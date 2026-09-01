@@ -1,0 +1,164 @@
+"""Experiment-facing API for external device operations."""
+
+from __future__ import annotations
+
+from collections.abc import Collection, Iterator
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+from .dc_voltage_control import DCVoltageControl
+from .models.dc_voltage_state import DCVoltageState
+
+if TYPE_CHECKING:
+    from .experiment_context import ExperimentContext
+
+
+class ExternalDevices:
+    """Operate external devices (DC voltage sources) from an experiment."""
+
+    def __init__(self, *, context: ExperimentContext) -> None:
+        """Bind the API to one experiment context."""
+        self._ctx = context
+
+    @contextmanager
+    def dc_voltage(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> Iterator[DCVoltageControl]:
+        """
+        Yield DC voltage operations bound to one mux.
+
+        Parameters
+        ----------
+        mux : int or str, optional
+            Mux index or label. Required when multiple muxes are active.
+
+        Yields
+        ------
+        DCVoltageControl
+            Operations bound to the resolved mux.
+        """
+        with self._ctx.dc_voltage_control(mux=mux) as control:
+            yield control
+
+    def get_dc_voltage_state(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> DCVoltageState:
+        """Return DC voltage and output-state readback for one mux."""
+        return self._ctx.get_dc_voltage_state(mux=mux)
+
+    def get_dc_voltage_states(self) -> dict[int, DCVoltageState]:
+        """
+        Return DC readback states for every active wired mux.
+
+        Returns
+        -------
+        dict[int, DCVoltageState]
+            States keyed by mux index, read on one device connection.
+        """
+        return self._ctx.get_dc_voltage_states()
+
+    def reset_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """
+        Bring the selected muxes to their reset voltages, outputs on.
+
+        Off outputs come up at `reset_voltage` (default 0 V) before
+        being switched on; on outputs are ramped to it. Afterwards the
+        selection is in the known reset state, regardless of stale stored
+        setpoints.
+
+        Parameters
+        ----------
+        muxes : int, str, or collection of them, optional
+            Target mux indices or labels. All active wired muxes when omitted.
+        confirm : bool, optional
+            Whether to prompt before writing to the hardware.
+
+        Returns
+        -------
+        dict[int, DCVoltageState]
+            Readback states for every active wired mux after resetting, or an
+            empty mapping when the selection is empty or confirmation is declined.
+        """
+        return self._ctx.reset_dc_voltages(muxes=muxes, confirm=confirm)
+
+    def bias_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """
+        Ramp the selected calibrated muxes to their bias voltages.
+
+        When `muxes` is omitted, every active wired mux with a calibrated
+        `optimal_voltage` in `jpa_params.yaml` is biased and the rest are
+        skipped; an explicitly selected mux without one raises. Ramp back
+        with `idle_dc_voltages()`.
+
+        Parameters
+        ----------
+        muxes : int, str, or collection of them, optional
+            Target mux indices or labels. All active wired muxes when omitted.
+        confirm : bool, optional
+            Whether to prompt before writing to the hardware.
+
+        Returns
+        -------
+        dict[int, DCVoltageState]
+            Readback states for every active wired mux after biasing, or an
+            empty mapping when the selection is empty or confirmation is declined.
+        """
+        return self._ctx.bias_dc_voltages(muxes=muxes, confirm=confirm)
+
+    def idle_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """
+        Ramp the selected muxes back to their idle voltages.
+
+        Parameters
+        ----------
+        muxes : int, str, or collection of them, optional
+            Target mux indices or labels. All active wired muxes when omitted.
+        confirm : bool, optional
+            Whether to prompt before writing to the hardware.
+
+        Returns
+        -------
+        dict[int, DCVoltageState]
+            Readback states for every active wired mux after idling, or an
+            empty mapping when the selection is empty or confirmation is declined.
+        """
+        return self._ctx.idle_dc_voltages(muxes=muxes, confirm=confirm)
+
+    def shutdown_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """
+        Ramp selected muxes to reset voltage and switch off supported outputs.
+
+        Parameters
+        ----------
+        muxes : int, str, or collection of them, optional
+            Target mux indices or labels. All active wired muxes when omitted.
+        confirm : bool, optional
+            Whether to prompt before writing to the hardware.
+
+        Returns
+        -------
+        dict[int, DCVoltageState]
+            Readback states for every active wired mux after shutdown, or an
+            empty mapping when the selection is empty or confirmation is declined.
+        """
+        return self._ctx.shutdown_dc_voltages(muxes=muxes, confirm=confirm)

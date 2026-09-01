@@ -25,7 +25,6 @@ from qubex.system.quel1.quel1_system_constants import (
 )
 from qubex.system.quel3.quel3_control_parameter_defaults import (
     DEFAULT_CONTROL_AMPLITUDE as DEFAULT_QUEL3_CONTROL_AMPLITUDE,
-    DEFAULT_DC_VOLTAGE as DEFAULT_QUEL3_DC_VOLTAGE,
     DEFAULT_PUMP_FREQUENCY_GHZ as DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ,
     DEFAULT_READOUT_AMPLITUDE as DEFAULT_QUEL3_READOUT_AMPLITUDE,
 )
@@ -119,7 +118,12 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
         {
             "meta": {},
             "data": {
-                0: {"pump_frequency": 12.3, "pump_amplitude": 0.1, "dc_voltage": 0.2},
+                0: {
+                    "pump_frequency": 12.3,
+                    "pump_amplitude": 0.1,
+                    "optimal_voltage": 0.2,
+                    "idle_voltage": -0.05,
+                },
                 1: None,
             },
         },
@@ -554,13 +558,19 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert cp.jpa_params.get(0) == {
         "pump_frequency": 12.3,
         "pump_amplitude": 0.1,
-        "dc_voltage": 0.2,
+        "optimal_voltage": 0.2,
+        "idle_voltage": -0.05,
     }
     assert cp.jpa_params.get(1) == {
         "pump_frequency": DEFAULT_PUMP_FREQUENCY_GHZ,
         "pump_amplitude": 0.0,
-        "dc_voltage": 0.0,
     }
+    assert cp.has_optimal_voltage(0) is True
+    assert cp.has_optimal_voltage(1) is False
+    assert cp.get_idle_voltage(0) == pytest.approx(-0.05)
+    assert cp.get_idle_voltage(1) is None
+    with pytest.raises(ValueError, match="no calibrated `optimal_voltage`"):
+        cp.get_optimal_voltage(1)
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(
         cp.get_pump_frequency(1),
@@ -573,6 +583,40 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert math.isclose(
         cp.get_frequency_margin("CTRL_GE"), 0.1, rel_tol=0, abs_tol=1e-12
     )
+
+
+def test_legacy_dc_voltage_name_warns_and_maps_to_optimal_voltage(
+    tmp_path: Path,
+) -> None:
+    """Legacy dc_voltage should warn and remain available as optimal_voltage."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "jpa_params.yaml",
+        {
+            "meta": {},
+            "data": {0: {"dc_voltage": 0.2}},
+        },
+    )
+
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"`dc_voltage`.*`optimal_voltage`",
+    ) as config_warnings:
+        loader = ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+    assert "v1.6.0" not in str(config_warnings[0].message)
+
+    control_parameters = loader.get_experiment_system().control_params
+    assert control_parameters.get_optimal_voltage(0) == pytest.approx(0.2)
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"get_dc_voltage.*get_optimal_voltage",
+    ) as api_warnings:
+        assert control_parameters.get_dc_voltage(0) == pytest.approx(0.2)
+    assert "v1.6.0" not in str(api_warnings[0].message)
 
 
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):
@@ -1749,9 +1793,7 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     assert control_parameters.get_pump_frequency(1) == pytest.approx(
         DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ
     )
-    assert control_parameters.get_dc_voltage(1) == pytest.approx(
-        DEFAULT_QUEL3_DC_VOLTAGE
-    )
+    assert control_parameters.has_optimal_voltage(1) is False
 
 
 def test_load_preserves_quel3_capture_delay_ns_without_ndelay_side_effect(
@@ -2596,3 +2638,217 @@ def test_load_uses_quel1_system_loader_when_backend_is_unset(
     loader.load()
 
     assert called == ["clock", "control", "wiring"]
+
+
+def test_external_devices_config_loads_dc_controller_profiles(
+    tmp_path: Path,
+) -> None:
+    """External device settings should expose resolved DC voltage profiles."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {
+            chip_id: {
+                "name": "Test Chip",
+                "n_qubits": 16,
+                "clock_master": "10.0.0.1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {
+            "devices": {
+                "ONS1": {
+                    "driver": "ons61797",
+                    "params": {"port": "/dev/system-dc"},
+                    "channels": [1, 2],
+                },
+            },
+            "wiring": [
+                {"mux": 0, "bias": "ONS1-1"},
+                {"mux": 1, "bias": "ONS1-2"},
+            ],
+            "settings": {
+                "ramp": {
+                    "rate_v_per_s": 0.1,
+                    "step_size_v": 0.01,
+                    "wait_s": 0.1,
+                },
+                "readback": {
+                    "tolerance_v": 0.001,
+                    "max_attempts": 5,
+                },
+                "overrides": [
+                    {
+                        "mux": 1,
+                        "ramp": {"rate_v_per_s": 0.05},
+                        "readback": {"tolerance_v": 0.002},
+                    },
+                ],
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    controller = loader.external_devices_config.dc_voltage.controller
+    assert controller.driver == "ons61797"
+    assert controller.params == {"port": "/dev/system-dc"}
+    assert controller.device_id == "ONS1"
+    assert controller.resolve_voltage_profile(0).channel == 1
+    assert controller.resolve_voltage_profile(0).ramp_rate_v_per_s == pytest.approx(0.1)
+    assert controller.resolve_voltage_profile(0).readback_tolerance_v == pytest.approx(
+        0.001
+    )
+    assert controller.resolve_voltage_profile(0).max_set_attempts == 5
+    assert controller.resolve_voltage_profile(1).channel == 2
+    assert controller.resolve_voltage_profile(1).ramp_rate_v_per_s == pytest.approx(
+        0.05
+    )
+    assert controller.resolve_voltage_profile(1).readback_tolerance_v == pytest.approx(
+        0.002
+    )
+
+
+def test_external_devices_config_defaults_when_missing(
+    tmp_path: Path,
+) -> None:
+    """Missing external device settings should expose a default JPA controller."""
+    config_dir, params_dir, _ = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        chip_id="TESTCHIP",
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    controller = loader.external_devices_config.dc_voltage.controller
+    assert controller.driver == "ons61797"
+    assert controller.params == {}
+    with pytest.raises(ValueError, match=r"Mux 6 has no DC voltage wiring"):
+        controller.resolve_voltage_profile(6)
+
+
+def test_external_devices_config_rejects_unknown_mux(tmp_path: Path) -> None:
+    """External device wiring should reference a mux in the quantum system."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {
+            "devices": {"ONS1": {"driver": "ons61797"}},
+            "wiring": [{"mux": 99, "bias": "ONS1-1"}],
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"External device wiring references unknown mux 99",
+    ):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "match"),
+    [
+        (("ramp", "rate_v_per_s"), 0.0, "rate_v_per_s.*positive"),
+        (("ramp", "rate_v_per_s"), float("nan"), "rate_v_per_s.*finite"),
+        (("ramp", "step_size_v"), float("inf"), "step_size_v.*finite"),
+        (("ramp", "wait_s"), float("-inf"), "wait_s.*finite"),
+        (("reset_voltage",), float("inf"), "reset_voltage.*finite"),
+        (("readback", "tolerance_v"), -0.1, "tolerance_v.*non-negative"),
+        (("readback", "tolerance_v"), float("inf"), "tolerance_v.*finite"),
+        (("readback", "max_attempts"), 0, "max_attempts.*positive"),
+    ],
+)
+def test_external_devices_config_rejects_invalid_control_values(
+    tmp_path: Path,
+    path: tuple[str, ...],
+    value: object,
+    match: str,
+) -> None:
+    """Invalid nested DC control values should be rejected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    controller: dict[str, object] = {}
+    current = controller
+    for key in path[:-1]:
+        child: dict[str, object] = {}
+        current[key] = child
+        current = child
+    current[path[-1]] = value
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {"settings": controller},
+    )
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_external_devices_config_rejects_non_string_driver(
+    tmp_path: Path,
+) -> None:
+    """A non-string external DC device driver should be rejected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {"devices": {"ONS1": {"driver": 123}}},
+    )
+
+    with pytest.raises(ValueError, match=r"driver.*string"):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("wiring", "match"),
+    [
+        ([{"mux": 6, "bias": "ONS1-one"}], "DEVICE-CHANNEL"),
+        (
+            [{"mux": 6, "bias": "ONS1-1"}, {"mux": 7, "bias": "ONS1-1"}],
+            "more than once",
+        ),
+        (
+            [{"mux": 6, "bias": "ONS1-1"}, {"mux": 6, "bias": "ONS1-2"}],
+            "lists mux 6 twice",
+        ),
+        ([{"mux": "MUX06", "bias": "ONS1-1"}], "integer `mux`"),
+        ({6: {"bias": "ONS1-1"}}, "must be a list of entries"),
+    ],
+)
+def test_external_devices_config_rejects_invalid_wiring_entries(
+    tmp_path: Path,
+    wiring: object,
+    match: str,
+) -> None:
+    """Invalid external DC wiring entries should be rejected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {
+            "devices": {"ONS1": {"driver": "ons61797"}},
+            "wiring": wiring,
+        },
+    )
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )

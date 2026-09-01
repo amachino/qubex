@@ -68,6 +68,7 @@ from qubex.typing import (
 )
 
 from .experiment_context import ExperimentContext
+from .external_devices import ExternalDevices
 from .models.calibration_note import CalibrationNote
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
@@ -862,6 +863,11 @@ class Experiment:
         """Temporarily override target frequencies within the context."""
         with self.ctx.modified_frequencies(frequencies):
             yield
+
+    @property
+    def external_devices(self) -> ExternalDevices:
+        """Return operations for external devices (DC voltage sources)."""
+        return ExternalDevices(context=self.ctx)
 
     def save_calib_note(
         self,
@@ -2073,6 +2079,7 @@ class Experiment:
         mode: MeasurementMode | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        time_integration: bool | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -2094,6 +2101,9 @@ class Experiment:
             Number of shots.
         shot_interval : float, optional
             Interval between shots in ns.
+        time_integration : bool, optional
+            Whether to integrate captured waveforms over time. Defaults to True when
+            omitted or None.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
         readout_duration : float, optional
@@ -2127,6 +2137,7 @@ class Experiment:
             mode=mode,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            time_integration=time_integration,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,

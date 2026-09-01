@@ -33,6 +33,78 @@ imports, the upgrade is usually straightforward.
 - Replace simulator `Control` interpolation with explicitly sampled waveforms
 - Remove hardcoded `2 ns` assumptions from sweeps, plots, and timing utilities
 
+## SQUAD window arguments and units
+
+Standalone `beta_mode` and `beta_sum` arguments have been removed from
+`Squad`, `Squad.func`, and the SQUAD paths of `FlatTop` and `FlatTop.func`.
+They now raise `TypeError`, including explicitly supplied former defaults.
+There is no deprecation period. Replace them with a window dictionary:
+
+```python
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12, correction_factor=0,
+    window={"type": "beta", "mode": 0.4, "sum": 6.0},
+)
+```
+
+The string `window="beta"` still uses mode 1/3 and sum 5.
+Tukey settings continue to use the same dictionary interface.
+
+### Unified CD sign and strength
+
+This is a breaking change to direct `Squad` / `Squad.func`:
+`factor` has been removed and is rejected with `TypeError`, including
+explicit `factor=None`. The instance attribute is now `correction_factor`.
+
+Both SQUAD entry points use transition-minus-drive delta, an `I + i*Q`
+envelope, and the same negative-sign CD formula:
+`Q = -correction_factor * delta * dI/dt / (delta**2 + I**2)`.
+Use angular-rate amplitude/delta in rad/ns and time in ns.
+`correction_factor` is dimensionless: 1 is the analytic CD strength,
+0.5 halves it, and 0 disables it. The carrier is configured separately.
+
+To preserve an old direct-SQUAD waveform, negate its old factor:
+
+```python
+# Before: Squad(..., factor=x)
+# After:
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12,
+    correction_factor=-x,
+)
+```
+
+**Old omitted/None factor meant +1: use new correction_factor=-1 to
+preserve that old waveform.** New omitted/None correction_factor means +1
+in the unified convention and therefore reverses the old default Q.
+There is no silent compatibility alias. `FlatTop`'s existing CD formula,
+DRAG behavior, correction-disabled default, ramp sampling and signs are unchanged.
+Direct `Squad` still enables CD by default.
+
+Keep hardware-unit conversion separate from correction strength:
+
+```python
+K = 2 * np.pi * rabi_ghz_per_command
+pulse = FlatTop(
+    duration=40, tau=12, type="Squad",
+    amplitude=K * command_amplitude,
+    delta=2 * np.pi * (transition_ghz - drive_ghz),
+    correction_type="CD", correction_factor=1.0,
+    scale=1 / K,
+)
+```
+
+Scale converts both I and Q to command amplitudes. This preserves older
+command-unit FlatTop waveforms that used delta divided by the Rabi scale
+and correction_factor divided by K; do not apply both conversions.
+The Rabi scale remains a caller-supplied hardware model, not a calibration
+performed by the pulse API.
+
+Recompute delta per drive frequency for carrier-adaptive SQUAD design.
+Holding delta fixed instead deliberately scans one waveform's carrier;
+regenerating the waveform changes the interpretation of a chevron.
+See the API docstrings for the complete conventions.
+
 ## Installation and environment changes
 
 The `v1.5.0` repository workflow assumes a `uv`-managed environment.

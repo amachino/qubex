@@ -3667,22 +3667,22 @@ class CharacterizationService:
             )
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
-        if plot:
-            fig = fit_result.get_figure()
-            fig.update_layout(
-                title=dict(
-                    text=f"Control amplitude estimation : {target}",
-                    subtitle=dict(
-                        text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
-                        font=dict(size=13, family="monospace"),
-                    ),
+        fig = fit_result.get_figure()
+        fig.update_layout(
+            title=dict(
+                text=f"Control amplitude estimation : {target}",
+                subtitle=dict(
+                    text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
+                    font=dict(size=13, family="monospace"),
                 ),
-                xaxis_title="Control frequency (GHz)",
-                yaxis_title="Unwrapped phase (rad)",
-                width=600,
-                height=300,
-                margin=dict(t=80),
-            )
+            ),
+            xaxis_title="Control frequency (GHz)",
+            yaxis_title="Unwrapped phase (rad)",
+            width=600,
+            height=300,
+            margin=dict(t=80),
+        )
+        if plot:
             fig.show()
 
         if save_image:
@@ -3741,6 +3741,8 @@ class CharacterizationService:
             )
 
         power_range = np.array(power_range)
+        if power_range.size == 0:
+            raise ValueError("power_range must not be empty.")
         result2d = []
         for power in tqdm(power_range, desc=f"control power sweep for {target}"):
             power_linear = 10 ** (power / 10)

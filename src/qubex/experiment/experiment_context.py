@@ -24,6 +24,8 @@ from qubex.backend.backend_controller import (
     SystemBackendController,
 )
 from qubex.compat.deprecated_options import resolve_deprecated_option
+from qubex.external_devices import DCVoltageProfile
+from qubex.external_devices.dc_voltage.controller import DCVoltageConnection
 from qubex.measurement import (
     Measurement,
     StateClassifier,
@@ -51,6 +53,7 @@ from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version
 
 from . import experiment_tool
+from .dc_voltage_control import DCVoltageControl
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
@@ -63,6 +66,7 @@ from .experiment_constants import (
 from .experiment_exceptions import CalibrationMissingError
 from .experiment_util import ExperimentUtil
 from .models.calibration_note import CalibrationNote
+from .models.dc_voltage_state import DCVoltageState
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
 from .models.rabi_param import RabiParam
@@ -1204,6 +1208,308 @@ class ExperimentContext:
         else:
             with self.system_manager.modified_frequencies(frequencies):
                 yield
+
+    def _resolve_dc_mux(self, mux: int | str | None = None) -> Mux:
+        """Resolve the mux used for DC voltage operations."""
+        if mux is not None:
+            return self.experiment_system.get_mux(mux)
+        mux_labels = self.mux_labels
+        if len(mux_labels) != 1:
+            raise ValueError(
+                "`mux` must be specified when there are multiple active muxes."
+            )
+        return self.experiment_system.get_mux(mux_labels[0])
+
+    def _resolve_dc_output(self, mux: int | str | None) -> tuple[Mux, int]:
+        """Resolve one mux and its configured DC output channel."""
+        resolved_mux = self._resolve_dc_mux(mux)
+        channel = self.system_manager.resolve_dc_voltage_channel(resolved_mux.index)
+        return resolved_mux, channel
+
+    def _get_active_dc_mux(self, mux_index: int) -> Mux | None:
+        """Return a wired mux only when it exists in the active system."""
+        try:
+            return self.experiment_system.get_mux(mux_index)
+        except (KeyError, ValueError):
+            logger.info(
+                "Skipping DC voltage wiring for mux %d because it is absent "
+                "from the active experiment system.",
+                mux_index,
+            )
+            return None
+
+    def _get_active_dc_muxes(self) -> dict[int, Mux]:
+        """Return configured DC muxes that exist in the active system."""
+        return {
+            mux_index: mux
+            for mux_index in self.system_manager.dc_voltage_mux_indices()
+            if (mux := self._get_active_dc_mux(mux_index)) is not None
+        }
+
+    def _read_dc_voltage_states(
+        self,
+        connection: DCVoltageConnection,
+        active_muxes: dict[int, Mux],
+    ) -> dict[int, DCVoltageState]:
+        """Read active wired muxes through an existing connection."""
+        system_manager = self.system_manager
+        channels = {
+            mux_index: system_manager.resolve_dc_voltage_channel(mux_index)
+            for mux_index in active_muxes
+        }
+        readings = connection.read_channels(list(channels.values()))
+        return {
+            mux_index: DCVoltageState(
+                mux_label=active_muxes[mux_index].label,
+                mux_index=mux_index,
+                channel=channel,
+                voltage=readings[channel][0],
+                output="on" if readings[channel][1] else "off",
+            )
+            for mux_index, channel in channels.items()
+        }
+
+    def get_dc_voltage_state(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> DCVoltageState:
+        """Return DC voltage and output-state readback for one mux."""
+        resolved_mux, channel = self._resolve_dc_output(mux)
+        controller = self.system_manager.dc_voltage_controller
+        voltage, is_on = controller.read_channels([channel])[channel]
+        return DCVoltageState(
+            mux_label=resolved_mux.label,
+            mux_index=resolved_mux.index,
+            channel=channel,
+            voltage=voltage,
+            output="on" if is_on else "off",
+        )
+
+    def get_dc_voltage_states(self) -> dict[int, DCVoltageState]:
+        """Return readback states for every active wired mux on one connection."""
+        system_manager = self.system_manager
+        active_muxes = self._get_active_dc_muxes()
+        if not active_muxes:
+            return {}
+        with system_manager.dc_voltage_controller.connected() as connection:
+            return self._read_dc_voltage_states(connection, active_muxes)
+
+    def _resolve_dc_target_muxes(
+        self,
+        muxes: int | str | Collection[int | str] | None,
+    ) -> list[int]:
+        """Resolve a mux selection into wired mux indices (None = all)."""
+        if muxes is None:
+            return list(self._get_active_dc_muxes())
+        if isinstance(muxes, (int, str)):
+            selectors = [muxes]
+        else:
+            selectors = list(muxes)
+        for selector in selectors:
+            if isinstance(selector, str):
+                continue
+            if type(selector) is not int or selector < 0:
+                raise ValueError(
+                    "Each DC voltage mux selector must be a non-negative integer "
+                    "or a valid mux label."
+                )
+        return [self.experiment_system.get_mux(mux).index for mux in selectors]
+
+    def reset_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Bring the selected muxes to their reset voltages, outputs on."""
+        system_manager = self.system_manager
+        active_muxes = self._get_active_dc_muxes()
+        profiles = {
+            mux_index: system_manager.resolve_dc_voltage_profile(mux_index)
+            for mux_index in self._resolve_dc_target_muxes(muxes)
+        }
+        if not profiles:
+            return {}
+        plan = {
+            mux_index: profile.reset_voltage_v
+            for mux_index, profile in profiles.items()
+        }
+        if not self._confirm_dc_voltage_write(
+            "reset the DC outputs to their reset voltages",
+            plan,
+            confirm=confirm,
+        ):
+            return {}
+        with system_manager.dc_voltage_controller.connected() as connection:
+            connection.reset_channels(
+                {profile.channel: profile for profile in profiles.values()}
+            )
+            return self._read_dc_voltage_states(connection, active_muxes)
+
+    def bias_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Ramp the selected calibrated muxes to their bias voltages."""
+        system_manager = self.system_manager
+        active_muxes = self._get_active_dc_muxes()
+        control_params = self.experiment_system.control_params
+        requests: dict[int, tuple[float, DCVoltageProfile]] = {}
+        plan: dict[int, float] = {}
+        for mux_index in self._resolve_dc_target_muxes(muxes):
+            if muxes is None and not control_params.has_optimal_voltage(mux_index):
+                continue
+            profile = system_manager.resolve_dc_voltage_profile(mux_index)
+            # Explicitly selected muxes must be calibrated: raise otherwise.
+            voltage = control_params.get_optimal_voltage(mux_index)
+            requests[profile.channel] = (voltage, profile)
+            plan[mux_index] = voltage
+        if not requests:
+            return {}
+        if not self._confirm_dc_voltage_write(
+            "ramp to the bias DC voltages",
+            plan,
+            confirm=confirm,
+        ):
+            return {}
+        with system_manager.dc_voltage_controller.connected() as connection:
+            connection.apply_channels(requests)
+            return self._read_dc_voltage_states(connection, active_muxes)
+
+    def idle_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Ramp the selected muxes to their idle voltages."""
+        system_manager = self.system_manager
+        active_muxes = self._get_active_dc_muxes()
+        profiles: dict[int, DCVoltageProfile] = {}
+        plan: dict[int, float] = {}
+        for mux_index in self._resolve_dc_target_muxes(muxes):
+            profile = system_manager.resolve_dc_voltage_profile(mux_index)
+            profiles[profile.channel] = profile
+            plan[mux_index] = profile.idle_voltage_v
+        if not profiles:
+            return {}
+        if not self._confirm_dc_voltage_write(
+            "ramp to the idle DC voltages",
+            plan,
+            confirm=confirm,
+        ):
+            return {}
+        with system_manager.dc_voltage_controller.connected() as connection:
+            connection.idle_channels(profiles)
+            return self._read_dc_voltage_states(connection, active_muxes)
+
+    def shutdown_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Ramp selected muxes to reset voltage and switch off supported outputs."""
+        system_manager = self.system_manager
+        active_muxes = self._get_active_dc_muxes()
+        profiles = {
+            mux_index: system_manager.resolve_dc_voltage_profile(mux_index)
+            for mux_index in self._resolve_dc_target_muxes(muxes)
+        }
+        if not profiles:
+            return {}
+        plan = {
+            mux_index: profile.reset_voltage_v
+            for mux_index, profile in profiles.items()
+        }
+        if not self._confirm_dc_voltage_write(
+            "ramp to the reset voltages and turn off the DC outputs",
+            plan,
+            confirm=confirm,
+        ):
+            return {}
+        with system_manager.dc_voltage_controller.connected() as connection:
+            connection.turn_off_channels(
+                {profile.channel: profile for profile in profiles.values()}
+            )
+            return self._read_dc_voltage_states(connection, active_muxes)
+
+    @staticmethod
+    def _confirm_dc_voltage_write(
+        operation: str,
+        plan: dict[int, float],
+        *,
+        confirm: bool,
+    ) -> bool:
+        """Ask before a bulk DC voltage write, mirroring hardware pushes."""
+        if not confirm:
+            return True
+        plan_str = "\n".join(
+            f"mux {mux_index}: {voltage:+.3f} V"
+            for mux_index, voltage in sorted(plan.items())
+        )
+        confirmed = Confirm.ask(
+            f"""
+You are going to {operation}:
+
+[bold bright_green]{plan_str}[/bold bright_green]
+
+Do you want to continue?
+"""
+        )
+        if not confirmed:
+            logger.info("Operation cancelled.")
+        return confirmed
+
+    @contextmanager
+    def dc_voltage_control(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> Iterator[DCVoltageControl]:
+        """Yield DC voltage operations bound to one mux."""
+        resolved_mux = self._resolve_dc_mux(mux)
+        profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
+        controller = self.system_manager.dc_voltage_controller
+
+        def create_state(readback: float, is_on: bool) -> DCVoltageState:
+            return DCVoltageState(
+                mux_label=resolved_mux.label,
+                mux_index=resolved_mux.index,
+                channel=profile.channel,
+                voltage=readback,
+                output="on" if is_on else "off",
+            )
+
+        with controller.connected() as connection:
+            control = DCVoltageControl(
+                apply_voltage=lambda voltage: create_state(
+                    *connection.apply_voltage_and_read(
+                        channel=profile.channel,
+                        voltage=voltage,
+                        profile=profile,
+                    )
+                ),
+                idle=lambda: connection.idle(
+                    channel=profile.channel,
+                    profile=profile,
+                ),
+                get_state=lambda: create_state(
+                    *connection.read_channel(profile.channel)
+                ),
+            )
+            try:
+                yield control
+            except BaseException:
+                try:
+                    control.idle()
+                except BaseException:
+                    logger.exception(
+                        "Failed to return DC voltage output to idle while handling "
+                        "an experiment error."
+                    )
+                raise
+            else:
+                control.idle()
 
     def save_calib_note(
         self,

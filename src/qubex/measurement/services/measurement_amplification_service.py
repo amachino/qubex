@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 
-from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.system import ControlParameters, ExperimentSystem
 
+logger = logging.getLogger(__name__)
+
 
 class MeasurementAmplificationService:
-    """Manage temporary amplification/DC operations for measurement APIs."""
+    """Manage amplification and DC operations for measurement APIs."""
 
     def __init__(
         self,
@@ -36,14 +38,22 @@ class MeasurementAmplificationService:
         return self.experiment_system.control_params
 
     @contextmanager
-    def apply_dc_voltages(self, targets: str | Collection[str]) -> Iterator[None]:
+    def apply_dc_voltages(
+        self,
+        targets: str | Collection[str],
+    ) -> Iterator[None]:
         """
-        Temporarily apply DC voltages to the specified targets.
+        Apply amplification-point DC voltages to the specified targets.
 
         Parameters
         ----------
         targets : str | Collection[str]
             Target label or target labels.
+
+        Notes
+        -----
+        Muxes without a calibrated `optimal_voltage` in `jpa_params.yaml` are
+        skipped: no DC voltage source is touched for them.
         """
         if isinstance(targets, str):
             targets = [targets]
@@ -53,6 +63,28 @@ class MeasurementAmplificationService:
         muxes = {
             self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
         }
-        voltages = {mux + 1: self.control_params.get_dc_voltage(mux) for mux in muxes}
-        with dc_voltage(voltages):
+        uncalibrated = {
+            mux for mux in muxes if not self.control_params.has_optimal_voltage(mux)
+        }
+        if uncalibrated:
+            logger.info(
+                "Skipping DC voltage application for muxes without a "
+                "calibrated `optimal_voltage` in `jpa_params.yaml`: %s",
+                sorted(uncalibrated),
+            )
+        muxes -= uncalibrated
+        if not muxes:
+            yield
+            return
+        profiles = {
+            mux: self.context.system_manager.resolve_dc_voltage_profile(mux)
+            for mux in muxes
+        }
+        requests = {
+            profile.channel: (self.control_params.get_optimal_voltage(mux), profile)
+            for mux, profile in profiles.items()
+        }
+        with self.context.system_manager.dc_voltage_controller.apply_voltages(
+            requests,
+        ):
             yield

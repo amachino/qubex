@@ -7,6 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -17,6 +18,14 @@ from qubex.backend.quel3 import (
     Quel3HttpTransportConfig,
     Quel3RuntimeConfig,
 )
+from qubex.external_devices import (
+    DCVoltageConfig,
+    DCVoltageControllerConfig,
+    DCVoltageProfile,
+    ExternalDevicesConfig,
+    ExternalDevicesController,
+)
+from qubex.external_devices.dc_voltage.config import DCVoltageProfileOverride
 from qubex.system.control_system import PortType
 from qubex.system.system_manager import BackendSettings, SystemManager
 
@@ -1157,6 +1166,138 @@ def test_load_uses_config_loader_backend_kind_when_backend_kind_is_omitted(
     assert captured_load_kwargs["backend_kind"] is None
 
 
+def test_resolve_dc_voltage_profile_overlays_calibrated_idle_voltage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A calibrated jpa_params idle voltage should override the reset fallback."""
+    manager = SystemManager.shared()
+    config = DCVoltageControllerConfig(
+        voltage_defaults=DCVoltageProfile(channel=1, reset_voltage_v=0.1),
+        muxes={6: DCVoltageProfileOverride(channel=1)},
+    )
+    monkeypatch.setattr(
+        manager,
+        "_external_devices_controller",
+        ExternalDevicesController(
+            ExternalDevicesConfig(dc_voltage=DCVoltageConfig(controller=config))
+        ),
+    )
+
+    class _ControlParams:
+        def get_idle_voltage(self, mux: int) -> float | None:
+            return {6: 0.05}.get(mux)
+
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(control_params=_ControlParams()),
+    )
+    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(0.05)
+
+    monkeypatch.setattr(manager, "_experiment_system", SimpleNamespace())
+    # Without calibration data, the idle voltage falls back to the reset voltage.
+    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(0.1)
+
+
+def test_resolve_dc_voltage_profile_rejects_invalid_calibrated_idle_voltage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An invalid calibrated idle voltage should fail before device access."""
+    manager = SystemManager.shared()
+    config = DCVoltageControllerConfig(
+        voltage_defaults=DCVoltageProfile(channel=1),
+        muxes={6: DCVoltageProfileOverride(channel=1)},
+    )
+    monkeypatch.setattr(
+        manager,
+        "_external_devices_controller",
+        ExternalDevicesController(
+            ExternalDevicesConfig(dc_voltage=DCVoltageConfig(controller=config))
+        ),
+    )
+
+    class _ControlParams:
+        def get_idle_voltage(self, mux: int) -> float | None:
+            return {6: -0.05}.get(mux)
+
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(control_params=_ControlParams()),
+    )
+
+    with pytest.raises(ValueError, match="ONS61797 voltage"):
+        manager.resolve_dc_voltage_profile(6)
+
+
+def test_load_creates_dc_voltage_controller_from_config_loader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given DC controller config, manager load should install configured controller."""
+    manager = SystemManager.shared()
+    created_configs: list[DCVoltageControllerConfig] = []
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL1
+
+        @property
+        def external_devices_config(self) -> ExternalDevicesConfig:
+            return ExternalDevicesConfig(
+                dc_voltage=DCVoltageConfig(
+                    controller=DCVoltageControllerConfig(
+                        driver="ons61797",
+                        params={"port": "/dev/system-dc"},
+                        voltage_defaults=DCVoltageProfile(channel=1),
+                        muxes={6: DCVoltageProfileOverride(channel=1)},
+                    )
+                )
+            )
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_create_dc_voltage_controller(
+        config: DCVoltageControllerConfig,
+    ) -> object:
+        created_configs.append(config)
+        return SimpleNamespace(config=config, validate_voltage=lambda _: None)
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(
+        "qubex.external_devices.controller.create_dc_voltage_controller",
+        _fake_create_dc_voltage_controller,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_sync_experiment_system_to_backend_controller",
+        lambda: None,
+    )
+
+    manager.load(chip_id="TEST", mock_mode=False)
+
+    assert created_configs == [
+        DCVoltageControllerConfig(
+            driver="ons61797",
+            params={"port": "/dev/system-dc"},
+            voltage_defaults=DCVoltageProfile(channel=1),
+            muxes={6: DCVoltageProfileOverride(channel=1)},
+        ),
+    ]
+    installed_controller = cast(Any, manager.dc_voltage_controller)
+    assert installed_controller.config == created_configs[0]
+    assert manager.resolve_dc_voltage_channel(6) == 1
+    with pytest.raises(ValueError, match="Mux 7 has no DC voltage wiring"):
+        manager.resolve_dc_voltage_channel(7)
+
+
 def test_load_does_not_pass_wiring_file_to_config_loader(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1781,3 +1922,62 @@ def test_load_preserves_backend_kind_when_experiment_system_resolution_fails(
     assert manager.backend_kind == BACKEND_KIND_QUEL1
     assert manager.backend_controller is previous_controller
     assert manager.__dict__["_config_loader"] is previous_loader
+
+
+def test_load_preserves_state_when_dc_controller_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid DC driver settings should fail before manager state is updated."""
+    manager = SystemManager.shared()
+    manager.__dict__["_backend_kind"] = BACKEND_KIND_QUEL1
+    previous_loader = object()
+    previous_dc_controller = object()
+    previous_external_controller = SimpleNamespace(
+        dc_voltage=previous_dc_controller,
+        config=ExternalDevicesConfig(),
+    )
+    manager.__dict__["_config_loader"] = previous_loader
+    manager.__dict__["_external_devices_controller"] = previous_external_controller
+    selected: list[str] = []
+
+    class _InvalidDCConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        @property
+        def external_devices_config(self) -> ExternalDevicesConfig:
+            return ExternalDevicesConfig(
+                dc_voltage=DCVoltageConfig(
+                    controller=DCVoltageControllerConfig(driver="unsupported")
+                )
+            )
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+
+    monkeypatch.setattr(
+        "qubex.system.system_manager.ConfigLoader",
+        _InvalidDCConfigLoader,
+    )
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    with pytest.raises(ValueError, match="Unsupported DC voltage controller driver"):
+        manager.load(chip_id="TEST", mock_mode=True)
+
+    assert selected == []
+    assert manager.backend_kind == BACKEND_KIND_QUEL1
+    assert manager.__dict__["_config_loader"] is previous_loader
+    assert manager.dc_voltage_controller is previous_dc_controller
+    assert (
+        manager.__dict__["_external_devices_controller"] is previous_external_controller
+    )
