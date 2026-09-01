@@ -20,12 +20,14 @@ from qubex.backend.backend_controller import (
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
+    EXTERNAL_DEVICES_FILE,
     MEASUREMENT_DEFAULTS_FILE,
     PARAMS_FILE,
     PROPS_FILE,
     SYSTEM_FILE,
     WIRING_FILE,
 )
+from qubex.external_devices import ExternalDevicesConfig
 from qubex.system.config_paths import (
     resolve_default_config_dir,
     resolve_default_params_dir,
@@ -169,7 +171,8 @@ class ConfigLoader:
         files under `params/`). When omitted, Qubex prefers
         `<root>/params/<system_id>`, then `<root>/params/<chip_id>`, and
         finally the legacy nested layout `<root>/<id>/params`.
-    chip_file, system_file, box_file, props_file, params_file : str, optional
+    chip_file, system_file, box_file, external_devices_file,
+    props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
     wiring_file : str | None, optional
         Wiring filename override. Defaults to `wiring.yaml` when omitted.
@@ -215,6 +218,7 @@ class ConfigLoader:
         chip_file: str = CHIP_FILE,
         system_file: str = SYSTEM_FILE,
         box_file: str = BOX_FILE,
+        external_devices_file: str = EXTERNAL_DEVICES_FILE,
         wiring_file: str | None = None,
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
@@ -241,6 +245,8 @@ class ConfigLoader:
             System YAML filename.
         box_file : str, optional
             Box YAML filename.
+        external_devices_file : str, optional
+            External devices YAML filename.
         wiring_file : str | None, optional
             Wiring YAML filename override.
         props_file : str, optional
@@ -284,6 +290,7 @@ class ConfigLoader:
         self._chip_file = chip_file
         self._system_file = system_file
         self._box_file = box_file
+        self._external_devices_file = external_devices_file
         self._wiring_file = wiring_file
         self._resolved_wiring_file = wiring_file or WIRING_FILE
         self._props_file = props_file
@@ -301,6 +308,7 @@ class ConfigLoader:
         self._props_dict: dict = {}
         self._params_dict: dict = {}
         self._measurement_defaults: MeasurementDefaults = MeasurementDefaults()
+        self._external_devices_config = ExternalDevicesConfig()
         self._quantum_system: QuantumSystem | None = None
         self._wiring_rows: list[dict[str, Any]] | None = None
         self._control_system: ControlSystem | None = None
@@ -372,9 +380,11 @@ class ConfigLoader:
                 self._params_file
             )  # legacy
             self._measurement_defaults = self._load_measurement_defaults()
+            self._external_devices_config = self._load_external_devices_config()
             self._system_loader = self._create_system_loader(self._backend_kind)
 
             self._quantum_system = self._load_quantum_system()
+            self._validate_external_device_muxes()
             self._control_system = self._load_control_system()
             self._wiring_info = self._load_wiring_info()
             self._control_params = self._load_control_params()
@@ -409,6 +419,12 @@ class ConfigLoader:
         """Return parsed partial measurement defaults for the loaded system."""
         self._ensure_loaded()
         return self._measurement_defaults
+
+    @property
+    def external_devices_config(self) -> ExternalDevicesConfig:
+        """Return external device configuration for the loaded system."""
+        self._ensure_loaded()
+        return self._external_devices_config
 
     @property
     def wiring_file(self) -> str:
@@ -645,6 +661,27 @@ class ConfigLoader:
                 f"Unsupported backend for chip `{self._chip_id}` in `{self._system_file}`: {value!r}"
             )
         return BACKEND_KIND_QUEL1
+
+    def _load_external_devices_config(self) -> ExternalDevicesConfig:
+        """Load external device settings from their dedicated config."""
+        raw_config = self._load_optional_config_file(self._external_devices_file)
+        return ExternalDevicesConfig.from_dict(raw_config)
+
+    def _validate_external_device_muxes(self) -> None:
+        """Require external device wiring to reference known muxes."""
+        if self._quantum_system is None:
+            return
+        mux_indices = {
+            mux_index
+            for role_wiring in self._external_devices_config.dc_voltage.wiring.values()
+            for mux_index in role_wiring
+        }
+        known_mux_indices = {mux.index for mux in self._quantum_system.muxes}
+        for mux_index in sorted(mux_indices):
+            if mux_index not in known_mux_indices:
+                raise ValueError(
+                    f"External device wiring references unknown mux {mux_index}."
+                )
 
     def _resolve_wiring_file(self) -> str:
         """Resolve effective wiring file name for the current load."""

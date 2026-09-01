@@ -68,6 +68,7 @@ from qubex.typing import (
 )
 
 from .experiment_context import ExperimentContext
+from .external_devices import ExternalDevices
 from .models.calibration_note import CalibrationNote
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
@@ -862,6 +863,11 @@ class Experiment:
         """Temporarily override target frequencies within the context."""
         with self.ctx.modified_frequencies(frequencies):
             yield
+
+    @property
+    def external_devices(self) -> ExternalDevices:
+        """Return operations for external devices (DC voltage sources)."""
+        return ExternalDevices(context=self.ctx)
 
     def save_calib_note(
         self,

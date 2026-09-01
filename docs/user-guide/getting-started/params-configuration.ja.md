@@ -177,7 +177,7 @@ data:
 | `pump_fsc.yaml` | mux | 整数または `null` | 対応 backend の pump-line full-scale current 設定。 | `params.yaml:<chip_id>.pump_fsc` |
 | `capture_delay.yaml` | mux | backend 依存 | capture timing offset。QuEL-1 では `meta.unit: ndelay`、QuEL-3 では `meta.unit: ns` が必須です。 | `params.yaml:<chip_id>.capture_delay` |
 | `capture_delay_word.yaml` | mux | `word` または `words` | QuEL-1 の capture-delay word offset。QuEL-3 ではサポートされません。 | `params.yaml:<chip_id>.capture_delay_word` |
-| `jpa_params.yaml` | mux | 内部単位 | JPA parameter。各 mux entry は `pump_frequency` (`GHz`), `pump_amplitude`, `dc_voltage` を持てます。無い field は backend default で補われます。 | `params.yaml:<chip_id>.jpa_params` |
+| `jpa_params.yaml` | mux | 内部単位 | JPA parameter。各 mux entry は `pump_frequency` (`GHz`)、`pump_amplitude`、較正済み動作点の `optimal_voltage`、任意の待機点 `idle_voltage` を持てます。pump系のfieldが無い場合はbackend defaultで補われますが、`optimal_voltage` にdefaultはありません — 未較正の mux はDC電圧印加の対象外になります。`idle_voltage` が無い mux は reset 電圧で待機します。 | `params.yaml:<chip_id>.jpa_params` |
 
 QuEL-1 では VATT、FSC、capture delay、JPA fields に対して QuEL-1 default が
 materialize されます。QuEL-3 では未対応の VATT/FSC/capture-delay-word は `null`
@@ -214,8 +214,21 @@ data:
   0:
     pump_frequency: 6.000
     pump_amplitude: 0.10
-    dc_voltage: 0.00
+    optimal_voltage: 0.27
+    idle_voltage: 0.05
 ```
+
+このfileには較正値だけを置きます。`optimal_voltage` にdefaultはなく、
+`measurement.apply_dc_voltages()` は較正のない mux を skip するため、この
+fileが無い system では bias 電圧は自動印加されません。ただし、直接の電圧
+contextと reset・idle・shutdown 操作は `external_devices.yaml` の設定だけで
+利用でき、reset は対応機器の出力を ON にします。`idle_voltage` は任意で、
+無い mux は reset 電圧で待機します。制御ポリシーは `external_devices.yaml`
+に置きます (システム設定ガイド参照)。
+
+正規の key は `optimal_voltage` です。旧 `dc_voltage` key は deprecated alias として
+引き続き読み込めますが、`DeprecationWarning` が発生します。既存設定を
+`optimal_voltage` へ変更してください。
 
 ### Measurement defaults
 
