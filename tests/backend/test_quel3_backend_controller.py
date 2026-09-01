@@ -527,6 +527,7 @@ def test_extract_capture_samples_from_waveform_result_container() -> None:
                 ]
             }
             self.iq_point_result = {}
+            self.integer_result = {}
 
     values = Quel3ExecutionManager._extract_capture_samples(
         _Result(),
@@ -554,6 +555,7 @@ def test_extract_capture_samples_from_raw_waveform_result_container() -> None:
                 ]
             }
             self.iq_point_result = {}
+            self.integer_result = {}
 
     values = Quel3ExecutionManager._extract_capture_samples(
         _Result(),
@@ -583,6 +585,7 @@ def test_extract_capture_samples_from_point_result_container() -> None:
             self.iq_point_result = {
                 "RQ00:0": [1.0 + 2.0j, 3.0 + 4.0j],
             }
+            self.integer_result = {}
 
     values = Quel3ExecutionManager._extract_capture_samples(
         _Result(),
@@ -1200,6 +1203,7 @@ class _FakeResultContainer:
     def __init__(self) -> None:
         self.iq_waveform_result = {}
         self.iq_point_result = {"alias-rq00:0": [1.0 + 0.0j]}
+        self.integer_result = {}
 
 
 class _FakeInstrumentDriver:
@@ -1222,8 +1226,15 @@ class _FakeInstrumentDriver:
 
 
 class _FakeSequencer:
-    def __init__(self, default_sampling_period_ns: float) -> None:
+    def __init__(
+        self,
+        default_sampling_period_ns: float,
+        enforce_sample_grid: bool = True,
+        iter_blank_ns: float = 2_000,
+    ) -> None:
         self.default_sampling_period_ns = default_sampling_period_ns
+        self.enforce_sample_grid = enforce_sample_grid
+        self.iter_blank_ns = iter_blank_ns
 
     def bind(
         self,
@@ -1266,6 +1277,9 @@ class _FakeSequencer:
     def extend_length_ns(self, additional_ns: float) -> None:
         del additional_ns
 
+    def get_aligned_length_fs(self, post_blank_fs: int = 0) -> int:
+        return post_blank_fs
+
     def export_set_fixed_timeline_directive(self, instrument_alias: str) -> object:
         return ("timeline", instrument_alias)
 
@@ -1287,6 +1301,7 @@ class _ParallelResultContainer:
     def __init__(self, alias: str, value: complex) -> None:
         self.iq_waveform_result = {}
         self.iq_point_result = {f"{alias}:0": [value]}
+        self.integer_result = {}
 
 
 class _ParallelInstrumentDriver:

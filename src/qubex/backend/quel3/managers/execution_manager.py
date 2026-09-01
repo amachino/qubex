@@ -32,6 +32,7 @@ from qubex.backend.quel3.interfaces import (
     QuelwareClientFactory,
     ResourceIdProtocol,
     ResultContainerProtocol,
+    SequencerFactoryProtocol,
     SequencerProtocol,
     SessionProtocol,
     SetCaptureModeFactory,
@@ -99,7 +100,7 @@ class _QuelwareExecutionApi:
 
     client_factory: QuelwareClientFactory
     instrument_resolver_factory: InstrumentResolverFactory
-    sequencer_factory: Callable[..., SequencerProtocol]
+    sequencer_factory: SequencerFactoryProtocol[SequencerProtocol]
     fixed_timeline_driver_factory: InstrumentDriverFactory
     set_frequency_directive_factory: SetFrequencyFactory
     set_capture_mode_directive_factory: SetCaptureModeFactory
@@ -971,7 +972,9 @@ class Quel3ExecutionManager:
         instrument_resolver_factory: InstrumentResolverFactory = (
             resolver_module.InstrumentResolver
         )
-        sequencer_factory: Callable[..., SequencerProtocol] = sequencer_module.Sequencer
+        sequencer_factory: SequencerFactoryProtocol[SequencerProtocol] = (
+            sequencer_module.Sequencer
+        )
         fixed_timeline_driver_factory: InstrumentDriverFactory = (
             driver_module.create_instrument_driver_fixed_timeline
         )
