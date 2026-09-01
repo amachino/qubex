@@ -50,8 +50,15 @@ class _Binding:
 
 
 class _RecordingSequencer:
-    def __init__(self, default_sampling_period_ns: float) -> None:
+    def __init__(
+        self,
+        default_sampling_period_ns: float,
+        enforce_sample_grid: bool = True,
+        iter_blank_ns: float = 2_000,
+    ) -> None:
         self.default_sampling_period_ns = default_sampling_period_ns
+        self.enforce_sample_grid = enforce_sample_grid
+        self.iter_blank_ns = iter_blank_ns
         self.registered_waveforms: dict[str, _RegisteredWaveform] = {}
         self.events: list[_Event] = []
         self.capture_windows: list[_CaptureWindow] = []
@@ -123,6 +130,9 @@ class _RecordingSequencer:
 
     def extend_length_ns(self, additional_ns: float) -> None:
         self.extended_by_ns += additional_ns
+
+    def get_aligned_length_fs(self, post_blank_fs: int = 0) -> int:
+        return post_blank_fs
 
     def export_set_fixed_timeline_directive(
         self,
@@ -209,6 +219,7 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
         _Binding(alias="alias-RQ00", sampling_period_fs=400_000, step_samples=64)
     ]
     assert sequencer.extended_by_ns == pytest.approx(0.0)
+    assert sequencer.iter_blank_ns == pytest.approx(0.0)
     assert sequencer.iterations == 16
 
 
@@ -412,8 +423,8 @@ def test_builder_rejects_missing_alias_binding() -> None:
         )
 
 
-def test_builder_extends_timeline_length_to_match_interval() -> None:
-    """Given longer shot interval, builder extends sequencer length to match it."""
+def test_builder_passes_shot_interval_as_iteration_blank() -> None:
+    """Given a shot interval, builder passes its aligned value as the iteration blank."""
     payload = _make_payload(
         waveform_library={
             "wf_known": Quel3Waveform(
@@ -433,7 +444,6 @@ def test_builder_extends_timeline_length_to_match_interval() -> None:
                 length_ns=10.0,
             )
         },
-        n_iterations=1,
         shot_interval_ns=2048.0,
     )
 
@@ -445,11 +455,12 @@ def test_builder_extends_timeline_length_to_match_interval() -> None:
         alias_bindings={"alias-RQ00": (400_000, 64)},
     )
 
-    assert sequencer.extended_by_ns == pytest.approx(2048.0)
+    assert sequencer.iter_blank_ns == pytest.approx(2048.0)
+    assert sequencer.extended_by_ns == pytest.approx(0.0)
 
 
-def test_builder_applies_minimum_shot_interval_floor() -> None:
-    """Given tiny shot interval, builder extends by aligned minimum floor."""
+def test_builder_applies_minimum_iteration_blank_floor() -> None:
+    """Given a tiny shot interval, builder passes the aligned minimum iteration blank."""
     payload = _make_payload(
         waveform_library={
             "wf_known": Quel3Waveform(
@@ -469,7 +480,6 @@ def test_builder_applies_minimum_shot_interval_floor() -> None:
                 length_ns=10.0,
             )
         },
-        n_iterations=1,
         shot_interval_ns=1.0,
     )
 
@@ -481,4 +491,5 @@ def test_builder_applies_minimum_shot_interval_floor() -> None:
         alias_bindings={"alias-RQ00": (400_000, 64)},
     )
 
-    assert sequencer.extended_by_ns == pytest.approx(1024.0)
+    assert sequencer.iter_blank_ns == pytest.approx(1024.0)
+    assert sequencer.extended_by_ns == pytest.approx(0.0)

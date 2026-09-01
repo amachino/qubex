@@ -16,6 +16,8 @@ from qubex.backend.quel3.interfaces.client import (
     QuelwareClientProtocol,
     ResourceIdProtocol,
     SessionProtocol,
+    UnitConfigurationProtocol,
+    UnitControlSpecProtocol,
 )
 from qubex.backend.quel3.interfaces.directives import (
     CaptureModeNamespaceProtocol,
@@ -35,7 +37,10 @@ from qubex.backend.quel3.interfaces.resolver import (
     InstrumentResolverFactory,
     InstrumentResolverProtocol,
 )
-from qubex.backend.quel3.interfaces.sequencer import SequencerProtocol
+from qubex.backend.quel3.interfaces.sequencer import (
+    SequencerFactoryProtocol,
+    SequencerProtocol,
+)
 
 __all__ = [
     "CaptureModeNamespaceProtocol",
@@ -60,8 +65,11 @@ __all__ = [
     "QuelwareClientProtocol",
     "ResourceIdProtocol",
     "ResultContainerProtocol",
+    "SequencerFactoryProtocol",
     "SequencerProtocol",
     "SessionProtocol",
     "SetCaptureModeFactory",
     "SetFrequencyFactory",
+    "UnitConfigurationProtocol",
+    "UnitControlSpecProtocol",
 ]

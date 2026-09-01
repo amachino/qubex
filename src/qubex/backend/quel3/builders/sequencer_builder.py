@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import TypeVar
 
-from qubex.backend.quel3.interfaces import SequencerProtocol
+from qubex.backend.quel3.interfaces import (
+    SequencerFactoryProtocol,
+    SequencerProtocol,
+)
 from qubex.backend.quel3.models import Quel3ExecutionPayload
 
 T = TypeVar("T", bound=SequencerProtocol)
@@ -47,7 +50,7 @@ class Quel3SequencerBuilder:
         self,
         *,
         payload: Quel3ExecutionPayload,
-        sequencer_factory: Callable[..., T],
+        sequencer_factory: SequencerFactoryProtocol[T],
         default_sampling_period_ns: float,
         alias_bindings: Mapping[str, tuple[int, int]],
     ) -> T:
@@ -58,8 +61,8 @@ class Quel3SequencerBuilder:
         ----------
         payload : Quel3ExecutionPayload
             QuEL-3 execution payload from measurement adapter.
-        sequencer_factory : Callable[..., T]
-            Sequencer class or factory compatible with quelware `Sequencer`.
+        sequencer_factory : SequencerFactoryProtocol[T]
+            Quelware-compatible sequencer factory.
         default_sampling_period_ns : float
             Sequencer default sampling period in ns.
         alias_bindings : Mapping[str, tuple[int, int]]
@@ -70,8 +73,14 @@ class Quel3SequencerBuilder:
         T
             Built sequencer instance.
         """
+        iter_blank_ns = (
+            self._resolve_effective_shot_interval_ns(payload.shot_interval_ns)
+            if payload.shot_interval_ns > 0
+            else 0.0
+        )
         sequencer = sequencer_factory(
-            default_sampling_period_ns=default_sampling_period_ns
+            default_sampling_period_ns=default_sampling_period_ns,
+            iter_blank_ns=iter_blank_ns,
         )
         sequencer.set_iterations(payload.n_iterations)
 
@@ -127,10 +136,5 @@ class Quel3SequencerBuilder:
                         sampling_period_fs,
                     ),
                 )
-
-        if payload.shot_interval_ns > 0:
-            sequencer.extend_length_ns(
-                self._resolve_effective_shot_interval_ns(payload.shot_interval_ns)
-            )
 
         return sequencer

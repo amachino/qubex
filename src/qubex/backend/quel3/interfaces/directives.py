@@ -26,6 +26,7 @@ class CaptureModeProtocol(Protocol):
 class CaptureModeNamespaceProtocol(Protocol):
     """Capture-mode enum namespace protocol."""
 
+    UNSPECIFIED: CaptureModeProtocol
     RAW_WAVEFORMS: CaptureModeProtocol
     AVERAGED_WAVEFORM: CaptureModeProtocol
     AVERAGED_VALUE: CaptureModeProtocol

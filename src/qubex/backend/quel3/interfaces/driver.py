@@ -36,6 +36,11 @@ class ResultContainerProtocol(Protocol):
         """Return point capture-window IQ results keyed by window name."""
         ...
 
+    @property
+    def integer_result(self) -> Mapping[str, Sequence[int]]:
+        """Return integer results keyed by capture-window name."""
+        ...
+
 
 class InstrumentConfigProtocol(Protocol):
     """Minimal instrument-config protocol."""
@@ -46,8 +51,18 @@ class InstrumentConfigProtocol(Protocol):
         ...
 
     @property
+    def bitdepth(self) -> int:
+        """Return waveform sample bit depth."""
+        ...
+
+    @property
     def timeline_step_samples(self) -> int:
         """Return timeline-step alignment size in samples."""
+        ...
+
+    @property
+    def samples_per_tick(self) -> int:
+        """Return the number of samples per hardware clock tick."""
         ...
 
 
@@ -62,15 +77,22 @@ class InstrumentDriverProtocol(Protocol):
     async def apply(
         self,
         directive: DirectiveProtocol | Sequence[DirectiveProtocol],
-    ) -> None:
-        """Apply one or more fixed-timeline directives."""
+    ) -> bool:
+        """Apply one or more fixed-timeline directives and return success."""
         ...
 
     async def initialize(self) -> None:
         """Initialize instrument state before apply/trigger flow."""
         ...
 
-    async def wait_for_result(self) -> ResultContainerProtocol:
+    async def fetch_result(self) -> ResultContainerProtocol:
+        """Fetch the current fixed-timeline execution result."""
+        ...
+
+    async def wait_for_result(
+        self,
+        timeout_sec: float | None = None,
+    ) -> ResultContainerProtocol:
         """Wait for one fixed-timeline execution result."""
         ...
 

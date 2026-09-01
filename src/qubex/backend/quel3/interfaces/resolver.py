@@ -18,14 +18,24 @@ class InstrumentResolverProtocol(Protocol):
         """Refresh instrument mapping from current resources."""
         ...
 
-    def resolve(self, aliases: list[str]) -> list[ResourceIdProtocol]:
+    def resolve(
+        self,
+        aliases: list[str],
+        unit: str | None = None,
+    ) -> list[ResourceIdProtocol]:
         """Resolve instrument aliases to resource IDs."""
+        ...
+
+    def find_inst_info_by_id(
+        self,
+        instrument_id: ResourceIdProtocol,
+    ) -> InstrumentInfoProtocol:
+        """Return one instrument info resolved by resource ID."""
         ...
 
     def find_inst_info_by_alias(
         self,
         alias: str,
-        *,
         unit: str | None = None,
     ) -> InstrumentInfoProtocol:
         """Return one instrument info resolved by alias."""
