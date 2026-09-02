@@ -39,6 +39,16 @@ _LOG_FILE_NAME = "warmup_log.jsonl"
 _SUMMARY_FILE_NAME = "summary.json"
 _SINGLE_SHOT_DIR_NAME = "single_shot"
 
+_CORE_REQUIREMENTS = ("ge_frequency", "ge_rabi_params", "ge_pi_pulse")
+_STEP_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "ramsey": _CORE_REQUIREMENTS,
+    "t1": _CORE_REQUIREMENTS,
+    "t2_echo": _CORE_REQUIREMENTS,
+    "thermal": ("ge_frequency", "ge_pi_pulse", "ef_pi_pulse"),
+    "single_shot": ("ge_frequency", "ge_pi_pulse"),
+    "reflection": ("read_frequency",),
+}
+
 
 def effective_temperature(p_ex: float, frequency: float) -> float:
     """
@@ -123,6 +133,177 @@ def _normalize_steps(steps: Collection[str] | None) -> list[str]:
     if len(normalized) == 0:
         raise ValueError("At least one warm-up step must be specified.")
     return normalized
+
+
+def preflight_check(
+    exp: Experiment,
+    targets: Collection[str] | str | None = None,
+    *,
+    verbose: bool = True,
+) -> Result:
+    """
+    Check offline whether targets carry the calibrations the warm-up needs.
+
+    No hardware is accessed. The check inspects stored frequencies, Rabi
+    parameters, and pi pulses, then reports which warm-up steps each target
+    is ready for. Run it before the warm-up day and fix missing
+    calibrations; run the campaign with ``max_cycles=1`` afterwards to
+    validate the chain on hardware.
+
+    Parameters
+    ----------
+    exp : Experiment
+        Experiment instance whose calibration note is inspected.
+    targets : Collection[str] or str, optional
+        Target qubits. Defaults to every qubit in the experiment.
+    verbose : bool, optional
+        Whether to print a readiness table.
+
+    Returns
+    -------
+    Result
+        Mapping-style result with per-target check flags, ready and missing
+        steps, and an ``all_ready`` flag.
+    """
+    target_list = _normalize_targets(exp, targets)
+    rabi_params, _ = _safe_call(lambda: dict(exp.pulse.rabi_params))
+    rabi_params = rabi_params or {}
+
+    report: dict[str, dict[str, Any]] = {}
+    for target in target_list:
+        ge_label, _ = _safe_call(lambda target=target: exp.ctx.resolve_ge_label(target))
+        ef_label, _ = _safe_call(lambda target=target: exp.ctx.resolve_ef_label(target))
+        read_label, _ = _safe_call(
+            lambda target=target: exp.ctx.resolve_read_label(target)
+        )
+
+        def _frequency_ok(label: str | None) -> bool:
+            if label is None:
+                return False
+            value, error = _safe_call(lambda: exp.ctx.targets[label].frequency)
+            return error is None and np.isfinite(_finite_float(value))
+
+        def _pulse_ok(label: str | None) -> bool:
+            if label is None:
+                return False
+            _, error = _safe_call(lambda: exp.pulse.x180(label))
+            return error is None
+
+        checks = {
+            "ge_frequency": _frequency_ok(ge_label),
+            "read_frequency": _frequency_ok(read_label),
+            "ge_rabi_params": ge_label is not None and ge_label in rabi_params,
+            "ge_pi_pulse": _pulse_ok(ge_label),
+            "ef_pi_pulse": _pulse_ok(ef_label),
+        }
+        ready_steps = [
+            step
+            for step, requirements in _STEP_REQUIREMENTS.items()
+            if all(checks[requirement] for requirement in requirements)
+        ]
+        missing_steps = [step for step in _STEP_REQUIREMENTS if step not in ready_steps]
+        report[target] = {
+            "checks": checks,
+            "ready_steps": ready_steps,
+            "missing_steps": missing_steps,
+        }
+
+    all_ready = all(len(entry["missing_steps"]) == 0 for entry in report.values())
+
+    if verbose:
+        print("Warm-up preflight check")
+        print("-----------------------")
+        for target, entry in report.items():
+            flags = " ".join(
+                f"{name}={'ok' if value else 'NG'}"
+                for name, value in entry["checks"].items()
+            )
+            missing = ", ".join(entry["missing_steps"]) or "none"
+            print(f"{target}: {flags}")
+            print(f"    missing steps: {missing}")
+        print(f"all ready: {all_ready}")
+
+    return Result(data={"targets": report, "all_ready": all_ready})
+
+
+def check_mux_isolation(
+    exp: Experiment,
+    forbidden_muxes: Collection[int | str],
+    *,
+    verbose: bool = True,
+) -> Result:
+    """
+    Check that the experiment shares no qubits or boxes with forbidden muxes.
+
+    Use this before touching hardware when other muxes on the same system
+    are in use by a concurrent experiment. Box-level operations such as
+    AWG/capture-unit resets and clock re-synchronization act on whole
+    boxes, so a box shared with a forbidden mux would disturb that
+    experiment even if none of its qubits is addressed. No hardware is
+    accessed by this check.
+
+    Parameters
+    ----------
+    exp : Experiment
+        Experiment instance whose selected qubits and boxes are inspected.
+    forbidden_muxes : Collection[int or str]
+        Mux indices or labels that must not be touched. A mux missing from
+        the system configuration raises, so the check fails closed.
+    verbose : bool, optional
+        Whether to print the isolation report.
+
+    Returns
+    -------
+    Result
+        Mapping-style result with the selected and forbidden qubits and
+        boxes, the shared qubits and boxes, and an ``isolated`` flag that
+        is True only when nothing is shared.
+    """
+    system = exp.ctx.experiment_system
+    selected_qubits = list(exp.ctx.qubit_labels)
+    selected_boxes = sorted(exp.ctx.box_ids)
+
+    forbidden_qubits: list[str] = []
+    for mux in forbidden_muxes:
+        mux_object, error = _safe_call(lambda mux=mux: system.get_mux(mux))
+        if error is not None:
+            raise ValueError(
+                f"Forbidden mux `{mux}` was not found in the system configuration: {error}"
+            )
+        forbidden_qubits.extend(resonator.qubit for resonator in mux_object.resonators)
+
+    boxes, error = _safe_call(lambda: system.get_boxes_for_qubits(forbidden_qubits))
+    if error is not None:
+        raise ValueError(f"Could not resolve boxes for forbidden muxes: {error}")
+    forbidden_boxes = sorted({box.id for box in boxes})
+
+    shared_qubits = sorted(set(selected_qubits) & set(forbidden_qubits))
+    shared_boxes = sorted(set(selected_boxes) & set(forbidden_boxes))
+    isolated = len(shared_qubits) == 0 and len(shared_boxes) == 0
+
+    if verbose:
+        print("Mux isolation check")
+        print("-------------------")
+        print(f"forbidden muxes  : {list(forbidden_muxes)}")
+        print(f"forbidden qubits : {forbidden_qubits}")
+        print(f"forbidden boxes  : {forbidden_boxes}")
+        print(f"selected qubits  : {selected_qubits}")
+        print(f"selected boxes   : {selected_boxes}")
+        print(f"shared qubits    : {shared_qubits or 'none'}")
+        print(f"shared boxes     : {shared_boxes or 'none'}")
+        print(f"isolated         : {isolated}")
+
+    return Result(
+        data={
+            "selected_qubits": selected_qubits,
+            "selected_boxes": selected_boxes,
+            "forbidden_qubits": forbidden_qubits,
+            "forbidden_boxes": forbidden_boxes,
+            "shared_qubits": shared_qubits,
+            "shared_boxes": shared_boxes,
+            "isolated": isolated,
+        }
+    )
 
 
 class _CampaignLog:

@@ -21,3 +21,5 @@ def test_contrib_module_is_exported_from_qubex() -> None:
     assert callable(contrib.effective_temperature)
     assert callable(contrib.load_warmup_log)
     assert callable(contrib.plot_warmup_log)
+    assert callable(contrib.preflight_check)
+    assert callable(contrib.check_mux_isolation)

@@ -121,9 +121,11 @@ from .experiment.thermal_excitation_characterization import (
     measure_thermal_excitation,
 )
 from .experiment.warmup_characterization import (
+    check_mux_isolation,
     effective_temperature,
     load_warmup_log,
     plot_warmup_log,
+    preflight_check,
     warmup_campaign,
 )
 
@@ -135,6 +137,7 @@ __all__ = [
     "calibrate_gf_pulse",
     "characterize_coarse_readout_parameters",
     "characterize_readout_parameters",
+    "check_mux_isolation",
     "ckp_measurement_v2",
     "cpmg_noise_spectroscopy",
     "cr_crosstalk_hamiltonian_tomography",
@@ -194,6 +197,7 @@ __all__ = [
     "pb_experiment_2q",
     "plot_cpmg_results",
     "plot_warmup_log",
+    "preflight_check",
     "purity_benchmarking",
     "purity_sequence_1q",
     "purity_sequence_2q",

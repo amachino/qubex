@@ -12,12 +12,15 @@ import numpy as np
 import pytest
 
 from qubex.contrib import (
+    check_mux_isolation,
     effective_temperature,
     load_warmup_log,
     plot_warmup_log,
+    preflight_check,
     warmup_campaign,
 )
 from qubex.contrib.experiment import warmup_characterization
+from qubex.experiment.experiment_exceptions import CalibrationMissingError
 from qubex.experiment.models.experiment_result import ExperimentResult
 from qubex.experiment.models.result import Result
 
@@ -36,14 +39,43 @@ class _FakeExperiment:
             qubit_labels=labels,
             targets=targets,
             resolve_ge_label=lambda target: target,
+            resolve_ef_label=lambda target: f"{target}-ef",
             resolve_read_label=lambda target: f"R{target}",
             resolve_qubit_label=lambda target: target,
+        )
+        self.box_map = {"Q32": "BOX07", "Q33": "BOX07", "Q40": "BOX08", "Q41": "BOX08"}
+        self.mux_map = {7: ["Q32", "Q33"], 8: ["Q40", "Q41"]}
+        self.ctx.box_ids = ["BOX07"]
+        self.ctx.experiment_system = SimpleNamespace(
+            get_mux=self._get_mux,
+            get_boxes_for_qubits=self._get_boxes_for_qubits,
+        )
+        self.calibrated_pulses = set(labels) | {f"{label}-ef" for label in labels}
+        self.pulse = SimpleNamespace(
+            rabi_params={label: object() for label in labels},
+            x180=self._x180,
         )
         self.modified_frequency_calls: list[dict[str, float] | None] = []
         self.reflection_calls: list[dict[str, Any]] = []
         self.ramsey_shift = 0.001
         self.coherence_value = 10_000.0
         self.reflection_shift = 0.002
+
+    def _get_mux(self, mux: int | str) -> SimpleNamespace:
+        qubits = self.mux_map[int(mux)]
+        return SimpleNamespace(
+            index=int(mux),
+            resonators=[SimpleNamespace(qubit=qubit) for qubit in qubits],
+        )
+
+    def _get_boxes_for_qubits(self, qubits: Any) -> list[SimpleNamespace]:
+        box_ids = {self.box_map[qubit] for qubit in qubits}
+        return [SimpleNamespace(id=box_id) for box_id in sorted(box_ids)]
+
+    def _x180(self, label: str) -> str:
+        if label not in self.calibrated_pulses:
+            raise CalibrationMissingError(f"missing {label}")
+        return f"x180:{label}"
 
     @contextmanager
     def modified_frequencies(
@@ -327,3 +359,76 @@ def test_plot_warmup_log_builds_figures_from_log(
 
     with pytest.raises(ValueError, match="Unknown metric"):
         plot_warmup_log(records, metrics=["bogus"], plot=False)
+
+
+def test_preflight_check_reports_all_ready_for_calibrated_targets() -> None:
+    """Given fully calibrated targets, when checked offline, then every step is ready."""
+    exp = _FakeExperiment()
+
+    result = preflight_check(cast(Any, exp), verbose=False)
+
+    assert result.data["all_ready"] is True
+    entry = result.data["targets"]["Q32"]
+    assert entry["missing_steps"] == []
+    assert set(entry["ready_steps"]) == set(warmup_characterization.WARMUP_STEPS)
+    assert all(entry["checks"].values())
+
+
+def test_preflight_check_reports_missing_calibrations() -> None:
+    """Given missing ef and Rabi calibrations, when checked, then the dependent steps are reported."""
+    exp = _FakeExperiment()
+    exp.calibrated_pulses.discard("Q33-ef")
+    del exp.pulse.rabi_params["Q32"]
+
+    result = preflight_check(cast(Any, exp), verbose=True)
+
+    assert result.data["all_ready"] is False
+    q32 = result.data["targets"]["Q32"]
+    q33 = result.data["targets"]["Q33"]
+    assert q32["checks"]["ge_rabi_params"] is False
+    assert q32["missing_steps"] == ["ramsey", "t1", "t2_echo"]
+    assert q33["checks"]["ef_pi_pulse"] is False
+    assert q33["missing_steps"] == ["thermal"]
+
+
+def test_check_mux_isolation_passes_when_nothing_is_shared() -> None:
+    """Given a forbidden mux on another box, when checked, then the experiment is isolated."""
+    exp = _FakeExperiment()
+
+    result = check_mux_isolation(cast(Any, exp), [8], verbose=False)
+
+    assert result.data["isolated"] is True
+    assert result.data["forbidden_qubits"] == ["Q40", "Q41"]
+    assert result.data["forbidden_boxes"] == ["BOX08"]
+    assert result.data["selected_boxes"] == ["BOX07"]
+    assert result.data["shared_qubits"] == []
+    assert result.data["shared_boxes"] == []
+
+
+def test_check_mux_isolation_detects_shared_box() -> None:
+    """Given a forbidden mux wired to a selected box, when checked, then isolation fails."""
+    exp = _FakeExperiment()
+    exp.box_map["Q40"] = "BOX07"
+
+    result = check_mux_isolation(cast(Any, exp), [8], verbose=True)
+
+    assert result.data["isolated"] is False
+    assert result.data["shared_boxes"] == ["BOX07"]
+    assert result.data["shared_qubits"] == []
+
+
+def test_check_mux_isolation_detects_shared_qubit() -> None:
+    """Given a selected qubit inside a forbidden mux, when checked, then isolation fails."""
+    exp = _FakeExperiment()
+    exp.mux_map[8] = ["Q32", "Q41"]
+
+    result = check_mux_isolation(cast(Any, exp), [8], verbose=False)
+
+    assert result.data["isolated"] is False
+    assert result.data["shared_qubits"] == ["Q32"]
+
+
+def test_check_mux_isolation_fails_closed_for_unknown_mux() -> None:
+    """Given a forbidden mux missing from the configuration, when checked, then a ValueError is raised."""
+    with pytest.raises(ValueError, match="not found"):
+        check_mux_isolation(cast(Any, _FakeExperiment()), [12], verbose=False)
