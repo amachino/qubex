@@ -120,6 +120,12 @@ from .experiment.superconducting_gap import (
 from .experiment.thermal_excitation_characterization import (
     measure_thermal_excitation,
 )
+from .experiment.warmup_characterization import (
+    effective_temperature,
+    load_warmup_log,
+    plot_warmup_log,
+    warmup_campaign,
+)
 
 __all__ = [
     "analyze_chevron_matched_transform",
@@ -146,6 +152,7 @@ __all__ = [
     "create_mqc_sequence",
     "decompose_cr_crosstalk",
     "ef_ramsey_experiment",
+    "effective_temperature",
     "estimate_ef_frequency_from_chevron",
     "estimate_ef_frequency_from_chevron_adaptive",
     "estimate_fh_frequency_from_chevron",
@@ -164,6 +171,7 @@ __all__ = [
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",
     "ipb_experiment",
+    "load_warmup_log",
     "mcm_randomized_benchmarking",
     "mcm_rb_sequence",
     "measure_1d_cluster_state",
@@ -185,6 +193,7 @@ __all__ = [
     "pb_experiment_1q",
     "pb_experiment_2q",
     "plot_cpmg_results",
+    "plot_warmup_log",
     "purity_benchmarking",
     "purity_sequence_1q",
     "purity_sequence_2q",
@@ -201,4 +210,5 @@ __all__ = [
     "stark_t1_experiment",
     "sweep_readout_snr",
     "visualize_graph",
+    "warmup_campaign",
 ]

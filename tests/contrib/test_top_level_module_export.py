@@ -17,3 +17,7 @@ def test_contrib_module_is_exported_from_qubex() -> None:
     assert callable(contrib.purity_benchmarking)
     assert callable(contrib.get_superconducting_gap)
     assert callable(contrib.get_resistance_charge)
+    assert callable(contrib.warmup_campaign)
+    assert callable(contrib.effective_temperature)
+    assert callable(contrib.load_warmup_log)
+    assert callable(contrib.plot_warmup_log)
