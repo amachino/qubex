@@ -392,6 +392,7 @@ def warmup_campaign(
     refresh_reference_points: bool = True,
     refresh_rabi_every: int | None = 5,
     plot: bool = False,
+    on_cycle_end: Callable[[dict[str, Any]], None] | None = None,
 ) -> Result:
     """
     Run an interleaved characterization loop during a fridge warm-up.
@@ -468,6 +469,12 @@ def warmup_campaign(
         cycles. Disabled when None.
     plot : bool, optional
         Whether to show figures of the underlying measurements.
+    on_cycle_end : callable, optional
+        Called after every cycle with a mapping holding ``cycle``,
+        ``output_dir``, ``log_path``, ``summary_path``, ``qubit_alive``, and
+        ``resonator_alive`` (for example to publish the log). Exceptions it
+        raises are logged as a failed ``cycle_callback`` step and do not
+        stop the campaign.
 
     Returns
     -------
@@ -816,6 +823,21 @@ def warmup_campaign(
                     "resonator_centers": dict(resonator_centers),
                 }
             )
+            if on_cycle_end is not None:
+                _run_side_effect(
+                    "cycle_callback",
+                    cycle,
+                    lambda cycle=cycle: on_cycle_end(
+                        {
+                            "cycle": cycle,
+                            "output_dir": str(output_path),
+                            "log_path": str(log.log_path),
+                            "summary_path": str(log.summary_path),
+                            "qubit_alive": dict(qubit_alive),
+                            "resonator_alive": dict(resonator_alive),
+                        }
+                    ),
+                )
 
             remaining = cycle_interval - (time.monotonic() - cycle_started_at)
             while remaining > 0 and not stop_path.exists():

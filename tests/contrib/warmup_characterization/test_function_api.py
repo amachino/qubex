@@ -391,6 +391,36 @@ def test_preflight_check_reports_missing_calibrations() -> None:
     assert q33["missing_steps"] == ["thermal"]
 
 
+def test_warmup_campaign_invokes_cycle_callback_and_survives_its_errors(
+    tmp_path: Path,
+) -> None:
+    """Given a cycle callback that fails once, when cycles run, then it is called each cycle and the failure is logged."""
+    calls: list[int] = []
+
+    def _callback(info: dict[str, Any]) -> None:
+        calls.append(info["cycle"])
+        assert info["qubit_alive"] == {"Q32": False, "Q33": False}
+        if info["cycle"] == 1:
+            raise RuntimeError("boom")
+
+    result = warmup_campaign(
+        cast(Any, _FakeExperiment()),
+        output_dir=tmp_path / "run",
+        max_cycles=2,
+        steps=["reflection"],
+        on_cycle_end=_callback,
+    )
+
+    assert calls == [1, 2]
+    statuses = [
+        record["status"]
+        for record in result.data["records"]
+        if record["step"] == "cycle_callback"
+    ]
+    assert statuses == ["failed", "ok"]
+    assert result.data["stop_reason"] == "max_cycles"
+
+
 def test_check_mux_isolation_passes_when_nothing_is_shared() -> None:
     """Given a forbidden mux on another box, when checked, then the experiment is isolated."""
     exp = _FakeExperiment()
