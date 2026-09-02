@@ -6,6 +6,8 @@ import math
 from collections.abc import Mapping
 from typing import TypeVar
 
+import numpy as np
+
 from qubex.backend.quel3.interfaces import (
     SequencerFactoryProtocol,
     SequencerProtocol,
@@ -98,9 +100,10 @@ class Quel3SequencerBuilder:
             )
 
         for waveform_name, waveform_def in payload.waveform_library.items():
+            # Convert the registered shape to quelware IQ coordinates.
             sequencer.register_waveform(
                 waveform_name,
-                waveform_def.iq_array,
+                np.conj(waveform_def.iq_array),
                 sampling_period_ns=waveform_def.sampling_period_ns,
             )
 
@@ -119,7 +122,7 @@ class Quel3SequencerBuilder:
                         sampling_period_fs,
                     ),
                     gain=event.gain,
-                    # Invert sign
+                    # Complete the conjugation for the per-event phase.
                     phase_offset_deg=-event.phase_offset_deg,
                 )
 

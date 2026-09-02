@@ -158,8 +158,8 @@ def _make_payload(
     )
 
 
-def test_builder_registers_waveforms_and_forwards_events() -> None:
-    """Given payload library/events, when building, waveforms and events are forwarded."""
+def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
+    """Given complex IQ and phase, builder should conjugate the complete waveform."""
     waveform_name = "wf_shared_0000"
     waveform_values = np.array([1.0 + 0.0j, 0.3 + 0.2j], dtype=np.complex128)
     timeline = Quel3FixedTimeline(
@@ -197,7 +197,7 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
     assert set(sequencer.registered_waveforms.keys()) == {waveform_name}
     registered = sequencer.registered_waveforms[waveform_name]
     assert registered.sampling_period_ns == pytest.approx(0.4)
-    assert np.array_equal(registered.values, waveform_values)
+    assert np.array_equal(registered.values, np.conj(waveform_values))
     assert sequencer.events == [
         _Event(
             instrument_alias="alias-RQ00",
@@ -207,6 +207,21 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
             phase_offset_deg=-90.0,
         )
     ]
+    event = sequencer.events[0]
+    logical_waveform = (
+        waveform_values
+        * timeline.events[0].gain
+        * np.exp(1j * np.deg2rad(timeline.events[0].phase_offset_deg))
+    )
+    registered_waveform = (
+        registered.values * event.gain * np.exp(1j * np.deg2rad(event.phase_offset_deg))
+    )
+    np.testing.assert_allclose(
+        registered_waveform,
+        np.conj(logical_waveform),
+        rtol=0.0,
+        atol=1e-12,
+    )
     assert sequencer.capture_windows == [
         _CaptureWindow(
             instrument_alias="alias-RQ00",
