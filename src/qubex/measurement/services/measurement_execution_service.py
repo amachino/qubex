@@ -12,7 +12,7 @@ from typing import Any, Literal, TypeAlias, TypeVar, cast
 
 import numpy as np
 from numpy.typing import ArrayLike
-from qxpulse import PulseSchedule, RampType
+from qxpulse import PulseChannel, PulseSchedule, RampType
 
 from qubex.backend import (
     BackendController,
@@ -37,7 +37,7 @@ from qubex.measurement.measurement_schedule_builder import (
 )
 from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
 from qubex.measurement.models.capture_data import CaptureData
-from qubex.measurement.models.capture_schedule import CaptureSchedule
+from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.measurement.models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
@@ -1026,6 +1026,24 @@ class MeasurementExecutionService:
         target_registry = self._context.experiment_system.target_registry
         return str(target_registry.measurement_output_label(capture_channel))
 
+    @staticmethod
+    def _create_empty_packed_pulse_schedule(
+        pulse_schedule: PulseSchedule,
+    ) -> PulseSchedule:
+        """Build an empty neutral schedule with matching channel metadata."""
+        channels: list[PulseChannel] = []
+        for label in pulse_schedule.labels:
+            sequence = pulse_schedule.get_sequence(label, copy=False)
+            channel = PulseChannel(
+                label=label,
+                frequency=pulse_schedule.get_frequency(label),
+                target=pulse_schedule.get_target(label),
+                frame=pulse_schedule.get_frame(label),
+            )
+            channel.sequence._sampling_period = sequence.sampling_period  # noqa: SLF001
+            channels.append(channel)
+        return PulseSchedule(channels)
+
     def _merge_measurement_schedules(
         self,
         *,
@@ -1036,17 +1054,17 @@ class MeasurementExecutionService:
         if len(schedules) == 0:
             raise ValueError("At least one schedule is required.")
 
-        merged_pulse_schedule = schedules[0].pulse_schedule.copy()
-        merged_captures = [
-            capture.model_copy(update={"channels": capture.channels.copy()})
-            for capture in schedules[0].capture_schedule.captures
-        ]
+        merged_pulse_schedule = self._create_empty_packed_pulse_schedule(
+            schedules[0].pulse_schedule
+        )
+        merged_captures: list[Capture] = []
 
-        for schedule in schedules[1:]:
-            # TODO: Base packed shifts on the full capture timeline, not only pulse duration.
-            shift_duration = merged_pulse_schedule.duration + shot_interval
-            merged_pulse_schedule.barrier()
-            merged_pulse_schedule.pad(shift_duration)
+        for index, schedule in enumerate(schedules):
+            shift_duration = 0.0
+            if index > 0:
+                shift_duration = merged_pulse_schedule.duration + shot_interval
+                merged_pulse_schedule.barrier()
+                merged_pulse_schedule.pad(shift_duration)
             merged_pulse_schedule.call(schedule.pulse_schedule, copy=True)
             merged_captures.extend(
                 capture.model_copy(
