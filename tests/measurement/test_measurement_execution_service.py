@@ -9,7 +9,14 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 import pytest
-from qxpulse import Blank, PulseSchedule, Rect, get_sampling_period, set_sampling_period
+from qxpulse import (
+    Blank,
+    PulseChannel,
+    PulseSchedule,
+    Rect,
+    get_sampling_period,
+    set_sampling_period,
+)
 
 from qubex.backend import BackendExecutionRequest
 from qubex.measurement.models import (
@@ -401,6 +408,82 @@ def test_merge_measurement_schedules_appends_same_channels() -> None:
         pytest.approx(106.0)
     )
     assert merged_schedule.pulse_schedule.is_valid()
+
+
+def test_merge_measurement_schedules_preserves_per_schedule_transforms() -> None:
+    """Packing should preserve each schedule's scale, phase, and detuning."""
+    service = MeasurementExecutionService.__new__(MeasurementExecutionService)
+    first_schedule = _make_schedule(
+        label="Q00", capture_start=1.0, capture_target="Q00"
+    )
+    second_schedule = _make_schedule(
+        label="Q00", capture_start=2.0, capture_target="Q00"
+    )
+    first_schedule = first_schedule.model_copy(
+        update={
+            "pulse_schedule": first_schedule.pulse_schedule.scaled(0.1)
+            .shifted(0.2)
+            .detuned(0.003)
+        }
+    )
+    second_schedule = second_schedule.model_copy(
+        update={
+            "pulse_schedule": second_schedule.pulse_schedule.scaled(0.3)
+            .shifted(0.4)
+            .detuned(0.005)
+        }
+    )
+
+    merged_schedule = service._merge_measurement_schedules(  # noqa: SLF001
+        schedules=[first_schedule, second_schedule],
+        shot_interval=100.0,
+    )
+
+    waveforms = merged_schedule.pulse_schedule.get_sequence(
+        "Q00",
+        copy=False,
+    ).get_flattened_waveforms(apply_frame_shifts=False)
+    pulses = [waveform for waveform in waveforms if not isinstance(waveform, Blank)]
+    assert all(waveform.duration > 0.0 for waveform in waveforms)
+    assert [pulse.scale for pulse in pulses] == pytest.approx([0.1, 0.3])
+    assert [pulse.phase for pulse in pulses] == pytest.approx([0.2, 0.4])
+    assert [pulse.detuning for pulse in pulses] == pytest.approx([0.003, 0.005])
+
+
+def test_merge_measurement_schedules_preserves_first_channel_metadata() -> None:
+    """Packing into an empty schedule should preserve first-channel metadata."""
+    service = MeasurementExecutionService.__new__(MeasurementExecutionService)
+    original_sampling_period = get_sampling_period()
+    try:
+        set_sampling_period(2.0)
+        with PulseSchedule(
+            [
+                PulseChannel(
+                    label="Q00",
+                    frequency=5.25,
+                    target="Q00",
+                    frame="drive",
+                )
+            ]
+        ) as pulse_schedule:
+            pulse_schedule.add("Q00", Rect(duration=4.0, amplitude=0.1))
+    finally:
+        set_sampling_period(original_sampling_period)
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+
+    merged_schedule = service._merge_measurement_schedules(  # noqa: SLF001
+        schedules=[schedule],
+        shot_interval=100.0,
+    )
+
+    merged_pulse_schedule = merged_schedule.pulse_schedule
+    assert merged_pulse_schedule.get_frequencies() == {"Q00": 5.25}
+    assert merged_pulse_schedule.get_targets() == {"Q00": "Q00"}
+    assert merged_pulse_schedule.get_frames() == {"Q00": "drive"}
+    assert merged_pulse_schedule.get_sequence("Q00", copy=False).sampling_period == 2.0
 
 
 def test_split_merged_measurement_result_uses_capture_order_contract() -> None:
