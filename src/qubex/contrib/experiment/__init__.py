@@ -24,6 +24,18 @@ from .ef_measurement_with_one_channel import (
     obtain_anharmonicity_with_cr,
 )
 from .efh_ramsey_experiment import ef_ramsey_experiment, fh_ramsey_experiment
+from .gef_population_estimation import (
+    GefPopulationBootstrap,
+    GefPopulationCalibration,
+    GefPopulationFit,
+    IQMomentSummary,
+    bootstrap_gef_populations,
+    calibrate_gef_population,
+    fit_gef_population,
+    measure_gef_populations,
+    reconstruct_gef_state_features,
+    summarize_iq_shots,
+)
 from .gf_calibration import (
     calibrate_gf_hpi_pulse,
     calibrate_gf_pi_pulse,
@@ -109,9 +121,15 @@ from .thermal_excitation_characterization import (
 )
 
 __all__ = [
+    "GefPopulationBootstrap",
+    "GefPopulationCalibration",
+    "GefPopulationFit",
+    "IQMomentSummary",
     "analyze_chevron_matched_transform",
     "analyze_paired_irb",
+    "bootstrap_gef_populations",
     "calibrate_cr_pi_pulse",
+    "calibrate_gef_population",
     "calibrate_gf_hpi_pulse",
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
@@ -142,6 +160,7 @@ __all__ = [
     "estimate_qubit_frequency_from_chevron_adaptive",
     "fh_ramsey_experiment",
     "filtered_ckp_experiment",
+    "fit_gef_population",
     "fourier_analysis",
     "get_resistance_charge",
     "get_superconducting_gap",
@@ -158,6 +177,7 @@ __all__ = [
     "measure_bell_states",
     "measure_chevron_pattern",
     "measure_cr_crosstalk",
+    "measure_gef_populations",
     "measure_ghz_state",
     "measure_graph_state",
     "measure_paired_irb",
@@ -179,6 +199,7 @@ __all__ = [
     "purity_sequence_2q",
     "quantum_efficiency_measurement",
     "readout_snr",
+    "reconstruct_gef_state_features",
     "repeated_coherence_measurement",
     "rzx",
     "rzx_gate_property",
@@ -188,6 +209,7 @@ __all__ = [
     "spin_lock_spectroscopy",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
+    "summarize_iq_shots",
     "sweep_readout_snr",
     "visualize_graph",
 ]
