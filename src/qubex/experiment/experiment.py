@@ -5251,7 +5251,14 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Run randomized benchmarking for the specified targets."""
+        """
+        Run randomized benchmarking for the specified targets.
+
+        Notes
+        -----
+        Two-qubit randomized benchmarking requires state classifiers for both
+        the control and target qubits.
+        """
         return self.benchmarking_service.randomized_benchmarking(
             targets=targets,
             n_cliffords_range=n_cliffords_range,
