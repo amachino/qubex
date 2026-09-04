@@ -1158,6 +1158,7 @@ def test_execute_resolves_unit_prefixed_alias_binding(
             ]
         ]
     assert session.trigger_calls == [[f"inst-q00-{index}" for index in range(4)]]
+    assert session.lifecycle_calls == ["extend", "trigger"]
     assert result.data == {}
 
 
@@ -1450,6 +1451,7 @@ class _FakeSession:
     def __init__(self, *, session_id: str = "session-id") -> None:
         self.token = session_id
         self.trigger_calls: list[list[str]] = []
+        self.lifecycle_calls: list[str] = []
 
     async def __aenter__(self) -> _FakeSession:
         return self
@@ -1468,8 +1470,14 @@ class _FakeSession:
         wait_ms: int | None = None,
     ) -> int:
         del wait_ms
+        self.lifecycle_calls.append("trigger")
         self.trigger_calls.append(list(instrument_ids))
         return 0
+
+    async def extend(self, new_ttl_ms: int) -> bool:
+        assert new_ttl_ms == 30_000
+        self.lifecycle_calls.append("extend")
+        return True
 
 
 class _FakeClient:
