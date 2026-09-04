@@ -126,6 +126,9 @@ class _ExperimentContextStub:
     def reload(self) -> None:
         self.calls.append(("reload", {}))
 
+    def load_classifier(self, path: object = None) -> None:
+        self.calls.append(("load_classifier", {"path": path}))
+
     def register_custom_target(self, **kwargs: Any) -> None:
         self.calls.append(("register_custom_target", kwargs))
 
@@ -420,6 +423,17 @@ def test_print_boxes_delegates_to_context() -> None:
     exp.print_boxes()
 
     assert context_stub.calls == [("print_boxes", {})]
+
+
+def test_load_classifier_delegates_to_context() -> None:
+    """Given a classifier path, when loading, then it delegates to experiment context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.load_classifier(path="custom-classifiers")
+
+    assert context_stub.calls == [("load_classifier", {"path": "custom-classifiers"})]
 
 
 def test_clifford_generator_property_delegates_to_benchmarking_service() -> None:
