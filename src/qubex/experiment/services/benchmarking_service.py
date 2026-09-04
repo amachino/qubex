@@ -424,7 +424,7 @@ class BenchmarkingService:
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
         """Run single-qubit randomized benchmarking."""
-        return get_shared_async_bridge(key="experiment").run(
+        return get_shared_async_bridge(key="experiment").run_without_timeout(
             lambda: self._run_rb_experiment_1q(
                 targets=targets,
                 n_cliffords_range=n_cliffords_range,
@@ -670,7 +670,7 @@ class BenchmarkingService:
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
         """Run two-qubit randomized benchmarking."""
-        return get_shared_async_bridge(key="experiment").run(
+        return get_shared_async_bridge(key="experiment").run_without_timeout(
             lambda: self._run_rb_experiment_2q(
                 targets=targets,
                 n_cliffords_range=n_cliffords_range,

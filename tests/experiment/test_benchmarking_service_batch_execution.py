@@ -41,6 +41,39 @@ def test_benchmarking_service_api_remains_synchronous() -> None:
     )
 
 
+@pytest.mark.parametrize("method_name", ["rb_experiment_1q", "rb_experiment_2q"])
+def test_rb_experiment_wrappers_use_unbounded_bridge(
+    monkeypatch: Any,
+    method_name: str,
+) -> None:
+    """Synchronous RB wrappers should wait without the bridge default timeout."""
+    expected_result = object()
+    bridge_calls: list[object] = []
+    bridge_keys: list[str] = []
+
+    class _Bridge:
+        def run_without_timeout(self, factory: object) -> object:
+            bridge_calls.append(factory)
+            return expected_result
+
+    def _get_bridge(*, key: str) -> _Bridge:
+        bridge_keys.append(key)
+        return _Bridge()
+
+    monkeypatch.setattr(
+        benchmarking_module,
+        "get_shared_async_bridge",
+        _get_bridge,
+    )
+    service = cast(Any, object.__new__(BenchmarkingService))
+
+    result = getattr(service, method_name)(targets="Q00")
+
+    assert result is expected_result
+    assert bridge_keys == ["experiment"]
+    assert len(bridge_calls) == 1
+
+
 def test_rb_trial_sweep_is_async() -> None:
     """The internal trial sweep should remain available for async orchestration."""
     assert inspect.iscoroutinefunction(

@@ -74,6 +74,30 @@ def test_run_inside_running_loop_cancels_on_timeout(bridge: AsyncBridge) -> None
     assert cancelled.wait(timeout=1.0)
 
 
+def test_run_without_timeout_ignores_default_deadline() -> None:
+    """Given an active loop, unbounded bridge execution should ignore its default timeout."""
+    release = threading.Event()
+    timer = threading.Timer(0.05, release.set)
+    bridge = AsyncBridge(default_timeout=0.01, startup_timeout=1.0)
+
+    async def _complete_after_default_timeout() -> int:
+        assert await asyncio.to_thread(release.wait, 1.0)
+        return 7
+
+    async def _invoke() -> int:
+        return bridge.run_without_timeout(_complete_after_default_timeout)
+
+    timer.start()
+    try:
+        result = asyncio.run(_invoke())
+    finally:
+        timer.cancel()
+        timer.join(timeout=1.0)
+        bridge.close()
+
+    assert result == 7
+
+
 def test_run_inside_running_loop_propagates_cancelled_error(
     bridge: AsyncBridge,
 ) -> None:
