@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import _thread
 import asyncio
 import contextvars
+import signal
 import threading
 import time
 from collections.abc import Generator
+from types import FrameType
 
 import pytest
 
@@ -75,6 +76,10 @@ def test_run_inside_running_loop_cancels_on_timeout(bridge: AsyncBridge) -> None
     assert cancelled.wait(timeout=1.0)
 
 
+@pytest.mark.skipif(
+    not hasattr(signal, "pthread_kill") or not hasattr(signal, "SIGUSR1"),
+    reason="requires thread-directed signal support",
+)
 def test_run_inside_running_loop_cancels_on_keyboard_interrupt(
     bridge: AsyncBridge,
 ) -> None:
@@ -90,20 +95,33 @@ def test_run_inside_running_loop_cancels_on_keyboard_interrupt(
             cancelled.set()
             raise
 
+    def _raise_keyboard_interrupt(
+        signal_number: int,
+        frame: FrameType | None,
+    ) -> None:
+        del signal_number, frame
+        raise KeyboardInterrupt
+
+    main_thread_id = threading.get_ident()
+
     def _interrupt_after_start() -> None:
-        assert started.wait(timeout=1.0)
-        _thread.interrupt_main()
+        assert started.wait(timeout=10.0)
+        signal.pthread_kill(main_thread_id, signal.SIGUSR1)
 
     async def _invoke() -> None:
         with pytest.raises(KeyboardInterrupt):
-            bridge.run(lambda: _hang_forever(), timeout=1.0)
+            bridge.run(lambda: _hang_forever(), timeout=10.0)
 
-    interrupter = threading.Thread(target=_interrupt_after_start)
-    interrupter.start()
+    previous_handler = signal.signal(signal.SIGUSR1, _raise_keyboard_interrupt)
     try:
-        asyncio.run(_invoke())
+        interrupter = threading.Thread(target=_interrupt_after_start)
+        interrupter.start()
+        try:
+            asyncio.run(_invoke())
+        finally:
+            interrupter.join(timeout=1.0)
     finally:
-        interrupter.join(timeout=1.0)
+        signal.signal(signal.SIGUSR1, previous_handler)
 
     assert not interrupter.is_alive()
     assert cancelled.wait(timeout=1.0)
