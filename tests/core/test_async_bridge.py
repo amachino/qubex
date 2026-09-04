@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import _thread
 import asyncio
 import contextvars
 import threading
@@ -76,36 +77,36 @@ def test_run_inside_running_loop_cancels_on_timeout(bridge: AsyncBridge) -> None
 
 def test_run_inside_running_loop_cancels_on_keyboard_interrupt(
     bridge: AsyncBridge,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given an interrupted wait, bridge should cancel its background task."""
+    started = threading.Event()
+    cancelled = threading.Event()
 
-    class _InterruptingFuture:
-        def __init__(self) -> None:
-            self.cancelled = False
+    async def _hang_forever() -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
 
-        def result(self, timeout: float | None = None) -> None:
-            del timeout
-            raise KeyboardInterrupt
-
-        def cancel(self) -> bool:
-            self.cancelled = True
-            return True
-
-    interrupting_future = _InterruptingFuture()
-    monkeypatch.setattr(
-        bridge,
-        "_submit",
-        lambda **_: interrupting_future,
-    )
+    def _interrupt_after_start() -> None:
+        assert started.wait(timeout=1.0)
+        _thread.interrupt_main()
 
     async def _invoke() -> None:
         with pytest.raises(KeyboardInterrupt):
-            bridge.run(lambda: asyncio.sleep(0), timeout=1.0)
+            bridge.run(lambda: _hang_forever(), timeout=1.0)
 
-    asyncio.run(_invoke())
+    interrupter = threading.Thread(target=_interrupt_after_start)
+    interrupter.start()
+    try:
+        asyncio.run(_invoke())
+    finally:
+        interrupter.join(timeout=1.0)
 
-    assert interrupting_future.cancelled is True
+    assert not interrupter.is_alive()
+    assert cancelled.wait(timeout=1.0)
 
 
 def test_run_inside_running_loop_propagates_cancelled_error(
