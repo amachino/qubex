@@ -29,6 +29,14 @@ class _BenchmarkingServiceStub:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
+    def randomized_benchmarking(self, **kwargs: Any) -> str:
+        self.calls.append(("randomized_benchmarking", kwargs))
+        return "randomized_benchmarking_result"
+
+    def interleaved_randomized_benchmarking(self, **kwargs: Any) -> str:
+        self.calls.append(("interleaved_randomized_benchmarking", kwargs))
+        return "interleaved_randomized_benchmarking_result"
+
     def benchmark_1q(self, **kwargs: Any) -> None:
         self.calls.append(("benchmark_1q", kwargs))
 
@@ -317,6 +325,34 @@ def test_benchmark_2q_delegates_to_benchmarking_service() -> None:
             },
         )
     ]
+
+
+def test_randomized_benchmarking_delegates_to_sync_service() -> None:
+    """Randomized benchmarking should delegate to its synchronous service."""
+    exp = object.__new__(Experiment)
+    benchmarking_stub = _BenchmarkingServiceStub()
+    exp.__dict__["_benchmarking_service"] = benchmarking_stub
+
+    result = exp.randomized_benchmarking(targets="Q00", plot=False)
+
+    assert result == "randomized_benchmarking_result"
+    assert benchmarking_stub.calls[0][0] == "randomized_benchmarking"
+
+
+def test_interleaved_randomized_benchmarking_delegates_to_sync_service() -> None:
+    """Interleaved randomized benchmarking should use its synchronous service."""
+    exp = object.__new__(Experiment)
+    benchmarking_stub = _BenchmarkingServiceStub()
+    exp.__dict__["_benchmarking_service"] = benchmarking_stub
+
+    result = exp.interleaved_randomized_benchmarking(
+        targets="Q00",
+        interleaved_clifford="X90",
+        plot=False,
+    )
+
+    assert result == "interleaved_randomized_benchmarking_result"
+    assert benchmarking_stub.calls[0][0] == "interleaved_randomized_benchmarking"
 
 
 def test_characterize_2q_delegates_in_same_mux_to_characterization_service() -> None:
