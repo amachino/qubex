@@ -14,6 +14,7 @@ from qxpulse import (
     PulseChannel,
     PulseSchedule,
     Rect,
+    VirtualZ,
     get_sampling_period,
     set_sampling_period,
 )
@@ -408,6 +409,38 @@ def test_merge_measurement_schedules_appends_same_channels() -> None:
         pytest.approx(106.0)
     )
     assert merged_schedule.pulse_schedule.is_valid()
+
+
+def test_merge_measurement_schedules_resets_virtual_z_between_schedules() -> None:
+    """Packing should keep one schedule's virtual Z from rotating the next schedule."""
+    service = MeasurementExecutionService.__new__(MeasurementExecutionService)
+    with PulseSchedule(["Q00"]) as first_pulse_schedule:
+        first_pulse_schedule.add("Q00", Rect(duration=4.0, amplitude=0.1))
+        first_pulse_schedule.add("Q00", VirtualZ(np.pi / 2))
+    with PulseSchedule(["Q00"]) as second_pulse_schedule:
+        second_pulse_schedule.add("Q00", Rect(duration=4.0, amplitude=0.2))
+    schedules = [
+        MeasurementSchedule(
+            pulse_schedule=pulse_schedule,
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+        for pulse_schedule in (first_pulse_schedule, second_pulse_schedule)
+    ]
+
+    merged_schedule = service._merge_measurement_schedules(  # noqa: SLF001
+        schedules=schedules,
+        shot_interval=100.0,
+    )
+
+    merged_waveforms = merged_schedule.pulse_schedule.get_sequence(
+        "Q00",
+        copy=False,
+    ).get_flattened_waveforms(apply_frame_shifts=True)
+    pulses = [
+        waveform for waveform in merged_waveforms if not isinstance(waveform, Blank)
+    ]
+    np.testing.assert_allclose(pulses[0].values, 0.1, rtol=0.0, atol=1e-12)
+    np.testing.assert_allclose(pulses[1].values, 0.2, rtol=0.0, atol=1e-12)
 
 
 def test_merge_measurement_schedules_preserves_per_schedule_transforms() -> None:
