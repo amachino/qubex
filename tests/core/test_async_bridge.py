@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextvars
 import signal
 import threading
@@ -82,10 +83,23 @@ def test_run_inside_running_loop_cancels_on_timeout(bridge: AsyncBridge) -> None
 )
 def test_run_inside_running_loop_cancels_on_keyboard_interrupt(
     bridge: AsyncBridge,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given an interrupted wait, bridge should cancel its background task."""
     started = threading.Event()
+    waiting = threading.Event()
     cancelled = threading.Event()
+    original_result = concurrent.futures.Future.result
+
+    def _wait_for_result(
+        future: concurrent.futures.Future[None],
+        timeout: float | None = None,
+    ) -> None:
+        # Signal only once run() has entered its protected result wait.
+        waiting.set()
+        return original_result(future, timeout=timeout)
+
+    monkeypatch.setattr(concurrent.futures.Future, "result", _wait_for_result)
 
     async def _hang_forever() -> None:
         started.set()
@@ -106,6 +120,7 @@ def test_run_inside_running_loop_cancels_on_keyboard_interrupt(
 
     def _interrupt_after_start() -> None:
         assert started.wait(timeout=10.0)
+        assert waiting.wait(timeout=10.0)
         signal.pthread_kill(main_thread_id, signal.SIGUSR1)
 
     async def _invoke() -> None:
