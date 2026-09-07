@@ -7,7 +7,8 @@ import pytest
 from numpy.testing import assert_allclose
 from scipy.linalg import expm
 
-from qubex.contrib.experiment.cr_pulse_coherence_characterization import (
+from qubex.contrib.experiment import cr_pulse_coherence_characterization as module
+from qubex.contrib.experiment.cr_pulse_coherence_fitting import (
     fit_exponential_decay,
     fit_three_level_rate_model,
 )
@@ -86,6 +87,7 @@ def test_weighted_rate_fit_preserves_absolute_error_scale() -> None:
         excited,
         np.full(ground.shape, 0.01),
         np.full(excited.shape, 0.01),
+        relative_uncertainty_threshold=100.0,
     )
     doubled_error_fit = fit_three_level_rate_model(
         times,
@@ -93,12 +95,75 @@ def test_weighted_rate_fit_preserves_absolute_error_scale() -> None:
         excited,
         np.full(ground.shape, 0.02),
         np.full(excited.shape, 0.02),
+        relative_uncertainty_threshold=100.0,
     )
 
     assert fit.gamma_ge_down_error > 0.0
     assert doubled_error_fit.gamma_ge_down_error / fit.gamma_ge_down_error == (
         pytest.approx(2.0, rel=1e-6)
     )
+
+
+def test_control_rate_fit_falls_back_when_leakage_is_unresolved() -> None:
+    """A GE-only trajectory should refit with both EF rates fixed to zero."""
+    times = np.array([0, 800, 1600, 3000, 5000, 8000, 13_000, 21_000.0])
+    rates = (2.5e-5, 4.0e-6, 0.0, 0.0)
+    ground = _trajectory(times, np.array([0.98, 0.02, 0.0]), rates)
+    excited = _trajectory(times, np.array([0.03, 0.97, 0.0]), rates)
+
+    fit = fit_three_level_rate_model(times, ground, excited)
+
+    assert fit.success
+    assert fit.leakage_model == "none"
+    assert fit.gamma_ef_down == 0.0
+    assert fit.gamma_ef_up == 0.0
+    assert fit.gamma_ge_down == pytest.approx(rates[0], rel=1e-4)
+    assert fit.gamma_ge_up == pytest.approx(rates[1], rel=1e-4)
+
+
+def test_control_rate_fit_falls_back_when_only_seepage_is_unresolved() -> None:
+    """An outward-only trajectory should refit with F-to-E fixed to zero."""
+    times = np.array([0, 800, 1600, 3000, 5000, 8000, 13_000, 21_000.0])
+    rates = (2.5e-5, 4.0e-6, 0.0, 7.0e-6)
+    ground = _trajectory(times, np.array([0.98, 0.02, 0.0]), rates)
+    excited = _trajectory(times, np.array([0.03, 0.97, 0.0]), rates)
+
+    fit = fit_three_level_rate_model(times, ground, excited)
+
+    assert fit.success
+    assert fit.leakage_model == "outward_only"
+    assert fit.gamma_ef_down == 0.0
+    assert np.isnan(fit.gamma_ef_down_error)
+    assert fit.gamma_ef_up == pytest.approx(rates[3], rel=1e-4)
+
+
+def test_safe_control_rate_fit_preserves_results_on_numerical_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A numerical rate-fit failure should produce a structured failed fit."""
+    times = np.array([0.0, 1.0, 2.0])
+    ground = np.tile(np.array([0.98, 0.02, 0.0]), (3, 1))
+    excited = np.tile(np.array([0.03, 0.97, 0.0]), (3, 1))
+
+    def fail_fit(*args: object, **kwargs: object) -> None:
+        raise np.linalg.LinAlgError("singular fit")
+
+    monkeypatch.setattr(module, "fit_three_level_rate_model", fail_fit)
+
+    fit = module._safe_fit_three_level_rate_model(  # noqa: SLF001
+        times,
+        ground,
+        excited,
+        None,
+        None,
+        1.0,
+    )
+
+    assert not fit.success
+    assert "singular fit" in fit.message
+    assert_allclose(fit.initial_ground, ground[0])
+    assert_allclose(fit.initial_excited, excited[0])
+    assert np.all(np.isnan(fit.fitted_ground))
 
 
 def test_exponential_fit_recovers_offset_decay() -> None:

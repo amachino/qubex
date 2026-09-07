@@ -9,8 +9,13 @@ from typing import Any
 
 import numpy as np
 import pytest
+from scipy.linalg import expm
 
 from qubex.contrib.experiment import cr_pulse_coherence_characterization as module
+from qubex.contrib.experiment.cr_pulse_coherence_fitting import CrOnDephasingFit
+from qubex.contrib.experiment.cr_pulse_fidelity_simulation import (
+    CrPulseFidelitySimulationResult,
+)
 from qubex.experiment.models.result import Result
 from qubex.pulse import Blank, PulseSchedule, Rect, VirtualZ
 
@@ -79,6 +84,38 @@ def _schedule(duration: float) -> PulseSchedule:
     with PulseSchedule(["Q0", "Q0-Q1", "Q1"]) as schedule:
         schedule.add("Q0-Q1", Rect(duration=duration, amplitude=1.0))
     return schedule
+
+
+def test_default_un_echoed_zx90_repeats_two_same_sign_cr_lobes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The generated un-echoed ZX90 should join two identical CR lobes."""
+    exp = _DummyExperiment()
+    primitive = _schedule(8.0)
+    primitive.cr_duration = 8.0  # type: ignore[attr-defined]
+    primitive.echo = False  # type: ignore[attr-defined]
+    calls: list[tuple[str, str, bool]] = []
+
+    def zx90(control: str, target: str, *, echo: bool) -> PulseSchedule:
+        calls.append((control, target, echo))
+        return primitive
+
+    monkeypatch.setattr(exp.pulse, "zx90", zx90, raising=False)
+
+    gate = module._build_un_echoed_zx90(
+        exp,  # type: ignore[arg-type]
+        "Q0",
+        "Q1",
+    )
+
+    assert calls == [("Q0", "Q1", False)]
+    assert gate.duration == pytest.approx(16.0)
+    assert vars(gate)["cr_duration"] == pytest.approx(16.0)
+    assert vars(gate)["echo"] is False
+    np.testing.assert_array_equal(
+        gate.get_sampled_sequence("Q0-Q1"),
+        np.tile(primitive.get_sampled_sequence("Q0-Q1"), 2),
+    )
 
 
 def test_control_t2_echo_block_uses_requested_x180_pattern(
@@ -298,6 +335,7 @@ def test_characterization_runs_requested_hardware_order(
         exp,  # type: ignore[arg-type]
         "Q0",
         "Q1",
+        measure_orthogonal_components=False,
         n_values=[0, 1, 2],
         zx90_no_echo=_schedule(8.0),
         zx90_echo=_schedule(20.0),
@@ -339,6 +377,17 @@ def test_characterization_runs_requested_hardware_order(
     assert result.data["state_order"] == ("g", "e", "f")
     assert result.data["transition_rates"]["unit"] == "1/ns"
     assert result.data["decay_times"]["unit"] == "ns"
+    assert result.data["fidelity_analysis"] is None
+    assert result.data["fidelity_limits"] is None
+    assert not result.data["measurement_options"]["fidelity_simulation_enabled"]
+    assert result.data["measurement_options"]["n_shots"] == 4096
+    assert result.data["measurement_options"]["calibration_n_shots"] == 8192
+    assert (
+        "cr_duration"
+        in result.data["measurement_options"]["fidelity_simulation_skip_reason"]
+    )
+    assert set(result.data["fits"]["target_t1rho"]) == {"actual", "reference"}
+    assert set(result.data["fits"]["target_leakage"]) == {"actual", "reference"}
     assert result.data["sequence_durations"]["control_ground"][0] == pytest.approx(4.0)
     assert result.data["sequence_durations"]["control_excited"][0] == pytest.approx(6.0)
     assert result.data["sequence_durations"]["control_t2_echo"][0] == pytest.approx(2.0)
@@ -530,6 +579,121 @@ def test_characterization_requires_ground_and_excited_as_a_pair(
         )
 
 
+def test_fidelity_simulation_requires_all_protocols_before_measurement() -> None:
+    """An incomplete protocol set should be rejected before hardware work."""
+    with pytest.raises(ValueError, match="requires all four protocols"):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            protocols=["control_t2_echo", "target_t2rho_echo"],
+            n_values=[0, 1, 2],
+            zx90_echo=_schedule(20.0),
+            run_fidelity_simulation=True,
+            idle_t1={"Q0": 50_000.0, "Q1": 40_000.0},
+            idle_t2_echo={"Q0": 70_000.0, "Q1": 60_000.0},
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+def test_forward_echo_fit_requires_all_protocols_before_measurement() -> None:
+    """An explicitly required joint forward fit should need A through D."""
+    with pytest.raises(ValueError, match="All four protocols"):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            protocols=["control_t2_echo", "target_t2rho_echo"],
+            n_values=[0, 1, 2],
+            zx90_echo=_schedule(20.0),
+            echo_fit_method="forward",
+            run_fidelity_simulation=False,
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+def test_fidelity_simulation_rejects_exponential_only_echo_fit() -> None:
+    """Fidelity calculation should require fitted CR-on dephasing rates."""
+    with pytest.raises(ValueError, match="requires a CR echo-decay forward fit"):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            n_values=[0, 1, 2],
+            echo_fit_method="exponential",
+            run_fidelity_simulation=True,
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+def test_fidelity_gate_metadata_is_validated_before_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A generic schedule should fail before starting GEF calibration."""
+
+    def unexpected_calibration(*args: object, **kwargs: object) -> None:
+        raise AssertionError("calibration should not run")
+
+    monkeypatch.setattr(module, "calibrate_gef_population", unexpected_calibration)
+
+    echo_gate = _schedule(20.0)
+    echo_gate.cr_duration = 8.0  # type: ignore[attr-defined]
+    echo_gate.echo = True  # type: ignore[attr-defined]
+    echo_gate.pi_pulse = Blank(2.0)  # type: ignore[attr-defined]
+
+    with pytest.raises(ValueError, match=r"cr_duration.*echo"):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            n_values=[0, 1, 2],
+            zx90_no_echo=_schedule(8.0),
+            zx90_echo=echo_gate,
+            run_fidelity_simulation=True,
+            idle_t1={"Q0": 50_000.0, "Q1": 40_000.0},
+            idle_t2_echo={"Q0": 70_000.0, "Q1": 60_000.0},
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("parameter_name", "declared_echo"),
+    [("zx90_no_echo", True), ("zx90_echo", False)],
+)
+def test_characterization_rejects_contradictory_gate_echo_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    parameter_name: str,
+    declared_echo: bool,
+) -> None:
+    """A gate override must not contradict its requested protocol role."""
+
+    def unexpected_calibration(*args: object, **kwargs: object) -> None:
+        raise AssertionError("calibration should not run")
+
+    no_echo = _schedule(8.0)
+    echo = _schedule(20.0)
+    gate = no_echo if parameter_name == "zx90_no_echo" else echo
+    gate.echo = declared_echo  # type: ignore[attr-defined]
+    monkeypatch.setattr(module, "calibrate_gef_population", unexpected_calibration)
+
+    with pytest.raises(ValueError, match=parameter_name):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            n_values=[0, 1, 2],
+            zx90_no_echo=no_echo,
+            zx90_echo=echo,
+            run_fidelity_simulation=False,
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
 @pytest.mark.parametrize(
     "protocols",
     [[], ["control_t2_echo", "control_t2_echo"], ["C"]],
@@ -597,6 +761,7 @@ def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration
         "Q0",
         "Q1",
         protocols=protocol,
+        measure_orthogonal_components=False,
         n_values=[0, 1, 2],
         zx90_echo=_schedule(20.0),
         enable_tqdm=False,
@@ -606,6 +771,8 @@ def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration
     assert calls == [(measured_qubit, primary_basis)] * 6
     assert result.data["protocols"] == (protocol,)
     assert result.data["pauli_components"] == {protocol: (primary_basis,)}
+    assert result.data["fidelity_analysis"] is None
+    assert not result.data["measurement_options"]["fidelity_simulation_enabled"]
     assert result.data["calibration"] is None
     assert result.data["populations"] == {}
     assert set(result.data["sequence_durations"]) == {
@@ -615,7 +782,7 @@ def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration
     assert set(result.figures or {}) == {protocol}
 
 
-def test_characterization_measures_and_plots_orthogonal_components(
+def test_characterization_measures_and_plots_orthogonal_components_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Orthogonal components should be measured and plotted without fitting."""
@@ -651,7 +818,6 @@ def test_characterization_measures_and_plots_orthogonal_components(
         "Q0",
         "Q1",
         protocols=["control_t2_echo", "target_t2rho_echo"],
-        measure_orthogonal_components=True,
         n_values=[0, 1, 2],
         zx90_echo=_schedule(20.0),
         enable_tqdm=False,
@@ -670,8 +836,14 @@ def test_characterization_measures_and_plots_orthogonal_components(
     pauli_expectations: Any = result.data["pauli_expectations"]
     assert set(pauli_expectations["control_t2_echo"]) == {"X", "Y", "Z"}
     assert "pauli_components" not in result.data["fits"]
-    assert result.data["fits"]["control_t2_echo"]["actual"].success
+    assert result.data["fits"]["phenomenological_echo_decay"]["control_t2_echo"][
+        "actual"
+    ].success
     assert "pauli_components" not in result.data["decay_times"]
+    assert (
+        result.data["fit_status"]["echo_actual_primary_model"] == "offset_exponential"
+    )
+    assert result.data["fit_status"]["echo_reference_model"] == "offset_exponential"
     control_t2_traces: Any = result.get_figure("control_t2_echo").data
     assert len(control_t2_traces) == 8
     trace_names = {trace.name for trace in control_t2_traces}
@@ -715,3 +887,293 @@ def test_characterization_rejects_invalid_n_values(n_values: list[int]) -> None:
             enable_tqdm=False,
             plot=False,
         )
+
+
+def test_characterization_rejects_invalid_echo_fit_method() -> None:
+    """The primary C/D fit selector should fail before hardware work."""
+    with pytest.raises(ValueError, match="echo_fit_method"):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            echo_fit_method="invalid",  # type: ignore[arg-type]
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("run_fidelity_simulation", "simulation_fails"),
+    [(None, False), (False, False), (None, True)],
+)
+def test_characterization_integrates_fidelity_simulation_and_forward_curves(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    run_fidelity_simulation: bool | None,
+    simulation_fails: bool,
+) -> None:
+    """Forward fitting should be independent of the final fidelity calculation."""
+    exp = _DummyExperiment()
+    calibration = {"Q0": object(), "Q1": object()}
+
+    def fake_calibrate(*args: object, **kwargs: object) -> dict[str, object]:
+        return calibration
+
+    def fake_measure_gef(
+        _exp: object,
+        targets: object,
+        sequences: dict[str, PulseSchedule],
+        **kwargs: object,
+    ) -> Result:
+        del targets, kwargs
+        populations = {
+            name: {
+                "Q0": np.array([0.8, 0.18, 0.02]),
+                "Q1": np.array([0.2, 0.79, 0.01]),
+            }
+            for name in sequences
+        }
+        raw_iq = {
+            name: {
+                analyzer: {
+                    "Q0": np.ones(4, dtype=complex),
+                    "Q1": np.ones(4, dtype=complex),
+                }
+                for analyzer in ("s1", "s4", "s5")
+            }
+            for name in sequences
+        }
+        return Result(
+            data={
+                "populations": populations,
+                "raw_iq": raw_iq,
+                "fits": {name: {"Q0": object(), "Q1": object()} for name in sequences},
+                "moment_summaries": {
+                    name: {
+                        analyzer: {"Q0": object(), "Q1": object()}
+                        for analyzer in ("s1", "s4", "s5")
+                    }
+                    for name in sequences
+                },
+            }
+        )
+
+    def fake_bootstrap(
+        _calibration: object,
+        raw_iq: dict[str, object],
+        **kwargs: object,
+    ) -> dict[str, dict[str, Any]]:
+        del kwargs
+        return {
+            name: {
+                target: SimpleNamespace(
+                    samples=np.tile(np.array([0.2, 0.79, 0.01]), (4, 1)),
+                    standard_error=np.full(3, 0.01),
+                    unavailable_reason=None,
+                )
+                for target in ("Q0", "Q1")
+            }
+            for name in raw_iq
+        }
+
+    pauli_values = iter([0.95, 0.9, 0.92, 0.85] * 3)
+
+    def fake_measure_pauli(*args: object, **kwargs: object) -> Any:
+        del args, kwargs
+        value = next(pauli_values)
+        return module._PauliMeasurement(
+            expectation=value,
+            standard_error=0.01,
+            normalized_shots=np.array([value, value]),
+            raw_iq=np.array([value + 0j, value + 0j]),
+        )
+
+    fit_times = np.array([0.0, 1.0, 2.0])
+    rates = (0.2, 0.05, 0.03, 0.01)
+    rate_matrix = np.array(
+        [
+            [-rates[1], rates[0], 0.0],
+            [rates[1], -(rates[0] + rates[3]), rates[2]],
+            [0.0, rates[3], -rates[2]],
+        ]
+    )
+    ground_initial = np.array([0.98, 0.01, 0.01])
+    excited_initial = np.array([0.02, 0.96, 0.02])
+    ground_population = np.stack(
+        [expm(rate_matrix * time) @ ground_initial for time in fit_times]
+    )
+    excited_population = np.stack(
+        [expm(rate_matrix * time) @ excited_initial for time in fit_times]
+    )
+    rate_fit = module.fit_three_level_rate_model(
+        fit_times,
+        ground_population,
+        excited_population,
+    )
+    t1rho_fit = module.fit_target_t1rho(
+        fit_times,
+        np.exp(-fit_times / 3),
+        -0.8 * np.exp(-fit_times / 3),
+    )
+    leakage_fit = module.fit_target_leakage(
+        fit_times,
+        np.array([0.01, 0.03, 0.05]),
+        np.array([0.02, 0.04, 0.06]),
+        relative_uncertainty_threshold=100.0,
+    )
+    pauli_fit = module.fit_exponential_decay(
+        fit_times,
+        0.1 + 0.9 * np.exp(-fit_times / 3),
+    )
+
+    def fake_fit_all(*args: object, **kwargs: object) -> dict[str, object]:
+        del args, kwargs
+        return {
+            "control_rate_model": {"actual": rate_fit, "reference": rate_fit},
+            "target_t1rho": {"actual": t1rho_fit, "reference": t1rho_fit},
+            "target_leakage": {"actual": leakage_fit, "reference": leakage_fit},
+            "phenomenological_echo_decay": {
+                "control_t2_echo": {
+                    "actual": pauli_fit,
+                    "reference": pauli_fit,
+                },
+                "target_t2rho_echo": {
+                    "actual": pauli_fit,
+                    "reference": pauli_fit,
+                },
+            },
+        }
+
+    dephasing_fit = CrOnDephasingFit(
+        success=True,
+        message="ok",
+        gamma_phi_control=1e-5,
+        gamma_phi_rho_target=2e-5,
+        gamma_phi_control_error=1e-6,
+        gamma_phi_rho_target_error=2e-6,
+        covariance=np.diag([1e-12, 4e-12]),
+        control_amplitude=0.9,
+        control_offset=0.05,
+        target_amplitude=0.8,
+        target_offset=0.1,
+        fitted_control_x=np.array([0.95, 0.9, 0.85]),
+        fitted_target_z=np.array([0.9, 0.85, 0.8]),
+        curve_n_values=np.array([0, 1, 2]),
+        curve_control_x=np.array([0.95, 0.9, 0.85]),
+        curve_target_z=np.array([0.9, 0.85, 0.8]),
+        r_squared=0.99,
+    )
+    simulation = CrPulseFidelitySimulationResult(
+        idle_coherence_limited_fidelity=0.999,
+        cr_on_coherence_limited_fidelity=0.995,
+        cr_on_dissipative_limited_fidelity=0.99,
+        average_leakage=0.004,
+        idle_average_survival=1.0,
+        cr_on_coherence_average_survival=1.0,
+        cr_on_dissipative_average_survival=0.996,
+        model_metadata={},
+    )
+    captured_base_noise: list[Any] = []
+    captured_fitted_noise: list[Any] = []
+
+    def fake_prepare(*args: object, **kwargs: object) -> object:
+        del kwargs
+        captured_base_noise.append(args[3])
+        return object()
+
+    def fake_forward_fit(*args: object, **kwargs: object) -> CrOnDephasingFit:
+        del args, kwargs
+        return dephasing_fit
+
+    def fake_simulate(
+        *args: object, **kwargs: object
+    ) -> CrPulseFidelitySimulationResult:
+        del kwargs
+        captured_fitted_noise.append(args[3])
+        if simulation_fails:
+            raise RuntimeError("nonphysical channel")
+        return simulation
+
+    monkeypatch.setattr(module, "calibrate_gef_population", fake_calibrate)
+    monkeypatch.setattr(module, "measure_gef_populations", fake_measure_gef)
+    monkeypatch.setattr(module, "bootstrap_gef_populations", fake_bootstrap)
+    monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
+    monkeypatch.setattr(module, "_fit_all_results", fake_fit_all)
+    monkeypatch.setattr(module, "prepare_cr_echo_decay_model", fake_prepare)
+    monkeypatch.setattr(module, "fit_cr_on_dephasing", fake_forward_fit)
+    monkeypatch.setattr(module, "simulate_cr_pulse_fidelity", fake_simulate)
+
+    echo_gate = _schedule(20.0)
+    echo_gate.cr_duration = 8.0  # type: ignore[attr-defined]
+    echo_gate.echo = True  # type: ignore[attr-defined]
+    echo_gate.pi_pulse = Blank(2.0)  # type: ignore[attr-defined]
+    no_echo_gate = _schedule(8.0)
+    no_echo_gate.cr_duration = 8.0  # type: ignore[attr-defined]
+    no_echo_gate.echo = False  # type: ignore[attr-defined]
+    result = module.characterize_cr_pulse_coherence(
+        exp,  # type: ignore[arg-type]
+        "Q0",
+        "Q1",
+        measure_orthogonal_components=False,
+        n_values=[0, 1, 2],
+        zx90_no_echo=no_echo_gate,
+        zx90_echo=echo_gate,
+        n_bootstrap=4,
+        idle_t1={"Q0": 50_000.0, "Q1": 40_000.0},
+        idle_t2_echo={"Q0": 70_000.0, "Q1": 60_000.0},
+        run_fidelity_simulation=run_fidelity_simulation,
+        enable_tqdm=False,
+        plot=False,
+    )
+
+    noise = captured_base_noise[0]
+    assert noise.gamma_control_g_to_e == pytest.approx(rate_fit.gamma_ge_up)
+    assert noise.gamma_control_e_to_g == pytest.approx(rate_fit.gamma_ge_down)
+    assert noise.gamma_control_e_to_f == pytest.approx(rate_fit.gamma_ef_up)
+    assert noise.gamma_control_f_to_e == pytest.approx(rate_fit.gamma_ef_down)
+    assert result.data["fits"]["cr_on_dephasing"] is dephasing_fit
+    assert result.data["fitted_cr_on_noise"].gamma_phi_control == pytest.approx(1e-5)
+    assert result.data["fitted_cr_on_noise"].gamma_phi_rho_target == pytest.approx(2e-5)
+    assert result.data["fit_status"]["echo_actual_primary_model"] == "forward"
+    assert result.data["measurement_options"]["forward_fit_enabled"]
+    assert (
+        result.data["measurement_options"]["run_fidelity_simulation"]
+        is run_fidelity_simulation
+    )
+    output = capsys.readouterr().out
+    if run_fidelity_simulation is None and not simulation_fails:
+        assert captured_fitted_noise[0].gamma_phi_control == pytest.approx(1e-5)
+        assert captured_fitted_noise[0].gamma_phi_rho_target == pytest.approx(2e-5)
+        assert result.data["fidelity_limits"] == {
+            "success": True,
+            "idle_coherence_limited_fidelity": 0.999,
+            "cr_on_coherence_limited_fidelity": 0.995,
+            "cr_on_dissipative_limited_fidelity": 0.99,
+            "average_leakage": 0.004,
+        }
+        assert result.data["measurement_options"]["fidelity_simulation_enabled"]
+        assert "CR-pulse fidelity simulation" in output
+        assert "Idle coherence limit:       99.900000%" in output
+        assert "CR-on coherence limit:      99.500000%" in output
+        assert "CR-on dissipative limit:    99.000000%" in output
+        assert "Average leakage:             0.400000%" in output
+    elif simulation_fails:
+        assert captured_fitted_noise[0].gamma_phi_control == pytest.approx(1e-5)
+        assert result.data["fidelity_limits"] == {
+            "success": False,
+            "message": "Fidelity simulation failed: nonphysical channel",
+        }
+        assert result.data["fidelity_analysis"].dephasing_fit is dephasing_fit
+        assert not result.data["fidelity_analysis"].success
+        assert "nonphysical channel" in result.data["fidelity_analysis"].message
+        assert "CR-pulse fidelity simulation failed" in output
+    else:
+        assert captured_fitted_noise == []
+        assert result.data["fidelity_limits"] is None
+        assert not result.data["measurement_options"]["fidelity_simulation_enabled"]
+        assert "CR-pulse fidelity simulation" not in output
+    control_traces: Any = result.get_figure("control_t2_echo").data
+    actual_fit = next(
+        trace for trace in control_traces if trace.name == "actual <X> fit"
+    )
+    assert np.asarray(actual_fit.y) == pytest.approx(dephasing_fit.curve_control_x)

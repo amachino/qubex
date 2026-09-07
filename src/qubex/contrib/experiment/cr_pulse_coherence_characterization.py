@@ -3,29 +3,46 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import pairwise
 from numbers import Integral, Real
 from typing import Literal, cast
 
 import numpy as np
 import plotly.graph_objects as go
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 from plotly.subplots import make_subplots
-from scipy.linalg import expm
-from scipy.optimize import least_squares
 from tqdm.auto import tqdm
 
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
-    CALIBRATION_SHOTS,
     DEFAULT_INTERVAL,
-    DEFAULT_SHOTS,
 )
 from qubex.experiment.models.result import Result
 from qubex.pulse import Blank, PulseSchedule, Waveform
 from qubex.visualization import COLORS
 
+from .cr_pulse_coherence_fitting import (
+    CrOnDephasingFit,
+    ExponentialDecayFit,
+    TargetLeakageFit,
+    TargetT1RhoFit,
+    ThreeLevelRateFit,
+    fit_cr_on_dephasing,
+    fit_exponential_decay,
+    fit_target_leakage,
+    fit_target_t1rho,
+    fit_three_level_rate_model,
+    three_level_population_trajectory,
+)
+from .cr_pulse_fidelity_simulation import (
+    CrOnNoise,
+    CrPulseFidelitySimulationResult,
+    IdleQubitNoise,
+    extract_zx90_gate_timing,
+    prepare_cr_echo_decay_model,
+    simulate_cr_pulse_fidelity,
+)
 from .gef_population_estimation import (
     GefPopulationBootstrap,
     GefPopulationCalibration,
@@ -45,12 +62,16 @@ _Protocol = Literal[
 _GefProtocol = Literal["control_ground", "control_excited"]
 _PauliProtocol = Literal["control_t2_echo", "target_t2rho_echo"]
 _PauliBasis = Literal["X", "Y", "Z"]
+EchoFitMethod = Literal["auto", "forward", "exponential"]
 
 DEFAULT_N_VALUES: tuple[int, ...] = (0, 1, 2, 3, 5, 8, 13, 21, 34, 55)
+_DEFAULT_N_SHOTS = 4096
+_DEFAULT_CALIBRATION_N_SHOTS = 8192
 _CONTROL_GROUND = "control_ground"
 _CONTROL_EXCITED = "control_excited"
 _CONTROL_T2_ECHO = "control_t2_echo"
 _TARGET_T2RHO_ECHO = "target_t2rho_echo"
+_PHENOMENOLOGICAL_ECHO_FITS = "phenomenological_echo_decay"
 _PROTOCOLS: tuple[_Protocol, ...] = (
     _CONTROL_GROUND,
     _CONTROL_EXCITED,
@@ -83,7 +104,6 @@ _PROTOCOL_LABELS: dict[_Protocol, str] = {
 _STATE_NAMES = ("g", "e", "f")
 _REFERENCE_OPACITY = 0.38
 _RATE_PARAMETER_COUNT = 4
-_EXPONENTIAL_PARAMETER_COUNT = 3
 
 
 @dataclass(frozen=True)
@@ -97,44 +117,13 @@ class _PauliMeasurement:
 
 
 @dataclass(frozen=True)
-class ExponentialDecayFit:
-    """Store an offset exponential-decay fit and its diagnostics."""
+class CrPulseFidelityAnalysis:
+    """Store the inferred CR-on dephasing and optional fidelity simulation."""
 
     success: bool
     message: str
-    amplitude: float
-    offset: float
-    tau: float
-    amplitude_error: float
-    offset_error: float
-    tau_error: float
-    covariance: NDArray[np.float64]
-    fitted_values: NDArray[np.float64]
-    r_squared: float
-
-
-@dataclass(frozen=True)
-class ThreeLevelRateFit:
-    """Store a joint ground/excited adjacent-transition three-level rate fit."""
-
-    success: bool
-    message: str
-    gamma_ge_down: float
-    gamma_ge_up: float
-    gamma_ef_down: float
-    gamma_ef_up: float
-    gamma_ge_down_error: float
-    gamma_ge_up_error: float
-    gamma_ef_down_error: float
-    gamma_ef_up_error: float
-    t1_eff: float
-    t1_eff_error: float
-    covariance: NDArray[np.float64]
-    initial_ground: NDArray[np.float64]
-    initial_excited: NDArray[np.float64]
-    fitted_ground: NDArray[np.float64]
-    fitted_excited: NDArray[np.float64]
-    r_squared: float
+    dephasing_fit: CrOnDephasingFit | None
+    simulation: CrPulseFidelitySimulationResult | None
 
 
 @dataclass(frozen=True)
@@ -144,175 +133,6 @@ class _ProtocolSequences:
     sequences: dict[str, PulseSchedule]
     evolution_durations: dict[str, float]
     cr_pulse_count: int
-
-
-def _validate_time_series(
-    times: ArrayLike,
-    values: ArrayLike,
-    *,
-    name: str,
-    minimum_points: int,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Validate a finite series sampled on an increasing zero-based time axis."""
-    time_array = np.asarray(times, dtype=np.float64)
-    value_array = np.asarray(values, dtype=np.float64)
-    if time_array.ndim != 1:
-        raise ValueError("times must be one-dimensional.")
-    if value_array.ndim == 0:
-        raise ValueError(f"{name} must be at least one-dimensional.")
-    if value_array.shape[0] != time_array.size:
-        raise ValueError(f"{name} must have the same leading length as times.")
-    if time_array.size < minimum_points:
-        raise ValueError(f"times must contain at least {minimum_points} points.")
-    if not np.all(np.isfinite(time_array)) or not np.all(np.isfinite(value_array)):
-        raise ValueError(f"times and {name} must contain only finite values.")
-    if not np.isclose(time_array[0], 0.0, rtol=0.0, atol=1e-12):
-        raise ValueError("times must start at zero.")
-    if np.any(np.diff(time_array) <= 0):
-        raise ValueError("times must be strictly increasing.")
-    return time_array, value_array
-
-
-def _resolve_standard_errors(
-    standard_errors: ArrayLike | None,
-    shape: tuple[int, ...],
-) -> NDArray[np.float64] | None:
-    """Validate uncertainties and floor zero values for stable weighting."""
-    if standard_errors is None:
-        return None
-    errors = np.asarray(standard_errors, dtype=np.float64)
-    if errors.shape != shape:
-        raise ValueError(f"standard_errors must have shape {shape}.")
-    if np.any(np.isfinite(errors) & (errors < 0)):
-        raise ValueError("standard_errors must be nonnegative where finite.")
-    positive = errors[np.isfinite(errors) & (errors > 0)]
-    if positive.size == 0:
-        return None
-    typical = float(np.median(positive))
-    floor = max(typical * 1e-3, np.finfo(float).eps)
-    return np.where(
-        np.isfinite(errors) & (errors > 0),
-        np.maximum(errors, floor),
-        typical,
-    )
-
-
-def _estimate_covariance(
-    jacobian: NDArray[np.float64],
-    cost: float,
-    residual_count: int,
-    parameter_count: int,
-    *,
-    absolute_weights: bool,
-) -> NDArray[np.float64]:
-    """Estimate covariance using absolute weights or fitted residual variance."""
-    covariance = np.linalg.pinv(jacobian.T @ jacobian)
-    if absolute_weights:
-        return covariance
-    degrees_of_freedom = residual_count - parameter_count
-    if degrees_of_freedom > 0:
-        covariance *= 2 * cost / degrees_of_freedom
-    else:
-        covariance.fill(np.nan)
-    return covariance
-
-
-def _r_squared(observed: NDArray[np.float64], fitted: NDArray[np.float64]) -> float:
-    """Return an R-squared value, including the constant-data edge case."""
-    residual_sum = float(np.sum((observed - fitted) ** 2))
-    total_sum = float(np.sum((observed - np.mean(observed)) ** 2))
-    if total_sum == 0:
-        return 1.0 if residual_sum == 0 else float("nan")
-    return 1 - residual_sum / total_sum
-
-
-def fit_exponential_decay(
-    times: ArrayLike,
-    values: ArrayLike,
-    standard_errors: ArrayLike | None = None,
-) -> ExponentialDecayFit:
-    """
-    Fit `offset + amplitude * exp(-time / tau)` to a decay series.
-
-    Parameters
-    ----------
-    times
-        Strictly increasing times beginning at zero, in any consistent unit.
-    values
-        Finite measured values.
-    standard_errors
-        Optional nonnegative one-standard-error uncertainties used as absolute
-        fit weights. Missing or zero entries use the median positive error when
-        available; otherwise the fit is unweighted.
-
-    Returns
-    -------
-    ExponentialDecayFit
-        Fitted parameters. `tau` uses the same unit as `times`.
-    """
-    time_array, value_array = _validate_time_series(
-        times,
-        values,
-        name="values",
-        minimum_points=_EXPONENTIAL_PARAMETER_COUNT,
-    )
-    if value_array.ndim != 1:
-        raise ValueError("values must be one-dimensional.")
-    errors = _resolve_standard_errors(standard_errors, value_array.shape)
-    weights = np.ones_like(value_array) if errors is None else 1 / errors
-    time_scale = float(time_array[-1])
-    scaled_times = time_array / time_scale
-
-    offset_guess = float(value_array[-1])
-    amplitude_guess = float(value_array[0] - offset_guess)
-    if np.isclose(amplitude_guess, 0.0):
-        amplitude_guess = float(np.ptp(value_array))
-
-    def residual(parameters: NDArray[np.float64]) -> NDArray[np.float64]:
-        amplitude, offset, scaled_tau = parameters
-        prediction = offset + amplitude * np.exp(-scaled_times / scaled_tau)
-        return (prediction - value_array) * weights
-
-    try:
-        optimization = least_squares(
-            residual,
-            x0=np.array([amplitude_guess, offset_guess, 0.5]),
-            bounds=(
-                np.array([-np.inf, -np.inf, np.finfo(float).eps]),
-                np.array([np.inf, np.inf, np.inf]),
-            ),
-            x_scale=1.0,
-            max_nfev=20_000,
-        )
-    except (FloatingPointError, RuntimeError, ValueError) as exc:
-        return _failed_exponential_fit(str(exc), value_array.size)
-
-    amplitude, offset, scaled_tau = optimization.x
-    tau = float(scaled_tau * time_scale)
-    fitted_values = offset + amplitude * np.exp(-time_array / tau)
-    scaled_covariance = _estimate_covariance(
-        np.asarray(optimization.jac, dtype=np.float64),
-        float(optimization.cost),
-        value_array.size,
-        _EXPONENTIAL_PARAMETER_COUNT,
-        absolute_weights=errors is not None,
-    )
-    transform = np.diag([1.0, 1.0, time_scale])
-    covariance = transform @ scaled_covariance @ transform
-    errors_by_parameter = np.sqrt(np.clip(np.diag(covariance), 0.0, np.inf))
-    return ExponentialDecayFit(
-        success=bool(optimization.success),
-        message=str(optimization.message),
-        amplitude=float(amplitude),
-        offset=float(offset),
-        tau=tau,
-        amplitude_error=float(errors_by_parameter[0]),
-        offset_error=float(errors_by_parameter[1]),
-        tau_error=float(errors_by_parameter[2]),
-        covariance=covariance,
-        fitted_values=np.asarray(fitted_values, dtype=np.float64),
-        r_squared=_r_squared(value_array, fitted_values),
-    )
 
 
 def _failed_exponential_fit(message: str, n_values: int) -> ExponentialDecayFit:
@@ -326,7 +146,7 @@ def _failed_exponential_fit(message: str, n_values: int) -> ExponentialDecayFit:
         amplitude_error=float("nan"),
         offset_error=float("nan"),
         tau_error=float("nan"),
-        covariance=np.full((_EXPONENTIAL_PARAMETER_COUNT,) * 2, np.nan),
+        covariance=np.full((3, 3), np.nan),
         fitted_values=np.full(n_values, np.nan),
         r_squared=float("nan"),
     )
@@ -340,217 +160,79 @@ def _safe_fit_exponential_decay(
     """Fit a decay while preserving measured data when validation fails."""
     try:
         return fit_exponential_decay(times, values, standard_errors)
-    except ValueError as exc:
+    except (FloatingPointError, RuntimeError, ValueError, np.linalg.LinAlgError) as exc:
         return _failed_exponential_fit(str(exc), values.size)
 
 
-def _three_level_rate_matrix(
-    rates: ArrayLike,
-) -> NDArray[np.float64]:
-    """Return the GEF rate matrix with no direct G-to-F transition."""
-    gamma_ge_down, gamma_ge_up, gamma_ef_down, gamma_ef_up = np.asarray(
-        rates,
-        dtype=np.float64,
-    )
-    return np.array(
-        [
-            [-gamma_ge_up, gamma_ge_down, 0.0],
-            [
-                gamma_ge_up,
-                -(gamma_ge_down + gamma_ef_up),
-                gamma_ef_down,
-            ],
-            [0.0, gamma_ef_up, -gamma_ef_down],
-        ],
-        dtype=np.float64,
-    )
-
-
-def _population_trajectory(
+def _safe_fit_target_t1rho(
     times: NDArray[np.float64],
-    initial_population: NDArray[np.float64],
-    rates: ArrayLike,
-) -> NDArray[np.float64]:
-    """Propagate a GEF population under the adjacent-transition rate model."""
-    matrix = _three_level_rate_matrix(rates)
-    return np.stack([expm(matrix * float(time)) @ initial_population for time in times])
-
-
-def _validate_population_series(
-    populations: NDArray[np.float64],
-    *,
-    name: str,
-) -> None:
-    """Validate physical GEF population rows."""
-    if populations.ndim != 2 or populations.shape[1] != len(_STATE_NAMES):
-        raise ValueError(f"{name} must have shape (n_times, 3).")
-    tolerance = 1e-7
-    if np.any(populations < -tolerance) or np.any(populations > 1 + tolerance):
-        raise ValueError(f"{name} must contain probabilities in [0, 1].")
-    if not np.allclose(np.sum(populations, axis=1), 1.0, rtol=1e-6, atol=1e-7):
-        raise ValueError(f"Rows of {name} must sum to one.")
-
-
-def fit_three_level_rate_model(
-    times: ArrayLike,
-    populations_ground: ArrayLike,
-    populations_excited: ArrayLike,
-    standard_errors_ground: ArrayLike | None = None,
-    standard_errors_excited: ArrayLike | None = None,
-) -> ThreeLevelRateFit:
-    """
-    Jointly fit ground/excited initial states to a four-rate adjacent GEF model.
-
-    Parameters
-    ----------
-    times
-        Strictly increasing times beginning at zero, in any consistent unit.
-    populations_ground
-        Populations initialized near g, ordered as g, e, f, with shape
-        `(n_times, 3)`.
-    populations_excited
-        Populations initialized near e, ordered as g, e, f, with shape
-        `(n_times, 3)`.
-    standard_errors_ground
-        Optional nonnegative one-standard-error uncertainties for
-        `populations_ground`, used as absolute fit weights.
-    standard_errors_excited
-        Optional nonnegative one-standard-error uncertainties for
-        `populations_excited`, used as absolute fit weights.
-
-    Returns
-    -------
-    ThreeLevelRateFit
-        Four directed rates and `T1_eff`. Rates are inverse `times` units.
-    """
-    time_array, population_ground = _validate_time_series(
-        times,
-        populations_ground,
-        name="populations_ground",
-        minimum_points=3,
-    )
-    _, population_excited = _validate_time_series(
-        times,
-        populations_excited,
-        name="populations_excited",
-        minimum_points=3,
-    )
-    _validate_population_series(population_ground, name="populations_ground")
-    _validate_population_series(population_excited, name="populations_excited")
-
-    errors_ground = _resolve_standard_errors(
-        standard_errors_ground, population_ground.shape
-    )
-    errors_excited = _resolve_standard_errors(
-        standard_errors_excited, population_excited.shape
-    )
-    weights_ground = (
-        np.ones_like(population_ground) if errors_ground is None else 1 / errors_ground
-    )
-    weights_excited = (
-        np.ones_like(population_excited)
-        if errors_excited is None
-        else 1 / errors_excited
-    )
-    initial_ground = np.clip(population_ground[0], 0.0, 1.0)
-    initial_excited = np.clip(population_excited[0], 0.0, 1.0)
-    initial_ground /= np.sum(initial_ground)
-    initial_excited /= np.sum(initial_excited)
-    time_scale = float(time_array[-1])
-    scaled_times = time_array / time_scale
-
-    def trajectories(
-        scaled_rates: NDArray[np.float64],
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        return (
-            _population_trajectory(scaled_times, initial_ground, scaled_rates),
-            _population_trajectory(scaled_times, initial_excited, scaled_rates),
+    ground: NDArray[np.float64],
+    excited: NDArray[np.float64],
+    ground_errors: NDArray[np.float64] | None,
+    excited_errors: NDArray[np.float64] | None,
+    relative_uncertainty_threshold: float,
+) -> TargetT1RhoFit:
+    """Fit target T1rho while preserving measurements on numerical failure."""
+    try:
+        return fit_target_t1rho(
+            times,
+            ground,
+            excited,
+            ground_errors,
+            excited_errors,
+            relative_uncertainty_threshold=relative_uncertainty_threshold,
+        )
+    except (FloatingPointError, RuntimeError, ValueError, np.linalg.LinAlgError) as exc:
+        return TargetT1RhoFit(
+            success=False,
+            message=str(exc),
+            t1rho=float("nan"),
+            t1rho_error=float("nan"),
+            amplitude_ground=float("nan"),
+            amplitude_excited=float("nan"),
+            amplitude_ground_error=float("nan"),
+            amplitude_excited_error=float("nan"),
+            covariance=np.full((3, 3), np.nan),
+            fitted_ground=np.full(times.shape, np.nan),
+            fitted_excited=np.full(times.shape, np.nan),
+            r_squared=float("nan"),
         )
 
-    def residual(scaled_rates: NDArray[np.float64]) -> NDArray[np.float64]:
-        fitted_ground, fitted_excited = trajectories(scaled_rates)
-        return np.concatenate(
-            (
-                ((fitted_ground - population_ground) * weights_ground).ravel(),
-                ((fitted_excited - population_excited) * weights_excited).ravel(),
-            )
+
+def _safe_fit_target_leakage(
+    times: NDArray[np.float64],
+    ground: NDArray[np.float64],
+    excited: NDArray[np.float64],
+    ground_errors: NDArray[np.float64] | None,
+    excited_errors: NDArray[np.float64] | None,
+    relative_uncertainty_threshold: float,
+) -> TargetLeakageFit:
+    """Fit target leakage while preserving measurements on numerical failure."""
+    try:
+        return fit_target_leakage(
+            times,
+            ground,
+            excited,
+            ground_errors,
+            excited_errors,
+            relative_uncertainty_threshold=relative_uncertainty_threshold,
         )
-
-    def optimize(initial_scale: float):
-        """Run one rate fit from a scalar initial-rate scale."""
-        try:
-            return least_squares(
-                residual,
-                x0=np.full(_RATE_PARAMETER_COUNT, initial_scale),
-                bounds=(0.0, np.inf),
-                x_scale=1.0,
-                max_nfev=30_000,
-            )
-        except (FloatingPointError, RuntimeError, ValueError):
-            return None
-
-    optimizations = [
-        optimization
-        for initial_scale in (0.05, 0.2, 0.7, 2.0)
-        if (optimization := optimize(initial_scale)) is not None
-    ]
-    if not optimizations:
-        return _failed_rate_fit(
-            "All least-squares attempts failed.",
-            initial_ground,
-            initial_excited,
-            time_array.size,
+    except (FloatingPointError, RuntimeError, ValueError, np.linalg.LinAlgError) as exc:
+        return TargetLeakageFit(
+            success=False,
+            message=str(exc),
+            model=None,
+            leakage_rate=float("nan"),
+            seepage_rate=float("nan"),
+            leakage_rate_error=float("nan"),
+            seepage_rate_error=float("nan"),
+            covariance=np.full((2, 2), np.nan),
+            initial_ground=float(ground[0]),
+            initial_excited=float(excited[0]),
+            fitted_ground=np.full(times.shape, np.nan),
+            fitted_excited=np.full(times.shape, np.nan),
+            r_squared=float("nan"),
         )
-
-    optimization = min(optimizations, key=lambda candidate: candidate.cost)
-    scaled_rates = np.asarray(optimization.x, dtype=np.float64)
-    rates = scaled_rates / time_scale
-    fitted_ground, fitted_excited = (
-        _population_trajectory(time_array, initial_ground, rates),
-        _population_trajectory(time_array, initial_excited, rates),
-    )
-    residual_count = population_ground.size + population_excited.size
-    scaled_covariance = _estimate_covariance(
-        np.asarray(optimization.jac, dtype=np.float64),
-        float(optimization.cost),
-        residual_count,
-        _RATE_PARAMETER_COUNT,
-        absolute_weights=errors_ground is not None or errors_excited is not None,
-    )
-    covariance = scaled_covariance / time_scale**2
-    rate_errors = np.sqrt(np.clip(np.diag(covariance), 0.0, np.inf))
-    ge_rate_sum = float(rates[0] + rates[1])
-    t1_eff = 1 / ge_rate_sum if ge_rate_sum > 0 else float("inf")
-    ge_rate_sum_variance = float(
-        covariance[0, 0] + covariance[1, 1] + 2 * covariance[0, 1]
-    )
-    t1_eff_error = (
-        np.sqrt(max(ge_rate_sum_variance, 0.0)) / ge_rate_sum**2
-        if ge_rate_sum > 0
-        else float("nan")
-    )
-    observed = np.concatenate((population_ground.ravel(), population_excited.ravel()))
-    fitted = np.concatenate((fitted_ground.ravel(), fitted_excited.ravel()))
-    return ThreeLevelRateFit(
-        success=bool(optimization.success),
-        message=str(optimization.message),
-        gamma_ge_down=float(rates[0]),
-        gamma_ge_up=float(rates[1]),
-        gamma_ef_down=float(rates[2]),
-        gamma_ef_up=float(rates[3]),
-        gamma_ge_down_error=float(rate_errors[0]),
-        gamma_ge_up_error=float(rate_errors[1]),
-        gamma_ef_down_error=float(rate_errors[2]),
-        gamma_ef_up_error=float(rate_errors[3]),
-        t1_eff=float(t1_eff),
-        t1_eff_error=float(t1_eff_error),
-        covariance=covariance,
-        initial_ground=initial_ground,
-        initial_excited=initial_excited,
-        fitted_ground=fitted_ground,
-        fitted_excited=fitted_excited,
-        r_squared=_r_squared(observed, fitted),
-    )
 
 
 def _failed_rate_fit(
@@ -563,6 +245,7 @@ def _failed_rate_fit(
     return ThreeLevelRateFit(
         success=False,
         message=message,
+        leakage_model=None,
         gamma_ge_down=float("nan"),
         gamma_ge_up=float("nan"),
         gamma_ef_down=float("nan"),
@@ -580,6 +263,35 @@ def _failed_rate_fit(
         fitted_excited=np.full((n_times, len(_STATE_NAMES)), np.nan),
         r_squared=float("nan"),
     )
+
+
+def _safe_fit_three_level_rate_model(
+    times: NDArray[np.float64],
+    populations_ground: NDArray[np.float64],
+    populations_excited: NDArray[np.float64],
+    standard_errors_ground: NDArray[np.float64] | None,
+    standard_errors_excited: NDArray[np.float64] | None,
+    relative_uncertainty_threshold: float,
+) -> ThreeLevelRateFit:
+    """Fit the rate model without discarding measurements on numerical failure."""
+    try:
+        return fit_three_level_rate_model(
+            times,
+            populations_ground,
+            populations_excited,
+            standard_errors_ground,
+            standard_errors_excited,
+            relative_uncertainty_threshold=relative_uncertainty_threshold,
+        )
+    except (FloatingPointError, RuntimeError, ValueError, np.linalg.LinAlgError) as exc:
+        initial_ground = np.asarray(populations_ground[0], dtype=np.float64)
+        initial_excited = np.asarray(populations_excited[0], dtype=np.float64)
+        return _failed_rate_fit(
+            str(exc),
+            initial_ground,
+            initial_excited,
+            times.size,
+        )
 
 
 def _reference_unit(
@@ -601,6 +313,33 @@ def _reference_unit(
             f"({schedule.duration} ns > {duration} ns)."
         )
     return schedule.padded(duration, pad_side="right")
+
+
+def _build_un_echoed_zx90(
+    exp: Experiment,
+    control_qubit: str,
+    target_qubit: str,
+) -> PulseSchedule:
+    """
+    Build a full ZX90 from two identical un-echoed CR primitives.
+
+    Qubex calibrates one ``echo=False`` CR primitive as one lobe of the
+    echoed ZX90 (nominally ZX45). Repeating that schedule twice preserves the
+    calibrated ramps, cancellation tone, rotary tone, sign, and phase while
+    producing the intended un-echoed ZX90 rotation.
+    """
+    cr_lobe = exp.pulse.zx90(control_qubit, target_qubit, echo=False)
+    timing = extract_zx90_gate_timing(cr_lobe)
+    if timing.echo:
+        raise ValueError("exp.pulse.zx90(..., echo=False) returned an echoed CR gate.")
+
+    zx90 = cr_lobe.repeated(2)
+    # ``repeated`` intentionally returns a plain PulseSchedule. Attach
+    # semantic metadata for the full, contiguous CR-active ZX90 so the
+    # fidelity model interprets both physical lobes as one measured gate.
+    zx90.cr_duration = 2 * timing.cr_lobe_duration  # type: ignore[attr-defined]
+    zx90.echo = False  # type: ignore[attr-defined]
+    return zx90
 
 
 def _state_preparation(
@@ -972,6 +711,19 @@ def _validate_protocols(
     return tuple(protocol for protocol in _PROTOCOLS if protocol in requested)
 
 
+def _validate_echo_fit_method(method: str) -> EchoFitMethod:
+    """Validate the requested primary fit model for actual C/D data."""
+    valid_methods: tuple[EchoFitMethod, ...] = (
+        "auto",
+        "forward",
+        "exponential",
+    )
+    if method not in valid_methods:
+        valid_names = ", ".join(valid_methods)
+        raise ValueError(f"echo_fit_method must be one of: {valid_names}.")
+    return cast(EchoFitMethod, method)
+
+
 def _resolve_shot_count(value: int | None, *, default: int, name: str) -> int:
     """Resolve an optional shot count of at least two."""
     resolved = default if value is None else value
@@ -1125,13 +877,15 @@ def _fit_all_results(
         Mapping[str, Mapping[str, NDArray[np.float64]]],
     ],
     control_qubit: str,
+    target_qubit: str,
     protocols: Sequence[_Protocol],
+    relative_uncertainty_threshold: float,
 ) -> dict[str, object]:
     """Fit actual and reference data for every selected protocol."""
     fits: dict[str, object] = {}
     if _CONTROL_GROUND in protocols:
         fits["control_rate_model"] = {
-            kind: fit_three_level_rate_model(
+            kind: _safe_fit_three_level_rate_model(
                 times[_CONTROL_GROUND],
                 populations[_CONTROL_GROUND][kind][control_qubit],
                 populations[_CONTROL_EXCITED][kind][control_qubit],
@@ -1141,33 +895,57 @@ def _fit_all_results(
                 _finite_errors_or_none(
                     population_errors[_CONTROL_EXCITED][kind][control_qubit]
                 ),
+                relative_uncertainty_threshold,
             )
             for kind in ("actual", "reference")
         }
         fits["target_t1rho"] = {
-            protocol: {
-                kind: _safe_fit_exponential_decay(
-                    times[protocol],
-                    target_polarizations[protocol][kind],
-                    _finite_errors_or_none(target_polarization_errors[protocol][kind]),
-                )
-                for kind in ("actual", "reference")
-            }
-            for protocol in _GEF_PROTOCOLS
-        }
-
-    for protocol in _PAULI_PROTOCOLS:
-        if protocol not in protocols:
-            continue
-        basis = _PAULI_COMPONENT_ORDER[protocol][0]
-        fits[protocol] = {
-            kind: _safe_fit_exponential_decay(
-                times[protocol],
-                pauli_expectations[protocol][basis][kind],
-                _finite_errors_or_none(pauli_errors[protocol][basis][kind]),
+            kind: _safe_fit_target_t1rho(
+                times[_CONTROL_GROUND],
+                target_polarizations[_CONTROL_GROUND][kind],
+                target_polarizations[_CONTROL_EXCITED][kind],
+                _finite_errors_or_none(
+                    target_polarization_errors[_CONTROL_GROUND][kind]
+                ),
+                _finite_errors_or_none(
+                    target_polarization_errors[_CONTROL_EXCITED][kind]
+                ),
+                relative_uncertainty_threshold,
             )
             for kind in ("actual", "reference")
         }
+        fits["target_leakage"] = {
+            kind: _safe_fit_target_leakage(
+                times[_CONTROL_GROUND],
+                populations[_CONTROL_GROUND][kind][target_qubit][:, 2],
+                populations[_CONTROL_EXCITED][kind][target_qubit][:, 2],
+                _finite_errors_or_none(
+                    population_errors[_CONTROL_GROUND][kind][target_qubit][:, 2]
+                ),
+                _finite_errors_or_none(
+                    population_errors[_CONTROL_EXCITED][kind][target_qubit][:, 2]
+                ),
+                relative_uncertainty_threshold,
+            )
+            for kind in ("actual", "reference")
+        }
+
+    echo_fits = {
+        protocol: {
+            kind: _safe_fit_exponential_decay(
+                times[protocol],
+                pauli_expectations[protocol][_PAULI_COMPONENT_ORDER[protocol][0]][kind],
+                _finite_errors_or_none(
+                    pauli_errors[protocol][_PAULI_COMPONENT_ORDER[protocol][0]][kind]
+                ),
+            )
+            for kind in ("actual", "reference")
+        }
+        for protocol in _PAULI_PROTOCOLS
+        if protocol in protocols
+    }
+    if echo_fits:
+        fits[_PHENOMENOLOGICAL_ECHO_FITS] = echo_fits
     return fits
 
 
@@ -1225,7 +1003,7 @@ def _rate_curve(
         fit.gamma_ef_down,
         fit.gamma_ef_up,
     )
-    return _population_trajectory(dense_times, initial, rates)
+    return three_level_population_trajectory(dense_times, initial, rates)
 
 
 def _make_control_figure(
@@ -1289,6 +1067,36 @@ def _exponential_curve(
     return fit.offset + fit.amplitude * np.exp(-times / fit.tau)
 
 
+def _target_t1rho_curve(
+    fit: TargetT1RhoFit,
+    protocol: _GefProtocol,
+    times: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Evaluate one branch of the common target T1rho fit."""
+    if not fit.success or not np.isfinite(fit.t1rho) or fit.t1rho <= 0:
+        return np.full(times.shape, np.nan)
+    amplitude = (
+        fit.amplitude_ground if protocol == _CONTROL_GROUND else fit.amplitude_excited
+    )
+    return amplitude * np.exp(-times / fit.t1rho)
+
+
+def _target_leakage_curve(
+    fit: TargetLeakageFit,
+    protocol: _GefProtocol,
+    times: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Evaluate one branch of the common target leakage fit."""
+    if not fit.success:
+        return np.full(times.shape, np.nan)
+    initial = fit.initial_ground if protocol == _CONTROL_GROUND else fit.initial_excited
+    rate_sum = fit.leakage_rate + fit.seepage_rate
+    if rate_sum == 0:
+        return np.full(times.shape, initial)
+    equilibrium = fit.leakage_rate / rate_sum
+    return equilibrium + (initial - equilibrium) * np.exp(-rate_sum * times)
+
+
 def _make_target_figure(
     protocol: _GefProtocol,
     times: NDArray[np.float64],
@@ -1298,7 +1106,8 @@ def _make_target_figure(
     target_qubit: str,
     polarizations: Mapping[str, NDArray[np.float64]],
     polarization_errors: Mapping[str, NDArray[np.float64]],
-    fits: Mapping[str, ExponentialDecayFit],
+    t1rho_fits: Mapping[str, TargetT1RhoFit],
+    leakage_fits: Mapping[str, TargetLeakageFit],
 ) -> go.Figure:
     """Plot target polarization decay and measured F-state leakage."""
     figure = make_subplots(
@@ -1331,7 +1140,7 @@ def _make_target_figure(
         figure.add_trace(
             go.Scatter(
                 x=dense_times * 1e-3,
-                y=_exponential_curve(fits[kind], dense_times),
+                y=_target_t1rho_curve(t1rho_fits[kind], protocol, dense_times),
                 mode="lines",
                 line={"color": COLORS[0], "dash": line_dash},
                 opacity=opacity,
@@ -1349,6 +1158,22 @@ def _make_target_figure(
                 opacity=opacity,
                 error_y=_error_array(population_errors[kind][target_qubit][:, 2]),
                 name=f"{kind} Pf",
+            ),
+            row=2,
+            col=1,
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=dense_times * 1e-3,
+                y=_target_leakage_curve(
+                    leakage_fits[kind],
+                    protocol,
+                    dense_times,
+                ),
+                mode="lines",
+                line={"color": COLORS[2], "dash": line_dash},
+                opacity=opacity,
+                name=f"{kind} Pf fit",
             ),
             row=2,
             col=1,
@@ -1388,6 +1213,7 @@ def _make_pauli_figure(
     fits: Mapping[str, ExponentialDecayFit],
     target: str,
     primary_basis: _PauliBasis,
+    forward_fit: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
 ) -> go.Figure:
     """Plot Pauli data and fit only the protocol's primary component."""
     figure = go.Figure()
@@ -1418,10 +1244,15 @@ def _make_pauli_figure(
                 )
             )
             if basis == primary_basis:
+                if kind == "actual" and forward_fit is not None:
+                    curve_times, curve_values = forward_fit
+                else:
+                    curve_times = dense_times
+                    curve_values = _exponential_curve(fits[kind], dense_times)
                 figure.add_trace(
                     go.Scatter(
-                        x=dense_times * 1e-3,
-                        y=_exponential_curve(fits[kind], dense_times),
+                        x=curve_times * 1e-3,
+                        y=curve_values,
                         mode="lines",
                         line={
                             "color": color,
@@ -1478,8 +1309,12 @@ def _make_figures(
             fits["control_rate_model"],
         )
         t1rho_fits = cast(
-            Mapping[str, Mapping[str, ExponentialDecayFit]],
+            Mapping[str, TargetT1RhoFit],
             fits["target_t1rho"],
+        )
+        leakage_fits = cast(
+            Mapping[str, TargetLeakageFit],
+            fits["target_leakage"],
         )
         for protocol in selected_gef_protocols:
             figures[f"{protocol}_control_populations"] = _make_control_figure(
@@ -1500,13 +1335,30 @@ def _make_figures(
                 target_qubit,
                 target_polarizations[protocol],
                 target_polarization_errors[protocol],
-                t1rho_fits[protocol],
+                t1rho_fits,
+                leakage_fits,
             )
     if _CONTROL_T2_ECHO in protocols:
+        echo_fits = cast(
+            Mapping[str, Mapping[str, ExponentialDecayFit]],
+            fits[_PHENOMENOLOGICAL_ECHO_FITS],
+        )
         control_t2_fits = cast(
             Mapping[str, ExponentialDecayFit],
-            fits[_CONTROL_T2_ECHO],
+            echo_fits[_CONTROL_T2_ECHO],
         )
+        dephasing_fit = cast(
+            CrOnDephasingFit | None,
+            fits.get("cr_on_dephasing"),
+        )
+        control_forward_fit = None
+        if dephasing_fit is not None and dephasing_fit.success:
+            control_forward_fit = (
+                dephasing_fit.curve_n_values
+                * times[_CONTROL_T2_ECHO][-1]
+                / max(dephasing_fit.curve_n_values[-1], 1),
+                dephasing_fit.curve_control_x,
+            )
         figures[_CONTROL_T2_ECHO] = _make_pauli_figure(
             _CONTROL_T2_ECHO,
             times[_CONTROL_T2_ECHO],
@@ -1516,12 +1368,29 @@ def _make_figures(
             control_t2_fits,
             control_qubit,
             "X",
+            control_forward_fit,
         )
     if _TARGET_T2RHO_ECHO in protocols:
+        echo_fits = cast(
+            Mapping[str, Mapping[str, ExponentialDecayFit]],
+            fits[_PHENOMENOLOGICAL_ECHO_FITS],
+        )
         target_t2rho_fits = cast(
             Mapping[str, ExponentialDecayFit],
-            fits[_TARGET_T2RHO_ECHO],
+            echo_fits[_TARGET_T2RHO_ECHO],
         )
+        dephasing_fit = cast(
+            CrOnDephasingFit | None,
+            fits.get("cr_on_dephasing"),
+        )
+        target_forward_fit = None
+        if dephasing_fit is not None and dephasing_fit.success:
+            target_forward_fit = (
+                dephasing_fit.curve_n_values
+                * times[_TARGET_T2RHO_ECHO][-1]
+                / max(dephasing_fit.curve_n_values[-1], 1),
+                dephasing_fit.curve_target_z,
+            )
         figures[_TARGET_T2RHO_ECHO] = _make_pauli_figure(
             _TARGET_T2RHO_ECHO,
             times[_TARGET_T2RHO_ECHO],
@@ -1531,6 +1400,7 @@ def _make_figures(
             target_t2rho_fits,
             target_qubit,
             "Z",
+            target_forward_fit,
         )
     return figures
 
@@ -1552,8 +1422,12 @@ def _summarize_fit_parameters(
             fits["control_rate_model"],
         )
         t1rho_fits = cast(
-            Mapping[str, Mapping[str, ExponentialDecayFit]],
+            Mapping[str, TargetT1RhoFit],
             fits["target_t1rho"],
+        )
+        leakage_fits = cast(
+            Mapping[str, TargetLeakageFit],
+            fits["target_leakage"],
         )
         transition_rates.update(
             {
@@ -1583,32 +1457,213 @@ def _summarize_fit_parameters(
             for kind, fit in rate_fits.items()
         }
         decay_times["T1rho"] = {
-            protocol: {
-                kind: _value_with_error(fit.tau, fit.tau_error)
-                for kind, fit in protocol_fits.items()
+            kind: _value_with_error(fit.t1rho, fit.t1rho_error)
+            for kind, fit in t1rho_fits.items()
+        }
+        transition_rates["target_leakage"] = {
+            kind: {
+                "leakage_rate": _value_with_error(
+                    fit.leakage_rate,
+                    fit.leakage_rate_error,
+                ),
+                "seepage_rate": _value_with_error(
+                    fit.seepage_rate,
+                    fit.seepage_rate_error,
+                ),
+                "model": fit.model,
             }
-            for protocol, protocol_fits in t1rho_fits.items()
+            for kind, fit in leakage_fits.items()
         }
 
-    if _CONTROL_T2_ECHO in fits:
+    echo_fits = cast(
+        Mapping[str, Mapping[str, ExponentialDecayFit]],
+        fits.get(_PHENOMENOLOGICAL_ECHO_FITS, {}),
+    )
+    if _CONTROL_T2_ECHO in echo_fits:
         control_t2_fits = cast(
             Mapping[str, ExponentialDecayFit],
-            fits[_CONTROL_T2_ECHO],
+            echo_fits[_CONTROL_T2_ECHO],
         )
         decay_times["T2_echo"] = {
             kind: _value_with_error(fit.tau, fit.tau_error)
             for kind, fit in control_t2_fits.items()
         }
-    if _TARGET_T2RHO_ECHO in fits:
+    if _TARGET_T2RHO_ECHO in echo_fits:
         target_t2rho_fits = cast(
             Mapping[str, ExponentialDecayFit],
-            fits[_TARGET_T2RHO_ECHO],
+            echo_fits[_TARGET_T2RHO_ECHO],
         )
         decay_times["T2rho_echo"] = {
             kind: _value_with_error(fit.tau, fit.tau_error)
             for kind, fit in target_t2rho_fits.items()
         }
+    if "cr_on_dephasing" in fits:
+        dephasing_fit = cast(CrOnDephasingFit, fits["cr_on_dephasing"])
+        transition_rates["cr_on_dephasing"] = {
+            "gamma_phi_control": _value_with_error(
+                dephasing_fit.gamma_phi_control,
+                dephasing_fit.gamma_phi_control_error,
+            ),
+            "gamma_phi_rho_target": _value_with_error(
+                dephasing_fit.gamma_phi_rho_target,
+                dephasing_fit.gamma_phi_rho_target_error,
+            ),
+        }
     return transition_rates, decay_times
+
+
+def _resolve_idle_noise(
+    exp: Experiment,
+    control_qubit: str,
+    target_qubit: str,
+    idle_t1: Mapping[str, float] | None,
+    idle_t2_echo: Mapping[str, float] | None,
+) -> tuple[IdleQubitNoise, IdleQubitNoise]:
+    """Load or validate the two qubits' idle coherence inputs."""
+    t1_values = (
+        exp.ctx.system_manager.config_loader.load_param_data("t1")
+        if idle_t1 is None
+        else idle_t1
+    )
+    t2_values = (
+        exp.ctx.system_manager.config_loader.load_param_data("t2_echo")
+        if idle_t2_echo is None
+        else idle_t2_echo
+    )
+    try:
+        control_noise = IdleQubitNoise(
+            t1=float(t1_values[control_qubit]),
+            t2_echo=float(t2_values[control_qubit]),
+        )
+        target_noise = IdleQubitNoise(
+            t1=float(t1_values[target_qubit]),
+            t2_echo=float(t2_values[target_qubit]),
+        )
+    except KeyError as exc:
+        raise ValueError(
+            f"Idle coherence data are missing for qubit {exc.args[0]}."
+        ) from exc
+    return control_noise, target_noise
+
+
+def _validate_forward_model_gate_pair(
+    zx90_no_echo: PulseSchedule | None,
+    zx90_echo: PulseSchedule | None,
+) -> None:
+    """Validate timing metadata and echo modes used by the forward model."""
+    if zx90_no_echo is None:
+        raise ValueError("zx90_no_echo is required for the forward model.")
+    if zx90_echo is None:
+        raise ValueError("zx90_echo is required for the forward model.")
+    no_echo_timing = extract_zx90_gate_timing(zx90_no_echo)
+    if no_echo_timing.echo:
+        raise ValueError("zx90_no_echo must be an un-echoed ZX90 gate.")
+    echo_timing = extract_zx90_gate_timing(zx90_echo)
+    if not echo_timing.echo:
+        raise ValueError("zx90_echo must be an echoed ZX90 gate.")
+
+
+def _validate_declared_echo_mode(
+    gate: PulseSchedule,
+    *,
+    parameter_name: str,
+    expected_echo: bool,
+) -> None:
+    """Reject a gate override whose available echo metadata is contradictory."""
+    echo = vars(gate).get("echo")
+    if echo is None:
+        return
+    if not isinstance(echo, bool):
+        raise TypeError(f"{parameter_name} echo metadata must be a boolean.")
+    if echo != expected_echo:
+        expected = "echoed" if expected_echo else "un-echoed"
+        raise ValueError(f"{parameter_name} must be an {expected} ZX90 gate.")
+
+
+def _base_cr_on_noise_from_fits(
+    fits: Mapping[str, object],
+) -> tuple[CrOnNoise | None, str | None]:
+    """Build the measured CR-on dissipation model needed by the forward fit."""
+    rate_fit = cast(
+        Mapping[str, ThreeLevelRateFit],
+        fits["control_rate_model"],
+    )["actual"]
+    t1rho_fit = cast(
+        Mapping[str, TargetT1RhoFit],
+        fits["target_t1rho"],
+    )["actual"]
+    leakage_fit = cast(
+        Mapping[str, TargetLeakageFit],
+        fits["target_leakage"],
+    )["actual"]
+    failed = [
+        name
+        for name, success in (
+            ("control rate", rate_fit.success),
+            ("target T1rho", t1rho_fit.success),
+            ("target leakage", leakage_fit.success),
+        )
+        if not success
+    ]
+    if failed:
+        return None, f"Required fit failed: {', '.join(failed)}."
+    try:
+        noise = CrOnNoise(
+            gamma_control_g_to_e=rate_fit.gamma_ge_up,
+            gamma_control_e_to_g=rate_fit.gamma_ge_down,
+            gamma_control_e_to_f=rate_fit.gamma_ef_up,
+            gamma_control_f_to_e=rate_fit.gamma_ef_down,
+            target_t1rho=t1rho_fit.t1rho,
+            target_leakage_rate=leakage_fit.leakage_rate,
+            target_seepage_rate=leakage_fit.seepage_rate,
+        )
+    except (TypeError, ValueError) as exc:
+        return None, f"Could not construct the CR-on noise model: {exc}"
+    return noise, None
+
+
+def _fidelity_limits(
+    analysis: CrPulseFidelityAnalysis | None,
+) -> dict[str, object] | None:
+    """Build a concise scalar fidelity summary."""
+    if analysis is None:
+        return None
+    if not analysis.success or analysis.simulation is None:
+        return {"success": False, "message": analysis.message}
+    simulation = analysis.simulation
+    return {
+        "success": True,
+        "idle_coherence_limited_fidelity": (simulation.idle_coherence_limited_fidelity),
+        "cr_on_coherence_limited_fidelity": (
+            simulation.cr_on_coherence_limited_fidelity
+        ),
+        "cr_on_dissipative_limited_fidelity": (
+            simulation.cr_on_dissipative_limited_fidelity
+        ),
+        "average_leakage": simulation.average_leakage,
+    }
+
+
+def _print_fidelity_analysis(analysis: CrPulseFidelityAnalysis) -> None:
+    """Print the fidelity limits, or the reason that analysis failed."""
+    simulation = analysis.simulation
+    if not analysis.success or simulation is None:
+        print(f"CR-pulse fidelity simulation failed: {analysis.message}")
+        return
+    print("CR-pulse fidelity simulation:")
+    print(
+        "  Idle coherence limit:       "
+        f"{simulation.idle_coherence_limited_fidelity:.6%}"
+    )
+    print(
+        "  CR-on coherence limit:      "
+        f"{simulation.cr_on_coherence_limited_fidelity:.6%}"
+    )
+    print(
+        "  CR-on dissipative limit:    "
+        f"{simulation.cr_on_dissipative_limited_fidelity:.6%}"
+    )
+    print(f"  Average leakage:             {simulation.average_leakage:.6%}")
 
 
 def characterize_cr_pulse_coherence(
@@ -1617,17 +1672,22 @@ def characterize_cr_pulse_coherence(
     target_qubit: str,
     *,
     protocols: Collection[str] | str | None = None,
-    measure_orthogonal_components: bool = False,
+    measure_orthogonal_components: bool = True,
     n_values: Sequence[int] | None = None,
     zx90_no_echo: PulseSchedule | None = None,
     zx90_echo: PulseSchedule | None = None,
-    n_shots: int | None = None,
-    calibration_n_shots: int | None = None,
+    n_shots: int | None = _DEFAULT_N_SHOTS,
+    calibration_n_shots: int | None = _DEFAULT_CALIBRATION_N_SHOTS,
     shot_interval: float | None = None,
     covariance_rcond: float = 1e-12,
     n_bootstrap: int = 1000,
     bootstrap_seed: int | None = 0,
     bootstrap_confidence_level: float = 0.95,
+    relative_uncertainty_threshold: float = 1.0,
+    echo_fit_method: EchoFitMethod = "auto",
+    run_fidelity_simulation: bool | None = None,
+    idle_t1: Mapping[str, float] | None = None,
+    idle_t2_echo: Mapping[str, float] | None = None,
     enable_tqdm: bool = True,
     plot: bool = True,
 ) -> Result:
@@ -1650,20 +1710,22 @@ def characterize_cr_pulse_coherence(
         always run in the order listed above.
     measure_orthogonal_components
         Whether `control_t2_echo` and `target_t2rho_echo` also measure their two
-        orthogonal Pauli components. Defaults to `False`.
+        orthogonal Pauli components. Defaults to `True`.
     n_values
         Unique increasing nonnegative repetition indices beginning at zero.
         Defaults to `(0, 1, 2, 3, 5, 8, 13, 21, 34, 55)`.
     zx90_no_echo
-        Optional un-echoed ZX90 schedule override.
+        Optional full un-echoed ZX90 schedule override. By default, two
+        identical `exp.pulse.zx90(..., echo=False)` CR lobes are joined to
+        produce a ZX90-equivalent schedule.
     zx90_echo
         Optional echoed ZX90 schedule override.
     n_shots
         Shots per measurement configuration. Must be at least two. Defaults to
-        `DEFAULT_SHOTS`.
+        4096.
     calibration_n_shots
         Shots per GEF calibration configuration. Must be at least two. Defaults
-        to `CALIBRATION_SHOTS`.
+        to 8192.
     shot_interval
         Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
     covariance_rcond
@@ -1674,6 +1736,30 @@ def characterize_cr_pulse_coherence(
         Nonnegative bootstrap seed, or `None` for nondeterministic resampling.
     bootstrap_confidence_level
         Marginal bootstrap confidence level strictly between zero and one.
+    relative_uncertainty_threshold
+        Maximum relative uncertainty retained by the shared target T1rho and
+        population-rate fits. Unresolved leakage/seepage rates use
+        reduced-model fallbacks. Defaults to one.
+    echo_fit_method
+        Primary fit for the actual control-X and target-Z echo curves.
+        `"auto"` uses their joint physical forward model when all four
+        protocols and model inputs are available, otherwise it falls back to
+        offset exponentials. `"forward"` requires the joint model, while
+        `"exponential"` disables it. References always use offset
+        exponentials. Defaults to `"auto"`.
+    run_fidelity_simulation
+        Whether to calculate dissipative ZX90 fidelity limits from the fitted
+        CR-on noise. The default `None` enables it automatically after a
+        successful forward fit. `True` requires the forward-fit inputs;
+        `False` disables only the final fidelity calculation, not fitting.
+    idle_t1
+        Optional qubit-to-T1 mapping in ns for the echo forward model and
+        fidelity simulation. When omitted, the stored `t1` parameters are
+        loaded.
+    idle_t2_echo
+        Optional qubit-to-T2-echo mapping in ns for the echo forward model and
+        fidelity simulation. When omitted, the stored `t2_echo` parameters
+        are loaded.
     enable_tqdm
         Whether to show progress over `n_values`.
     plot
@@ -1683,12 +1769,15 @@ def characterize_cr_pulse_coherence(
     -------
     Result
         Raw measurements, derived observables, actual/reference fits, timing
-        metadata, optional GEF calibration, and figures for selected protocols.
+        metadata, optional GEF calibration and fidelity simulation, and
+        figures for selected protocols.
 
     Notes
     -----
     `control_ground` prepares control `|0>` and target `|+>`, applies an
-    un-echoed ZX90 `4n` times, and finishes with target Y90.
+    un-echoed ZX90 `4n` times, and finishes with target Y90. The default
+    un-echoed ZX90 is two consecutive, same-sign `echo=False` CR primitives;
+    each primitive is one lobe of Qubex's calibrated echoed ZX90.
     `control_excited` uses control `|1>` and the same target preparation and
     analyzer. Their references replace ZX90 by duration-matched target `+X90`
     and `-X90`, respectively.
@@ -1701,18 +1790,41 @@ def characterize_cr_pulse_coherence(
     matched target X90.
 
     GEF calibration is performed only when `control_ground` and
-    `control_excited` are selected. When orthogonal components are requested,
-    `control_t2_echo` measures X/Y/Z and `target_t2rho_echo` measures Z/X/Y,
-    with the primary component listed first. Orthogonal components are plotted
-    as reference information without fitting. The upper plot axis counts ZX90
-    schedule calls; one echoed ZX90 internally contains two physical CR lobes
-    in the current pulse implementation. Fitted rates use `1/ns`; all returned
-    decay times use ns. Convenient scalar summaries are available in
+    `control_excited` are selected. By default, `control_t2_echo` measures
+    X/Y/Z and `target_t2rho_echo` measures Z/X/Y, with the primary component
+    listed first. Set `measure_orthogonal_components=False` to measure only the
+    primary components. Orthogonal components are plotted as reference
+    information without fitting. The upper plot axis counts ZX90 schedule
+    calls; one echoed ZX90 internally contains two physical CR lobes in the
+    current pulse implementation. Fitted rates use `1/ns`; all returned decay
+    times use ns. Convenient scalar summaries are available in
     `result.data["transition_rates"]` and `result.data["decay_times"]`.
+    The forward fit uses only actual data from all four protocols; references
+    remain diagnostics and are never subtracted from CR-on rates. Successful
+    fidelity limits are printed after fitting. In automatic mode, unavailable
+    model inputs select exponential echo fits without affecting measurements.
+
+    The two control-state target-polarization curves share one zero-asymptote
+    T1rho fit, and their F populations share one effective leakage/seepage fit.
+    When the forward fit succeeds, the actual control- and target-echo plot
+    curves come from the full physical model with affine SPAM nuisance
+    parameters, even if final fidelity calculation is disabled. Their
+    reference curves retain the diagnostic exponential fit. Actual
+    exponential fits are also retained as phenomenological decay summaries
+    and as a forward-fit fallback.
     """
     selected_protocols = _validate_protocols(protocols)
+    resolved_echo_fit_method = _validate_echo_fit_method(echo_fit_method)
     if not isinstance(measure_orthogonal_components, bool):
         raise TypeError("measure_orthogonal_components must be a boolean.")
+    if run_fidelity_simulation is not None and not isinstance(
+        run_fidelity_simulation, bool
+    ):
+        raise TypeError("run_fidelity_simulation must be a boolean or None.")
+    if run_fidelity_simulation is True and selected_protocols != _PROTOCOLS:
+        raise ValueError("Fidelity simulation requires all four protocols.")
+    if run_fidelity_simulation is True and resolved_echo_fit_method == "exponential":
+        raise ValueError("Fidelity simulation requires a CR echo-decay forward fit.")
     selected_gef_protocols: tuple[_GefProtocol, ...] = tuple(
         cast(_GefProtocol, protocol)
         for protocol in selected_protocols
@@ -1726,13 +1838,13 @@ def characterize_cr_pulse_coherence(
     normalized_n_values = _validate_n_values(n_values)
     resolved_n_shots = _resolve_shot_count(
         n_shots,
-        default=DEFAULT_SHOTS,
+        default=_DEFAULT_N_SHOTS,
         name="n_shots",
     )
     resolved_calibration_n_shots = (
         _resolve_shot_count(
             calibration_n_shots,
-            default=CALIBRATION_SHOTS,
+            default=_DEFAULT_CALIBRATION_N_SHOTS,
             name="calibration_n_shots",
         )
         if selected_gef_protocols
@@ -1759,15 +1871,81 @@ def characterize_cr_pulse_coherence(
         name="covariance_rcond",
         include_zero=True,
     )
+    resolved_relative_uncertainty_threshold = _positive_real(
+        relative_uncertainty_threshold,
+        default=1.0,
+        name="relative_uncertainty_threshold",
+    )
 
     control = exp.ctx.resolve_qubit_label(control_qubit)
     target = exp.ctx.resolve_qubit_label(target_qubit)
     if control == target:
         raise ValueError("control_qubit and target_qubit must be different.")
     if selected_gef_protocols and zx90_no_echo is None:
-        zx90_no_echo = exp.pulse.zx90(control, target, echo=False)
+        zx90_no_echo = _build_un_echoed_zx90(exp, control, target)
     if selected_pauli_protocols and zx90_echo is None:
         zx90_echo = exp.pulse.zx90(control, target, echo=True)
+    if selected_gef_protocols and zx90_no_echo is not None:
+        _validate_declared_echo_mode(
+            zx90_no_echo,
+            parameter_name="zx90_no_echo",
+            expected_echo=False,
+        )
+    if selected_pauli_protocols and zx90_echo is not None:
+        _validate_declared_echo_mode(
+            zx90_echo,
+            parameter_name="zx90_echo",
+            expected_echo=True,
+        )
+
+    control_idle_noise: IdleQubitNoise | None = None
+    target_idle_noise: IdleQubitNoise | None = None
+    forward_fit_enabled = False
+    forward_fit_skip_reason = (
+        "All four protocols are required for the CR echo-decay forward fit."
+        if selected_protocols != _PROTOCOLS
+        else None
+    )
+    if resolved_echo_fit_method == "forward" and selected_protocols != _PROTOCOLS:
+        raise ValueError(forward_fit_skip_reason)
+    if resolved_echo_fit_method != "exponential" and selected_protocols == _PROTOCOLS:
+        try:
+            _validate_forward_model_gate_pair(zx90_no_echo, zx90_echo)
+            control_idle_noise, target_idle_noise = _resolve_idle_noise(
+                exp,
+                control,
+                target,
+                idle_t1,
+                idle_t2_echo,
+            )
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            forward_fit_skip_reason = str(exc)
+        else:
+            forward_fit_enabled = True
+            forward_fit_skip_reason = None
+    elif resolved_echo_fit_method == "exponential":
+        forward_fit_skip_reason = "echo_fit_method='exponential' was requested."
+    if resolved_echo_fit_method == "forward" and not forward_fit_enabled:
+        raise ValueError(
+            forward_fit_skip_reason or "Forward-fit inputs are unavailable."
+        )
+    if run_fidelity_simulation is True and not forward_fit_enabled:
+        raise ValueError(
+            forward_fit_skip_reason or "Fidelity simulation inputs are unavailable."
+        )
+
+    fidelity_simulation_enabled = (
+        run_fidelity_simulation is not False and forward_fit_enabled
+    )
+    fidelity_simulation_skip_reason = (
+        None
+        if fidelity_simulation_enabled
+        else (
+            "run_fidelity_simulation=False was requested."
+            if run_fidelity_simulation is False
+            else forward_fit_skip_reason
+        )
+    )
 
     calibration: dict[str, GefPopulationCalibration] | None = None
     if selected_gef_protocols:
@@ -1991,8 +2169,112 @@ def characterize_cr_pulse_coherence(
         pauli_expectations,
         pauli_errors,
         control,
+        target,
         selected_protocols,
+        resolved_relative_uncertainty_threshold,
     )
+    base_cr_noise: CrOnNoise | None = None
+    fitted_cr_noise: CrOnNoise | None = None
+    dephasing_fit: CrOnDephasingFit | None = None
+    if forward_fit_enabled:
+        base_cr_noise, fit_input_error = _base_cr_on_noise_from_fits(fits)
+        if fit_input_error is not None:
+            forward_fit_skip_reason = fit_input_error
+        else:
+            try:
+                echo_model = prepare_cr_echo_decay_model(
+                    extract_zx90_gate_timing(cast(PulseSchedule, zx90_echo)),
+                    cast(IdleQubitNoise, control_idle_noise),
+                    cast(IdleQubitNoise, target_idle_noise),
+                    cast(CrOnNoise, base_cr_noise),
+                    exp.pulse.x180(control).duration,
+                    exp.pulse.x180(target).duration,
+                )
+                dephasing_fit = fit_cr_on_dephasing(
+                    echo_model,
+                    normalized_n_values,
+                    pauli_expectations[_CONTROL_T2_ECHO]["X"]["actual"],
+                    pauli_expectations[_TARGET_T2RHO_ECHO]["Z"]["actual"],
+                    _finite_errors_or_none(
+                        pauli_errors[_CONTROL_T2_ECHO]["X"]["actual"]
+                    ),
+                    _finite_errors_or_none(
+                        pauli_errors[_TARGET_T2RHO_ECHO]["Z"]["actual"]
+                    ),
+                )
+                fits["cr_on_dephasing"] = dephasing_fit
+                if dephasing_fit.success:
+                    fitted_cr_noise = replace(
+                        cast(CrOnNoise, base_cr_noise),
+                        gamma_phi_control=dephasing_fit.gamma_phi_control,
+                        gamma_phi_rho_target=dephasing_fit.gamma_phi_rho_target,
+                    )
+                    forward_fit_skip_reason = None
+                else:
+                    forward_fit_skip_reason = dephasing_fit.message
+            except (
+                FloatingPointError,
+                RuntimeError,
+                ValueError,
+                np.linalg.LinAlgError,
+            ) as exc:
+                forward_fit_skip_reason = str(exc)
+
+    primary_echo_fit_model = (
+        None
+        if not selected_pauli_protocols
+        else (
+            "forward"
+            if dephasing_fit is not None and dephasing_fit.success
+            else "offset_exponential"
+        )
+    )
+    fidelity_analysis: CrPulseFidelityAnalysis | None = None
+    if fidelity_simulation_enabled:
+        if fitted_cr_noise is None:
+            fidelity_analysis = CrPulseFidelityAnalysis(
+                success=False,
+                message=(
+                    "CR echo-decay forward fit failed: "
+                    f"{forward_fit_skip_reason or 'unknown failure'}"
+                ),
+                dephasing_fit=dephasing_fit,
+                simulation=None,
+            )
+        else:
+            try:
+                simulation = simulate_cr_pulse_fidelity(
+                    cast(PulseSchedule, zx90_echo),
+                    cast(IdleQubitNoise, control_idle_noise),
+                    cast(IdleQubitNoise, target_idle_noise),
+                    fitted_cr_noise,
+                )
+            except (
+                FloatingPointError,
+                RuntimeError,
+                ValueError,
+                np.linalg.LinAlgError,
+            ) as exc:
+                fidelity_analysis = CrPulseFidelityAnalysis(
+                    success=False,
+                    message=f"Fidelity simulation failed: {exc}",
+                    dephasing_fit=dephasing_fit,
+                    simulation=None,
+                )
+            else:
+                fidelity_analysis = CrPulseFidelityAnalysis(
+                    success=True,
+                    message="Forward fit and fidelity simulation completed.",
+                    dephasing_fit=dephasing_fit,
+                    simulation=simulation,
+                )
+        _print_fidelity_analysis(fidelity_analysis)
+        if not fidelity_analysis.success:
+            fidelity_simulation_skip_reason = fidelity_analysis.message
+    elif run_fidelity_simulation is None and fidelity_simulation_skip_reason:
+        print(
+            f"CR-pulse fidelity simulation skipped: {fidelity_simulation_skip_reason}"
+        )
     transition_rates, decay_times = _summarize_fit_parameters(fits)
     figures = _make_figures(
         times,
@@ -2007,6 +2289,43 @@ def characterize_cr_pulse_coherence(
         control,
         target,
         selected_protocols,
+    )
+    fit_status = {
+        "control_leakage_model": (
+            cast(
+                Mapping[str, ThreeLevelRateFit],
+                fits["control_rate_model"],
+            )["actual"].leakage_model
+            if "control_rate_model" in fits
+            else None
+        ),
+        "target_leakage_model": (
+            cast(
+                Mapping[str, TargetLeakageFit],
+                fits["target_leakage"],
+            )["actual"].model
+            if "target_leakage" in fits
+            else None
+        ),
+        "echo_actual_primary_model": primary_echo_fit_model,
+        "echo_actual_diagnostic_model": (
+            "offset_exponential" if selected_pauli_protocols else None
+        ),
+        "echo_reference_model": (
+            "offset_exponential" if selected_pauli_protocols else None
+        ),
+        "forward_fit_success": bool(
+            dephasing_fit is not None and dephasing_fit.success
+        ),
+        "forward_fit_skip_reason": forward_fit_skip_reason,
+    }
+    fidelity_model_metadata = (
+        {
+            **fidelity_analysis.simulation.model_metadata,
+            **fit_status,
+        }
+        if fidelity_analysis is not None and fidelity_analysis.simulation is not None
+        else None
     )
     if plot:
         for figure in figures.values():
@@ -2037,6 +2356,12 @@ def characterize_cr_pulse_coherence(
             "fits": fits,
             "transition_rates": transition_rates,
             "decay_times": decay_times,
+            "fidelity_analysis": fidelity_analysis,
+            "fidelity_limits": _fidelity_limits(fidelity_analysis),
+            "fidelity_model_metadata": fidelity_model_metadata,
+            "base_cr_on_noise": base_cr_noise,
+            "fitted_cr_on_noise": fitted_cr_noise,
+            "fit_status": fit_status,
             "calibration": calibration,
             "gef_bootstrap": bootstrap,
             "gef_population_fits": aggregate_gef_fits,
@@ -2053,6 +2378,14 @@ def characterize_cr_pulse_coherence(
                 "bootstrap_seed": resolved_bootstrap_seed,
                 "bootstrap_confidence_level": resolved_bootstrap_confidence_level,
                 "measure_orthogonal_components": measure_orthogonal_components,
+                "relative_uncertainty_threshold": (
+                    resolved_relative_uncertainty_threshold
+                ),
+                "echo_fit_method": resolved_echo_fit_method,
+                "forward_fit_enabled": forward_fit_enabled,
+                "run_fidelity_simulation": run_fidelity_simulation,
+                "fidelity_simulation_enabled": fidelity_simulation_enabled,
+                "fidelity_simulation_skip_reason": (fidelity_simulation_skip_reason),
             },
             "pulse_durations": {
                 "zx90_no_echo": (
@@ -2068,6 +2401,8 @@ def characterize_cr_pulse_coherence(
 
 __all__ = [
     "DEFAULT_N_VALUES",
+    "CrPulseFidelityAnalysis",
+    "EchoFitMethod",
     "ExponentialDecayFit",
     "ThreeLevelRateFit",
     "characterize_cr_pulse_coherence",

@@ -17,3 +17,6 @@ def test_contrib_module_is_exported_from_qubex() -> None:
     assert callable(contrib.purity_benchmarking)
     assert callable(contrib.get_superconducting_gap)
     assert callable(contrib.get_resistance_charge)
+    assert callable(contrib.simulate_cr_pulse_fidelity)
+    assert callable(contrib.prepare_cr_echo_decay_model)
+    assert callable(contrib.fit_cr_on_dephasing)
