@@ -4887,6 +4887,7 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
         """
         Scan qubit frequencies to locate resonances.
@@ -4902,10 +4903,14 @@ class Experiment:
         control_amplitude : float | None, optional
             Amplitude of the control pulse. If None, uses the value in
             `self.params.control_amplitude`.
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
         """
         return self.characterization_service.scan_qubit_frequencies(
             target=target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             readout_frequency=readout_frequency,
@@ -4930,11 +4935,21 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
-        """Estimate control amplitude from a resonance scan."""
+        """
+        Estimate control amplitude from a resonance scan.
+
+        Parameters
+        ----------
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
+        """
         return self.characterization_service.estimate_control_amplitude(
             target=target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             target_rabi_rate=target_rabi_rate,
@@ -4956,11 +4971,21 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
-        """Measure qubit resonance over a frequency sweep."""
+        """
+        Measure qubit resonance over a frequency sweep.
+
+        Parameters
+        ----------
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
+        """
         return self.characterization_service.measure_qubit_resonance(
             target=target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             target_rabi_rate=target_rabi_rate,
@@ -4981,11 +5006,22 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        *,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
-        """Run qubit spectroscopy over frequency and power."""
+        """
+        Run qubit spectroscopy over frequency and power.
+
+        Parameters
+        ----------
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
+        """
         return self.characterization_service.qubit_spectroscopy(
             target=target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             power_range=power_range,
             readout_amplitude=readout_amplitude,
             readout_frequency=readout_frequency,
