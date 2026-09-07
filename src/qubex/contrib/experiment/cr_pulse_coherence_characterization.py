@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 from numbers import Integral, Real
@@ -36,10 +36,50 @@ from .gef_population_estimation import (
     measure_gef_populations,
 )
 
-DEFAULT_N_VALUES = (0, 1, 2, 3, 5, 8, 13, 21, 34, 55)
-_PROTOCOLS = ("A", "B", "C", "D")
-_GEF_PROTOCOLS = ("A", "B")
-_GEF_CONDITIONS = ("A_reference", "A", "B_reference", "B")
+_Protocol = Literal[
+    "control_ground",
+    "control_excited",
+    "control_t2_echo",
+    "target_t2rho_echo",
+]
+_GefProtocol = Literal["control_ground", "control_excited"]
+_PauliProtocol = Literal["control_t2_echo", "target_t2rho_echo"]
+_PauliBasis = Literal["X", "Y", "Z"]
+
+DEFAULT_N_VALUES: tuple[int, ...] = (0, 1, 2, 3, 5, 8, 13, 21, 34, 55)
+_CONTROL_GROUND = "control_ground"
+_CONTROL_EXCITED = "control_excited"
+_CONTROL_T2_ECHO = "control_t2_echo"
+_TARGET_T2RHO_ECHO = "target_t2rho_echo"
+_PROTOCOLS: tuple[_Protocol, ...] = (
+    _CONTROL_GROUND,
+    _CONTROL_EXCITED,
+    _CONTROL_T2_ECHO,
+    _TARGET_T2RHO_ECHO,
+)
+_GEF_PROTOCOLS: tuple[_GefProtocol, ...] = (
+    _CONTROL_GROUND,
+    _CONTROL_EXCITED,
+)
+_PAULI_PROTOCOLS: tuple[_PauliProtocol, ...] = (
+    _CONTROL_T2_ECHO,
+    _TARGET_T2RHO_ECHO,
+)
+_PAULI_COMPONENT_ORDER: dict[_PauliProtocol, tuple[_PauliBasis, ...]] = {
+    _CONTROL_T2_ECHO: ("X", "Y", "Z"),
+    _TARGET_T2RHO_ECHO: ("Z", "X", "Y"),
+}
+_PAULI_MARKERS: dict[_PauliBasis, str] = {
+    "X": "circle",
+    "Y": "square",
+    "Z": "triangle-up",
+}
+_PROTOCOL_LABELS: dict[_Protocol, str] = {
+    _CONTROL_GROUND: "Control initialized in |g>",
+    _CONTROL_EXCITED: "Control initialized in |e>",
+    _CONTROL_T2_ECHO: "Control T2 echo",
+    _TARGET_T2RHO_ECHO: "Target T2rho echo",
+}
 _STATE_NAMES = ("g", "e", "f")
 _REFERENCE_OPACITY = 0.38
 _RATE_PARAMETER_COUNT = 4
@@ -75,7 +115,7 @@ class ExponentialDecayFit:
 
 @dataclass(frozen=True)
 class ThreeLevelRateFit:
-    """Store a joint A/B adjacent-transition three-level rate fit."""
+    """Store a joint ground/excited adjacent-transition three-level rate fit."""
 
     success: bool
     message: str
@@ -90,16 +130,16 @@ class ThreeLevelRateFit:
     t1_eff: float
     t1_eff_error: float
     covariance: NDArray[np.float64]
-    initial_a: NDArray[np.float64]
-    initial_b: NDArray[np.float64]
-    fitted_a: NDArray[np.float64]
-    fitted_b: NDArray[np.float64]
+    initial_ground: NDArray[np.float64]
+    initial_excited: NDArray[np.float64]
+    fitted_ground: NDArray[np.float64]
+    fitted_excited: NDArray[np.float64]
     r_squared: float
 
 
 @dataclass(frozen=True)
 class _ProtocolSequences:
-    """Store the eight schedules and timing metadata for one n value."""
+    """Store selected schedules and timing metadata for one n value."""
 
     sequences: dict[str, PulseSchedule]
     evolution_durations: dict[str, float]
@@ -143,6 +183,8 @@ def _resolve_standard_errors(
     errors = np.asarray(standard_errors, dtype=np.float64)
     if errors.shape != shape:
         raise ValueError(f"standard_errors must have shape {shape}.")
+    if np.any(np.isfinite(errors) & (errors < 0)):
+        raise ValueError("standard_errors must be nonnegative where finite.")
     positive = errors[np.isfinite(errors) & (errors > 0)]
     if positive.size == 0:
         return None
@@ -160,9 +202,13 @@ def _estimate_covariance(
     cost: float,
     residual_count: int,
     parameter_count: int,
+    *,
+    absolute_weights: bool,
 ) -> NDArray[np.float64]:
-    """Estimate a least-squares parameter covariance from the fitted Jacobian."""
+    """Estimate covariance using absolute weights or fitted residual variance."""
     covariance = np.linalg.pinv(jacobian.T @ jacobian)
+    if absolute_weights:
+        return covariance
     degrees_of_freedom = residual_count - parameter_count
     if degrees_of_freedom > 0:
         covariance *= 2 * cost / degrees_of_freedom
@@ -195,7 +241,9 @@ def fit_exponential_decay(
     values
         Finite measured values.
     standard_errors
-        Optional one-standard-error uncertainties used as fit weights.
+        Optional nonnegative one-standard-error uncertainties used as absolute
+        fit weights. Missing or zero entries use the median positive error when
+        available; otherwise the fit is unweighted.
 
     Returns
     -------
@@ -247,6 +295,7 @@ def fit_exponential_decay(
         float(optimization.cost),
         value_array.size,
         _EXPONENTIAL_PARAMETER_COUNT,
+        absolute_weights=errors is not None,
     )
     transform = np.diag([1.0, 1.0, time_scale])
     covariance = transform @ scaled_covariance @ transform
@@ -344,55 +393,69 @@ def _validate_population_series(
 
 def fit_three_level_rate_model(
     times: ArrayLike,
-    populations_a: ArrayLike,
-    populations_b: ArrayLike,
-    standard_errors_a: ArrayLike | None = None,
-    standard_errors_b: ArrayLike | None = None,
+    populations_ground: ArrayLike,
+    populations_excited: ArrayLike,
+    standard_errors_ground: ArrayLike | None = None,
+    standard_errors_excited: ArrayLike | None = None,
 ) -> ThreeLevelRateFit:
     """
-    Jointly fit A/B populations to a four-rate adjacent GEF model.
+    Jointly fit ground/excited initial states to a four-rate adjacent GEF model.
 
     Parameters
     ----------
     times
         Strictly increasing times beginning at zero, in any consistent unit.
-    populations_a
-        A populations ordered as g, e, f, with shape `(n_times, 3)`.
-    populations_b
-        B populations ordered as g, e, f, with shape `(n_times, 3)`.
-    standard_errors_a
-        Optional one-standard-error uncertainties for A.
-    standard_errors_b
-        Optional one-standard-error uncertainties for B.
+    populations_ground
+        Populations initialized near g, ordered as g, e, f, with shape
+        `(n_times, 3)`.
+    populations_excited
+        Populations initialized near e, ordered as g, e, f, with shape
+        `(n_times, 3)`.
+    standard_errors_ground
+        Optional nonnegative one-standard-error uncertainties for
+        `populations_ground`, used as absolute fit weights.
+    standard_errors_excited
+        Optional nonnegative one-standard-error uncertainties for
+        `populations_excited`, used as absolute fit weights.
 
     Returns
     -------
     ThreeLevelRateFit
         Four directed rates and `T1_eff`. Rates are inverse `times` units.
     """
-    time_array, population_a = _validate_time_series(
+    time_array, population_ground = _validate_time_series(
         times,
-        populations_a,
-        name="populations_a",
+        populations_ground,
+        name="populations_ground",
         minimum_points=3,
     )
-    _, population_b = _validate_time_series(
+    _, population_excited = _validate_time_series(
         times,
-        populations_b,
-        name="populations_b",
+        populations_excited,
+        name="populations_excited",
         minimum_points=3,
     )
-    _validate_population_series(population_a, name="populations_a")
-    _validate_population_series(population_b, name="populations_b")
+    _validate_population_series(population_ground, name="populations_ground")
+    _validate_population_series(population_excited, name="populations_excited")
 
-    errors_a = _resolve_standard_errors(standard_errors_a, population_a.shape)
-    errors_b = _resolve_standard_errors(standard_errors_b, population_b.shape)
-    weights_a = np.ones_like(population_a) if errors_a is None else 1 / errors_a
-    weights_b = np.ones_like(population_b) if errors_b is None else 1 / errors_b
-    initial_a = np.clip(population_a[0], 0.0, 1.0)
-    initial_b = np.clip(population_b[0], 0.0, 1.0)
-    initial_a /= np.sum(initial_a)
-    initial_b /= np.sum(initial_b)
+    errors_ground = _resolve_standard_errors(
+        standard_errors_ground, population_ground.shape
+    )
+    errors_excited = _resolve_standard_errors(
+        standard_errors_excited, population_excited.shape
+    )
+    weights_ground = (
+        np.ones_like(population_ground) if errors_ground is None else 1 / errors_ground
+    )
+    weights_excited = (
+        np.ones_like(population_excited)
+        if errors_excited is None
+        else 1 / errors_excited
+    )
+    initial_ground = np.clip(population_ground[0], 0.0, 1.0)
+    initial_excited = np.clip(population_excited[0], 0.0, 1.0)
+    initial_ground /= np.sum(initial_ground)
+    initial_excited /= np.sum(initial_excited)
     time_scale = float(time_array[-1])
     scaled_times = time_array / time_scale
 
@@ -400,16 +463,16 @@ def fit_three_level_rate_model(
         scaled_rates: NDArray[np.float64],
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         return (
-            _population_trajectory(scaled_times, initial_a, scaled_rates),
-            _population_trajectory(scaled_times, initial_b, scaled_rates),
+            _population_trajectory(scaled_times, initial_ground, scaled_rates),
+            _population_trajectory(scaled_times, initial_excited, scaled_rates),
         )
 
     def residual(scaled_rates: NDArray[np.float64]) -> NDArray[np.float64]:
-        fitted_a, fitted_b = trajectories(scaled_rates)
+        fitted_ground, fitted_excited = trajectories(scaled_rates)
         return np.concatenate(
             (
-                ((fitted_a - population_a) * weights_a).ravel(),
-                ((fitted_b - population_b) * weights_b).ravel(),
+                ((fitted_ground - population_ground) * weights_ground).ravel(),
+                ((fitted_excited - population_excited) * weights_excited).ravel(),
             )
         )
 
@@ -434,24 +497,25 @@ def fit_three_level_rate_model(
     if not optimizations:
         return _failed_rate_fit(
             "All least-squares attempts failed.",
-            initial_a,
-            initial_b,
+            initial_ground,
+            initial_excited,
             time_array.size,
         )
 
     optimization = min(optimizations, key=lambda candidate: candidate.cost)
     scaled_rates = np.asarray(optimization.x, dtype=np.float64)
     rates = scaled_rates / time_scale
-    fitted_a, fitted_b = (
-        _population_trajectory(time_array, initial_a, rates),
-        _population_trajectory(time_array, initial_b, rates),
+    fitted_ground, fitted_excited = (
+        _population_trajectory(time_array, initial_ground, rates),
+        _population_trajectory(time_array, initial_excited, rates),
     )
-    residual_count = population_a.size + population_b.size
+    residual_count = population_ground.size + population_excited.size
     scaled_covariance = _estimate_covariance(
         np.asarray(optimization.jac, dtype=np.float64),
         float(optimization.cost),
         residual_count,
         _RATE_PARAMETER_COUNT,
+        absolute_weights=errors_ground is not None or errors_excited is not None,
     )
     covariance = scaled_covariance / time_scale**2
     rate_errors = np.sqrt(np.clip(np.diag(covariance), 0.0, np.inf))
@@ -465,8 +529,8 @@ def fit_three_level_rate_model(
         if ge_rate_sum > 0
         else float("nan")
     )
-    observed = np.concatenate((population_a.ravel(), population_b.ravel()))
-    fitted = np.concatenate((fitted_a.ravel(), fitted_b.ravel()))
+    observed = np.concatenate((population_ground.ravel(), population_excited.ravel()))
+    fitted = np.concatenate((fitted_ground.ravel(), fitted_excited.ravel()))
     return ThreeLevelRateFit(
         success=bool(optimization.success),
         message=str(optimization.message),
@@ -481,18 +545,18 @@ def fit_three_level_rate_model(
         t1_eff=float(t1_eff),
         t1_eff_error=float(t1_eff_error),
         covariance=covariance,
-        initial_a=initial_a,
-        initial_b=initial_b,
-        fitted_a=fitted_a,
-        fitted_b=fitted_b,
+        initial_ground=initial_ground,
+        initial_excited=initial_excited,
+        fitted_ground=fitted_ground,
+        fitted_excited=fitted_excited,
         r_squared=_r_squared(observed, fitted),
     )
 
 
 def _failed_rate_fit(
     message: str,
-    initial_a: NDArray[np.float64],
-    initial_b: NDArray[np.float64],
+    initial_ground: NDArray[np.float64],
+    initial_excited: NDArray[np.float64],
     n_times: int,
 ) -> ThreeLevelRateFit:
     """Return a structured failed rate-model fit."""
@@ -510,10 +574,10 @@ def _failed_rate_fit(
         t1_eff=float("nan"),
         t1_eff_error=float("nan"),
         covariance=np.full((_RATE_PARAMETER_COUNT,) * 2, np.nan),
-        initial_a=initial_a,
-        initial_b=initial_b,
-        fitted_a=np.full((n_times, len(_STATE_NAMES)), np.nan),
-        fitted_b=np.full((n_times, len(_STATE_NAMES)), np.nan),
+        initial_ground=initial_ground,
+        initial_excited=initial_excited,
+        fitted_ground=np.full((n_times, len(_STATE_NAMES)), np.nan),
+        fitted_excited=np.full((n_times, len(_STATE_NAMES)), np.nan),
         r_squared=float("nan"),
     )
 
@@ -533,7 +597,7 @@ def _reference_unit(
             schedule.add(labels[0], Blank(0))
     if schedule.duration > duration and not np.isclose(schedule.duration, duration):
         raise ValueError(
-            "A reference single-qubit pulse is longer than the ZX90 schedule "
+            "The reference single-qubit pulse is longer than its ZX90 schedule "
             f"({schedule.duration} ns > {duration} ns)."
         )
     return schedule.padded(duration, pad_side="right")
@@ -560,14 +624,14 @@ def _state_preparation(
     return schedule
 
 
-def _ab_sequence(
+def _gef_sequence(
     exp: Experiment,
     control_qubit: str,
     target_qubit: str,
     control_state: Literal["0", "1"],
     evolution: PulseSchedule,
 ) -> PulseSchedule:
-    """Build an A or B preparation, evolution, and IY90 sequence."""
+    """Build a GEF preparation, evolution, and IY90 sequence."""
     preparation = _state_preparation(
         exp,
         control_qubit,
@@ -583,43 +647,58 @@ def _ab_sequence(
     return schedule
 
 
-def _echo_composite_block(
+def _control_t2_echo_block(
     exp: Experiment,
     control_qubit: str,
     target_qubit: str,
     zx90: PulseSchedule,
-    *,
-    protocol: Literal["C", "D"],
 ) -> PulseSchedule:
-    """Build one two-ZX90 composite block for protocol C or D."""
+    """Build one four-ZX90 block for control T2 echo."""
     with PulseSchedule() as block:
-        for _ in range(2):
-            block.call(zx90, copy=True)
-            block.barrier()
-            if protocol == "C":
-                block.add(control_qubit, exp.pulse.z90())
-                block.add(target_qubit, exp.pulse.x180(target_qubit))
-            else:
-                block.add(control_qubit, exp.pulse.z180())
-                block.add(target_qubit, exp.pulse.x90(target_qubit))
-            block.barrier()
-        if protocol == "C":
-            block.add(control_qubit, exp.pulse.x180(control_qubit))
-        else:
-            block.add(target_qubit, exp.pulse.z180())
+        block.call(zx90, copy=True)
         block.barrier()
+        block.add(control_qubit, exp.pulse.x180(control_qubit))
+        block.barrier()
+
+        block.call(zx90, copy=True)
+        block.barrier()
+        block.add(control_qubit, exp.pulse.x180(control_qubit))
+        block.add(target_qubit, exp.pulse.x180(target_qubit))
+        block.barrier()
+
+        block.call(zx90, copy=True)
+        block.barrier()
+        block.add(control_qubit, exp.pulse.x180(control_qubit))
+        block.barrier()
+
+        block.call(zx90, copy=True)
     return block
 
 
-def _cd_sequence(
+def _target_t2rho_echo_block(
+    exp: Experiment,
+    target_qubit: str,
+    zx90: PulseSchedule,
+) -> PulseSchedule:
+    """Build one two-ZX90 block for target T2rho echo."""
+    with PulseSchedule() as block:
+        block.call(zx90, copy=True)
+        block.barrier()
+        block.add(target_qubit, exp.pulse.z180())
+        block.barrier()
+        block.call(zx90, copy=True)
+    return block
+
+
+def _pauli_sequence(
     exp: Experiment,
     control_qubit: str,
     target_qubit: str,
-    protocol: Literal["C", "D"],
+    protocol: _PauliProtocol,
     evolution: PulseSchedule,
 ) -> PulseSchedule:
-    """Build the preparation and evolution schedule for protocol C or D."""
-    initial_state: Literal["0", "+"] = "+" if protocol == "C" else "0"
+    """Build the preparation and evolution for a Pauli-decay protocol."""
+    initial_state: Literal["0", "+"] = "+" if protocol == _CONTROL_T2_ECHO else "0"
     preparation = _state_preparation(
         exp,
         control_qubit,
@@ -639,143 +718,136 @@ def _build_protocol_sequences(
     target_qubit: str,
     *,
     n: int,
-    zx90_no_echo: PulseSchedule,
-    zx90_echo: PulseSchedule,
+    zx90_no_echo: PulseSchedule | None,
+    zx90_echo: PulseSchedule | None,
+    protocols: Sequence[_Protocol] = _PROTOCOLS,
 ) -> _ProtocolSequences:
     """Build the actual and reference schedules for one sweep point."""
     if isinstance(n, bool) or not isinstance(n, Integral) or n < 0:
         raise ValueError("n must be a nonnegative integer.")
     n = int(n)
+    selected = tuple(protocols)
+    if not selected or any(protocol not in _PROTOCOLS for protocol in selected):
+        valid_names = ", ".join(_PROTOCOLS)
+        raise ValueError(f"protocols must contain only: {valid_names}.")
+    if any(protocol in _GEF_PROTOCOLS for protocol in selected):
+        if zx90_no_echo is None:
+            raise ValueError(
+                "zx90_no_echo is required for control_ground and control_excited."
+            )
+        no_echo_duration = zx90_no_echo.duration
+    else:
+        no_echo_duration = 0.0
+    if any(protocol in _PAULI_PROTOCOLS for protocol in selected):
+        if zx90_echo is None:
+            raise ValueError(
+                "zx90_echo is required for control_t2_echo and target_t2rho_echo."
+            )
+        echo_duration = zx90_echo.duration
+    else:
+        echo_duration = 0.0
+
     cr_label = f"{control_qubit}-{target_qubit}"
     labels = (control_qubit, cr_label, target_qubit)
-    no_echo_duration = zx90_no_echo.duration
-    echo_duration = zx90_echo.duration
-    a_reference_unit = _reference_unit(
-        labels,
-        no_echo_duration,
-        pulse_target=target_qubit,
-        pulse=exp.pulse.x90(target_qubit),
-    )
-    b_reference_unit = _reference_unit(
-        labels,
-        no_echo_duration,
-        pulse_target=target_qubit,
-        pulse=exp.pulse.x90m(target_qubit),
-    )
-    c_reference_unit = _reference_unit(labels, echo_duration)
-    d_reference_unit = _reference_unit(
-        labels,
-        echo_duration,
-        pulse_target=target_qubit,
-        pulse=exp.pulse.x90(target_qubit),
-    )
 
-    a_evolution = zx90_no_echo.repeated(4 * n)
-    a_reference_evolution = a_reference_unit.repeated(4 * n)
-    b_evolution = zx90_no_echo.repeated(4 * n)
-    b_reference_evolution = b_reference_unit.repeated(4 * n)
-    c_block = _echo_composite_block(
-        exp,
-        control_qubit,
-        target_qubit,
-        zx90_echo,
-        protocol="C",
-    )
-    c_reference_block = _echo_composite_block(
-        exp,
-        control_qubit,
-        target_qubit,
-        c_reference_unit,
-        protocol="C",
-    )
-    d_block = _echo_composite_block(
-        exp,
-        control_qubit,
-        target_qubit,
-        zx90_echo,
-        protocol="D",
-    )
-    d_reference_block = _echo_composite_block(
-        exp,
-        control_qubit,
-        target_qubit,
-        d_reference_unit,
-        protocol="D",
-    )
-    c_evolution = c_block.repeated(2 * n)
-    c_reference_evolution = c_reference_block.repeated(2 * n)
-    d_evolution = d_block.repeated(2 * n)
-    d_reference_evolution = d_reference_block.repeated(2 * n)
-
-    evolutions = {
-        "A_reference": a_reference_evolution,
-        "A": a_evolution,
-        "B_reference": b_reference_evolution,
-        "B": b_evolution,
-        "C_reference": c_reference_evolution,
-        "C": c_evolution,
-        "D_reference": d_reference_evolution,
-        "D": d_evolution,
-    }
-    sequences = {
-        "A_reference": _ab_sequence(
+    evolutions: dict[str, PulseSchedule] = {}
+    sequences: dict[str, PulseSchedule] = {}
+    if _CONTROL_GROUND in selected:
+        no_echo_schedule = cast(PulseSchedule, zx90_no_echo)
+        reference_unit = _reference_unit(
+            labels,
+            no_echo_duration,
+            pulse_target=target_qubit,
+            pulse=exp.pulse.x90(target_qubit),
+        )
+        evolutions[_CONTROL_GROUND] = no_echo_schedule.repeated(4 * n)
+        evolutions[f"{_CONTROL_GROUND}_reference"] = reference_unit.repeated(4 * n)
+        sequences[_CONTROL_GROUND] = _gef_sequence(
+            exp, control_qubit, target_qubit, "0", evolutions[_CONTROL_GROUND]
+        )
+        sequences[f"{_CONTROL_GROUND}_reference"] = _gef_sequence(
             exp,
             control_qubit,
             target_qubit,
             "0",
-            a_reference_evolution,
-        ),
-        "A": _ab_sequence(
-            exp,
-            control_qubit,
-            target_qubit,
-            "0",
-            a_evolution,
-        ),
-        "B_reference": _ab_sequence(
+            evolutions[f"{_CONTROL_GROUND}_reference"],
+        )
+
+    if _CONTROL_EXCITED in selected:
+        no_echo_schedule = cast(PulseSchedule, zx90_no_echo)
+        reference_unit = _reference_unit(
+            labels,
+            no_echo_duration,
+            pulse_target=target_qubit,
+            pulse=exp.pulse.x90m(target_qubit),
+        )
+        evolutions[_CONTROL_EXCITED] = no_echo_schedule.repeated(4 * n)
+        evolutions[f"{_CONTROL_EXCITED}_reference"] = reference_unit.repeated(4 * n)
+        sequences[_CONTROL_EXCITED] = _gef_sequence(
+            exp, control_qubit, target_qubit, "1", evolutions[_CONTROL_EXCITED]
+        )
+        sequences[f"{_CONTROL_EXCITED}_reference"] = _gef_sequence(
             exp,
             control_qubit,
             target_qubit,
             "1",
-            b_reference_evolution,
-        ),
-        "B": _ab_sequence(
+            evolutions[f"{_CONTROL_EXCITED}_reference"],
+        )
+
+    if _CONTROL_T2_ECHO in selected:
+        echo_schedule = cast(PulseSchedule, zx90_echo)
+        reference_unit = _reference_unit(labels, echo_duration)
+        evolutions[_CONTROL_T2_ECHO] = _control_t2_echo_block(
+            exp, control_qubit, target_qubit, echo_schedule
+        ).repeated(n)
+        evolutions[f"{_CONTROL_T2_ECHO}_reference"] = _control_t2_echo_block(
+            exp, control_qubit, target_qubit, reference_unit
+        ).repeated(n)
+        sequences[_CONTROL_T2_ECHO] = _pauli_sequence(
             exp,
             control_qubit,
             target_qubit,
-            "1",
-            b_evolution,
-        ),
-        "C_reference": _cd_sequence(
+            _CONTROL_T2_ECHO,
+            evolutions[_CONTROL_T2_ECHO],
+        )
+        sequences[f"{_CONTROL_T2_ECHO}_reference"] = _pauli_sequence(
             exp,
             control_qubit,
             target_qubit,
-            "C",
-            c_reference_evolution,
-        ),
-        "C": _cd_sequence(
+            _CONTROL_T2_ECHO,
+            evolutions[f"{_CONTROL_T2_ECHO}_reference"],
+        )
+
+    if _TARGET_T2RHO_ECHO in selected:
+        echo_schedule = cast(PulseSchedule, zx90_echo)
+        reference_unit = _reference_unit(
+            labels,
+            echo_duration,
+            pulse_target=target_qubit,
+            pulse=exp.pulse.x90(target_qubit),
+        )
+        evolutions[_TARGET_T2RHO_ECHO] = _target_t2rho_echo_block(
+            exp, target_qubit, echo_schedule
+        ).repeated(2 * n)
+        evolutions[f"{_TARGET_T2RHO_ECHO}_reference"] = _target_t2rho_echo_block(
+            exp, target_qubit, reference_unit
+        ).repeated(2 * n)
+        sequences[_TARGET_T2RHO_ECHO] = _pauli_sequence(
             exp,
             control_qubit,
             target_qubit,
-            "C",
-            c_evolution,
-        ),
-        "D_reference": _cd_sequence(
+            _TARGET_T2RHO_ECHO,
+            evolutions[_TARGET_T2RHO_ECHO],
+        )
+        sequences[f"{_TARGET_T2RHO_ECHO}_reference"] = _pauli_sequence(
             exp,
             control_qubit,
             target_qubit,
-            "D",
-            d_reference_evolution,
-        ),
-        "D": _cd_sequence(
-            exp,
-            control_qubit,
-            target_qubit,
-            "D",
-            d_evolution,
-        ),
-    }
-    for protocol in _PROTOCOLS:
+            _TARGET_T2RHO_ECHO,
+            evolutions[f"{_TARGET_T2RHO_ECHO}_reference"],
+        )
+
+    for protocol in selected:
         reference_name = f"{protocol}_reference"
         if not np.isclose(
             evolutions[reference_name].duration,
@@ -808,7 +880,7 @@ def _measure_pauli_expectation(
     exp: Experiment,
     sequence: PulseSchedule,
     target: str,
-    basis: Literal["X", "Z"],
+    basis: _PauliBasis,
     *,
     n_shots: int,
     shot_interval: float,
@@ -816,9 +888,14 @@ def _measure_pauli_expectation(
     """Measure only one requested Pauli basis and estimate its shot error."""
     with PulseSchedule() as measurement_sequence:
         measurement_sequence.call(sequence, copy=True)
+        analyzer: Waveform | None = None
         if basis == "X":
+            analyzer = exp.pulse.y90m(target)
+        elif basis == "Y":
+            analyzer = exp.pulse.x90(target)
+        if analyzer is not None:
             measurement_sequence.barrier()
-            measurement_sequence.add(target, exp.pulse.y90m(target))
+            measurement_sequence.add(target, analyzer)
     measurement = exp.measurement_service.measure(
         sequence=measurement_sequence,
         mode="single",
@@ -870,6 +947,29 @@ def _validate_n_values(n_values: Sequence[int] | None) -> tuple[int, ...]:
     if any(right <= left for left, right in pairwise(normalized)):
         raise ValueError("n_values must be unique and strictly increasing.")
     return normalized
+
+
+def _validate_protocols(
+    protocols: Collection[str] | str | None,
+) -> tuple[_Protocol, ...]:
+    """Return selected protocols in canonical measurement order."""
+    if protocols is None:
+        return _PROTOCOLS
+    requested = (protocols,) if isinstance(protocols, str) else tuple(protocols)
+    if not requested:
+        raise ValueError("protocols must contain at least one protocol.")
+    if len(set(requested)) != len(requested):
+        raise ValueError("protocols must not contain duplicates.")
+    invalid = [protocol for protocol in requested if protocol not in _PROTOCOLS]
+    if invalid:
+        valid_names = ", ".join(_PROTOCOLS)
+        raise ValueError(f"protocols must contain only: {valid_names}.")
+    if (_CONTROL_GROUND in requested) != (_CONTROL_EXCITED in requested):
+        raise ValueError(
+            "control_ground and control_excited must be selected together for "
+            "their joint rate fit."
+        )
+    return tuple(protocol for protocol in _PROTOCOLS if protocol in requested)
 
 
 def _resolve_shot_count(value: int | None, *, default: int, name: str) -> int:
@@ -964,6 +1064,15 @@ def _condition_name(protocol: str, reference: bool) -> str:
     return f"{protocol}_reference" if reference else protocol
 
 
+def _pauli_components(
+    protocol: _PauliProtocol,
+    include_orthogonal: bool,
+) -> tuple[_PauliBasis, ...]:
+    """Return primary-first Pauli components for a Pauli-decay protocol."""
+    components = _PAULI_COMPONENT_ORDER[protocol]
+    return components if include_orthogonal else components[:1]
+
+
 def _bootstrap_name(n: int, condition: str) -> str:
     """Return a globally unique bootstrap sequence name."""
     return f"n={n}/{condition}"
@@ -974,6 +1083,7 @@ def _collect_gef_arrays(
     point_errors: Mapping[str, Mapping[str, list[NDArray[np.float64]]]],
     control_qubit: str,
     target_qubit: str,
+    protocols: Sequence[_GefProtocol],
 ) -> tuple[
     dict[str, dict[str, dict[str, NDArray[np.float64]]]],
     dict[str, dict[str, dict[str, NDArray[np.float64]]]],
@@ -981,7 +1091,7 @@ def _collect_gef_arrays(
     """Convert list-backed population buffers into result arrays."""
     populations: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
     errors: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
-    for protocol in _GEF_PROTOCOLS:
+    for protocol in protocols:
         populations[protocol] = {}
         errors[protocol] = {}
         for kind in ("actual", "reference"):
@@ -1006,54 +1116,59 @@ def _fit_all_results(
     ],
     target_polarizations: Mapping[str, Mapping[str, NDArray[np.float64]]],
     target_polarization_errors: Mapping[str, Mapping[str, NDArray[np.float64]]],
-    pauli_expectations: Mapping[str, Mapping[str, NDArray[np.float64]]],
-    pauli_errors: Mapping[str, Mapping[str, NDArray[np.float64]]],
+    pauli_expectations: Mapping[
+        str,
+        Mapping[str, Mapping[str, NDArray[np.float64]]],
+    ],
+    pauli_errors: Mapping[
+        str,
+        Mapping[str, Mapping[str, NDArray[np.float64]]],
+    ],
     control_qubit: str,
+    protocols: Sequence[_Protocol],
 ) -> dict[str, object]:
-    """Fit actual and reference data for all four protocols."""
-    rate_fits = {
-        kind: fit_three_level_rate_model(
-            times["A"],
-            populations["A"][kind][control_qubit],
-            populations["B"][kind][control_qubit],
-            _finite_errors_or_none(population_errors["A"][kind][control_qubit]),
-            _finite_errors_or_none(population_errors["B"][kind][control_qubit]),
-        )
-        for kind in ("actual", "reference")
-    }
-    t1rho_fits = {
-        protocol: {
-            kind: _safe_fit_exponential_decay(
-                times[protocol],
-                target_polarizations[protocol][kind],
-                _finite_errors_or_none(target_polarization_errors[protocol][kind]),
+    """Fit actual and reference data for every selected protocol."""
+    fits: dict[str, object] = {}
+    if _CONTROL_GROUND in protocols:
+        fits["control_rate_model"] = {
+            kind: fit_three_level_rate_model(
+                times[_CONTROL_GROUND],
+                populations[_CONTROL_GROUND][kind][control_qubit],
+                populations[_CONTROL_EXCITED][kind][control_qubit],
+                _finite_errors_or_none(
+                    population_errors[_CONTROL_GROUND][kind][control_qubit]
+                ),
+                _finite_errors_or_none(
+                    population_errors[_CONTROL_EXCITED][kind][control_qubit]
+                ),
             )
             for kind in ("actual", "reference")
         }
-        for protocol in _GEF_PROTOCOLS
-    }
-    c_fits = {
-        kind: _safe_fit_exponential_decay(
-            times["C"],
-            pauli_expectations["C"][kind],
-            _finite_errors_or_none(pauli_errors["C"][kind]),
-        )
-        for kind in ("actual", "reference")
-    }
-    d_fits = {
-        kind: _safe_fit_exponential_decay(
-            times["D"],
-            pauli_expectations["D"][kind],
-            _finite_errors_or_none(pauli_errors["D"][kind]),
-        )
-        for kind in ("actual", "reference")
-    }
-    return {
-        "control_rate_model": rate_fits,
-        "target_t1rho": t1rho_fits,
-        "control_t2_echo": c_fits,
-        "target_t2rho_echo": d_fits,
-    }
+        fits["target_t1rho"] = {
+            protocol: {
+                kind: _safe_fit_exponential_decay(
+                    times[protocol],
+                    target_polarizations[protocol][kind],
+                    _finite_errors_or_none(target_polarization_errors[protocol][kind]),
+                )
+                for kind in ("actual", "reference")
+            }
+            for protocol in _GEF_PROTOCOLS
+        }
+
+    for protocol in _PAULI_PROTOCOLS:
+        if protocol not in protocols:
+            continue
+        basis = _PAULI_COMPONENT_ORDER[protocol][0]
+        fits[protocol] = {
+            kind: _safe_fit_exponential_decay(
+                times[protocol],
+                pauli_expectations[protocol][basis][kind],
+                _finite_errors_or_none(pauli_errors[protocol][basis][kind]),
+            )
+            for kind in ("actual", "reference")
+        }
+    return fits
 
 
 def _add_top_cr_axis(
@@ -1097,13 +1212,13 @@ def _error_array(errors: NDArray[np.float64]) -> dict[str, object]:
 
 def _rate_curve(
     fit: ThreeLevelRateFit,
-    protocol: Literal["A", "B"],
+    protocol: _GefProtocol,
     dense_times: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Evaluate a fitted rate model for one initial condition."""
     if not fit.success:
         return np.full((dense_times.size, len(_STATE_NAMES)), np.nan)
-    initial = fit.initial_a if protocol == "A" else fit.initial_b
+    initial = fit.initial_ground if protocol == _CONTROL_GROUND else fit.initial_excited
     rates = (
         fit.gamma_ge_down,
         fit.gamma_ge_up,
@@ -1114,7 +1229,7 @@ def _rate_curve(
 
 
 def _make_control_figure(
-    protocol: Literal["A", "B"],
+    protocol: _GefProtocol,
     times: NDArray[np.float64],
     cr_counts: Sequence[int],
     populations: Mapping[str, Mapping[str, NDArray[np.float64]]],
@@ -1157,7 +1272,7 @@ def _make_control_figure(
                 )
             )
     figure.update_layout(
-        title=f"Protocol {protocol}: control {control_qubit} GEF populations",
+        title=f"{_PROTOCOL_LABELS[protocol]}: control {control_qubit} GEF populations",
         yaxis={"title": "Population", "range": [0.0, 1.0]},
     )
     _add_top_cr_axis(figure, times_us, cr_counts)
@@ -1175,7 +1290,7 @@ def _exponential_curve(
 
 
 def _make_target_figure(
-    protocol: Literal["A", "B"],
+    protocol: _GefProtocol,
     times: NDArray[np.float64],
     cr_counts: Sequence[int],
     populations: Mapping[str, Mapping[str, NDArray[np.float64]]],
@@ -1238,7 +1353,7 @@ def _make_target_figure(
             row=2,
             col=1,
         )
-    figure.update_layout(title=f"Protocol {protocol}: target {target_qubit}")
+    figure.update_layout(title=f"{_PROTOCOL_LABELS[protocol]}: target {target_qubit}")
     figure.update_yaxes(title_text="(Pe-Pg)/(Pe+Pg)", range=[-1.05, 1.05], row=1, col=1)
     figure.update_yaxes(title_text="Pf", range=[0.0, 1.0], row=2, col=1)
     maximum = max(float(times_us[-1]), np.finfo(float).eps)
@@ -1265,50 +1380,63 @@ def _make_target_figure(
 
 
 def _make_pauli_figure(
-    protocol: Literal["C", "D"],
+    protocol: _PauliProtocol,
     times: NDArray[np.float64],
     cr_counts: Sequence[int],
-    expectations: Mapping[str, NDArray[np.float64]],
-    errors: Mapping[str, NDArray[np.float64]],
+    expectations: Mapping[str, Mapping[str, NDArray[np.float64]]],
+    errors: Mapping[str, Mapping[str, NDArray[np.float64]]],
     fits: Mapping[str, ExponentialDecayFit],
     target: str,
-    basis: Literal["X", "Z"],
+    primary_basis: _PauliBasis,
 ) -> go.Figure:
-    """Plot a Pauli decay for protocol C or D."""
+    """Plot Pauli data and fit only the protocol's primary component."""
     figure = go.Figure()
     times_us = times * 1e-3
     dense_times = np.linspace(0.0, float(times[-1]), 500)
     for kind in ("reference", "actual"):
         reference = kind == "reference"
         opacity = _REFERENCE_OPACITY if reference else 1.0
-        figure.add_trace(
-            go.Scatter(
-                x=times_us,
-                y=expectations[kind],
-                mode="markers",
-                marker={
-                    "color": COLORS[0],
-                    "symbol": "diamond-open" if reference else "circle",
-                },
-                opacity=opacity,
-                error_y=_error_array(errors[kind]),
-                name=f"{kind} data",
+        for component_index, (basis, component_values) in enumerate(
+            expectations.items()
+        ):
+            color = COLORS[component_index]
+            marker_symbol = _PAULI_MARKERS[cast(_PauliBasis, basis)]
+            if reference:
+                marker_symbol = f"{marker_symbol}-open"
+            figure.add_trace(
+                go.Scatter(
+                    x=times_us,
+                    y=component_values[kind],
+                    mode="markers",
+                    marker={
+                        "color": color,
+                        "symbol": marker_symbol,
+                    },
+                    opacity=opacity,
+                    error_y=_error_array(errors[basis][kind]),
+                    name=f"{kind} <{basis}> data",
+                )
             )
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=dense_times * 1e-3,
-                y=_exponential_curve(fits[kind], dense_times),
-                mode="lines",
-                line={"color": COLORS[0], "dash": "dot" if reference else "solid"},
-                opacity=opacity,
-                name=f"{kind} fit",
-            )
-        )
-    metric = "T2 echo" if protocol == "C" else "T2rho echo"
+            if basis == primary_basis:
+                figure.add_trace(
+                    go.Scatter(
+                        x=dense_times * 1e-3,
+                        y=_exponential_curve(fits[kind], dense_times),
+                        mode="lines",
+                        line={
+                            "color": color,
+                            "dash": "dot" if reference else "solid",
+                        },
+                        opacity=opacity,
+                        name=f"{kind} <{basis}> fit",
+                    )
+                )
+    yaxis_title = (
+        f"<{primary_basis}>" if len(expectations) == 1 else "Pauli expectation"
+    )
     figure.update_layout(
-        title=f"Protocol {protocol}: {target} {metric}",
-        yaxis={"title": f"<{basis}>", "range": [-1.05, 1.05]},
+        title=f"{_PROTOCOL_LABELS[protocol]}: {target}",
+        yaxis={"title": yaxis_title, "range": [-1.05, 1.05]},
     )
     _add_top_cr_axis(figure, times_us, cr_counts)
     return figure
@@ -1324,72 +1452,86 @@ def _make_figures(
     ],
     target_polarizations: Mapping[str, Mapping[str, NDArray[np.float64]]],
     target_polarization_errors: Mapping[str, Mapping[str, NDArray[np.float64]]],
-    pauli_expectations: Mapping[str, Mapping[str, NDArray[np.float64]]],
-    pauli_errors: Mapping[str, Mapping[str, NDArray[np.float64]]],
+    pauli_expectations: Mapping[
+        str,
+        Mapping[str, Mapping[str, NDArray[np.float64]]],
+    ],
+    pauli_errors: Mapping[
+        str,
+        Mapping[str, Mapping[str, NDArray[np.float64]]],
+    ],
     fits: Mapping[str, object],
     control_qubit: str,
     target_qubit: str,
+    protocols: Sequence[_Protocol],
 ) -> dict[str, go.Figure]:
-    """Build the six requested fixed-scale figures."""
-    rate_fits = cast(
-        Mapping[str, ThreeLevelRateFit],
-        fits["control_rate_model"],
-    )
-    t1rho_fits = cast(
-        Mapping[str, Mapping[str, ExponentialDecayFit]],
-        fits["target_t1rho"],
-    )
-    c_fits = cast(
-        Mapping[str, ExponentialDecayFit],
-        fits["control_t2_echo"],
-    )
-    d_fits = cast(
-        Mapping[str, ExponentialDecayFit],
-        fits["target_t2rho_echo"],
-    )
+    """Build fixed-scale figures for the selected protocols."""
     figures: dict[str, go.Figure] = {}
-    for protocol in _GEF_PROTOCOLS:
-        figures[f"{protocol}_control"] = _make_control_figure(
-            protocol,
-            times[protocol],
+    selected_gef_protocols: tuple[_GefProtocol, ...] = tuple(
+        cast(_GefProtocol, protocol)
+        for protocol in protocols
+        if protocol in _GEF_PROTOCOLS
+    )
+    if selected_gef_protocols:
+        rate_fits = cast(
+            Mapping[str, ThreeLevelRateFit],
+            fits["control_rate_model"],
+        )
+        t1rho_fits = cast(
+            Mapping[str, Mapping[str, ExponentialDecayFit]],
+            fits["target_t1rho"],
+        )
+        for protocol in selected_gef_protocols:
+            figures[f"{protocol}_control_populations"] = _make_control_figure(
+                protocol,
+                times[protocol],
+                cr_counts,
+                populations[protocol],
+                population_errors[protocol],
+                control_qubit,
+                rate_fits,
+            )
+            figures[f"{protocol}_target_polarization"] = _make_target_figure(
+                protocol,
+                times[protocol],
+                cr_counts,
+                populations[protocol],
+                population_errors[protocol],
+                target_qubit,
+                target_polarizations[protocol],
+                target_polarization_errors[protocol],
+                t1rho_fits[protocol],
+            )
+    if _CONTROL_T2_ECHO in protocols:
+        control_t2_fits = cast(
+            Mapping[str, ExponentialDecayFit],
+            fits[_CONTROL_T2_ECHO],
+        )
+        figures[_CONTROL_T2_ECHO] = _make_pauli_figure(
+            _CONTROL_T2_ECHO,
+            times[_CONTROL_T2_ECHO],
             cr_counts,
-            populations[protocol],
-            population_errors[protocol],
+            pauli_expectations[_CONTROL_T2_ECHO],
+            pauli_errors[_CONTROL_T2_ECHO],
+            control_t2_fits,
             control_qubit,
-            rate_fits,
+            "X",
         )
-        protocol_t1rho_fits = t1rho_fits[protocol]
-        figures[f"{protocol}_target"] = _make_target_figure(
-            protocol,
-            times[protocol],
+    if _TARGET_T2RHO_ECHO in protocols:
+        target_t2rho_fits = cast(
+            Mapping[str, ExponentialDecayFit],
+            fits[_TARGET_T2RHO_ECHO],
+        )
+        figures[_TARGET_T2RHO_ECHO] = _make_pauli_figure(
+            _TARGET_T2RHO_ECHO,
+            times[_TARGET_T2RHO_ECHO],
             cr_counts,
-            populations[protocol],
-            population_errors[protocol],
+            pauli_expectations[_TARGET_T2RHO_ECHO],
+            pauli_errors[_TARGET_T2RHO_ECHO],
+            target_t2rho_fits,
             target_qubit,
-            target_polarizations[protocol],
-            target_polarization_errors[protocol],
-            protocol_t1rho_fits,
+            "Z",
         )
-    figures["C_control"] = _make_pauli_figure(
-        "C",
-        times["C"],
-        cr_counts,
-        pauli_expectations["C"],
-        pauli_errors["C"],
-        c_fits,
-        control_qubit,
-        "X",
-    )
-    figures["D_target"] = _make_pauli_figure(
-        "D",
-        times["D"],
-        cr_counts,
-        pauli_expectations["D"],
-        pauli_errors["D"],
-        d_fits,
-        target_qubit,
-        "Z",
-    )
     return figures
 
 
@@ -1402,68 +1544,70 @@ def _summarize_fit_parameters(
     fits: Mapping[str, object],
 ) -> tuple[dict[str, object], dict[str, object]]:
     """Build convenient rate and decay-time summaries from fit dataclasses."""
-    rate_fits = cast(
-        Mapping[str, ThreeLevelRateFit],
-        fits["control_rate_model"],
-    )
-    t1rho_fits = cast(
-        Mapping[str, Mapping[str, ExponentialDecayFit]],
-        fits["target_t1rho"],
-    )
-    c_fits = cast(
-        Mapping[str, ExponentialDecayFit],
-        fits["control_t2_echo"],
-    )
-    d_fits = cast(
-        Mapping[str, ExponentialDecayFit],
-        fits["target_t2rho_echo"],
-    )
-    transition_rates = {
-        "unit": "1/ns",
-        **{
-            kind: {
-                "gamma_ge_down": _value_with_error(
-                    fit.gamma_ge_down,
-                    fit.gamma_ge_down_error,
-                ),
-                "gamma_ge_up": _value_with_error(
-                    fit.gamma_ge_up,
-                    fit.gamma_ge_up_error,
-                ),
-                "gamma_ef_down": _value_with_error(
-                    fit.gamma_ef_down,
-                    fit.gamma_ef_down_error,
-                ),
-                "gamma_ef_up": _value_with_error(
-                    fit.gamma_ef_up,
-                    fit.gamma_ef_up_error,
-                ),
+    transition_rates: dict[str, object] = {"unit": "1/ns"}
+    decay_times: dict[str, object] = {"unit": "ns"}
+    if "control_rate_model" in fits:
+        rate_fits = cast(
+            Mapping[str, ThreeLevelRateFit],
+            fits["control_rate_model"],
+        )
+        t1rho_fits = cast(
+            Mapping[str, Mapping[str, ExponentialDecayFit]],
+            fits["target_t1rho"],
+        )
+        transition_rates.update(
+            {
+                kind: {
+                    "gamma_ge_down": _value_with_error(
+                        fit.gamma_ge_down,
+                        fit.gamma_ge_down_error,
+                    ),
+                    "gamma_ge_up": _value_with_error(
+                        fit.gamma_ge_up,
+                        fit.gamma_ge_up_error,
+                    ),
+                    "gamma_ef_down": _value_with_error(
+                        fit.gamma_ef_down,
+                        fit.gamma_ef_down_error,
+                    ),
+                    "gamma_ef_up": _value_with_error(
+                        fit.gamma_ef_up,
+                        fit.gamma_ef_up_error,
+                    ),
+                }
+                for kind, fit in rate_fits.items()
             }
-            for kind, fit in rate_fits.items()
-        },
-    }
-    decay_times = {
-        "unit": "ns",
-        "T1_eff": {
+        )
+        decay_times["T1_eff"] = {
             kind: _value_with_error(fit.t1_eff, fit.t1_eff_error)
             for kind, fit in rate_fits.items()
-        },
-        "T1rho": {
+        }
+        decay_times["T1rho"] = {
             protocol: {
                 kind: _value_with_error(fit.tau, fit.tau_error)
                 for kind, fit in protocol_fits.items()
             }
             for protocol, protocol_fits in t1rho_fits.items()
-        },
-        "T2_echo": {
+        }
+
+    if _CONTROL_T2_ECHO in fits:
+        control_t2_fits = cast(
+            Mapping[str, ExponentialDecayFit],
+            fits[_CONTROL_T2_ECHO],
+        )
+        decay_times["T2_echo"] = {
             kind: _value_with_error(fit.tau, fit.tau_error)
-            for kind, fit in c_fits.items()
-        },
-        "T2rho_echo": {
+            for kind, fit in control_t2_fits.items()
+        }
+    if _TARGET_T2RHO_ECHO in fits:
+        target_t2rho_fits = cast(
+            Mapping[str, ExponentialDecayFit],
+            fits[_TARGET_T2RHO_ECHO],
+        )
+        decay_times["T2rho_echo"] = {
             kind: _value_with_error(fit.tau, fit.tau_error)
-            for kind, fit in d_fits.items()
-        },
-    }
+            for kind, fit in target_t2rho_fits.items()
+        }
     return transition_rates, decay_times
 
 
@@ -1472,6 +1616,8 @@ def characterize_cr_pulse_coherence(
     control_qubit: str,
     target_qubit: str,
     *,
+    protocols: Collection[str] | str | None = None,
+    measure_orthogonal_components: bool = False,
     n_values: Sequence[int] | None = None,
     zx90_no_echo: PulseSchedule | None = None,
     zx90_echo: PulseSchedule | None = None,
@@ -1496,6 +1642,15 @@ def characterize_cr_pulse_coherence(
         Control qubit label.
     target_qubit
         Target qubit label.
+    protocols
+        Protocol or protocols to measure. Supported names are `control_ground`,
+        `control_excited`, `control_t2_echo`, and `target_t2rho_echo`. Defaults
+        to all four. `control_ground` and `control_excited` must be selected
+        together because their four-rate model is fitted jointly. Measurements
+        always run in the order listed above.
+    measure_orthogonal_components
+        Whether `control_t2_echo` and `target_t2rho_echo` also measure their two
+        orthogonal Pauli components. Defaults to `False`.
     n_values
         Unique increasing nonnegative repetition indices beginning at zero.
         Defaults to `(0, 1, 2, 3, 5, 8, 13, 21, 34, 55)`.
@@ -1528,38 +1683,60 @@ def characterize_cr_pulse_coherence(
     -------
     Result
         Raw measurements, derived observables, actual/reference fits, timing
-        metadata, GEF calibration, and six named figures.
+        metadata, optional GEF calibration, and figures for selected protocols.
 
     Notes
     -----
-    Protocol A prepares control `|0>` and target `|+>`, applies an un-echoed
-    ZX90 `4n` times, and finishes with target Y90. Protocol B uses control
-    `|1>` and the same target preparation and analyzer. Their references replace
-    ZX90 by duration-matched target `+X90` and `-X90`, respectively.
+    `control_ground` prepares control `|0>` and target `|+>`, applies an
+    un-echoed ZX90 `4n` times, and finishes with target Y90.
+    `control_excited` uses control `|1>` and the same target preparation and
+    analyzer. Their references replace ZX90 by duration-matched target `+X90`
+    and `-X90`, respectively.
 
-    Protocol C prepares `|+,+>`, repeats
-    `((ZX90_echo -> ZI90 + IX180) * 2 -> XI180)` `2n` times, and measures
-    control X. Protocol D prepares `|0,0>`, repeats
-    `((ZX90_echo -> ZI180 + IX90) * 2 -> IZ180)` `2n` times, and measures
-    target Z. Their ZX90 references are a matched blank and matched target X90.
+    `control_t2_echo` prepares `|+,+>`, repeats
+    `(ZX90_echo -> XI180 -> ZX90_echo -> XI180 + IX180 -> ZX90_echo -> XI180
+    -> ZX90_echo)` `n` times, and measures control X. `target_t2rho_echo`
+    prepares `|0,0>`, repeats `(ZX90_echo -> IZ180 -> ZX90_echo)` `2n` times,
+    and measures target Z. Their ZX90 references are a matched blank and
+    matched target X90.
 
-    This function performs six GEF calibration measurements, then sixteen
-    hardware measurement configurations per n value. The upper plot axis counts
-    ZX90 schedule calls; one echoed ZX90 internally contains two physical CR
-    lobes in the current pulse implementation. Fitted rates use `1/ns`; all
-    returned decay times use ns. Convenient scalar summaries are available in
+    GEF calibration is performed only when `control_ground` and
+    `control_excited` are selected. When orthogonal components are requested,
+    `control_t2_echo` measures X/Y/Z and `target_t2rho_echo` measures Z/X/Y,
+    with the primary component listed first. Orthogonal components are plotted
+    as reference information without fitting. The upper plot axis counts ZX90
+    schedule calls; one echoed ZX90 internally contains two physical CR lobes
+    in the current pulse implementation. Fitted rates use `1/ns`; all returned
+    decay times use ns. Convenient scalar summaries are available in
     `result.data["transition_rates"]` and `result.data["decay_times"]`.
     """
+    selected_protocols = _validate_protocols(protocols)
+    if not isinstance(measure_orthogonal_components, bool):
+        raise TypeError("measure_orthogonal_components must be a boolean.")
+    selected_gef_protocols: tuple[_GefProtocol, ...] = tuple(
+        cast(_GefProtocol, protocol)
+        for protocol in selected_protocols
+        if protocol in _GEF_PROTOCOLS
+    )
+    selected_pauli_protocols: tuple[_PauliProtocol, ...] = tuple(
+        cast(_PauliProtocol, protocol)
+        for protocol in selected_protocols
+        if protocol in _PAULI_PROTOCOLS
+    )
     normalized_n_values = _validate_n_values(n_values)
     resolved_n_shots = _resolve_shot_count(
         n_shots,
         default=DEFAULT_SHOTS,
         name="n_shots",
     )
-    resolved_calibration_n_shots = _resolve_shot_count(
-        calibration_n_shots,
-        default=CALIBRATION_SHOTS,
-        name="calibration_n_shots",
+    resolved_calibration_n_shots = (
+        _resolve_shot_count(
+            calibration_n_shots,
+            default=CALIBRATION_SHOTS,
+            name="calibration_n_shots",
+        )
+        if selected_gef_protocols
+        else None
     )
     resolved_shot_interval = _positive_real(
         shot_interval,
@@ -1587,19 +1764,26 @@ def characterize_cr_pulse_coherence(
     target = exp.ctx.resolve_qubit_label(target_qubit)
     if control == target:
         raise ValueError("control_qubit and target_qubit must be different.")
-    if zx90_no_echo is None:
+    if selected_gef_protocols and zx90_no_echo is None:
         zx90_no_echo = exp.pulse.zx90(control, target, echo=False)
-    if zx90_echo is None:
+    if selected_pauli_protocols and zx90_echo is None:
         zx90_echo = exp.pulse.zx90(control, target, echo=True)
 
-    calibration: dict[str, GefPopulationCalibration] = calibrate_gef_population(
-        exp,
-        targets=[control, target],
-        n_shots=resolved_calibration_n_shots,
-        shot_interval=resolved_shot_interval,
+    calibration: dict[str, GefPopulationCalibration] | None = None
+    if selected_gef_protocols:
+        calibration = calibrate_gef_population(
+            exp,
+            targets=[control, target],
+            n_shots=resolved_calibration_n_shots,
+            shot_interval=resolved_shot_interval,
+        )
+    gef_conditions = tuple(
+        condition
+        for protocol in selected_gef_protocols
+        for condition in (f"{protocol}_reference", protocol)
     )
     point_populations: dict[str, dict[str, list[NDArray[np.float64]]]] = {
-        condition: {control: [], target: []} for condition in _GEF_CONDITIONS
+        condition: {control: [], target: []} for condition in gef_conditions
     }
     point_errors: dict[str, dict[str, list[NDArray[np.float64]]]] = {
         condition: {control: [], target: []} for condition in point_populations
@@ -1614,24 +1798,26 @@ def characterize_cr_pulse_coherence(
         dict[str, dict[str, IQMomentSummary]],
     ] = {}
     bootstrap_key_order: list[tuple[int, str, str]] = []
-    times_buffer: dict[str, list[float]] = {protocol: [] for protocol in _PROTOCOLS}
+    times_buffer: dict[str, list[float]] = {
+        protocol: [] for protocol in selected_protocols
+    }
     cr_pulse_counts_buffer: list[int] = []
     sequence_durations: dict[str, list[float]] = {
         condition: []
-        for protocol in _PROTOCOLS
+        for protocol in selected_protocols
         for condition in (protocol, f"{protocol}_reference")
     }
-    pauli_specs: tuple[
-        tuple[str, str, Literal["X", "Z"]],
-        ...,
-    ] = (
-        ("C_reference", control, "X"),
-        ("C", control, "X"),
-        ("D_reference", target, "Z"),
-        ("D", target, "Z"),
-    )
-    pauli_measurements: dict[str, list[_PauliMeasurement]] = {
-        condition: [] for condition, _, _ in pauli_specs
+    pauli_components = {
+        protocol: _pauli_components(protocol, measure_orthogonal_components)
+        for protocol in selected_pauli_protocols
+    }
+    pauli_measurements: dict[
+        str,
+        dict[_PauliBasis, list[_PauliMeasurement]],
+    ] = {
+        condition: {basis: [] for basis in pauli_components[protocol]}
+        for protocol in selected_pauli_protocols
+        for condition in (f"{protocol}_reference", protocol)
     }
 
     progress = tqdm(
@@ -1647,79 +1833,89 @@ def characterize_cr_pulse_coherence(
             n=n,
             zx90_no_echo=zx90_no_echo,
             zx90_echo=zx90_echo,
+            protocols=selected_protocols,
         )
         cr_pulse_counts_buffer.append(point.cr_pulse_count)
-        for protocol in _PROTOCOLS:
+        for protocol in selected_protocols:
             times_buffer[protocol].append(point.evolution_durations[protocol])
             for condition in (protocol, f"{protocol}_reference"):
                 sequence_durations[condition].append(
                     point.sequences[condition].duration
                 )
 
-        gef_sequences = {
-            condition: point.sequences[condition] for condition in _GEF_CONDITIONS
-        }
-        gef_result = measure_gef_populations(
-            exp,
-            targets=[control, target],
-            sequences=gef_sequences,
-            calibration=calibration,
-            n_shots=resolved_n_shots,
-            shot_interval=resolved_shot_interval,
-            covariance_rcond=resolved_covariance_rcond,
-            n_bootstrap=0,
-        )
-        for condition in gef_sequences:
-            global_name = _bootstrap_name(n, condition)
-            aggregate_raw_iq[global_name] = gef_result.data["raw_iq"][condition]
-            aggregate_gef_fits[global_name] = gef_result.data["fits"][condition]
-            aggregate_moment_summaries[global_name] = gef_result.data[
-                "moment_summaries"
-            ][condition]
-            bootstrap_key_order.append((point_index, condition, global_name))
-            for qubit in (control, target):
-                point_populations[condition][qubit].append(
-                    np.asarray(
-                        gef_result.data["populations"][condition][qubit],
-                        dtype=np.float64,
+        if calibration is not None:
+            gef_sequences = {
+                condition: point.sequences[condition] for condition in gef_conditions
+            }
+            gef_result = measure_gef_populations(
+                exp,
+                targets=[control, target],
+                sequences=gef_sequences,
+                calibration=calibration,
+                n_shots=resolved_n_shots,
+                shot_interval=resolved_shot_interval,
+                covariance_rcond=resolved_covariance_rcond,
+                n_bootstrap=0,
+            )
+            for condition in gef_sequences:
+                global_name = _bootstrap_name(n, condition)
+                aggregate_raw_iq[global_name] = gef_result.data["raw_iq"][condition]
+                aggregate_gef_fits[global_name] = gef_result.data["fits"][condition]
+                aggregate_moment_summaries[global_name] = gef_result.data[
+                    "moment_summaries"
+                ][condition]
+                bootstrap_key_order.append((point_index, condition, global_name))
+                for qubit in (control, target):
+                    point_populations[condition][qubit].append(
+                        np.asarray(
+                            gef_result.data["populations"][condition][qubit],
+                            dtype=np.float64,
+                        )
                     )
-                )
 
-        for condition, measured_qubit, basis in pauli_specs:
-            pauli_measurements[condition].append(
-                _measure_pauli_expectation(
-                    exp,
-                    point.sequences[condition],
-                    measured_qubit,
-                    basis,
-                    n_shots=resolved_n_shots,
-                    shot_interval=resolved_shot_interval,
-                )
-            )
+        for protocol in selected_pauli_protocols:
+            measured_qubit = control if protocol == _CONTROL_T2_ECHO else target
+            for condition in (f"{protocol}_reference", protocol):
+                for basis in pauli_components[protocol]:
+                    pauli_measurements[condition][basis].append(
+                        _measure_pauli_expectation(
+                            exp,
+                            point.sequences[condition],
+                            measured_qubit,
+                            basis,
+                            n_shots=resolved_n_shots,
+                            shot_interval=resolved_shot_interval,
+                        )
+                    )
 
-    bootstrap = bootstrap_gef_populations(
-        calibration,
-        aggregate_raw_iq,
-        n_resamples=resolved_n_bootstrap,
-        seed=resolved_bootstrap_seed,
-        confidence_level=resolved_bootstrap_confidence_level,
-        covariance_rcond=resolved_covariance_rcond,
-    )
+    bootstrap: dict[str, dict[str, GefPopulationBootstrap]] = {}
     bootstrap_lookup: dict[tuple[int, str, str], GefPopulationBootstrap] = {}
-    for point_index, condition, global_name in bootstrap_key_order:
-        for qubit in (control, target):
-            population_bootstrap = bootstrap[global_name][qubit]
-            bootstrap_lookup[(point_index, condition, qubit)] = population_bootstrap
-            point_errors[condition][qubit].append(
-                _population_standard_error(population_bootstrap)
-            )
+    if calibration is not None:
+        bootstrap = bootstrap_gef_populations(
+            calibration,
+            aggregate_raw_iq,
+            n_resamples=resolved_n_bootstrap,
+            seed=resolved_bootstrap_seed,
+            confidence_level=resolved_bootstrap_confidence_level,
+            covariance_rcond=resolved_covariance_rcond,
+        )
+        for point_index, condition, global_name in bootstrap_key_order:
+            for qubit in (control, target):
+                population_bootstrap = bootstrap[global_name][qubit]
+                bootstrap_lookup[(point_index, condition, qubit)] = population_bootstrap
+                point_errors[condition][qubit].append(
+                    _population_standard_error(population_bootstrap)
+                )
 
-    populations, population_errors = _collect_gef_arrays(
-        point_populations,
-        point_errors,
-        control,
-        target,
-    )
+        populations, population_errors = _collect_gef_arrays(
+            point_populations,
+            point_errors,
+            control,
+            target,
+            selected_gef_protocols,
+        )
+    else:
+        populations, population_errors = {}, {}
     times = {
         protocol: np.asarray(values, dtype=np.float64)
         for protocol, values in times_buffer.items()
@@ -1727,7 +1923,7 @@ def characterize_cr_pulse_coherence(
     cr_pulse_counts = tuple(cr_pulse_counts_buffer)
     target_polarizations: dict[str, dict[str, NDArray[np.float64]]] = {}
     target_polarization_errors: dict[str, dict[str, NDArray[np.float64]]] = {}
-    for protocol in _GEF_PROTOCOLS:
+    for protocol in selected_gef_protocols:
         target_polarizations[protocol] = {}
         target_polarization_errors[protocol] = {}
         for kind in ("actual", "reference"):
@@ -1745,35 +1941,46 @@ def characterize_cr_pulse_coherence(
                 dtype=np.float64,
             )
 
-    pauli_expectations: dict[str, dict[str, NDArray[np.float64]]] = {}
-    pauli_errors: dict[str, dict[str, NDArray[np.float64]]] = {}
-    pauli_raw_iq: dict[str, dict[str, list[NDArray[np.complex128]]]] = {}
+    pauli_expectations: dict[
+        str,
+        dict[str, dict[str, NDArray[np.float64]]],
+    ] = {}
+    pauli_errors: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
+    pauli_raw_iq: dict[
+        str,
+        dict[str, dict[str, list[NDArray[np.complex128]]]],
+    ] = {}
     pauli_normalized_shots: dict[
         str,
-        dict[str, list[NDArray[np.float64]]],
+        dict[str, dict[str, list[NDArray[np.float64]]]],
     ] = {}
-    for protocol in ("C", "D"):
+    for protocol in selected_pauli_protocols:
         pauli_expectations[protocol] = {}
         pauli_errors[protocol] = {}
         pauli_raw_iq[protocol] = {}
         pauli_normalized_shots[protocol] = {}
-        for kind in ("actual", "reference"):
-            condition = _condition_name(protocol, kind == "reference")
-            measurements = pauli_measurements[condition]
-            pauli_expectations[protocol][kind] = np.asarray(
-                [measurement.expectation for measurement in measurements],
-                dtype=np.float64,
-            )
-            pauli_errors[protocol][kind] = np.asarray(
-                [measurement.standard_error for measurement in measurements],
-                dtype=np.float64,
-            )
-            pauli_raw_iq[protocol][kind] = [
-                measurement.raw_iq for measurement in measurements
-            ]
-            pauli_normalized_shots[protocol][kind] = [
-                measurement.normalized_shots for measurement in measurements
-            ]
+        for basis in pauli_components[protocol]:
+            pauli_expectations[protocol][basis] = {}
+            pauli_errors[protocol][basis] = {}
+            pauli_raw_iq[protocol][basis] = {}
+            pauli_normalized_shots[protocol][basis] = {}
+            for kind in ("actual", "reference"):
+                condition = _condition_name(protocol, kind == "reference")
+                measurements = pauli_measurements[condition][basis]
+                pauli_expectations[protocol][basis][kind] = np.asarray(
+                    [measurement.expectation for measurement in measurements],
+                    dtype=np.float64,
+                )
+                pauli_errors[protocol][basis][kind] = np.asarray(
+                    [measurement.standard_error for measurement in measurements],
+                    dtype=np.float64,
+                )
+                pauli_raw_iq[protocol][basis][kind] = [
+                    measurement.raw_iq for measurement in measurements
+                ]
+                pauli_normalized_shots[protocol][basis][kind] = [
+                    measurement.normalized_shots for measurement in measurements
+                ]
 
     fits = _fit_all_results(
         times,
@@ -1784,6 +1991,7 @@ def characterize_cr_pulse_coherence(
         pauli_expectations,
         pauli_errors,
         control,
+        selected_protocols,
     )
     transition_rates, decay_times = _summarize_fit_parameters(fits)
     figures = _make_figures(
@@ -1798,6 +2006,7 @@ def characterize_cr_pulse_coherence(
         fits,
         control,
         target,
+        selected_protocols,
     )
     if plot:
         for figure in figures.values():
@@ -1807,6 +2016,8 @@ def characterize_cr_pulse_coherence(
         data={
             "control_qubit": control,
             "target_qubit": target,
+            "protocols": selected_protocols,
+            "pauli_components": pauli_components,
             "state_order": _STATE_NAMES,
             "n_values": normalized_n_values,
             "cr_pulse_counts": cr_pulse_counts,
@@ -1841,13 +2052,16 @@ def characterize_cr_pulse_coherence(
                 "n_bootstrap": resolved_n_bootstrap,
                 "bootstrap_seed": resolved_bootstrap_seed,
                 "bootstrap_confidence_level": resolved_bootstrap_confidence_level,
+                "measure_orthogonal_components": measure_orthogonal_components,
             },
             "pulse_durations": {
-                "zx90_no_echo": zx90_no_echo.duration,
-                "zx90_echo": zx90_echo.duration,
+                "zx90_no_echo": (
+                    None if zx90_no_echo is None else zx90_no_echo.duration
+                ),
+                "zx90_echo": None if zx90_echo is None else zx90_echo.duration,
             },
         },
-        figure=figures["A_control"],
+        figure=next(iter(figures.values())),
         figures=figures,
     )
 

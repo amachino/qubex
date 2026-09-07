@@ -44,10 +44,6 @@ class _DummyPulseService:
         """Return a two-nanosecond negative Y90 stand-in."""
         return Blank(2.0)
 
-    def z90(self) -> VirtualZ:
-        """Return a virtual Z90 pulse."""
-        return VirtualZ(np.pi / 2)
-
     def z180(self) -> VirtualZ:
         """Return a virtual Z180 pulse."""
         return VirtualZ(np.pi)
@@ -85,6 +81,50 @@ def _schedule(duration: float) -> PulseSchedule:
     return schedule
 
 
+def test_control_t2_echo_block_uses_requested_x180_pattern(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control T2 echo should apply XI, XI+IX, and XI between four ZX90s."""
+    exp = _DummyExperiment()
+    x180_targets: list[str] = []
+    original_x180 = exp.pulse.x180
+
+    def record_x180(target: str) -> Blank:
+        x180_targets.append(target)
+        return original_x180(target)
+
+    monkeypatch.setattr(exp.pulse, "x180", record_x180)
+
+    block = module._control_t2_echo_block(
+        exp,  # type: ignore[arg-type]
+        "Q0",
+        "Q1",
+        _schedule(20.0),
+    )
+
+    assert x180_targets == ["Q0", "Q0", "Q1", "Q0"]
+    assert block.duration == pytest.approx(4 * 20.0 + 3 * 4.0)
+
+
+def test_target_t2rho_echo_block_places_z180_between_two_zx90s() -> None:
+    """Target T2rho echo should place one target Z180 between two ZX90s."""
+    block = module._target_t2rho_echo_block(
+        _DummyExperiment(),  # type: ignore[arg-type]
+        "Q1",
+        _schedule(20.0),
+    )
+
+    target_elements = block.get_sequences(copy=True)["Q1"].flattened_elements
+    z_rotations = [
+        element for element in target_elements if isinstance(element, VirtualZ)
+    ]
+    cr_elements = block.get_sequences(copy=True)["Q0-Q1"].flattened_elements
+
+    assert [abs(rotation.theta) for rotation in z_rotations] == pytest.approx([np.pi])
+    assert sum(isinstance(element, Rect) for element in cr_elements) == 2
+    assert block.duration == pytest.approx(2 * 20.0)
+
+
 def test_protocol_references_match_actual_evolution_durations() -> None:
     """Every reference should preserve its protocol's actual evolution time."""
     exp = _DummyExperiment()
@@ -100,7 +140,12 @@ def test_protocol_references_match_actual_evolution_durations() -> None:
         zx90_echo=echo,
     )
 
-    for protocol in ("A", "B", "C", "D"):
+    for protocol in (
+        "control_ground",
+        "control_excited",
+        "control_t2_echo",
+        "target_t2rho_echo",
+    ):
         assert point.sequences[f"{protocol}_reference"].duration == pytest.approx(
             point.sequences[protocol].duration
         )
@@ -110,10 +155,16 @@ def test_protocol_references_match_actual_evolution_durations() -> None:
         for condition in (protocol, f"{protocol}_reference"):
             sequence = point.sequences[condition]
             assert sequence.is_valid()
-    assert point.evolution_durations["A"] == pytest.approx(4 * 3 * 8.0)
-    assert point.evolution_durations["B"] == pytest.approx(4 * 3 * 8.0)
+    assert point.evolution_durations["control_ground"] == pytest.approx(4 * 3 * 8.0)
+    assert point.evolution_durations["control_excited"] == pytest.approx(4 * 3 * 8.0)
+    assert point.evolution_durations["control_t2_echo"] == pytest.approx(
+        3 * (4 * 20.0 + 3 * 4.0)
+    )
+    assert point.evolution_durations["target_t2rho_echo"] == pytest.approx(
+        2 * 3 * (2 * 20.0)
+    )
     assert point.cr_pulse_count == 12
-    for protocol in ("A", "B"):
+    for protocol in ("control_ground", "control_excited"):
         actual = point.sequences[protocol].get_sampled_sequence("Q0-Q1")
         reference = point.sequences[f"{protocol}_reference"].get_sampled_sequence(
             "Q0-Q1"
@@ -121,13 +172,17 @@ def test_protocol_references_match_actual_evolution_durations() -> None:
         unit_nonzero = np.count_nonzero(no_echo.get_sampled_sequence("Q0-Q1"))
         assert np.count_nonzero(actual) == 12 * unit_nonzero
         assert np.count_nonzero(reference) == 0
-    a_reference_target = point.sequences["A_reference"].get_sampled_sequence("Q1")
-    b_reference_target = point.sequences["B_reference"].get_sampled_sequence("Q1")
-    assert np.max(a_reference_target.real) > 0
-    assert np.min(a_reference_target.real) >= 0
-    assert np.min(b_reference_target.real) < 0
-    assert np.max(b_reference_target.real) <= 0
-    for protocol in ("C", "D"):
+    ground_reference_target = point.sequences[
+        "control_ground_reference"
+    ].get_sampled_sequence("Q1")
+    excited_reference_target = point.sequences[
+        "control_excited_reference"
+    ].get_sampled_sequence("Q1")
+    assert np.max(ground_reference_target.real) > 0
+    assert np.min(ground_reference_target.real) >= 0
+    assert np.min(excited_reference_target.real) < 0
+    assert np.max(excited_reference_target.real) <= 0
+    for protocol in ("control_t2_echo", "target_t2rho_echo"):
         actual = point.sequences[protocol].get_sampled_sequence("Q0-Q1")
         reference = point.sequences[f"{protocol}_reference"].get_sampled_sequence(
             "Q0-Q1"
@@ -135,12 +190,18 @@ def test_protocol_references_match_actual_evolution_durations() -> None:
         unit_nonzero = np.count_nonzero(echo.get_sampled_sequence("Q0-Q1"))
         assert np.count_nonzero(actual) == 12 * unit_nonzero
         assert np.count_nonzero(reference) == 0
+    assert (
+        np.count_nonzero(
+            point.sequences["target_t2rho_echo"].get_sampled_sequence("Q1")
+        )
+        == 0
+    )
 
 
 def test_characterization_runs_requested_hardware_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Calibration and A-through-D conditions should run in the requested order."""
+    """Calibration and selected conditions should run in canonical order."""
     exp = _DummyExperiment()
     events: list[object] = []
     calibration = {"Q0": object(), "Q1": object()}
@@ -246,7 +307,15 @@ def test_characterization_runs_requested_hardware_order(
     )
 
     expected_per_n: list[object] = [
-        ("gef", ("A_reference", "A", "B_reference", "B")),
+        (
+            "gef",
+            (
+                "control_ground_reference",
+                "control_ground",
+                "control_excited_reference",
+                "control_excited",
+            ),
+        ),
         "pauli",
         "pauli",
         "pauli",
@@ -260,38 +329,44 @@ def test_characterization_runs_requested_hardware_order(
         "bootstrap",
     ]
     assert result.data["n_values"] == (0, 1, 2)
+    assert result.data["protocols"] == (
+        "control_ground",
+        "control_excited",
+        "control_t2_echo",
+        "target_t2rho_echo",
+    )
     assert result.data["cr_pulse_counts"] == (0, 4, 8)
     assert result.data["state_order"] == ("g", "e", "f")
     assert result.data["transition_rates"]["unit"] == "1/ns"
     assert result.data["decay_times"]["unit"] == "ns"
-    assert result.data["sequence_durations"]["A"][0] == pytest.approx(4.0)
-    assert result.data["sequence_durations"]["B"][0] == pytest.approx(6.0)
-    assert result.data["sequence_durations"]["C"][0] == pytest.approx(2.0)
+    assert result.data["sequence_durations"]["control_ground"][0] == pytest.approx(4.0)
+    assert result.data["sequence_durations"]["control_excited"][0] == pytest.approx(6.0)
+    assert result.data["sequence_durations"]["control_t2_echo"][0] == pytest.approx(2.0)
     assert set(result.figures or {}) == {
-        "A_control",
-        "A_target",
-        "B_control",
-        "B_target",
-        "C_control",
-        "D_target",
+        "control_ground_control_populations",
+        "control_ground_target_polarization",
+        "control_excited_control_populations",
+        "control_excited_target_polarization",
+        "control_t2_echo",
+        "target_t2rho_echo",
     }
-    a_control = result.get_figure("A_control")
-    a_control_data: Any = a_control.data
-    assert a_control_data[0].name == "reference Pg"
-    assert a_control_data[-1].name == "actual fit Pf"
-    a_control_layout: Any = a_control.layout
-    assert tuple(a_control_layout.yaxis.range) == (0.0, 1.0)
-    assert a_control_layout.xaxis.range[0] == 0.0
-    assert tuple(a_control_layout.xaxis2.ticktext) == ("0", "4", "8")
-    a_target = result.get_figure("A_target")
-    a_target_layout: Any = a_target.layout
-    assert tuple(a_target_layout.yaxis.range) == (-1.05, 1.05)
-    assert tuple(a_target_layout.yaxis2.range) == (0.0, 1.0)
-    assert tuple(a_target_layout.xaxis3.ticktext) == ("0", "4", "8")
+    ground_control = result.get_figure("control_ground_control_populations")
+    ground_control_data: Any = ground_control.data
+    assert ground_control_data[0].name == "reference Pg"
+    assert ground_control_data[-1].name == "actual fit Pf"
+    ground_control_layout: Any = ground_control.layout
+    assert tuple(ground_control_layout.yaxis.range) == (0.0, 1.0)
+    assert ground_control_layout.xaxis.range[0] == 0.0
+    assert tuple(ground_control_layout.xaxis2.ticktext) == ("0", "4", "8")
+    ground_target = result.get_figure("control_ground_target_polarization")
+    ground_target_layout: Any = ground_target.layout
+    assert tuple(ground_target_layout.yaxis.range) == (-1.05, 1.05)
+    assert tuple(ground_target_layout.yaxis2.range) == (0.0, 1.0)
+    assert tuple(ground_target_layout.xaxis3.ticktext) == ("0", "4", "8")
 
 
 def test_pauli_measurement_uses_only_requested_basis_analyzer() -> None:
-    """An X measurement should append -Y90 while a Z measurement appends nothing."""
+    """X, Y, and Z measurements should append -Y90, +X90, and no analyzer."""
     exp = _DummyExperiment()
     calls: list[dict[str, object]] = []
 
@@ -312,6 +387,14 @@ def test_pauli_measurement_uses_only_requested_basis_analyzer() -> None:
         n_shots=2,
         shot_interval=1.0,
     )
+    measured_y = module._measure_pauli_expectation(
+        exp,  # type: ignore[arg-type]
+        preparation,
+        "Q0",
+        "Y",
+        n_shots=2,
+        shot_interval=1.0,
+    )
     measured_z = module._measure_pauli_expectation(
         exp,  # type: ignore[arg-type]
         preparation,
@@ -323,9 +406,13 @@ def test_pauli_measurement_uses_only_requested_basis_analyzer() -> None:
 
     assert measured_x.expectation == pytest.approx(2.0)
     assert measured_x.standard_error == pytest.approx(1.0)
+    assert measured_y.expectation == pytest.approx(2.0)
     assert measured_z.expectation == pytest.approx(2.0)
     assert calls[0]["sequence"].duration == pytest.approx(10.0)  # type: ignore[union-attr]
-    assert calls[1]["sequence"].duration == pytest.approx(8.0)  # type: ignore[union-attr]
+    assert calls[1]["sequence"].duration == pytest.approx(10.0)  # type: ignore[union-attr]
+    assert calls[2]["sequence"].duration == pytest.approx(8.0)  # type: ignore[union-attr]
+    y_sequence: Any = calls[1]["sequence"]
+    assert np.max(y_sequence.get_sampled_sequence("Q0").real) > 0
     for call in calls:
         assert call["mode"] == "single"
         assert call["state_classification"] is False
@@ -411,6 +498,207 @@ def test_characterization_rejects_boolean_covariance_cutoff_before_calibration(
             enable_tqdm=False,
             plot=False,
         )
+
+
+@pytest.mark.parametrize(
+    "protocols",
+    [
+        ["control_ground"],
+        ["control_excited"],
+        ["control_ground", "control_t2_echo"],
+        ["control_excited", "target_t2rho_echo"],
+    ],
+)
+def test_characterization_requires_ground_and_excited_as_a_pair(
+    protocols: list[str],
+) -> None:
+    """Ground and excited protocols should be paired for the joint rate fit."""
+    with pytest.raises(
+        ValueError,
+        match="control_ground and control_excited must be selected together",
+    ):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            protocols=protocols,
+            n_values=[0, 1, 2],
+            zx90_no_echo=_schedule(8.0),
+            zx90_echo=_schedule(20.0),
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "protocols",
+    [[], ["control_t2_echo", "control_t2_echo"], ["C"]],
+)
+def test_characterization_rejects_invalid_protocol_selection(
+    protocols: list[str],
+) -> None:
+    """Protocol selection should be nonempty, unique, and use descriptive names."""
+    with pytest.raises(ValueError, match="protocols"):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            protocols=protocols,
+            n_values=[0, 1, 2],
+            zx90_echo=_schedule(20.0),
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("protocol", "measured_qubit", "primary_basis"),
+    [
+        ("control_t2_echo", "Q0", "X"),
+        ("target_t2rho_echo", "Q1", "Z"),
+    ],
+)
+def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+    protocol: str,
+    measured_qubit: str,
+    primary_basis: str,
+) -> None:
+    """A Pauli-only run should skip GEF calibration and unrelated protocols."""
+    calls: list[tuple[str, str]] = []
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("GEF work should not run")
+
+    def fake_measure_pauli(
+        _exp: object,
+        _sequence: PulseSchedule,
+        target: str,
+        basis: str,
+        **kwargs: object,
+    ) -> Any:
+        del kwargs
+        calls.append((target, basis))
+        value = 0.9 * np.exp(-0.1 * len(calls))
+        return module._PauliMeasurement(
+            expectation=value,
+            standard_error=0.01,
+            normalized_shots=np.array([value]),
+            raw_iq=np.array([value + 0j]),
+        )
+
+    monkeypatch.setattr(module, "calibrate_gef_population", forbidden)
+    monkeypatch.setattr(module, "measure_gef_populations", forbidden)
+    monkeypatch.setattr(module, "bootstrap_gef_populations", forbidden)
+    monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
+
+    result = module.characterize_cr_pulse_coherence(
+        _DummyExperiment(),  # type: ignore[arg-type]
+        "Q0",
+        "Q1",
+        protocols=protocol,
+        n_values=[0, 1, 2],
+        zx90_echo=_schedule(20.0),
+        enable_tqdm=False,
+        plot=False,
+    )
+
+    assert calls == [(measured_qubit, primary_basis)] * 6
+    assert result.data["protocols"] == (protocol,)
+    assert result.data["pauli_components"] == {protocol: (primary_basis,)}
+    assert result.data["calibration"] is None
+    assert result.data["populations"] == {}
+    assert set(result.data["sequence_durations"]) == {
+        protocol,
+        f"{protocol}_reference",
+    }
+    assert set(result.figures or {}) == {protocol}
+
+
+def test_characterization_measures_and_plots_orthogonal_components(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Orthogonal components should be measured and plotted without fitting."""
+    calls: list[tuple[str, str]] = []
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("GEF work should not run")
+
+    def fake_measure_pauli(
+        _exp: object,
+        _sequence: PulseSchedule,
+        target: str,
+        basis: str,
+        **kwargs: object,
+    ) -> Any:
+        del kwargs
+        calls.append((target, basis))
+        value = 0.8 * np.exp(-0.02 * len(calls))
+        return module._PauliMeasurement(
+            expectation=value,
+            standard_error=0.01,
+            normalized_shots=np.array([value]),
+            raw_iq=np.array([value + 0j]),
+        )
+
+    monkeypatch.setattr(module, "calibrate_gef_population", forbidden)
+    monkeypatch.setattr(module, "measure_gef_populations", forbidden)
+    monkeypatch.setattr(module, "bootstrap_gef_populations", forbidden)
+    monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
+
+    result = module.characterize_cr_pulse_coherence(
+        _DummyExperiment(),  # type: ignore[arg-type]
+        "Q0",
+        "Q1",
+        protocols=["control_t2_echo", "target_t2rho_echo"],
+        measure_orthogonal_components=True,
+        n_values=[0, 1, 2],
+        zx90_echo=_schedule(20.0),
+        enable_tqdm=False,
+        plot=False,
+    )
+
+    expected_per_n = [
+        *(("Q0", basis) for _ in range(2) for basis in ("X", "Y", "Z")),
+        *(("Q1", basis) for _ in range(2) for basis in ("Z", "X", "Y")),
+    ]
+    assert calls == expected_per_n * 3
+    assert result.data["pauli_components"] == {
+        "control_t2_echo": ("X", "Y", "Z"),
+        "target_t2rho_echo": ("Z", "X", "Y"),
+    }
+    pauli_expectations: Any = result.data["pauli_expectations"]
+    assert set(pauli_expectations["control_t2_echo"]) == {"X", "Y", "Z"}
+    assert "pauli_components" not in result.data["fits"]
+    assert result.data["fits"]["control_t2_echo"]["actual"].success
+    assert "pauli_components" not in result.data["decay_times"]
+    control_t2_traces: Any = result.get_figure("control_t2_echo").data
+    assert len(control_t2_traces) == 8
+    trace_names = {trace.name for trace in control_t2_traces}
+    assert trace_names >= {
+        "reference <Y> data",
+        "actual <Z> data",
+    }
+    assert "actual <Y> fit" not in trace_names
+    assert "reference <Z> fit" not in trace_names
+    actual_markers = {
+        trace.marker.symbol
+        for trace in control_t2_traces
+        if trace.name.startswith("actual") and trace.name.endswith("data")
+    }
+    reference_markers = {
+        trace.marker.symbol
+        for trace in control_t2_traces
+        if trace.name.startswith("reference") and trace.name.endswith("data")
+    }
+    assert len(actual_markers) == 3
+    assert len(reference_markers) == 3
+    assert actual_markers.isdisjoint(reference_markers)
+    target_t2rho_traces: Any = result.get_figure("target_t2rho_echo").data
+    assert len(target_t2rho_traces) == 8
+    target_trace_names = {trace.name for trace in target_t2rho_traces}
+    assert "actual <X> fit" not in target_trace_names
+    assert "reference <Y> fit" not in target_trace_names
 
 
 @pytest.mark.parametrize("n_values", [[1, 2], [0, 2, 1], [0, 1, 1], [0, -1]])

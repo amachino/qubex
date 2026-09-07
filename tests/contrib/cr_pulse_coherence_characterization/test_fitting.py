@@ -36,16 +36,16 @@ def _trajectory(
 
 
 def test_three_level_fit_recovers_four_independent_adjacent_rates() -> None:
-    """A joint A/B fit should recover independent GE and EF transition rates."""
+    """A ground/excited fit should recover independent GE and EF rates."""
     times = np.array([0, 800, 1600, 3000, 5000, 8000, 13_000, 21_000.0])
     rates = (2.5e-5, 4.0e-6, 4.2e-5, 7.0e-6)
-    initial_a = np.array([0.97, 0.02, 0.01])
-    initial_b = np.array([0.03, 0.94, 0.03])
+    initial_ground = np.array([0.97, 0.02, 0.01])
+    initial_excited = np.array([0.03, 0.94, 0.03])
 
     fit = fit_three_level_rate_model(
         times,
-        _trajectory(times, initial_a, rates),
-        _trajectory(times, initial_b, rates),
+        _trajectory(times, initial_ground, rates),
+        _trajectory(times, initial_excited, rates),
     )
 
     assert fit.success
@@ -61,8 +61,44 @@ def test_three_level_fit_recovers_four_independent_adjacent_rates() -> None:
         atol=1e-10,
     )
     assert fit.t1_eff == pytest.approx(1 / (rates[0] + rates[1]), rel=2e-4)
-    assert_allclose(fit.fitted_a, _trajectory(times, initial_a, rates), atol=1e-7)
-    assert_allclose(fit.fitted_b, _trajectory(times, initial_b, rates), atol=1e-7)
+    assert_allclose(
+        fit.fitted_ground,
+        _trajectory(times, initial_ground, rates),
+        atol=1e-7,
+    )
+    assert_allclose(
+        fit.fitted_excited,
+        _trajectory(times, initial_excited, rates),
+        atol=1e-7,
+    )
+
+
+def test_weighted_rate_fit_preserves_absolute_error_scale() -> None:
+    """Doubling population errors should double fitted rate errors."""
+    times = np.array([0, 800, 1600, 3000, 5000, 8000, 13_000, 21_000.0])
+    rates = (2.5e-5, 4.0e-6, 4.2e-5, 7.0e-6)
+    ground = _trajectory(times, np.array([0.97, 0.02, 0.01]), rates)
+    excited = _trajectory(times, np.array([0.03, 0.94, 0.03]), rates)
+
+    fit = fit_three_level_rate_model(
+        times,
+        ground,
+        excited,
+        np.full(ground.shape, 0.01),
+        np.full(excited.shape, 0.01),
+    )
+    doubled_error_fit = fit_three_level_rate_model(
+        times,
+        ground,
+        excited,
+        np.full(ground.shape, 0.02),
+        np.full(excited.shape, 0.02),
+    )
+
+    assert fit.gamma_ge_down_error > 0.0
+    assert doubled_error_fit.gamma_ge_down_error / fit.gamma_ge_down_error == (
+        pytest.approx(2.0, rel=1e-6)
+    )
 
 
 def test_exponential_fit_recovers_offset_decay() -> None:
@@ -78,6 +114,22 @@ def test_exponential_fit_recovers_offset_decay() -> None:
     assert fit.offset == pytest.approx(-0.12, rel=1e-5)
     assert fit.tau == pytest.approx(3200.0, rel=1e-5)
     assert_allclose(fit.fitted_values, values, atol=1e-7)
+
+
+def test_weighted_exponential_fit_preserves_absolute_error_scale() -> None:
+    """Doubling known data errors should double fitted parameter errors."""
+    times = np.array([0, 500, 1000, 2000, 3500, 5500, 8000.0])
+    values = -0.12 + 0.91 * np.exp(-times / 3200.0)
+
+    fit = fit_exponential_decay(times, values, np.full(times.shape, 0.01))
+    doubled_error_fit = fit_exponential_decay(
+        times,
+        values,
+        np.full(times.shape, 0.02),
+    )
+
+    assert fit.tau_error > 0.0
+    assert doubled_error_fit.tau_error / fit.tau_error == pytest.approx(2.0, rel=1e-6)
 
 
 @pytest.mark.parametrize(
@@ -101,3 +153,13 @@ def test_exponential_fit_rejects_scalar_values_cleanly() -> None:
     """A scalar value input should raise ValueError instead of leaking IndexError."""
     with pytest.raises(ValueError, match="values must be at least one-dimensional"):
         fit_exponential_decay([0.0, 1.0, 2.0], 1.0)
+
+
+def test_exponential_fit_rejects_negative_standard_errors() -> None:
+    """Finite negative standard errors should be rejected instead of ignored."""
+    with pytest.raises(ValueError, match="standard_errors must be nonnegative"):
+        fit_exponential_decay(
+            [0.0, 1.0, 2.0],
+            [1.0, 0.5, 0.25],
+            [0.1, -0.1, 0.1],
+        )
