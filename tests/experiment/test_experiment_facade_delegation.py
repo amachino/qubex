@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, cast
+from unittest.mock import Mock
 
 import pytest
 
@@ -1236,3 +1237,35 @@ def test_get_dc_voltage_state_delegates_to_context() -> None:
         output="on",
     )
     assert context_stub.calls == [("get_dc_voltage_state", {"mux": 6})]
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "scan_qubit_frequencies",
+        "qubit_spectroscopy",
+        "measure_qubit_resonance",
+        "estimate_control_amplitude",
+    ],
+)
+@pytest.mark.parametrize("simultaneous_drive", [None, True, False])
+def test_spectroscopy_delegates_drive_timing(method, simultaneous_drive) -> None:
+    """Experiment should forward drive timing and shot settings to characterization."""
+    exp = object.__new__(Experiment)
+    service = Mock()
+    exp.__dict__["_characterization_service"] = service
+    delegate = getattr(service, method)
+
+    result = getattr(exp, method)(
+        "Q00",
+        frequency_range=[5.0, 5.01],
+        simultaneous_drive=simultaneous_drive,
+        n_shots=32,
+        shot_interval=100.0,
+    )
+
+    assert result is delegate.return_value
+    delegate.assert_called_once()
+    assert delegate.call_args.kwargs["simultaneous_drive"] is simultaneous_drive
+    assert delegate.call_args.kwargs["shots"] == 32
+    assert delegate.call_args.kwargs["interval"] == 100.0
