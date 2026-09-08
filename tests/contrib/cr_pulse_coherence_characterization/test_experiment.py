@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -11,8 +12,11 @@ import numpy as np
 import pytest
 from scipy.linalg import expm
 
-from qubex.contrib.experiment import cr_pulse_coherence_characterization as module
-from qubex.contrib.experiment.cr_pulse_coherence_fitting import CrOnDephasingFit
+from qubex.contrib.experiment import (
+    cr_pulse_coherence_analysis as analysis_module,
+    cr_pulse_coherence_characterization as module,
+)
+from qubex.contrib.experiment.cr_pulse_coherence_analysis import CrOnDephasingFit
 from qubex.contrib.experiment.cr_pulse_fidelity_simulation import (
     CrPulseFidelitySimulationResult,
 )
@@ -366,31 +370,32 @@ def test_characterization_runs_requested_hardware_order(
         *expected_per_n,
         "bootstrap",
     ]
-    assert result.data["n_values"] == (0, 1, 2)
-    assert result.data["protocols"] == (
+    measurements = result.data["measurements"]
+    analysis = result.data["analysis"]
+    assert measurements.n_values == (0, 1, 2)
+    assert measurements.protocols == (
         "control_ground",
         "control_excited",
         "control_t2_echo",
         "target_t2rho_echo",
     )
-    assert result.data["cr_pulse_counts"] == (0, 4, 8)
-    assert result.data["state_order"] == ("g", "e", "f")
-    assert result.data["transition_rates"]["unit"] == "1/ns"
-    assert result.data["decay_times"]["unit"] == "ns"
-    assert result.data["fidelity_analysis"] is None
-    assert result.data["fidelity_limits"] is None
-    assert not result.data["measurement_options"]["fidelity_simulation_enabled"]
+    assert measurements.cr_pulse_counts == (0, 4, 8)
+    assert analysis.transition_rates["unit"] == "1/ns"
+    assert analysis.decay_times["unit"] == "ns"
+    assert analysis.fidelity_analysis is None
     assert result.data["measurement_options"]["n_shots"] == 4096
     assert result.data["measurement_options"]["calibration_n_shots"] == 8192
-    assert (
-        "cr_duration"
-        in result.data["measurement_options"]["fidelity_simulation_skip_reason"]
+    assert "cr_duration" in result.data["analysis_options"]["forward_model_error"]
+    assert set(analysis.fits["target_t1rho"]) == {"actual", "reference"}
+    assert set(analysis.fits["target_leakage"]) == {"actual", "reference"}
+    assert all(
+        fit.model == "leakage_corrected"
+        for fit in analysis.fits["target_t1rho"].values()
     )
-    assert set(result.data["fits"]["target_t1rho"]) == {"actual", "reference"}
-    assert set(result.data["fits"]["target_leakage"]) == {"actual", "reference"}
-    assert result.data["sequence_durations"]["control_ground"][0] == pytest.approx(4.0)
-    assert result.data["sequence_durations"]["control_excited"][0] == pytest.approx(6.0)
-    assert result.data["sequence_durations"]["control_t2_echo"][0] == pytest.approx(2.0)
+    assert analysis.fit_status["target_t1rho_model"] == "leakage_corrected"
+    assert measurements.sequence_durations["control_ground"][0] == pytest.approx(4.0)
+    assert measurements.sequence_durations["control_excited"][0] == pytest.approx(6.0)
+    assert measurements.sequence_durations["control_t2_echo"][0] == pytest.approx(2.0)
     assert set(result.figures or {}) == {
         "control_ground_control_populations",
         "control_ground_target_polarization",
@@ -484,7 +489,7 @@ def test_unavailable_bootstrap_does_not_report_polarization_error() -> None:
 
 def test_error_bars_do_not_present_missing_uncertainty_as_zero() -> None:
     """Unavailable uncertainties should remain missing and hide the error bars."""
-    error_config = module._error_array(np.array([np.nan, np.nan]))
+    error_config = analysis_module._error_array(np.array([np.nan, np.nan]))
 
     assert error_config["visible"] is False
     assert np.all(np.isnan(np.asarray(error_config["array"], dtype=float)))
@@ -597,38 +602,6 @@ def test_fidelity_simulation_requires_all_protocols_before_measurement() -> None
         )
 
 
-def test_forward_echo_fit_requires_all_protocols_before_measurement() -> None:
-    """An explicitly required joint forward fit should need A through D."""
-    with pytest.raises(ValueError, match="All four protocols"):
-        module.characterize_cr_pulse_coherence(
-            _DummyExperiment(),  # type: ignore[arg-type]
-            "Q0",
-            "Q1",
-            protocols=["control_t2_echo", "target_t2rho_echo"],
-            n_values=[0, 1, 2],
-            zx90_echo=_schedule(20.0),
-            echo_fit_method="forward",
-            run_fidelity_simulation=False,
-            enable_tqdm=False,
-            plot=False,
-        )
-
-
-def test_fidelity_simulation_rejects_exponential_only_echo_fit() -> None:
-    """Fidelity calculation should require fitted CR-on dephasing rates."""
-    with pytest.raises(ValueError, match="requires a CR echo-decay forward fit"):
-        module.characterize_cr_pulse_coherence(
-            _DummyExperiment(),  # type: ignore[arg-type]
-            "Q0",
-            "Q1",
-            n_values=[0, 1, 2],
-            echo_fit_method="exponential",
-            run_fidelity_simulation=True,
-            enable_tqdm=False,
-            plot=False,
-        )
-
-
 def test_fidelity_gate_metadata_is_validated_before_calibration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -640,9 +613,6 @@ def test_fidelity_gate_metadata_is_validated_before_calibration(
     monkeypatch.setattr(module, "calibrate_gef_population", unexpected_calibration)
 
     echo_gate = _schedule(20.0)
-    echo_gate.cr_duration = 8.0  # type: ignore[attr-defined]
-    echo_gate.echo = True  # type: ignore[attr-defined]
-    echo_gate.pi_pulse = Blank(2.0)  # type: ignore[attr-defined]
 
     with pytest.raises(ValueError, match=r"cr_duration.*echo"):
         module.characterize_cr_pulse_coherence(
@@ -768,14 +738,15 @@ def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration
         plot=False,
     )
 
+    measurements = result.data["measurements"]
+    analysis = result.data["analysis"]
     assert calls == [(measured_qubit, primary_basis)] * 6
-    assert result.data["protocols"] == (protocol,)
-    assert result.data["pauli_components"] == {protocol: (primary_basis,)}
-    assert result.data["fidelity_analysis"] is None
-    assert not result.data["measurement_options"]["fidelity_simulation_enabled"]
-    assert result.data["calibration"] is None
-    assert result.data["populations"] == {}
-    assert set(result.data["sequence_durations"]) == {
+    assert measurements.protocols == (protocol,)
+    assert measurements.pauli_components == {protocol: (primary_basis,)}
+    assert analysis.fidelity_analysis is None
+    assert result.data["raw_data"]["calibration"] is None
+    assert measurements.populations == {}
+    assert set(measurements.sequence_durations) == {
         protocol,
         f"{protocol}_reference",
     }
@@ -829,21 +800,23 @@ def test_characterization_measures_and_plots_orthogonal_components_by_default(
         *(("Q1", basis) for _ in range(2) for basis in ("Z", "X", "Y")),
     ]
     assert calls == expected_per_n * 3
-    assert result.data["pauli_components"] == {
+    measurements = result.data["measurements"]
+    analysis = result.data["analysis"]
+    assert measurements.pauli_components == {
         "control_t2_echo": ("X", "Y", "Z"),
         "target_t2rho_echo": ("Z", "X", "Y"),
     }
-    pauli_expectations: Any = result.data["pauli_expectations"]
+    pauli_expectations: Any = measurements.pauli_expectations
     assert set(pauli_expectations["control_t2_echo"]) == {"X", "Y", "Z"}
-    assert "pauli_components" not in result.data["fits"]
-    assert result.data["fits"]["phenomenological_echo_decay"]["control_t2_echo"][
+    assert "pauli_components" not in analysis.fits
+    assert analysis.fits["phenomenological_echo_decay"]["control_t2_echo"][
         "actual"
     ].success
-    assert "pauli_components" not in result.data["decay_times"]
-    assert (
-        result.data["fit_status"]["echo_actual_primary_model"] == "offset_exponential"
-    )
-    assert result.data["fit_status"]["echo_reference_model"] == "offset_exponential"
+    assert "pauli_components" not in analysis.decay_times
+    assert analysis.fit_status["forward_fit_success"] == {
+        "control_t2_echo": False,
+        "target_t2rho_echo": False,
+    }
     control_t2_traces: Any = result.get_figure("control_t2_echo").data
     assert len(control_t2_traces) == 8
     trace_names = {trace.name for trace in control_t2_traces}
@@ -851,8 +824,14 @@ def test_characterization_measures_and_plots_orthogonal_components_by_default(
         "reference <Y> data",
         "actual <Z> data",
     }
-    assert "actual <Y> fit" not in trace_names
-    assert "reference <Z> fit" not in trace_names
+    assert not any(
+        name.startswith("actual <Y>") and not name.endswith("data")
+        for name in trace_names
+    )
+    assert not any(
+        name.startswith("reference <Z>") and not name.endswith("data")
+        for name in trace_names
+    )
     actual_markers = {
         trace.marker.symbol
         for trace in control_t2_traces
@@ -869,8 +848,14 @@ def test_characterization_measures_and_plots_orthogonal_components_by_default(
     target_t2rho_traces: Any = result.get_figure("target_t2rho_echo").data
     assert len(target_t2rho_traces) == 8
     target_trace_names = {trace.name for trace in target_t2rho_traces}
-    assert "actual <X> fit" not in target_trace_names
-    assert "reference <Y> fit" not in target_trace_names
+    assert not any(
+        name.startswith("actual <X>") and not name.endswith("data")
+        for name in target_trace_names
+    )
+    assert not any(
+        name.startswith("reference <Y>") and not name.endswith("data")
+        for name in target_trace_names
+    )
 
 
 @pytest.mark.parametrize("n_values", [[1, 2], [0, 2, 1], [0, 1, 1], [0, -1]])
@@ -889,28 +874,21 @@ def test_characterization_rejects_invalid_n_values(n_values: list[int]) -> None:
         )
 
 
-def test_characterization_rejects_invalid_echo_fit_method() -> None:
-    """The primary C/D fit selector should fail before hardware work."""
-    with pytest.raises(ValueError, match="echo_fit_method"):
-        module.characterize_cr_pulse_coherence(
-            _DummyExperiment(),  # type: ignore[arg-type]
-            "Q0",
-            "Q1",
-            echo_fit_method="invalid",  # type: ignore[arg-type]
-            enable_tqdm=False,
-            plot=False,
-        )
-
-
 @pytest.mark.parametrize(
-    ("run_fidelity_simulation", "simulation_fails"),
-    [(None, False), (False, False), (None, True)],
+    ("run_fidelity_simulation", "simulation_fails", "control_fit_fails"),
+    [
+        (None, False, False),
+        (False, False, False),
+        (None, True, False),
+        (None, False, True),
+    ],
 )
 def test_characterization_integrates_fidelity_simulation_and_forward_curves(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     run_fidelity_simulation: bool | None,
     simulation_fails: bool,
+    control_fit_fails: bool,
 ) -> None:
     """Forward fitting should be independent of the final fidelity calculation."""
     exp = _DummyExperiment()
@@ -1005,23 +983,23 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
     excited_population = np.stack(
         [expm(rate_matrix * time) @ excited_initial for time in fit_times]
     )
-    rate_fit = module.fit_three_level_rate_model(
+    rate_fit = analysis_module.fit_three_level_rate_model(
         fit_times,
         ground_population,
         excited_population,
     )
-    t1rho_fit = module.fit_target_t1rho(
+    t1rho_fit = analysis_module.fit_target_t1rho(
         fit_times,
         np.exp(-fit_times / 3),
         -0.8 * np.exp(-fit_times / 3),
     )
-    leakage_fit = module.fit_target_leakage(
+    leakage_fit = analysis_module.fit_target_leakage(
         fit_times,
         np.array([0.01, 0.03, 0.05]),
         np.array([0.02, 0.04, 0.06]),
         relative_uncertainty_threshold=100.0,
     )
-    pauli_fit = module.fit_exponential_decay(
+    pauli_fit = analysis_module.fit_exponential_decay(
         fit_times,
         0.1 + 0.9 * np.exp(-fit_times / 3),
     )
@@ -1044,23 +1022,30 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
             },
         }
 
-    dephasing_fit = CrOnDephasingFit(
+    control_dephasing_fit = CrOnDephasingFit(
         success=True,
         message="ok",
-        gamma_phi_control=1e-5,
-        gamma_phi_rho_target=2e-5,
-        gamma_phi_control_error=1e-6,
-        gamma_phi_rho_target_error=2e-6,
-        covariance=np.diag([1e-12, 4e-12]),
-        control_amplitude=0.9,
-        control_offset=0.05,
-        target_amplitude=0.8,
-        target_offset=0.1,
-        fitted_control_x=np.array([0.95, 0.9, 0.85]),
-        fitted_target_z=np.array([0.9, 0.85, 0.8]),
+        gamma_phi=1e-5,
+        gamma_phi_error=1e-6,
+        covariance=np.array([[1e-12]]),
+        amplitude=0.9,
+        offset=0.05,
+        fitted_values=np.array([0.95, 0.9, 0.85]),
         curve_n_values=np.array([0, 1, 2]),
-        curve_control_x=np.array([0.95, 0.9, 0.85]),
-        curve_target_z=np.array([0.9, 0.85, 0.8]),
+        curve_values=np.array([0.95, 0.9, 0.85]),
+        r_squared=0.99,
+    )
+    target_dephasing_fit = CrOnDephasingFit(
+        success=True,
+        message="ok",
+        gamma_phi=2e-5,
+        gamma_phi_error=2e-6,
+        covariance=np.array([[4e-12]]),
+        amplitude=0.8,
+        offset=0.1,
+        fitted_values=np.array([0.9, 0.85, 0.8]),
+        curve_n_values=np.array([0, 1, 2]),
+        curve_values=np.array([0.9, 0.85, 0.8]),
         r_squared=0.99,
     )
     simulation = CrPulseFidelitySimulationResult(
@@ -1081,9 +1066,19 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
         captured_base_noise.append(args[3])
         return object()
 
-    def fake_forward_fit(*args: object, **kwargs: object) -> CrOnDephasingFit:
+    def fake_control_forward_fit(*args: object, **kwargs: object) -> CrOnDephasingFit:
         del args, kwargs
-        return dephasing_fit
+        if control_fit_fails:
+            return replace(
+                control_dephasing_fit,
+                success=False,
+                message="control rate is not identifiable",
+            )
+        return control_dephasing_fit
+
+    def fake_target_forward_fit(*args: object, **kwargs: object) -> CrOnDephasingFit:
+        del args, kwargs
+        return target_dephasing_fit
 
     def fake_simulate(
         *args: object, **kwargs: object
@@ -1098,10 +1093,19 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
     monkeypatch.setattr(module, "measure_gef_populations", fake_measure_gef)
     monkeypatch.setattr(module, "bootstrap_gef_populations", fake_bootstrap)
     monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
-    monkeypatch.setattr(module, "_fit_all_results", fake_fit_all)
-    monkeypatch.setattr(module, "prepare_cr_echo_decay_model", fake_prepare)
-    monkeypatch.setattr(module, "fit_cr_on_dephasing", fake_forward_fit)
-    monkeypatch.setattr(module, "simulate_cr_pulse_fidelity", fake_simulate)
+    monkeypatch.setattr(analysis_module, "_fit_measured_observables", fake_fit_all)
+    monkeypatch.setattr(analysis_module, "prepare_cr_echo_decay_model", fake_prepare)
+    monkeypatch.setattr(
+        analysis_module,
+        "fit_cr_on_control_dephasing",
+        fake_control_forward_fit,
+    )
+    monkeypatch.setattr(
+        analysis_module,
+        "fit_cr_on_target_rotating_frame_dephasing",
+        fake_target_forward_fit,
+    )
+    monkeypatch.setattr(analysis_module, "simulate_cr_pulse_fidelity", fake_simulate)
 
     echo_gate = _schedule(20.0)
     echo_gate.cr_duration = 8.0  # type: ignore[attr-defined]
@@ -1126,54 +1130,90 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
         plot=False,
     )
 
+    analysis = result.data["analysis"]
+    fidelity_analysis = analysis.fidelity_analysis
+    assert fidelity_analysis is not None
     noise = captured_base_noise[0]
     assert noise.gamma_control_g_to_e == pytest.approx(rate_fit.gamma_ge_up)
     assert noise.gamma_control_e_to_g == pytest.approx(rate_fit.gamma_ge_down)
     assert noise.gamma_control_e_to_f == pytest.approx(rate_fit.gamma_ef_up)
     assert noise.gamma_control_f_to_e == pytest.approx(rate_fit.gamma_ef_down)
-    assert result.data["fits"]["cr_on_dephasing"] is dephasing_fit
-    assert result.data["fitted_cr_on_noise"].gamma_phi_control == pytest.approx(1e-5)
-    assert result.data["fitted_cr_on_noise"].gamma_phi_rho_target == pytest.approx(2e-5)
-    assert result.data["fit_status"]["echo_actual_primary_model"] == "forward"
-    assert result.data["measurement_options"]["forward_fit_enabled"]
+    returned_control_fit = analysis.fits["cr_on_dephasing"]["control_t2_echo"]
+    assert analysis.fits["cr_on_dephasing"]["target_t2rho_echo"] is (
+        target_dephasing_fit
+    )
+    assert returned_control_fit.success is not control_fit_fails
+    assert analysis.fit_status["forward_fit_success"] == {
+        "control_t2_echo": not control_fit_fails,
+        "target_t2rho_echo": True,
+    }
     assert (
-        result.data["measurement_options"]["run_fidelity_simulation"]
+        result.data["analysis_options"]["run_fidelity_simulation"]
         is run_fidelity_simulation
     )
     output = capsys.readouterr().out
-    if run_fidelity_simulation is None and not simulation_fails:
+    if control_fit_fails:
+        assert captured_fitted_noise == []
+        assert not fidelity_analysis.success
+        assert fidelity_analysis.target_dephasing_fit is (target_dephasing_fit)
+        assert fidelity_analysis.cr_on_noise is not None
+        assert fidelity_analysis.cr_on_noise.gamma_phi_control == 0.0
+        assert fidelity_analysis.cr_on_noise.gamma_phi_rho_target == pytest.approx(2e-5)
+        assert "control rate is not identifiable" in output
+        assert "gamma_phi_control" not in analysis.transition_rates["cr_on_dephasing"]
+        assert "gamma_phi_rho_target" in analysis.transition_rates["cr_on_dephasing"]
+    else:
+        assert fidelity_analysis.cr_on_noise is not None
+        assert fidelity_analysis.cr_on_noise.gamma_phi_control == pytest.approx(1e-5)
+        assert fidelity_analysis.cr_on_noise.gamma_phi_rho_target == pytest.approx(2e-5)
+    if (
+        run_fidelity_simulation is None
+        and not simulation_fails
+        and not control_fit_fails
+    ):
         assert captured_fitted_noise[0].gamma_phi_control == pytest.approx(1e-5)
         assert captured_fitted_noise[0].gamma_phi_rho_target == pytest.approx(2e-5)
-        assert result.data["fidelity_limits"] == {
-            "success": True,
-            "idle_coherence_limited_fidelity": 0.999,
-            "cr_on_coherence_limited_fidelity": 0.995,
-            "cr_on_dissipative_limited_fidelity": 0.99,
-            "average_leakage": 0.004,
-        }
-        assert result.data["measurement_options"]["fidelity_simulation_enabled"]
+        assert fidelity_analysis.simulation is simulation
+        assert analysis.fit_status["fixed_zero_unresolved_rates"] == (
+            "target_seepage_rate",
+        )
         assert "CR-pulse fidelity simulation" in output
         assert "Idle coherence limit:       99.900000%" in output
         assert "CR-on coherence limit:      99.500000%" in output
         assert "CR-on dissipative limit:    99.000000%" in output
         assert "Average leakage:             0.400000%" in output
-    elif simulation_fails:
+        assert "unresolved rates were fixed to zero" in output
+        assert "target_seepage_rate" in output
+    elif simulation_fails and not control_fit_fails:
         assert captured_fitted_noise[0].gamma_phi_control == pytest.approx(1e-5)
-        assert result.data["fidelity_limits"] == {
-            "success": False,
-            "message": "Fidelity simulation failed: nonphysical channel",
-        }
-        assert result.data["fidelity_analysis"].dephasing_fit is dephasing_fit
-        assert not result.data["fidelity_analysis"].success
-        assert "nonphysical channel" in result.data["fidelity_analysis"].message
-        assert "CR-pulse fidelity simulation failed" in output
-    else:
+        assert fidelity_analysis.control_dephasing_fit is control_dephasing_fit
+        assert fidelity_analysis.target_dephasing_fit is target_dephasing_fit
+        assert not fidelity_analysis.success
+        assert "nonphysical channel" in fidelity_analysis.message
+        assert "CR-pulse fidelity analysis failed" in output
+    elif not control_fit_fails:
         assert captured_fitted_noise == []
-        assert result.data["fidelity_limits"] is None
-        assert not result.data["measurement_options"]["fidelity_simulation_enabled"]
+        assert fidelity_analysis.simulation is None
         assert "CR-pulse fidelity simulation" not in output
     control_traces: Any = result.get_figure("control_t2_echo").data
     actual_fit = next(
-        trace for trace in control_traces if trace.name == "actual <X> fit"
+        trace
+        for trace in control_traces
+        if trace.name
+        == (
+            "actual <X> exponential diagnostic"
+            if control_fit_fails
+            else "actual <X> forward fit"
+        )
     )
-    assert np.asarray(actual_fit.y) == pytest.approx(dephasing_fit.curve_control_x)
+    if not control_fit_fails:
+        assert np.asarray(actual_fit.y) == pytest.approx(
+            control_dephasing_fit.curve_values
+        )
+    target_traces: Any = result.get_figure("target_t2rho_echo").data
+    target_actual_fit = next(
+        trace for trace in target_traces if trace.name == "actual <Z> forward fit"
+    )
+    assert np.asarray(target_actual_fit.y) == pytest.approx(
+        target_dephasing_fit.curve_values
+    )

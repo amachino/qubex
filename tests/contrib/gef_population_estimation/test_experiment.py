@@ -13,7 +13,7 @@ from qubex.contrib.experiment.gef_population_estimation import (
     calibrate_gef_population,
     measure_gef_populations,
 )
-from qubex.pulse import Blank, PulseSchedule
+from qubex.pulse import Arbitrary, Blank, PulseSchedule
 
 
 def _state_samples() -> dict[str, np.ndarray]:
@@ -66,15 +66,16 @@ class _DummyContext:
 class _DummyPulseService:
     """Provide analysis pulses with distinct durations."""
 
-    def x180(self, target: str) -> Blank:
-        """Return GE and EF blank stand-ins."""
+    def x180(self, target: str) -> Arbitrary:
+        """Return visible GE and EF pulse stand-ins."""
         durations = {
             "Q0": 4.0,
             "Q0/ef": 6.0,
             "Q1": 8.0,
             "Q1/ef": 10.0,
         }
-        return Blank(duration=durations[target])
+        pulse_length = Blank(duration=durations[target]).length
+        return Arbitrary(np.ones(pulse_length, dtype=np.complex128))
 
 
 class _DummyMeasurementService:
@@ -163,6 +164,22 @@ def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
         ]
         == pytest.approx([18.0] * 3)
     )
+    c2_sequence = exp.measurement_service.calls[1]["sequence"]
+    assert isinstance(c2_sequence, PulseSchedule)
+    c2_ef_durations = [
+        waveform.duration
+        for waveform in c2_sequence.get_sequence("Q0/ef").flattened_elements
+        if isinstance(waveform, (Arbitrary, Blank))
+    ]
+    assert c2_ef_durations == pytest.approx([8.0, 6.0])
+    s1_sequence = exp.measurement_service.calls[6]["sequence"]
+    assert isinstance(s1_sequence, PulseSchedule)
+    s1_durations = [
+        waveform.duration
+        for waveform in s1_sequence.get_sequence("Q0").flattened_elements
+        if isinstance(waveform, (Arbitrary, Blank))
+    ]
+    assert s1_durations[-2:] == pytest.approx([10.0, 0.0])
     for call in exp.measurement_service.calls:
         assert call["mode"] == "single"
         assert call["time_integration"] is True
@@ -181,6 +198,33 @@ def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
     assert bootstrap.seed == 11
     assert result.data["measurement_options"]["n_bootstrap"] == 20
     assert result.data["measurement_options"]["bootstrap_seed"] == 11
+
+
+def test_measure_gef_populations_uses_gef_specific_shot_defaults() -> None:
+    """Default acquisition should use 8192 calibration and 4096 measurement shots."""
+    samples = _state_samples()
+    calibration_iq = [_pure(samples, state) for state in ("g", "g", "e", "f", "e", "f")]
+    measurement_iq = [
+        _mixture(samples, weights) for weights in ((2, 3, 5), (3, 5, 2), (5, 2, 3))
+    ]
+    exp = _DummyExperiment([*calibration_iq, *measurement_iq])
+    with PulseSchedule(["Q0"]) as preparation:
+        preparation.add("Q0", Blank(duration=2.0))
+
+    result = measure_gef_populations(
+        exp,  # type: ignore[arg-type]
+        targets="Q0",
+        sequences=[preparation],
+        n_bootstrap=0,
+    )
+
+    assert [call["n_shots"] for call in exp.measurement_service.calls[:6]] == [8192] * 6
+    assert [call["n_shots"] for call in exp.measurement_service.calls[6:]] == [4096] * 3
+    assert result.data["measurement_options"]["n_shots"] == 4096
+    assert result.data["measurement_options"]["calibration_n_shots"] == 8192
+    fit = result.data["fits"]["sequence_0"]["Q0"]
+    assert fit.population_covariance.shape == (3, 3)
+    assert fit.population_standard_error.shape == (3,)
 
 
 def test_measure_gef_populations_reuses_supplied_calibration() -> None:
@@ -268,6 +312,31 @@ def test_measure_gef_populations_estimates_multiple_targets_in_the_same_shots() 
     )
 
     assert len(exp.measurement_service.calls) == 9
+    assert (
+        [
+            call["sequence"].duration  # type: ignore[union-attr]
+            for call in exp.measurement_service.calls[:6]
+        ]
+        == pytest.approx([26.0] * 6)
+    )
+    c2_sequence = exp.measurement_service.calls[1]["sequence"]
+    assert isinstance(c2_sequence, PulseSchedule)
+    q0_ef_durations = [
+        waveform.duration
+        for waveform in c2_sequence.get_sequence("Q0/ef").flattened_elements
+        if isinstance(waveform, (Arbitrary, Blank))
+    ]
+    q1_ef_durations = [
+        waveform.duration
+        for waveform in c2_sequence.get_sequence("Q1/ef").flattened_elements
+        if isinstance(waveform, (Arbitrary, Blank))
+    ]
+    assert q0_ef_durations == pytest.approx([16.0, 10.0])
+    assert q1_ef_durations == pytest.approx([16.0, 10.0])
+    q0_ef_values = c2_sequence.get_sampled_sequence("Q0/ef")
+    q1_ef_values = c2_sequence.get_sampled_sequence("Q1/ef")
+    assert np.flatnonzero(q0_ef_values)[-1] == len(q0_ef_values) - 1
+    assert np.flatnonzero(q1_ef_values)[-1] == len(q1_ef_values) - 1
     assert_allclose(
         result.data["populations"]["cr"]["Q0"],
         [0.2, 0.3, 0.5],

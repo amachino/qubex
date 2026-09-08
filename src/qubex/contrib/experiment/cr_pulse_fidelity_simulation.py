@@ -52,7 +52,14 @@ class IdleQubitNoise:
 
 @dataclass(frozen=True)
 class CrOnNoise:
-    """Describe CR-active lifetimes in ns and transition rates in inverse ns."""
+    """
+    Describe sign-independent CR-active lifetimes and transition rates.
+
+    Lifetimes use ns and rates use inverse ns. One instance is applied to both
+    positive- and negative-amplitude lobes of an echoed CR gate; callers that
+    infer it from only one drive sign therefore assume that the dissipative
+    rates are invariant under CR sign reversal.
+    """
 
     gamma_control_g_to_e: float
     gamma_control_e_to_g: float
@@ -365,9 +372,48 @@ def _x_layer_map(
     return _segment_map(hamiltonian, duration, collapse_operators)
 
 
+def _parallel_x_layer_map(
+    control_duration: float,
+    control_angle: float,
+    target_duration: float,
+    target_angle: float,
+    collapse_operators: tuple[NDArray[np.complex128], ...],
+) -> NDArray[np.complex128]:
+    """Return simultaneous X rotations without stretching the shorter pulse."""
+    instantaneous_control_angle = control_angle if control_duration == 0 else 0.0
+    instantaneous_target_angle = target_angle if target_duration == 0 else 0.0
+    maps: list[NDArray[np.complex128]] = []
+    if instantaneous_control_angle != 0 or instantaneous_target_angle != 0:
+        instantaneous = np.asarray(
+            expm(
+                -0.5j
+                * (
+                    instantaneous_control_angle * _CONTROL_X
+                    + instantaneous_target_angle * _TARGET_X
+                )
+            ),
+            dtype=np.complex128,
+        )
+        maps.append(_unitary_map(instantaneous))
+
+    segment_start = 0.0
+    for segment_end in sorted(
+        {duration for duration in (control_duration, target_duration) if duration > 0}
+    ):
+        segment_duration = segment_end - segment_start
+        hamiltonian = np.zeros((_FULL_DIMENSION,) * 2, dtype=np.complex128)
+        if segment_start < control_duration:
+            hamiltonian += control_angle * _CONTROL_X / (2 * control_duration)
+        if segment_start < target_duration:
+            hamiltonian += target_angle * _TARGET_X / (2 * target_duration)
+        maps.append(_segment_map(hamiltonian, segment_duration, collapse_operators))
+        segment_start = segment_end
+    return _compose(*maps)
+
+
 @dataclass(frozen=True)
 class CrEchoDecayModel:
-    """Cache the physical model used to predict both echo-decay protocols."""
+    """Cache the physical model used to predict CR echo-decay protocols."""
 
     cr_lobe_duration: float
     positive_generator: NDArray[np.complex128]
@@ -384,7 +430,7 @@ class CrEchoDecayModel:
         gamma_phi_control: float,
         gamma_phi_rho_target: float,
     ) -> NDArray[np.complex128]:
-        """Build one ZX90 map while varying only its fitted dephasing rates."""
+        """Build one ZX90 map with the specified CR-on dephasing rates."""
         _validate_nonnegative_finite(
             gamma_phi_control,
             name="gamma_phi_control",
@@ -416,14 +462,13 @@ class CrEchoDecayModel:
             self.echo_layer,
         )
 
-    def predict(
+    def predict_control_x(
         self,
         n_values: NDArray[np.int64],
         gamma_phi_control: float,
-        gamma_phi_rho_target: float,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Predict the control-X and target-Z curves for specified rates."""
-        gate_map = self.gate_map(gamma_phi_control, gamma_phi_rho_target)
+    ) -> NDArray[np.float64]:
+        """Predict control X while varying only control CR-on dephasing."""
+        gate_map = self.gate_map(gamma_phi_control, 0.0)
         control_block = _compose(
             gate_map,
             self.control_x,
@@ -433,23 +478,28 @@ class CrEchoDecayModel:
             self.control_x,
             gate_map,
         )
-        target_block = _compose(gate_map, self.target_z, gate_map)
-
         plus = np.array([1.0, 1.0, 0.0], dtype=np.complex128) / np.sqrt(2)
+        return _expectation_curve(
+            control_block,
+            n_values,
+            _state_vector(np.kron(plus, plus)),
+            _CONTROL_X,
+        )
+
+    def predict_target_z(
+        self,
+        n_values: NDArray[np.int64],
+        gamma_phi_rho_target: float,
+    ) -> NDArray[np.float64]:
+        """Predict target Z while varying only target CR-on dephasing."""
+        gate_map = self.gate_map(0.0, gamma_phi_rho_target)
+        target_block = _compose(gate_map, self.target_z, gate_map)
         ground = np.array([1.0, 0.0, 0.0], dtype=np.complex128)
-        return (
-            _expectation_curve(
-                control_block,
-                n_values,
-                _state_vector(np.kron(plus, plus)),
-                _CONTROL_X,
-            ),
-            _expectation_curve(
-                target_block,
-                2 * n_values,
-                _state_vector(np.kron(ground, ground)),
-                _TARGET_Z,
-            ),
+        return _expectation_curve(
+            target_block,
+            2 * n_values,
+            _state_vector(np.kron(ground, ground)),
+            _TARGET_Z,
         )
 
 
@@ -462,11 +512,12 @@ def prepare_cr_echo_decay_model(
     target_x180_duration: float,
 ) -> CrEchoDecayModel:
     """
-    Prepare a reusable physical predictor for the C/D echo-decay curves.
+    Prepare a reusable physical predictor for the CR echo-decay curves.
 
-    Every map and generator independent of the two variable CR-on dephasing
-    rates is precomputed here. Measurement fitting is deliberately left to
-    :func:`fit_cr_on_dephasing` in ``cr_pulse_coherence_fitting``.
+    Every map and generator independent of the variable CR-on dephasing rate
+    is precomputed here. Control and target predictions vary their respective
+    rates independently. Measurement fitting is deliberately left to
+    `cr_pulse_coherence_analysis`.
     """
     if not timing.echo:
         raise ValueError("Echo-decay forward modeling requires an echoed ZX90 gate.")
@@ -525,9 +576,10 @@ def prepare_cr_echo_decay_model(
             0.0,
             idle_operators,
         ),
-        simultaneous_x=_x_layer_map(
-            max(control_x180_duration, target_x180_duration),
+        simultaneous_x=_parallel_x_layer_map(
+            control_x180_duration,
             np.pi,
+            target_x180_duration,
             np.pi,
             idle_operators,
         ),
@@ -723,9 +775,15 @@ def simulate_cr_pulse_fidelity(
             "coherent_errors_included": False,
             "coherent_leakage_included": False,
             "target_polarization_asymptote": 0.0,
+            "target_leakage_outward_model": "equal_incoherent_from_g_and_e",
             "target_seepage_return_model": "equal_incoherent_to_g_and_e",
+            "cr_lobe_rate_model": "same_for_positive_and_negative_drive_signs",
+            "cr_on_rate_target_state_dependence": "not_modeled",
             "reference_operation": "noise_off_same_semantic_gate",
             "gate_schedule_interpretation": "semantic_cr_echo_timing",
+            "zx_hamiltonian_qutrit_extension": (
+                "Z_control=diag(1,-1,0), X_target couples only g-e"
+            ),
             "control_qutrit_dephasing_extension": "diag(1,-1,0)",
             "idle_pure_dephasing_clamped": {
                 "control": control_idle_clamped,
@@ -759,13 +817,17 @@ def _expectation_curve(
     observable: NDArray[np.complex128],
 ) -> NDArray[np.float64]:
     """Propagate one state incrementally over increasing repetition counts."""
+    if repetition_counts.ndim != 1 or not np.issubdtype(
+        repetition_counts.dtype, np.integer
+    ):
+        raise ValueError("repetition counts must be a one-dimensional integer array.")
+    if np.any(repetition_counts < 0) or np.any(np.diff(repetition_counts) < 0):
+        raise ValueError("repetition counts must be nonnegative and nondecreasing.")
     values = np.empty(repetition_counts.shape, dtype=np.float64)
     state = initial_state
     previous_count = 0
     for index, count_value in enumerate(repetition_counts):
         count = int(count_value)
-        if count < previous_count:
-            raise ValueError("repetition counts must be nondecreasing.")
         for _ in range(count - previous_count):
             state = block @ state
         values[index] = _expectation(state, observable)

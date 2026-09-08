@@ -13,11 +13,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.linalg import block_diag
 
 from qubex.experiment import Experiment
-from qubex.experiment.experiment_constants import (
-    CALIBRATION_SHOTS,
-    DEFAULT_INTERVAL,
-    DEFAULT_SHOTS,
-)
+from qubex.experiment.experiment_constants import DEFAULT_INTERVAL
 from qubex.experiment.models.result import Result
 from qubex.pulse import Blank, PulseSchedule
 
@@ -36,9 +32,11 @@ _MEASUREMENT_STEPS = {
 }
 _FEATURE_COUNT = 5
 _STATE_COUNT = 3
+_DEFAULT_N_SHOTS = 4096
+_DEFAULT_CALIBRATION_N_SHOTS = 8192
 _DEFAULT_N_BOOTSTRAP = 1000
 _DEFAULT_BOOTSTRAP_CONFIDENCE_LEVEL = 0.95
-_MIN_BOOTSTRAP_SUCCESS_RATE = 0.8
+_MIN_BOOTSTRAP_SUCCESS_RATE = 0.9
 _SIMPLEX_BOUNDARY_TOLERANCE = 1e-10
 
 
@@ -127,7 +125,13 @@ class GefPopulationFit:
     population
         Constrained population `[P_g, P_e, P_f]`.
     population_unconstrained
-        GLS estimate before physical probability constraints are applied.
+        GLS estimate constrained to `P_g + P_e + P_f = 1` but allowing
+        negative components.
+    population_covariance
+        Analytic covariance conditional on fixed calibrated state features,
+        with shape `(3, 3)`. Calibration-shot uncertainty is not included.
+    population_standard_error
+        Square root of the analytic covariance diagonal, with shape `(3,)`.
     objective
         GLS residual objective at the constrained solution.
     residual
@@ -137,13 +141,16 @@ class GefPopulationFit:
     message
         Optimizer status message.
     design_rank
-        Rank of the covariance-weighted design matrix.
+        Rank of the covariance-weighted design on the two-dimensional simplex
+        tangent space `P_g + P_e + P_f = 1`.
     design_condition_number
-        Condition number of the covariance-weighted design matrix.
+        Condition number on the same simplex tangent space.
     """
 
     population: NDArray[np.float64]
     population_unconstrained: NDArray[np.float64]
+    population_covariance: NDArray[np.float64]
+    population_standard_error: NDArray[np.float64]
     objective: float
     residual: NDArray[np.float64]
     success: bool
@@ -162,12 +169,14 @@ class GefPopulationBootstrap:
     point_estimate
         Constrained estimate from the original IQ shots, ordered as g, e, f.
     unconstrained_point_estimate
-        GLS estimate from the original shots before probability constraints.
+        GLS estimate from the original shots constrained to sum to one but
+        allowing negative components.
     samples
         Constrained bootstrap estimates with shape `(n_resamples, 3)`. Failed
         fits are represented by rows of NaNs.
     unconstrained_samples
-        Unconstrained bootstrap estimates with shape `(n_resamples, 3)`.
+        Sum-constrained bootstrap estimates allowing negative components, with
+        shape `(n_resamples, 3)`.
     standard_error
         Sample standard deviation of successful constrained estimates.
     confidence_interval
@@ -310,13 +319,21 @@ def fit_gef_population(
     Returns
     -------
     GefPopulationFit
-        Constrained and unconstrained population estimates with fit diagnostics.
+        Physical and sum-constrained population estimates, analytic measurement
+        uncertainty, and fit diagnostics.
 
     Raises
     ------
     ValueError
         Raised for missing configurations, invalid state features, or an invalid
         pseudo-inverse cutoff.
+
+    Notes
+    -----
+    The analytic covariance treats calibrated state features as fixed and
+    includes measurement shot noise only. Its standard error is a local Gaussian
+    approximation and may be inaccurate near simplex boundaries. Prefer
+    bootstrap percentile intervals when a population is near zero.
     """
     _require_configurations(summaries, _MEASUREMENT_STEPS)
     calibrated_features = np.asarray(state_features, dtype=np.float64)
@@ -366,7 +383,9 @@ def fit_gef_population(
             [-1.0, -1.0],
         ]
     )
-    if np.linalg.matrix_rank(weighted_design @ simplex_tangent) < 2:
+    weighted_tangent_design = weighted_design @ simplex_tangent
+    design_rank = int(np.linalg.matrix_rank(weighted_tangent_design))
+    if design_rank < 2:
         raise _PopulationNotIdentifiableError(
             "GEF populations are not identifiable from the calibrated features "
             "and measurement covariance."
@@ -374,13 +393,23 @@ def fit_gef_population(
 
     normal_matrix = scaled_design.T @ weight @ scaled_design
     normal_vector = scaled_design.T @ weight @ scaled_observation
-    population_unconstrained = (
-        np.linalg.pinv(
-            normal_matrix,
-            rcond=covariance_rcond,
-            hermitian=True,
-        )
-        @ normal_vector
+    simplex_reference = np.array([0.0, 0.0, 1.0])
+    tangent_design = scaled_design @ simplex_tangent
+    tangent_observation = scaled_observation - scaled_design @ simplex_reference
+    tangent_normal_matrix = tangent_design.T @ weight @ tangent_design
+    tangent_covariance = np.linalg.pinv(
+        tangent_normal_matrix,
+        rcond=covariance_rcond,
+        hermitian=True,
+    )
+    tangent_estimate = (
+        tangent_covariance @ tangent_design.T @ weight @ tangent_observation
+    )
+    population_unconstrained = simplex_reference + simplex_tangent @ tangent_estimate
+    population_covariance = simplex_tangent @ tangent_covariance @ simplex_tangent.T
+    population_covariance = 0.5 * (population_covariance + population_covariance.T)
+    population_standard_error = np.sqrt(
+        np.clip(np.diag(population_covariance), 0.0, None)
     )
 
     def objective(population: NDArray[np.float64]) -> float:
@@ -395,17 +424,20 @@ def fit_gef_population(
     )
     residual = observation - design @ population
 
-    design_rank = int(np.linalg.matrix_rank(weighted_design))
-    design_condition_number = (
-        float(np.linalg.cond(weighted_design))
-        if design_rank == _STATE_COUNT
-        else float("inf")
-    )
+    design_condition_number = float(np.linalg.cond(weighted_tangent_design))
 
     return GefPopulationFit(
         population=population,
         population_unconstrained=np.asarray(
             population_unconstrained,
+            dtype=np.float64,
+        ),
+        population_covariance=np.asarray(
+            population_covariance,
+            dtype=np.float64,
+        ),
+        population_standard_error=np.asarray(
+            population_standard_error,
             dtype=np.float64,
         ),
         objective=objective(population),
@@ -470,9 +502,10 @@ def bootstrap_gef_populations(
     shot indices within each configuration. This preserves the correlations
     needed for later sequence and target comparisons. Failed fits remain as NaN
     rows and are not retried. For multiple targets, each configuration must come
-    from one simultaneous acquisition. The intervals describe finite-shot
-    uncertainty under independent sampling; they do not include drift or model
-    and pulse-calibration errors.
+    from one simultaneous acquisition. Unlike the analytic fit covariance,
+    bootstrap uncertainty includes finite-shot noise from both the C1--C6
+    calibration and S1/S4/S5 measurements. It does not include drift, model
+    error, or pulse-calibration errors.
     """
     resolved_n_resamples = _validate_nonnegative_integer(
         n_resamples,
@@ -596,8 +629,7 @@ def calibrate_gef_population(
     targets
         Qubit label or labels to calibrate simultaneously.
     n_shots
-        Number of shots per calibration configuration. Defaults to
-        `CALIBRATION_SHOTS`.
+        Number of shots per calibration configuration. Defaults to 8192.
     shot_interval
         Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
 
@@ -610,13 +642,14 @@ def calibrate_gef_population(
     -----
     This function performs six hardware measurements. It assumes the initial
     population is `(p, q, 0)` and that the calibrated GE and EF pi pulses act as
-    ideal population swaps.
+    ideal population swaps. Analyzers are left-padded so population-permutation
+    pulses occur as close as possible to readout.
     """
     target_list = _normalize_targets(exp, targets)
     resolved_n_shots = _resolve_shot_count(
         n_shots,
         name="n_shots",
-        default=CALIBRATION_SHOTS,
+        default=_DEFAULT_CALIBRATION_N_SHOTS,
     )
     resolved_shot_interval = _resolve_positive_real(
         shot_interval,
@@ -676,10 +709,10 @@ def measure_gef_populations(
         Optional prior calibration keyed by canonical qubit label. When omitted,
         six calibration configurations are measured before the input sequences.
     n_shots
-        Number of shots per S1/S4/S5 configuration. Defaults to `DEFAULT_SHOTS`.
+        Number of shots per S1/S4/S5 configuration. Defaults to 4096.
     calibration_n_shots
-        Number of shots per calibration configuration. Defaults to
-        `CALIBRATION_SHOTS` and is ignored when `calibration` is provided.
+        Number of shots per calibration configuration. Defaults to 8192 and is
+        ignored when `calibration` is provided.
     shot_interval
         Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
     covariance_rcond
@@ -703,8 +736,9 @@ def measure_gef_populations(
     Notes
     -----
     This function performs six calibration measurements when needed, followed by
-    three hardware measurements per input sequence. The analyzer configurations
-    are right-padded so readout starts at a common time within each group.
+    three hardware measurements per input sequence. Analyzers are left-padded so
+    population-permutation pulses occur as close as possible to readout while
+    readout starts at a common time within each group.
     Populations are modeled only in the g/e/f subspace and sum to one. The method
     assumes negligible initial f population during calibration, ideal GE/EF
     population swaps, and stable readout response throughout the run.
@@ -714,7 +748,7 @@ def measure_gef_populations(
     resolved_n_shots = _resolve_shot_count(
         n_shots,
         name="n_shots",
-        default=DEFAULT_SHOTS,
+        default=_DEFAULT_N_SHOTS,
     )
     resolved_shot_interval = _resolve_positive_real(
         shot_interval,
@@ -735,11 +769,12 @@ def measure_gef_populations(
         name="bootstrap_confidence_level",
     )
 
+    resolved_calibration_n_shots: int | None = None
     if calibration is None:
         resolved_calibration_n_shots = _resolve_shot_count(
             calibration_n_shots,
             name="calibration_n_shots",
-            default=CALIBRATION_SHOTS,
+            default=_DEFAULT_CALIBRATION_N_SHOTS,
         )
         calibration_by_target = calibrate_gef_population(
             exp,
@@ -815,13 +850,7 @@ def measure_gef_populations(
             "bootstrap": bootstrap,
             "measurement_options": {
                 "n_shots": resolved_n_shots,
-                "calibration_n_shots": (
-                    None
-                    if calibration is not None
-                    else next(iter(calibration_by_target.values()))
-                    .summaries["c1"]
-                    .n_shots
-                ),
+                "calibration_n_shots": resolved_calibration_n_shots,
                 "shot_interval": resolved_shot_interval,
                 "covariance_rcond": covariance_rcond,
                 "n_bootstrap": resolved_n_bootstrap,
@@ -1202,14 +1231,14 @@ def _build_padded_analyzers(
     targets: list[str],
     configurations: Mapping[str, tuple[str, ...]],
 ) -> dict[str, PulseSchedule]:
-    """Build analyzer schedules and right-pad them to a common duration."""
+    """Build analyzer schedules and left-pad them to a common duration."""
     schedules = {
         name: _build_analyzer(exp, targets, steps)
         for name, steps in configurations.items()
     }
     common_duration = max(schedule.duration for schedule in schedules.values())
     return {
-        name: schedule.padded(common_duration, pad_side="right")
+        name: schedule.padded(common_duration, pad_side="left")
         for name, schedule in schedules.items()
     }
 
@@ -1219,7 +1248,7 @@ def _build_analyzer(
     targets: list[str],
     steps: tuple[str, ...],
 ) -> PulseSchedule:
-    """Build simultaneous GE/EF population-permutation pulses."""
+    """Build right-aligned GE/EF population-permutation layers."""
     ge_labels = {target: exp.ctx.resolve_ge_label(target) for target in targets}
     ef_labels = {target: exp.ctx.resolve_ef_label(target) for target in targets}
     with PulseSchedule() as schedule:
@@ -1228,9 +1257,15 @@ def _build_analyzer(
                 schedule.add(ge_labels[target], Blank(0))
         for transition in steps:
             labels = ge_labels if transition == "ge" else ef_labels
-            for target in targets:
-                label = labels[target]
-                schedule.add(label, exp.pulse.x180(label))
+            pulses = {
+                labels[target]: exp.pulse.x180(labels[target]) for target in targets
+            }
+            layer_duration = max(pulse.duration for pulse in pulses.values())
+            for label, pulse in pulses.items():
+                schedule.add(
+                    label,
+                    pulse.padded(layer_duration, pad_side="left"),
+                )
             schedule.barrier()
     return schedule
 

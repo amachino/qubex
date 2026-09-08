@@ -103,6 +103,12 @@ def test_bootstrap_returns_reproducible_physical_population_samples() -> None:
     assert_allclose(first.samples, second.samples, rtol=0.0, atol=0.0)
     assert first.samples.shape == (40, 3)
     assert first.unconstrained_samples.shape == (40, 3)
+    assert_allclose(
+        np.sum(first.unconstrained_samples, axis=1),
+        1.0,
+        rtol=0.0,
+        atol=1e-12,
+    )
     assert first.standard_error is not None
     assert first.standard_error.shape == (3,)
     assert_allclose(
@@ -130,7 +136,7 @@ def test_bootstrap_returns_reproducible_physical_population_samples() -> None:
     assert first.successful_resamples == 40
     assert first.success_rate == pytest.approx(1.0)
     assert first.confidence_level == pytest.approx(0.90)
-    assert first.minimum_success_rate == pytest.approx(0.8)
+    assert first.minimum_success_rate == pytest.approx(0.9)
     assert first.seed == 17
     assert first.unavailable_reason is None
     assert np.all(first.samples >= -1e-12)

@@ -1,14 +1,18 @@
-"""Tests for CR-pulse coherence characterization fitting helpers."""
+"""Tests for CR-pulse coherence analysis helpers."""
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 from scipy.linalg import expm
 
-from qubex.contrib.experiment import cr_pulse_coherence_characterization as module
-from qubex.contrib.experiment.cr_pulse_coherence_fitting import (
+from qubex.contrib.experiment import cr_pulse_coherence_analysis as module
+from qubex.contrib.experiment.cr_pulse_coherence_analysis import (
+    CrPulseCoherenceMeasurements,
+    analyze_cr_pulse_coherence,
     fit_exponential_decay,
     fit_three_level_rate_model,
 )
@@ -34,6 +38,64 @@ def _trajectory(
     """Generate an exact population trajectory for synthetic fit data."""
     matrix = _rate_matrix(rates)
     return np.stack([expm(matrix * time) @ initial for time in times])
+
+
+def _control_echo_measurements() -> CrPulseCoherenceMeasurements:
+    """Return a minimal structurally valid offline-analysis data set."""
+    times = np.array([0.0, 10.0, 20.0], dtype=np.float64)
+    values = np.array([0.9, 0.8, 0.7])
+    errors = np.full(3, 0.01)
+    return CrPulseCoherenceMeasurements(
+        control_qubit="Q0",
+        target_qubit="Q1",
+        protocols=("control_t2_echo",),
+        pauli_components={"control_t2_echo": ("X",)},
+        n_values=(0, 1, 2),
+        cr_pulse_counts=(0, 4, 8),
+        times={"control_t2_echo": times},
+        sequence_durations={
+            "control_t2_echo": times + 2.0,
+            "control_t2_echo_reference": times + 2.0,
+        },
+        populations={},
+        population_standard_errors={},
+        target_polarizations={},
+        target_polarization_standard_errors={},
+        pauli_expectations={
+            "control_t2_echo": {
+                "X": {"actual": values, "reference": values},
+            }
+        },
+        pauli_standard_errors={
+            "control_t2_echo": {
+                "X": {"actual": errors, "reference": errors},
+            }
+        },
+    )
+
+
+def test_offline_analysis_validates_cross_field_measurement_structure() -> None:
+    """Malformed saved data should fail with a clear structural error."""
+    measurements = _control_echo_measurements()
+
+    with pytest.raises(ValueError, match=r"cr_pulse_counts must equal 4 \* n_values"):
+        analyze_cr_pulse_coherence(replace(measurements, cr_pulse_counts=(0, 5, 8)))
+
+    with pytest.raises(ValueError, match="actual and reference sequence durations"):
+        analyze_cr_pulse_coherence(
+            replace(
+                measurements,
+                sequence_durations={
+                    **measurements.sequence_durations,
+                    "control_t2_echo_reference": np.array([2.0, 12.0, 23.0]),
+                },
+            )
+        )
+
+    with pytest.raises(TypeError, match="must be a NumPy array"):
+        analyze_cr_pulse_coherence(
+            replace(measurements, times={"control_t2_echo": [0.0, 10.0, 20.0]})  # type: ignore[dict-item]
+        )
 
 
 def test_three_level_fit_recovers_four_independent_adjacent_rates() -> None:
@@ -135,6 +197,22 @@ def test_control_rate_fit_falls_back_when_only_seepage_is_unresolved() -> None:
     assert fit.gamma_ef_down == 0.0
     assert np.isnan(fit.gamma_ef_down_error)
     assert fit.gamma_ef_up == pytest.approx(rates[3], rel=1e-4)
+
+
+def test_control_rate_fit_keeps_resolved_seepage_when_leakage_is_zero() -> None:
+    """A seepage-only trajectory should not discard its resolved F-to-E rate."""
+    times = np.array([0, 800, 1600, 3000, 5000, 8000, 13_000, 21_000.0])
+    rates = (2.5e-5, 4.0e-6, 4.2e-5, 0.0)
+    ground = _trajectory(times, np.array([0.88, 0.02, 0.10]), rates)
+    excited = _trajectory(times, np.array([0.03, 0.82, 0.15]), rates)
+
+    fit = fit_three_level_rate_model(times, ground, excited)
+
+    assert fit.success
+    assert fit.leakage_model == "inward_only"
+    assert fit.gamma_ef_up == 0.0
+    assert np.isnan(fit.gamma_ef_up_error)
+    assert fit.gamma_ef_down == pytest.approx(rates[2], rel=1e-4)
 
 
 def test_safe_control_rate_fit_preserves_results_on_numerical_failure(
