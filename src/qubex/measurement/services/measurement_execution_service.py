@@ -12,7 +12,7 @@ from typing import Any, Literal, TypeAlias, TypeVar, cast
 
 import numpy as np
 from numpy.typing import ArrayLike
-from qxpulse import PulseChannel, PulseSchedule, RampType
+from qxpulse import PulseChannel, PulseSchedule, RampType, VirtualZ
 
 from qubex.backend import (
     BackendController,
@@ -1050,7 +1050,7 @@ class MeasurementExecutionService:
         schedules: list[MeasurementSchedule],
         shot_interval: float,
     ) -> MeasurementSchedule:
-        """Build one measurement schedule by concatenating schedules separated by shot interval."""
+        """Concatenate schedules with neutral frames at experiment boundaries."""
         if len(schedules) == 0:
             raise ValueError("At least one schedule is required.")
 
@@ -1065,6 +1065,10 @@ class MeasurementExecutionService:
                 shift_duration = merged_pulse_schedule.duration + shot_interval
                 merged_pulse_schedule.barrier()
                 merged_pulse_schedule.pad(shift_duration)
+                frame_shifts = merged_pulse_schedule.get_final_frame_shifts()
+                for label, frame_shift in frame_shifts.items():
+                    if frame_shift != 0.0:
+                        merged_pulse_schedule.add(label, VirtualZ(frame_shift))
             merged_pulse_schedule.call(schedule.pulse_schedule, copy=True)
             merged_captures.extend(
                 capture.model_copy(

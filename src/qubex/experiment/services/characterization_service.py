@@ -3196,6 +3196,9 @@ class CharacterizationService:
             Control frequency sweep range in GHz.
         control_amplitude
             Drive amplitude during the sweep.
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
         """
         if simultaneous_drive is None:
             simultaneous_drive = True
@@ -3468,6 +3471,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
         """
         Estimate control amplitude from a resonance scan.
@@ -3480,6 +3484,9 @@ class CharacterizationService:
             Frequency sweep range in GHz.
         target_rabi_rate
             Target Rabi rate used for scaling.
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
         """
         if target_rabi_rate is None:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
@@ -3501,6 +3508,7 @@ class CharacterizationService:
         data = self.scan_qubit_frequencies(
             target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             shots=shots,
@@ -3585,6 +3593,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
         """
         Measure qubit resonance and estimate control amplitude.
@@ -3598,6 +3607,9 @@ class CharacterizationService:
         target_rabi_rate
             Target Rabi rate used for scaling in GHz. If None, uses
             `qubex.experiment.experiment_constants.DEFAULT_RABI_FREQUENCY`.
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
 
         Returns
         -------
@@ -3635,6 +3647,7 @@ class CharacterizationService:
         data = self.scan_qubit_frequencies(
             target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             shots=shots,
@@ -3716,6 +3729,8 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        *,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
         """
         Perform qubit spectroscopy over frequency and power.
@@ -3728,6 +3743,9 @@ class CharacterizationService:
             Control frequency sweep range in GHz.
         power_range
             Drive power sweep range in dB.
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
         """
         if plot is None:
             plot = True
@@ -3750,6 +3768,7 @@ class CharacterizationService:
             result1d = self.scan_qubit_frequencies(
                 target,
                 frequency_range=frequency_range,
+                simultaneous_drive=simultaneous_drive,
                 control_amplitude=amplitude,
                 readout_amplitude=readout_amplitude,
                 readout_frequency=readout_frequency,

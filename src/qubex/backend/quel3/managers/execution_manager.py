@@ -41,6 +41,7 @@ from qubex.backend.quel3.interfaces import (
 from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.managers.session_workarounds import (
+    QUELWARE_SESSION_EXTEND_TTL_MS,
     QuelwareSessionError,
     quelware_exception_summary,
 )
@@ -568,6 +569,7 @@ class Quel3ExecutionManager:
             alias: {window.name: [] for window in timeline.capture_windows}
             for alias, timeline in payload.fixed_timelines.items()
         }
+        await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS)
         await session_state.session.trigger(
             instrument_ids=instrument_resource_ids,
             wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,

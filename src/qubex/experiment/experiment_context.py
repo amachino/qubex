@@ -233,10 +233,22 @@ class ExperimentContext:
         self._load_classifiers()
         self.print_environment(verbose=False)
 
-    def _load_classifiers(self):
+    def _resolve_classifier_dir(self, path: Path | str | None = None) -> Path:
+        """Resolve the directory containing classifier files."""
+        if path is None:
+            return self.classifier_dir / self.chip_id
+        return Path(path)
+
+    def _load_classifiers(self, path: Path | str | None = None) -> None:
+        """Load classifiers from disk and update the active classifier mapping."""
+        classifier_dir = self._resolve_classifier_dir(path)
+        if not classifier_dir.is_dir():
+            return
+
+        classifiers: TargetMap[StateClassifier] = {}
         for qubit in self.qubit_labels:
-            classifier_path = self.classifier_dir / self.chip_id / f"{qubit}.pkl"
-            if classifier_path.exists():
+            classifier_path = classifier_dir / f"{qubit}.pkl"
+            if classifier_path.is_file():
                 try:
                     classifier = StateClassifier.load(classifier_path)
                 except Exception as exc:
@@ -250,7 +262,11 @@ class ExperimentContext:
                         ),
                     )
                     continue
-                self._measurement.update_classifiers({qubit: classifier})
+                classifiers[qubit] = classifier
+
+        if classifiers:
+            self._measurement.update_classifiers(classifiers)
+            logger.info(f"State classifiers loaded from {classifier_dir}")
 
     @staticmethod
     def _is_classifier_compatibility_error(exc: BaseException) -> bool:
@@ -752,6 +768,39 @@ class ExperimentContext:
             raise CalibrationMissingError(
                 f"Failed to load calibration data from {path}: {e}"
             ) from e
+
+    def load_classifier(self, path: Path | str | None = None) -> None:
+        """
+        Load state classifiers from a given path or the default classifier directory.
+
+        Parameters
+        ----------
+        path : Path | str | None, optional
+            Directory containing `<qubit>.pkl` files. Defaults to
+            `<classifier_dir>/<chip_id>`.
+
+        Notes
+        -----
+        Loaded classifiers are merged into the active classifier mapping.
+        Classifiers without a corresponding file remain unchanged.
+        """
+        classifier_dir = self._resolve_classifier_dir(path)
+        if not classifier_dir.exists():
+            raise FileNotFoundError(
+                f"Classifier directory '{classifier_dir}' does not exist."
+            )
+        if not classifier_dir.is_dir():
+            raise NotADirectoryError(
+                f"Classifier path '{classifier_dir}' is not a directory."
+            )
+        if not any(
+            (classifier_dir / f"{qubit}.pkl").is_file() for qubit in self.qubit_labels
+        ):
+            raise FileNotFoundError(
+                f"No classifier files for configured qubits were found in "
+                f"'{classifier_dir}'."
+            )
+        self._load_classifiers(path=classifier_dir)
 
     def get_qubit_label(self, index: int) -> str:
         """Get the qubit label from the given qubit index."""

@@ -145,6 +145,9 @@ class AsyncBridge:
             raise TimeoutError(
                 "Timed out while waiting for asynchronous bridge execution."
             ) from error
+        except BaseException:
+            bridge_future.cancel()
+            raise
 
     def run_without_timeout(self, factory: Callable[[], Awaitable[T]]) -> T:
         """Run one awaitable factory without a bridge wait timeout."""

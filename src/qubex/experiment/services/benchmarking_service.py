@@ -669,7 +669,14 @@ class BenchmarkingService:
         save_image: bool | None = None,
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
-        """Run two-qubit randomized benchmarking."""
+        """
+        Run two-qubit randomized benchmarking.
+
+        Notes
+        -----
+        Two-qubit randomized benchmarking requires state classifiers for both
+        the control and target qubits.
+        """
         return get_shared_async_bridge(key="experiment").run_without_timeout(
             lambda: self._run_rb_experiment_2q(
                 targets=targets,
@@ -741,6 +748,18 @@ class BenchmarkingService:
             if self.ctx.experiment_system.get_target(target).is_cr
             and target in self.ctx.calib_note.cr_params
         ]
+
+        missing_classifiers = list(
+            dict.fromkeys(
+                qubit
+                for target in targets
+                for qubit in self.ctx.cr_pair(target)
+                if self.ctx.classifiers.get(qubit) is None
+            )
+        )
+        if missing_classifiers:
+            missing = ", ".join(missing_classifiers)
+            raise ValueError(f"Classifier not found for {missing}.")
 
         if n_cliffords_range is not None:
             n_cliffords_range = np.array(n_cliffords_range, dtype=int)
