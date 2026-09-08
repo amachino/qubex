@@ -145,6 +145,9 @@ class AsyncBridge:
             raise TimeoutError(
                 "Timed out while waiting for asynchronous bridge execution."
             ) from error
+        except BaseException:
+            bridge_future.cancel()
+            raise
 
     def close(self) -> None:
         """Stop the dedicated bridge loop and close this bridge."""
