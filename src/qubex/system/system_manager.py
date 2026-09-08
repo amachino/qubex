@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import math
 import warnings
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -22,6 +23,7 @@ from qubex.backend.backend_controller import (
 )
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import Quel3BackendController
+from qubex.backend.quel3.quel3_backend_constants import READOUT_SAMPLING_PERIOD_NS
 from qubex.constants import (
     DEFAULT_RAWDATA_DIR,
 )
@@ -861,6 +863,100 @@ This operation will overwrite the existing backend settings. Do you want to cont
             self.experiment_system.modify_target_frequencies(original_frequencies)
             if callable(modify_target_frequencies):
                 modify_target_frequencies(original_frequencies)
+
+    @contextmanager
+    def modified_capture_delay(
+        self, capture_delay: Mapping[int, int | float]
+    ) -> Iterator[None]:
+        """
+        Temporarily override capture delays by mux index.
+
+        Parameters
+        ----------
+        capture_delay : Mapping[int, int | float]
+            Mux indices mapped to non-negative integer `ndelay` for QuEL-1,
+            or non-negative ns aligned to the readout sampling period for QuEL-3.
+            Unspecified muxes retain their configured values.
+
+        Notes
+        -----
+        Restore software and controller settings even if applying the override
+        or the context body fails. Configuration files are not changed.
+        """
+        if not isinstance(capture_delay, Mapping):
+            raise TypeError("Capture delay must be a mapping keyed by mux index.")
+        overrides = dict(capture_delay)
+        if not overrides:
+            yield
+            return
+        backend = self.backend_kind
+        if backend not in (BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3):
+            raise NotImplementedError(
+                "Capture-delay overrides require QuEL-1 or QuEL-3."
+            )
+        for index, delay in overrides.items():
+            if isinstance(index, bool) or not isinstance(index, int):
+                raise TypeError("Capture-delay keys must be integer mux indices.")
+            if isinstance(delay, bool) or not isinstance(delay, (int, float)):
+                raise TypeError("Capture delay must be numeric.")
+            if backend == BACKEND_KIND_QUEL1 and not isinstance(delay, int):
+                raise TypeError("QuEL-1 capture delay must be integer `ndelay`.")
+            if not math.isfinite(delay) or delay < 0:
+                raise ValueError("Capture delay must be finite and non-negative.")
+            if backend == BACKEND_KIND_QUEL3:
+                samples = delay / READOUT_SAMPLING_PERIOD_NS
+                if not math.isclose(
+                    samples, round(samples), rel_tol=1e-5, abs_tol=1e-8
+                ):
+                    raise ValueError(
+                        "QuEL-3 capture delay must be a multiple of "
+                        f"{READOUT_SAMPLING_PERIOD_NS} ns."
+                    )
+
+        system = self.experiment_system
+        mux_indices = set(overrides)
+        delays = system.control_params.capture_delay
+        unknown = mux_indices - delays.keys()
+        if unknown:
+            raise ValueError(f"Unknown capture-delay mux indices: {sorted(unknown)}")
+        original_delays = {index: delays[index] for index in mux_indices}
+        channels = (
+            [
+                channel
+                for mux, port in system.wiring_info.read_in
+                if mux.index in mux_indices
+                for channel in port.channels
+            ]
+            if backend == BACKEND_KIND_QUEL1
+            else []
+        )
+        original_channel_delays = [(channel, channel.ndelay) for channel in channels]
+        controller = self.backend_controller
+        try:
+            with ExitStack() as restore_controller:
+                delays.update(overrides)
+                if isinstance(controller, Quel1BackendController):
+                    for mux, port in system.wiring_info.read_in:
+                        if mux.index not in mux_indices:
+                            continue
+                        for channel in port.channels:
+                            original_delay = controller.set_capture_delay(
+                                port_name=port.id,
+                                channel_number=channel.number,
+                                capture_delay=int(overrides[mux.index]),
+                            )
+                            restore_controller.callback(
+                                controller.set_capture_delay,
+                                port_name=port.id,
+                                channel_number=channel.number,
+                                capture_delay=original_delay,
+                            )
+                            channel.ndelay = int(overrides[mux.index])
+                yield
+        finally:
+            delays.update(original_delays)
+            for channel, original_ndelay in original_channel_delays:
+                channel.ndelay = original_ndelay
 
     @contextmanager
     def modified_backend_settings(

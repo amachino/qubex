@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -117,3 +118,49 @@ def test_r8_config_port_filters_only_unsupported_mixer_fields(
             "rfswitch": "pass",
         }
     ]
+
+
+def test_capture_delay_update_preserves_channel_relations() -> None:
+    """Updating and restoring one delay preserves channel relations and sibling delays."""
+    port = SimpleNamespace(ndelay_or_nwait=(8, 16))
+    relations = [("capture-0", {"port_name": "capture-port", "channel_number": 0})]
+    db = SimpleNamespace(
+        _port_settings={"capture-port": port}, _relation_channel_port=relations
+    )
+    runtime = SimpleNamespace(qubecalib=SimpleNamespace(system_config_database=db))
+    manager = Quel1ConfigurationManager(runtime_context=cast(Any, runtime))
+    for _ in range(2):
+        previous = manager.set_capture_delay(
+            port_name="capture-port", channel_number=0, capture_delay=10
+        )
+        assert previous == 8
+        assert port.ndelay_or_nwait == (10, 16)
+        manager.set_capture_delay(
+            port_name="capture-port", channel_number=0, capture_delay=previous
+        )
+    assert port.ndelay_or_nwait == (8, 16)
+    assert relations == [
+        ("capture-0", {"port_name": "capture-port", "channel_number": 0})
+    ]
+
+
+@pytest.mark.parametrize(
+    ("channel", "delay", "error"),
+    [
+        (-1, 10, ValueError),
+        (2, 10, ValueError),
+        (0, -1, ValueError),
+        (0, 1.5, TypeError),
+    ],
+)
+def test_capture_delay_update_rejects_invalid_values(channel, delay, error) -> None:
+    """Invalid delay updates preserve all configured channel delays."""
+    port = SimpleNamespace(ndelay_or_nwait=(8, 16))
+    db = SimpleNamespace(_port_settings={"capture-port": port})
+    runtime = SimpleNamespace(qubecalib=SimpleNamespace(system_config_database=db))
+    manager = Quel1ConfigurationManager(runtime_context=cast(Any, runtime))
+    with pytest.raises(error):
+        manager.set_capture_delay(
+            port_name="capture-port", channel_number=channel, capture_delay=delay
+        )
+    assert port.ndelay_or_nwait == (8, 16)

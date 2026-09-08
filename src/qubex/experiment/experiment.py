@@ -1721,6 +1721,7 @@ class Experiment:
         method: Literal["measure", "execute"] | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        capture_delay: dict[int, int | float] | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1743,6 +1744,14 @@ class Experiment:
             Number of shots.
         shot_interval : float, optional
             Interval between shots in ns.
+        capture_delay : dict[int, int | float], optional
+            Temporary capture-delay settings keyed by mux index, e.g. `{0: 10}`.
+            Unspecified muxes retain their configured delays.
+            QuEL-1 requires a non-negative integer in `ndelay` units; QuEL-3
+            requires non-negative ns aligned to its readout sampling period.
+            Defaults to None, preserving the configured delays. Shared mux
+            channels are affected. Original settings are restored on exit,
+            including when measurement fails. Configuration files are not changed.
         readout_amplitude : float, optional
             Amplitude of the readout pulse.
         readout_duration : float, optional
@@ -1770,6 +1779,7 @@ class Experiment:
             method=method,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            capture_delay=capture_delay,
             readout_amplitude=readout_amplitude,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,

@@ -6,6 +6,7 @@ import logging
 import warnings
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
+from contextlib import nullcontext
 from itertools import product
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
@@ -1700,6 +1701,7 @@ class MeasurementService:
         method: Literal["measure", "execute"] | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        capture_delay: dict[int, int | float] | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1722,6 +1724,14 @@ class MeasurementService:
             Number of shots.
         shot_interval : float | None, optional
             Interval between shots in ns.
+        capture_delay : dict[int, int | float], optional
+            Temporary capture-delay settings keyed by mux index, e.g. `{0: 10}`.
+            Unspecified muxes retain their configured delays.
+            QuEL-1 requires a non-negative integer in `ndelay` units; QuEL-3
+            requires non-negative ns aligned to its readout sampling period.
+            Defaults to None, preserving the configured delays. Shared mux
+            channels are affected. Original settings are restored on exit,
+            including when measurement fails. Configuration files are not changed.
         readout_amplitude : float, optional
             Amplitude of the readout pulse.
         readout_duration : float, optional
@@ -1794,22 +1804,28 @@ class MeasurementService:
             for target in targets:
                 ps.add(target, Blank(0))
 
-        result = MeasurementResultConverter.to_measure_result(
-            _run_async(
-                lambda: self.run_measurement(
-                    schedule=ps,
-                    n_shots=n_shots,
-                    shot_interval=shot_interval,
-                    readout_amplitudes=readout_amplitudes,
-                    readout_duration=readout_duration,
-                    readout_pre_margin=readout_pre_margin,
-                    readout_post_margin=readout_post_margin,
-                    readout_amplification=readout_amplification,
-                    final_measurement=True,
-                    time_integration=False,
+        delay_context = (
+            self.ctx.system_manager.modified_capture_delay(capture_delay)
+            if capture_delay is not None
+            else nullcontext()
+        )
+        with delay_context:
+            result = MeasurementResultConverter.to_measure_result(
+                _run_async(
+                    lambda: self.run_measurement(
+                        schedule=ps,
+                        n_shots=n_shots,
+                        shot_interval=shot_interval,
+                        readout_amplitudes=readout_amplitudes,
+                        readout_duration=readout_duration,
+                        readout_pre_margin=readout_pre_margin,
+                        readout_post_margin=readout_post_margin,
+                        readout_amplification=readout_amplification,
+                        final_measurement=True,
+                        time_integration=False,
+                    )
                 )
             )
-        )
         if plot:
             result.plot()
         return result
