@@ -672,10 +672,17 @@ class BenchmarkingService:
         """
         Run two-qubit randomized benchmarking.
 
+        Raises
+        ------
+        ValueError
+            If no targets are given, a target is not a CR target, or required
+            CR calibration parameters or state classifiers are missing.
+
         Notes
         -----
-        Two-qubit randomized benchmarking requires state classifiers for both
-        the control and target qubits.
+        Calibrate the gate pulses and readout before running this experiment.
+        Two-qubit RB estimates the joint ground-state probability using state
+        classifiers registered for both the control and target qubits.
         """
         return get_shared_async_bridge(key="experiment").run_without_timeout(
             lambda: self._run_rb_experiment_2q(
@@ -742,12 +749,19 @@ class BenchmarkingService:
         else:
             targets = list(targets)
 
-        targets = [
-            target
-            for target in targets
-            if self.ctx.experiment_system.get_target(target).is_cr
-            and target in self.ctx.calib_note.cr_params
+        if not targets:
+            raise ValueError("At least one 2Q target is required.")
+
+        for target in targets:
+            if not self.ctx.experiment_system.get_target(target).is_cr:
+                raise ValueError(f"`{target}` is not a 2Q target.")
+
+        missing_cr_params = [
+            target for target in targets if target not in self.ctx.calib_note.cr_params
         ]
+        if missing_cr_params:
+            missing = ", ".join(missing_cr_params)
+            raise ValueError(f"CR parameters not found for {missing}.")
 
         missing_classifiers = list(
             dict.fromkeys(
@@ -801,11 +815,6 @@ class BenchmarkingService:
             target_groups = [targets]
         else:
             target_groups = [[target] for target in targets]
-
-        for target in targets:
-            target_object = self.ctx.experiment_system.get_target(target)
-            if not target_object.is_cr:
-                raise ValueError(f"`{target}` is not a 2Q target.")
 
         def rb_sequence(
             targets: list[str],
@@ -1269,6 +1278,9 @@ class BenchmarkingService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if not targets:
+            raise ValueError("At least one target is required.")
 
         target_object = self.ctx.experiment_system.get_target(targets[0])
         is_2q = target_object.is_cr
