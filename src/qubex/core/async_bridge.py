@@ -168,7 +168,11 @@ class AsyncBridge:
             factory=factory,
             context=contextvars.copy_context(),
         )
-        return bridge_future.result()
+        try:
+            return bridge_future.result()
+        except BaseException:
+            bridge_future.cancel()
+            raise
 
     def close(self) -> None:
         """Stop the dedicated bridge loop and close this bridge."""
