@@ -634,6 +634,23 @@ class Experiment:
         """Load the calibration data from a given path or the default calibration note file."""
         return self.ctx.load_calib_note(path=path)
 
+    def load_classifier(self, path: Path | str | None = None) -> None:
+        """
+        Load state classifiers from a given path or the default classifier directory.
+
+        Parameters
+        ----------
+        path : Path | str | None, optional
+            Directory containing `<qubit>.pkl` files. Defaults to
+            `<classifier_dir>/<chip_id>`.
+
+        Notes
+        -----
+        Loaded classifiers are merged into the active classifier mapping.
+        Classifiers without a corresponding file remain unchanged.
+        """
+        return self.ctx.load_classifier(path=path)
+
     def get_qubit_label(self, index: int) -> str:
         """Get the qubit label from the given qubit index."""
         return self.ctx.get_qubit_label(index)

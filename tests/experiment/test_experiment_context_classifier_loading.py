@@ -19,21 +19,16 @@ class _MeasurementStub:
         self.classifiers.update(classifiers)
 
 
-class _TestExperimentContext(ExperimentContext):
-    def load_classifiers(self) -> None:
-        self._load_classifiers()
-
-
-def _make_context(tmp_path: Path) -> _TestExperimentContext:
+def _make_context(tmp_path: Path) -> ExperimentContext:
     """Create a minimal context instance for classifier-loading tests."""
-    context = object.__new__(_TestExperimentContext)
+    context = object.__new__(ExperimentContext)
     context.__dict__["_qubits"] = ["Q00", "Q01"]
     context.__dict__["_classifier_dir"] = tmp_path
     context.__dict__["_chip_id"] = "test-chip"
     context.__dict__["_measurement"] = _MeasurementStub()
 
     classifier_path = tmp_path / "test-chip"
-    classifier_path.mkdir()
+    classifier_path.mkdir(parents=True)
     for qubit in context.qubit_labels:
         (classifier_path / f"{qubit}.pkl").write_bytes(b"classifier")
 
@@ -57,7 +52,7 @@ def test_load_classifiers_warns_and_skips_compatibility_failure(
     monkeypatch.setattr(StateClassifier, "load", staticmethod(_load))
 
     caplog.set_level(logging.WARNING, logger="qubex.experiment.experiment_context")
-    context.load_classifiers()
+    context.load_classifier()
 
     assert "Failed to load state classifier for Q00" in caplog.text
     assert "compatibility issue" in caplog.text
@@ -74,11 +69,65 @@ def test_load_classifiers_propagates_non_compatibility_failure(
 ) -> None:
     """Given unrelated classifier load failure, when loading, then the original error is raised."""
     context = _make_context(tmp_path)
+    loaded_classifier = object()
 
-    def _load(_path: Path | str) -> object:
-        raise ValueError("broken classifier payload")
+    def _load(path: Path | str) -> object:
+        if Path(path).name == "Q01.pkl":
+            raise ValueError("broken classifier payload")
+        return loaded_classifier
 
     monkeypatch.setattr(StateClassifier, "load", staticmethod(_load))
 
     with pytest.raises(ValueError, match="broken classifier payload"):
-        context.load_classifiers()
+        context.load_classifier()
+
+    assert context.classifiers == {}
+
+
+def test_load_classifier_uses_custom_classifier_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given a custom classifier directory, when loading, then classifiers are read from that directory."""
+    default_dir = tmp_path / "default"
+    custom_dir = tmp_path / "custom" / "test-chip"
+    context = _make_context(default_dir)
+    custom_dir.mkdir(parents=True)
+    for qubit in context.qubit_labels:
+        (custom_dir / f"{qubit}.pkl").write_bytes(b"classifier")
+
+    loaded_paths: list[Path] = []
+
+    def _load(path: Path | str) -> object:
+        loaded_paths.append(Path(path))
+        return object()
+
+    monkeypatch.setattr(StateClassifier, "load", staticmethod(_load))
+
+    context.load_classifier(path=custom_dir)
+
+    assert loaded_paths == [
+        custom_dir / "Q00.pkl",
+        custom_dir / "Q01.pkl",
+    ]
+
+
+def test_load_classifier_rejects_missing_directory(tmp_path: Path) -> None:
+    """Given a missing classifier directory, when loading, then a file-not-found error is raised."""
+    context = _make_context(tmp_path / "default")
+    missing_dir = tmp_path / "missing"
+
+    with pytest.raises(FileNotFoundError, match=str(missing_dir)):
+        context.load_classifier(path=missing_dir)
+
+
+def test_load_classifier_rejects_directory_without_classifier_files(
+    tmp_path: Path,
+) -> None:
+    """Given an empty classifier directory, when loading, then a file-not-found error is raised."""
+    context = _make_context(tmp_path / "default")
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+
+    with pytest.raises(FileNotFoundError, match="No classifier files"):
+        context.load_classifier(path=empty_dir)
