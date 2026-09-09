@@ -90,16 +90,16 @@ class Quel1SystemSynchronizer:
             with ExitStack() as restore_controller:
                 for index, port, channel in channels:
                     delay = coarse[index]
-                    previous = self._backend_controller.set_capture_delay(
+                    previous = self._backend_controller.set_capture_ndelay(
                         port_name=port.id,
                         channel_number=channel.number,
-                        capture_delay=delay,
+                        ndelay=delay,
                     )
                     restore_controller.callback(
-                        self._backend_controller.set_capture_delay,
+                        self._backend_controller.set_capture_ndelay,
                         port_name=port.id,
                         channel_number=channel.number,
-                        capture_delay=previous,
+                        ndelay=previous,
                     )
                     channel.ndelay = delay
                 params.capture_delay.update(coarse)

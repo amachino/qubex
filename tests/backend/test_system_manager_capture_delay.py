@@ -18,7 +18,7 @@ def _make_manager(monkeypatch: pytest.MonkeyPatch, backend: str):
     controller = Mock(
         spec=Quel1BackendController if backend == "quel1" else Quel3BackendController
     )
-    controller.set_capture_delay = Mock(return_value=8)
+    controller.set_capture_ndelay = Mock(return_value=8)
     port = SimpleNamespace(id="capture-port")
     channels = [
         SimpleNamespace(id=f"capture-{i}", port=port, number=i, ndelay=8)
@@ -93,10 +93,9 @@ def test_capture_delay_is_temporary(monkeypatch, backend, delay, fail) -> None:
             assert system.control_params.capture_delay == {0: expected, 1: 16}
             if backend == "quel1":
                 assert [channel.ndelay for channel in channels] == [expected, expected]
-                assert controller.set_capture_delay.call_count == 2
+                assert controller.set_capture_ndelay.call_count == 2
                 assert (
-                    controller.set_capture_delay.call_args.kwargs["capture_delay"]
-                    == expected
+                    controller.set_capture_ndelay.call_args.kwargs["ndelay"] == expected
                 )
             if backend == "quel3":
                 assert system.control_params.capture_delay_word == {0: None, 1: None}
@@ -114,8 +113,8 @@ def test_capture_delay_is_temporary(monkeypatch, backend, delay, fail) -> None:
     assert system.control_params.capture_delay_word == expected_words
     assert [channel.ndelay for channel in channels] == [8, 8]
     if backend == "quel1":
-        assert controller.set_capture_delay.call_count == 4
-        assert controller.set_capture_delay.call_args.kwargs["capture_delay"] == 8
+        assert controller.set_capture_ndelay.call_count == 4
+        assert controller.set_capture_ndelay.call_args.kwargs["ndelay"] == 8
 
 
 @pytest.mark.parametrize(
@@ -144,7 +143,7 @@ def test_invalid_capture_delay_leaves_settings_unchanged(
 def test_capture_delay_restores_after_controller_failure(monkeypatch) -> None:
     """A partial controller update restores the original delay on every affected channel."""
     manager, system, controller, channels = _make_manager(monkeypatch, "quel1")
-    controller.set_capture_delay.side_effect = [
+    controller.set_capture_ndelay.side_effect = [
         8,
         RuntimeError("update failed"),
         24,
@@ -156,7 +155,7 @@ def test_capture_delay_restores_after_controller_failure(monkeypatch) -> None:
         pytest.fail("Controller failure was ignored")
     assert system.control_params.capture_delay == {0: 8, 1: 16}
     assert [channel.ndelay for channel in channels] == [8, 8]
-    assert controller.set_capture_delay.call_count == 3
+    assert controller.set_capture_ndelay.call_count == 3
     assert system.control_params.capture_delay_word == {0: 2, 1: 0}
 
 

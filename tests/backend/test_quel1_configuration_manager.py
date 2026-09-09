@@ -130,13 +130,13 @@ def test_capture_delay_update_preserves_channel_relations() -> None:
     runtime = SimpleNamespace(qubecalib=SimpleNamespace(system_config_database=db))
     manager = Quel1ConfigurationManager(runtime_context=cast(Any, runtime))
     for _ in range(2):
-        previous = manager.set_capture_delay(
-            port_name="capture-port", channel_number=0, capture_delay=10
+        previous = manager.set_capture_ndelay(
+            port_name="capture-port", channel_number=0, ndelay=10
         )
         assert previous == 8
         assert port.ndelay_or_nwait == (10, 16)
-        manager.set_capture_delay(
-            port_name="capture-port", channel_number=0, capture_delay=previous
+        manager.set_capture_ndelay(
+            port_name="capture-port", channel_number=0, ndelay=previous
         )
     assert port.ndelay_or_nwait == (8, 16)
     assert relations == [
@@ -160,7 +160,7 @@ def test_capture_delay_update_rejects_invalid_values(channel, delay, error) -> N
     runtime = SimpleNamespace(qubecalib=SimpleNamespace(system_config_database=db))
     manager = Quel1ConfigurationManager(runtime_context=cast(Any, runtime))
     with pytest.raises(error):
-        manager.set_capture_delay(
-            port_name="capture-port", channel_number=channel, capture_delay=delay
+        manager.set_capture_ndelay(
+            port_name="capture-port", channel_number=channel, ndelay=delay
         )
     assert port.ndelay_or_nwait == (8, 16)
