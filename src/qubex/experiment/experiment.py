@@ -1745,10 +1745,12 @@ class Experiment:
         shot_interval : float, optional
             Interval between shots in ns.
         capture_delay : dict[int, int | float], optional
-            Temporary capture-delay settings keyed by mux index, e.g. `{0: 10}`.
+            Temporary total capture delays in ns keyed by mux index, e.g. `{0: 776.0}`.
+            Values must be finite and non-negative. QuEL-1 requires multiples
+            of 8 ns; QuEL-3 requires multiples of 0.8 ns. Invalid values raise
+            `ValueError` rather than being rounded. QuEL-1 splits the delay
+            into coarse and word offsets internally, replacing both settings.
             Unspecified muxes retain their configured delays.
-            QuEL-1 requires a non-negative integer in `ndelay` units; QuEL-3
-            requires non-negative ns aligned to its readout sampling period.
             Defaults to None, preserving the configured delays. Shared mux
             channels are affected. Original settings are restored on exit,
             including when measurement fails. Configuration files are not changed.

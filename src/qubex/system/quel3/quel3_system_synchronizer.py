@@ -66,15 +66,22 @@ class Quel3SystemSynchronizer:
         Common input validation belongs to `SystemManager`. QuEL-3 consumes
         control parameters during measurement, so no controller update is needed.
         """
-        del experiment_system
-        for delay in capture_delay.values():
+        normalized = {}
+        for index, delay in capture_delay.items():
             samples = delay / READOUT_SAMPLING_PERIOD_NS
-            if not math.isclose(samples, round(samples), rel_tol=1e-5, abs_tol=1e-8):
+            if not math.isclose(samples, round(samples), rel_tol=0.0, abs_tol=1e-8):
                 raise ValueError(
-                    "QuEL-3 capture delay must be a multiple of "
-                    f"{READOUT_SAMPLING_PERIOD_NS} ns."
+                    f"QuEL-3 capture delay for MUX{index} must be a multiple of "
+                    f"{READOUT_SAMPLING_PERIOD_NS} ns; got {delay} ns."
                 )
-        yield
+            normalized[index] = round(samples) * READOUT_SAMPLING_PERIOD_NS
+        delays = experiment_system.control_params.capture_delay
+        original = {index: delays[index] for index in normalized}
+        try:
+            delays.update(normalized)
+            yield
+        finally:
+            delays.update(original)
 
     def sync_experiment_system_to_backend_controller(
         self,

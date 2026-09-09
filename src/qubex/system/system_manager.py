@@ -865,22 +865,24 @@ This operation will overwrite the existing backend settings. Do you want to cont
 
     @contextmanager
     def modified_capture_delay(
-        self, capture_delay: Mapping[int, int | float]
+        self,
+        capture_delay: Mapping[int, int | float],
     ) -> Iterator[None]:
         """
-        Temporarily override capture delays by mux index.
+        Temporarily override total capture delays in ns by mux index.
 
         Parameters
         ----------
         capture_delay : Mapping[int, int | float]
-            Mux indices mapped to non-negative integer `ndelay` for QuEL-1,
-            or non-negative ns aligned to the readout sampling period for QuEL-3.
+            Mux indices mapped to finite, non-negative delays in ns.
+            Each backend validates its resolution and converts to native units.
             Unspecified muxes retain their configured values.
 
         Notes
         -----
-        Restore software and controller settings even if applying the override
-        or the context body fails. Configuration files are not changed.
+        Backend synchronizers restore software and controller settings even if
+        applying the override or the context body fails. Configuration files
+        are not changed.
         """
         if not isinstance(capture_delay, Mapping):
             raise TypeError("Capture delay must be a mapping keyed by mux index.")
@@ -897,25 +899,17 @@ This operation will overwrite the existing backend settings. Do you want to cont
             if isinstance(index, bool) or not isinstance(index, int):
                 raise TypeError("Capture-delay keys must be integer mux indices.")
             if isinstance(delay, bool) or not isinstance(delay, (int, float)):
-                raise TypeError("Capture delay must be numeric.")
+                raise TypeError("Capture delay must be numeric in ns.")
             if not math.isfinite(delay) or delay < 0:
-                raise ValueError("Capture delay must be finite and non-negative.")
-
+                raise ValueError("Capture delay must be finite and non-negative in ns.")
         system = self.experiment_system
-        mux_indices = set(overrides)
-        delays = system.control_params.capture_delay
-        unknown = mux_indices - delays.keys()
+        unknown = overrides.keys() - system.control_params.capture_delay.keys()
         if unknown:
             raise ValueError(f"Unknown capture-delay mux indices: {sorted(unknown)}")
-        original_delays = {index: delays[index] for index in mux_indices}
-        try:
-            with synchronizer.modified_capture_delay(
-                experiment_system=system, capture_delay=overrides
-            ):
-                delays.update(overrides)
-                yield
-        finally:
-            delays.update(original_delays)
+        with synchronizer.modified_capture_delay(
+            experiment_system=system, capture_delay=overrides
+        ):
+            yield
 
     @contextmanager
     def modified_backend_settings(

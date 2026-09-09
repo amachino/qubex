@@ -37,13 +37,14 @@ class SystemSynchronizer(Protocol):
         capture_delay: Mapping[int, int | float],
     ) -> AbstractContextManager[None]:
         """
-        Validate backend delay units and temporarily apply backend-specific state.
+        Convert nanosecond delays and temporarily apply backend-specific settings.
 
         Notes
         -----
-        The manager validates mux keys and finite, non-negative numeric values,
-        and owns changes to `control_params.capture_delay`. This context must
-        restore backend state on exit, including partial entry failures.
+        The manager validates mux keys and finite, non-negative numeric values.
+        The synchronizer validates the backend resolution and owns temporary
+        control parameters and controller state, restoring both on exit,
+        including partial entry failures.
         """
         ...
 

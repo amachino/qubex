@@ -26,7 +26,13 @@ def _make_manager(monkeypatch: pytest.MonkeyPatch, backend: str):
     ]
     port.channels = channels
     system = SimpleNamespace(
-        control_params=SimpleNamespace(capture_delay={0: 8, 1: 16}),
+        control_params=SimpleNamespace(
+            # Native config units: ndelay for QuEL-1, ns for QuEL-3.
+            capture_delay={0: 8, 1: 16},
+            capture_delay_word=(
+                {0: 2, 1: 0} if backend == "quel1" else {0: None, 1: None}
+            ),
+        ),
         resolve_qubit_label=lambda label: "Q00",
         get_mux_by_qubit=lambda label: SimpleNamespace(index=0),
         wiring_info=SimpleNamespace(read_in=[(SimpleNamespace(index=0), port)]),
@@ -63,24 +69,37 @@ def test_capture_delay_reports_uninitialized_backend(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    ("backend", "delay"), [("quel1", 0), ("quel1", 24), ("quel3", 0), ("quel3", 24.0)]
+    ("backend", "delay"),
+    [
+        ("quel1", 0),
+        ("quel1", 776.0),
+        ("quel3", 0),
+        ("quel3", 24.0),
+        ("quel3", 0.8),
+        ("quel3", 3 * 0.8),
+    ],
 )
 @pytest.mark.parametrize("fail", [False, True])
 def test_capture_delay_is_temporary(monkeypatch, backend, delay, fail) -> None:
     """Capture delay overrides affect selected muxes and restore after success or failure."""
     manager, system, controller, channels = _make_manager(monkeypatch, backend)
     original = system.control_params.capture_delay
+    expected_words = {0: 2, 1: 0} if backend == "quel1" else {0: None, 1: None}
+    assert system.control_params.capture_delay_word == expected_words
 
     def run() -> None:
         with manager.modified_capture_delay({0: delay}):
-            assert system.control_params.capture_delay == {0: delay, 1: 16}
+            expected = int(delay // 128) if backend == "quel1" else delay
+            assert system.control_params.capture_delay == {0: expected, 1: 16}
             if backend == "quel1":
-                assert [channel.ndelay for channel in channels] == [delay, delay]
+                assert [channel.ndelay for channel in channels] == [expected, expected]
                 assert controller.set_capture_delay.call_count == 2
                 assert (
                     controller.set_capture_delay.call_args.kwargs["capture_delay"]
-                    == delay
+                    == expected
                 )
+            if backend == "quel3":
+                assert system.control_params.capture_delay_word == {0: None, 1: None}
             if fail:
                 raise RuntimeError("measurement failed")
 
@@ -92,6 +111,7 @@ def test_capture_delay_is_temporary(monkeypatch, backend, delay, fail) -> None:
 
     assert system.control_params.capture_delay is original
     assert original == {0: 8, 1: 16}
+    assert system.control_params.capture_delay_word == expected_words
     assert [channel.ndelay for channel in channels] == [8, 8]
     if backend == "quel1":
         assert controller.set_capture_delay.call_count == 4
@@ -101,7 +121,7 @@ def test_capture_delay_is_temporary(monkeypatch, backend, delay, fail) -> None:
 @pytest.mark.parametrize(
     ("backend", "delay", "error"),
     [
-        ("quel1", 1.5, TypeError),
+        ("quel1", 1.5, ValueError),
         ("quel1", -1, ValueError),
         ("quel3", -2, ValueError),
         ("quel3", float("nan"), ValueError),
@@ -137,6 +157,7 @@ def test_capture_delay_restores_after_controller_failure(monkeypatch) -> None:
     assert system.control_params.capture_delay == {0: 8, 1: 16}
     assert [channel.ndelay for channel in channels] == [8, 8]
     assert controller.set_capture_delay.call_count == 3
+    assert system.control_params.capture_delay_word == {0: 2, 1: 0}
 
 
 @pytest.mark.parametrize("backend", ["quel1", "quel3"])
@@ -145,7 +166,9 @@ def test_capture_delay_accepts_distinct_mux_values(monkeypatch, backend) -> None
     manager, system, controller, _channels = _make_manager(monkeypatch, backend)
     overrides = {0: 16, 1: 24}
     with manager.modified_capture_delay(overrides):
-        assert system.control_params.capture_delay == overrides
+        assert system.control_params.capture_delay == (
+            {0: 0, 1: 0} if backend == "quel1" else overrides
+        )
     assert system.control_params.capture_delay == {0: 8, 1: 16}
     assert overrides == {0: 16, 1: 24}
     if backend == "quel1":
@@ -206,7 +229,9 @@ def test_mux_overrides_reach_existing_backend_ports(monkeypatch) -> None:
         for i in range(3)
     ]
     system = SimpleNamespace(
-        control_params=SimpleNamespace(capture_delay={0: 8, 1: 9, 2: 10}),
+        control_params=SimpleNamespace(
+            capture_delay={0: 8, 1: 9, 2: 10}, capture_delay_word={0: 0, 1: 0, 2: 0}
+        ),
         wiring_info=SimpleNamespace(
             read_in=[(SimpleNamespace(index=i), port) for i, port in enumerate(ports)]
         ),
@@ -223,7 +248,7 @@ def test_mux_overrides_reach_existing_backend_ports(monkeypatch) -> None:
     )
     monkeypatch.setattr(manager, "_experiment_system", system)
     for _ in range(2):
-        with manager.modified_capture_delay({0: 16, 1: 24}):
+        with manager.modified_capture_delay({0: 16 * 128, 1: 24 * 128}):
             assert [settings[f"port-{i}"].ndelay_or_nwait for i in range(3)] == [
                 (16,),
                 (24,),
@@ -268,7 +293,7 @@ def test_capture_delay_uses_synchronizer_context(monkeypatch, failure) -> None:
     def run():
         with manager.modified_capture_delay({0: 24}):
             assert events == ["enter"]
-            assert system.control_params.capture_delay == {0: 24, 1: 16}
+            assert system.control_params.capture_delay == {0: 8, 1: 16}
             if failure == "body":
                 raise RuntimeError("body")
 
@@ -280,4 +305,54 @@ def test_capture_delay_uses_synchronizer_context(monkeypatch, failure) -> None:
     assert events == ["enter", "exit"]
     assert system.control_params.capture_delay == {0: 8, 1: 16}
     assert [channel.ndelay for channel in channels] == [8, 8]
+    assert controller.mock_calls == []
+
+
+@pytest.mark.parametrize(
+    ("delay", "ndelay", "word"),
+    [(0, 0, 0), (8, 0, 1), (120, 0, 15), (128, 1, 0), (776.0, 6, 1), (2048, 16, 0)],
+)
+@pytest.mark.parametrize("fail", [False, True])
+def test_ns_delay_splits_and_restores_words(monkeypatch, delay, ndelay, word, fail):
+    """Nanosecond overrides split into canonical coarse and word settings and restore both."""
+    manager, system, _controller, channels = _make_manager(monkeypatch, "quel1")
+    original_words = system.control_params.capture_delay_word
+
+    def run():
+        with manager.modified_capture_delay({0: delay}):
+            assert system.control_params.capture_delay == {0: ndelay, 1: 16}
+            assert system.control_params.capture_delay_word == {0: word, 1: 0}
+            assert [channel.ndelay for channel in channels] == [ndelay, ndelay]
+            with manager.modified_capture_delay({0: 128}):
+                assert system.control_params.capture_delay_word[0] == 0
+            assert system.control_params.capture_delay_word[0] == word
+            if fail:
+                raise RuntimeError("measurement failed")
+
+    if fail:
+        with pytest.raises(RuntimeError, match="measurement failed"):
+            run()
+    else:
+        run()
+    assert system.control_params.capture_delay_word is original_words
+    assert original_words == {0: 2, 1: 0}
+    assert system.control_params.capture_delay == {0: 8, 1: 16}
+
+
+@pytest.mark.parametrize(("backend", "step"), [("quel1", 8), ("quel3", 0.8)])
+@pytest.mark.parametrize("value", [777.0, 8000001.0])
+def test_ns_delay_rejects_off_grid_values_before_any_update(
+    monkeypatch, backend, step, value
+):
+    """Off-grid values report backend resolution before any mux or controller changes."""
+    manager, system, controller, _ = _make_manager(monkeypatch, backend)
+    with (
+        pytest.raises(ValueError, match=rf"multiple of {step}(?:\.0)? ns"),
+        manager.modified_capture_delay({0: 776.0, 1: value}),
+    ):
+        pytest.fail("Off-grid delay accepted")
+    assert system.control_params.capture_delay == {0: 8, 1: 16}
+    assert system.control_params.capture_delay_word == (
+        {0: 2, 1: 0} if backend == "quel1" else {0: None, 1: None}
+    )
     assert controller.mock_calls == []

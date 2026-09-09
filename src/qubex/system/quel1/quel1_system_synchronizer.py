@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
+from qubex.backend.quel1.quel1_backend_constants import (
+    BLOCK_LENGTH,
+    WORD_DURATION_NS,
+    WORD_LENGTH,
+)
 from qubex.core.parallel_executor import run_parallel, run_parallel_map
 from qubex.system.control_system import PortType
 from qubex.system.quel1.quel1_control_parameter_defaults import DEFAULT_CAPTURE_DELAY
@@ -48,16 +54,29 @@ class Quel1SystemSynchronizer:
         capture_delay: Mapping[int, int | float],
     ) -> Iterator[None]:
         """
-        Temporarily apply integer `ndelay` overrides to existing capture channels.
+        Convert ns delays into coarse and word offsets and apply them temporarily.
 
         Notes
         -----
-        Common input validation belongs to `SystemManager`. Restore channel and
-        controller delays on exit, including partial controller-update failures.
+        QuEL-1 requires multiples of 8 ns. Normalize the word remainder to
+        0 through 15. Restore control parameters, channels and controller delays
+        on exit, including partial controller-update failures.
         """
-        for delay in capture_delay.values():
-            if isinstance(delay, bool) or not isinstance(delay, int):
-                raise TypeError("QuEL-1 capture delay must be integer `ndelay`.")
+        coarse = {}
+        offsets = {}
+        for index, delay in capture_delay.items():
+            words = delay / WORD_DURATION_NS
+            if not math.isclose(words, round(words), rel_tol=0.0, abs_tol=1e-8):
+                raise ValueError(
+                    f"QuEL-1 capture delay for MUX{index} must be a multiple of "
+                    f"{WORD_DURATION_NS} ns; got {delay} ns."
+                )
+            coarse[index], offsets[index] = divmod(
+                round(words), BLOCK_LENGTH // WORD_LENGTH
+            )
+        params = experiment_system.control_params
+        original_delays = {index: params.capture_delay[index] for index in coarse}
+        original_words = {index: params.capture_delay_word[index] for index in offsets}
         channels = [
             (mux.index, port, channel)
             for mux, port in experiment_system.wiring_info.read_in
@@ -70,7 +89,7 @@ class Quel1SystemSynchronizer:
         try:
             with ExitStack() as restore_controller:
                 for index, port, channel in channels:
-                    delay = int(capture_delay[index])
+                    delay = coarse[index]
                     previous = self._backend_controller.set_capture_delay(
                         port_name=port.id,
                         channel_number=channel.number,
@@ -83,8 +102,12 @@ class Quel1SystemSynchronizer:
                         capture_delay=previous,
                     )
                     channel.ndelay = delay
+                params.capture_delay.update(coarse)
+                params.capture_delay_word.update(offsets)
                 yield
         finally:
+            params.capture_delay.update(original_delays)
+            params.capture_delay_word.update(original_words)
             for channel, original_ndelay in original_channel_delays:
                 channel.ndelay = original_ndelay
 
