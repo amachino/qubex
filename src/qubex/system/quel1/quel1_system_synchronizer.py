@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
 from qubex.core.parallel_executor import run_parallel, run_parallel_map
@@ -38,6 +39,54 @@ class Quel1SystemSynchronizer:
     def supports_mutable_backend_settings_cache(self) -> bool:
         """Return whether QuEL-1 supports mutable backend-settings cache writes."""
         return True
+
+    @contextmanager
+    def modified_capture_delay(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        capture_delay: Mapping[int, int | float],
+    ) -> Iterator[None]:
+        """
+        Temporarily apply integer `ndelay` overrides to existing capture channels.
+
+        Notes
+        -----
+        Common input validation belongs to `SystemManager`. Restore channel and
+        controller delays on exit, including partial controller-update failures.
+        """
+        for delay in capture_delay.values():
+            if isinstance(delay, bool) or not isinstance(delay, int):
+                raise TypeError("QuEL-1 capture delay must be integer `ndelay`.")
+        channels = [
+            (mux.index, port, channel)
+            for mux, port in experiment_system.wiring_info.read_in
+            if mux.index in capture_delay
+            for channel in port.channels
+        ]
+        original_channel_delays = [
+            (channel, channel.ndelay) for _, _, channel in channels
+        ]
+        try:
+            with ExitStack() as restore_controller:
+                for index, port, channel in channels:
+                    delay = int(capture_delay[index])
+                    previous = self._backend_controller.set_capture_delay(
+                        port_name=port.id,
+                        channel_number=channel.number,
+                        capture_delay=delay,
+                    )
+                    restore_controller.callback(
+                        self._backend_controller.set_capture_delay,
+                        port_name=port.id,
+                        channel_number=channel.number,
+                        capture_delay=previous,
+                    )
+                    channel.ndelay = delay
+                yield
+        finally:
+            for channel, original_ndelay in original_channel_delays:
+                channel.ndelay = original_ndelay
 
     def sync_experiment_system_to_backend_controller(
         self,

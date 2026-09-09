@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import math
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
+
+from qubex.backend.quel3.quel3_backend_constants import READOUT_SAMPLING_PERIOD_NS
 
 from .quel3_target_deploy_planner import Quel3TargetDeployPlanner
 
@@ -46,6 +50,31 @@ class Quel3SystemSynchronizer:
     def supports_mutable_backend_settings_cache(self) -> bool:
         """Return whether QuEL-3 supports mutable backend-settings cache writes."""
         return False
+
+    @contextmanager
+    def modified_capture_delay(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        capture_delay: Mapping[int, int | float],
+    ) -> Iterator[None]:
+        """
+        Validate nanosecond overrides against the QuEL-3 readout sampling period.
+
+        Notes
+        -----
+        Common input validation belongs to `SystemManager`. QuEL-3 consumes
+        control parameters during measurement, so no controller update is needed.
+        """
+        del experiment_system
+        for delay in capture_delay.values():
+            samples = delay / READOUT_SAMPLING_PERIOD_NS
+            if not math.isclose(samples, round(samples), rel_tol=1e-5, abs_tol=1e-8):
+                raise ValueError(
+                    "QuEL-3 capture delay must be a multiple of "
+                    f"{READOUT_SAMPLING_PERIOD_NS} ns."
+                )
+        yield
 
     def sync_experiment_system_to_backend_controller(
         self,

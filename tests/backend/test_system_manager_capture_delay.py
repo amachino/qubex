@@ -1,5 +1,6 @@
 """Tests for temporary capture-delay overrides."""
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -7,6 +8,8 @@ import pytest
 
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import Quel3BackendController
+from qubex.system.quel1 import Quel1SystemSynchronizer
+from qubex.system.quel3 import Quel3SystemSynchronizer
 from qubex.system.system_manager import SystemManager
 
 
@@ -29,6 +32,15 @@ def _make_manager(monkeypatch: pytest.MonkeyPatch, backend: str):
         wiring_info=SimpleNamespace(read_in=[(SimpleNamespace(index=0), port)]),
     )
     monkeypatch.setattr(manager, "_backend_controller", controller)
+    monkeypatch.setattr(
+        manager,
+        "_system_synchronizer",
+        (
+            Quel1SystemSynchronizer(backend_controller=controller)
+            if isinstance(controller, Quel1BackendController)
+            else Quel3SystemSynchronizer(backend_controller=controller)
+        ),
+    )
     monkeypatch.setattr(manager, "_experiment_system", system)
     return manager, system, controller, channels
 
@@ -183,6 +195,15 @@ def test_mux_overrides_reach_existing_backend_ports(monkeypatch) -> None:
         ),
     )
     monkeypatch.setattr(manager, "_backend_controller", controller)
+    monkeypatch.setattr(
+        manager,
+        "_system_synchronizer",
+        (
+            Quel1SystemSynchronizer(backend_controller=controller)
+            if isinstance(controller, Quel1BackendController)
+            else Quel3SystemSynchronizer(backend_controller=controller)
+        ),
+    )
     monkeypatch.setattr(manager, "_experiment_system", system)
     for _ in range(2):
         with manager.modified_capture_delay({0: 16, 1: 24}):
@@ -201,3 +222,45 @@ def test_mux_overrides_reach_existing_backend_ports(monkeypatch) -> None:
         assert [port.channels[0].ndelay for port in ports] == [8, 9, 10]
         assert system.control_params.capture_delay == {0: 8, 1: 9, 2: 10}
     assert len(relations) == 3
+
+
+@pytest.mark.parametrize("failure", [None, "enter", "body"])
+def test_capture_delay_uses_synchronizer_context(monkeypatch, failure) -> None:
+    """Backend contexts enclose measurements and software delays restore on failure."""
+    manager, system, controller, channels = _make_manager(monkeypatch, "quel1")
+    events = []
+
+    @contextmanager
+    def modified_capture_delay(*, experiment_system, capture_delay):
+        assert experiment_system is system
+        assert capture_delay == {0: 24}
+        events.append("enter")
+        try:
+            if failure == "enter":
+                raise RuntimeError("enter")
+            yield
+        finally:
+            events.append("exit")
+
+    monkeypatch.setattr(
+        manager,
+        "_system_synchronizer",
+        SimpleNamespace(modified_capture_delay=modified_capture_delay),
+    )
+
+    def run():
+        with manager.modified_capture_delay({0: 24}):
+            assert events == ["enter"]
+            assert system.control_params.capture_delay == {0: 24, 1: 16}
+            if failure == "body":
+                raise RuntimeError("body")
+
+    if failure:
+        with pytest.raises(RuntimeError, match=failure):
+            run()
+    else:
+        run()
+    assert events == ["enter", "exit"]
+    assert system.control_params.capture_delay == {0: 8, 1: 16}
+    assert [channel.ndelay for channel in channels] == [8, 8]
+    assert controller.mock_calls == []
