@@ -45,6 +45,23 @@ def _make_manager(monkeypatch: pytest.MonkeyPatch, backend: str):
     return manager, system, controller, channels
 
 
+def test_capture_delay_reports_uninitialized_backend(monkeypatch) -> None:
+    """Overrides report an uninitialized backend without changing capture settings."""
+    manager, system, controller, channels = _make_manager(monkeypatch, "quel1")
+    monkeypatch.setattr(manager, "_backend_controller", None)
+    with (
+        pytest.raises(
+            RuntimeError,
+            match=r"^Cannot override capture delay: backend controller is not initialized\.$",
+        ),
+        manager.modified_capture_delay({0: 24}),
+    ):
+        pytest.fail("Override accepted without an initialized backend")
+    assert system.control_params.capture_delay == {0: 8, 1: 16}
+    assert [channel.ndelay for channel in channels] == [8, 8]
+    assert controller.mock_calls == []
+
+
 @pytest.mark.parametrize(
     ("backend", "delay"), [("quel1", 0), ("quel1", 24), ("quel3", 0), ("quel3", 24.0)]
 )

@@ -890,8 +890,8 @@ This operation will overwrite the existing backend settings. Do you want to cont
             return
         synchronizer = self._resolve_system_synchronizer()
         if synchronizer is None:
-            raise NotImplementedError(
-                "Capture-delay overrides require QuEL-1 or QuEL-3."
+            raise RuntimeError(
+                "Cannot override capture delay: backend controller is not initialized."
             )
         for index, delay in overrides.items():
             if isinstance(index, bool) or not isinstance(index, int):
