@@ -33,6 +33,12 @@ QuEL-1 / QuEL-3 の具体実装を定義するモジュールです。低レベ�
 `INFO` で記録します。リトライと後始末の失敗は `WARNING`、最終的なリクエストの
 失敗は session ID と traceback 付きの `ERROR` で記録します。
 
+原因候補は `qubex.backend.quel3.managers.session_workarounds` の
+`QUELWARE_EXCEPTION_HINTS` に追加できます。キーにはモジュール名を含む例外クラス名
+（例: `quelware_client.core.exceptions.LockConflictError`）、値には表示したい文面を
+指定します。初期状態は空です。登録した文面は失敗ログに `possible cause` として表示し、
+サブクラスや明示的に連鎖した原因例外にも適用します。リトライの判断や例外は変更しません。
+
 session 作成では、既知の resource / unit 利用不可を待機時間を延ばしながら最大4回
 試行します。外側では `Exception` が発生した payload を client / session を作り直して
 最大4回試行し、その各試行で session 作成の試行枠を使います。キャンセルは再試行しません。

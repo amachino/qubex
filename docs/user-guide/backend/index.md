@@ -34,6 +34,13 @@ Execution logs record the session ID captured on opening and the request attempt
 number at `INFO`. Retries and cleanup failures are logged at `WARNING`; a final
 request failure is logged at `ERROR` with its traceback and session ID.
 
+Add your own possible causes to `QUELWARE_EXCEPTION_HINTS` in
+`qubex.backend.quel3.managers.session_workarounds`. Keys are module-qualified
+exception class names (for example, `quelware_client.core.exceptions.LockConflictError`);
+values are the messages to display. The mapping is initially empty. Registered
+hints appear as `possible cause` in failure logs, including for subclasses and
+explicitly chained causes. They do not change retry decisions or exceptions.
+
 Session creation retries known resource or unit availability failures up to four
 times with backoff. A separate loop retries each payload up to four times after
 an `Exception`, recreating the client and session. Each outer attempt retains its

@@ -33,6 +33,12 @@ QUELWARE_SESSION_CREATE_RETRY_DELAY_SECONDS = (
 )
 QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS = 4
 
+# Add diagnoses here using module-qualified exception class names.
+# String keys keep quelware-client optional and avoid importing it for logging.
+QUELWARE_EXCEPTION_HINTS: dict[str, str] = {
+    # "quelware_client.core.exceptions.LockConflictError": "Your possible cause",
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -102,12 +108,14 @@ async def run_with_session_request_retry(
             )
             await manager.close_safely()
             if attempt_number >= max_attempts:
+                hint = _exception_hint(exc)
                 logger.exception(
                     "QuEL-3 quelware session request failed after retries; "
-                    "session_token=%s; attempt=%d/%d",
+                    "session_token=%s; attempt=%d/%d%s",
                     session_token,
                     attempt_number,
                     max_attempts,
+                    f"; possible cause: {hint}" if hint else "",
                 )
                 if isinstance(exc, QuelwareSessionError):
                     raise
@@ -144,8 +152,24 @@ def quelware_session_token(session: object | None) -> str:
 
 
 def quelware_exception_summary(exc: BaseException) -> str:
-    """Return one-line exception context for retry logs."""
-    return f"{type(exc).__name__}: {exc}"
+    """Return exception context with a user-defined possible cause when registered."""
+    summary = f"{type(exc).__name__}: {exc}"
+    hint = _exception_hint(exc)
+    return f"{summary}; possible cause: {hint}" if hint else summary
+
+
+def _exception_hint(exc: BaseException) -> str | None:
+    """Find the first registered class hint along the explicit exception cause chain."""
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        for cls in type(current).__mro__:
+            hint = QUELWARE_EXCEPTION_HINTS.get(f"{cls.__module__}.{cls.__qualname__}")
+            if hint:
+                return hint
+        current = current.__cause__
+    return None
 
 
 def is_resource_allocation_error(exc: BaseException) -> bool:
