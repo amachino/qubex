@@ -4,19 +4,23 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
+from numpy.testing import assert_allclose
 from scipy.linalg import expm
 
 from qubex.contrib.experiment import (
     cr_pulse_coherence_analysis as analysis_module,
     cr_pulse_coherence_characterization as module,
 )
-from qubex.contrib.experiment.cr_pulse_coherence_analysis import CrOnDephasingFit
+from qubex.contrib.experiment.cr_pulse_coherence_analysis import (
+    CrOnDephasingFit,
+)
 from qubex.contrib.experiment.cr_pulse_fidelity_simulation import (
     CrPulseFidelitySimulationResult,
 )
@@ -88,6 +92,68 @@ def _schedule(duration: float) -> PulseSchedule:
     with PulseSchedule(["Q0", "Q0-Q1", "Q1"]) as schedule:
         schedule.add("Q0-Q1", Rect(duration=duration, amplitude=1.0))
     return schedule
+
+
+def test_fidelity_uncertainty_api_has_no_outer_bootstrap_controls() -> None:
+    """The public workflow should expose only local covariance propagation."""
+    parameters = inspect.signature(module.characterize_cr_pulse_coherence).parameters
+    plot_parameters = inspect.signature(
+        analysis_module.plot_cr_pulse_coherence
+    ).parameters
+
+    assert "propagate_fidelity_uncertainty" in parameters
+    assert parameters["propagate_fidelity_uncertainty"].default is None
+    assert "n_fidelity_bootstrap" not in parameters
+    assert "fidelity_bootstrap_seed" not in parameters
+    assert "leakage_ylim" not in parameters
+    assert "leakage_ylim" not in plot_parameters
+
+
+def test_fidelity_output_prints_local_standard_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Successful delta-method errors should be displayed with point estimates."""
+    simulation = CrPulseFidelitySimulationResult(
+        idle_coherence_limited_fidelity=0.999,
+        cr_on_coherence_limited_fidelity=0.982,
+        cr_on_dissipative_limited_fidelity=0.973,
+        average_leakage=0.008,
+        model_metadata={},
+    )
+    uncertainty = analysis_module.CrPulseFidelityLinearUncertainty(
+        success=True,
+        message="ok",
+        idle_coherence_limited_fidelity_standard_error=0.0,
+        cr_on_coherence_limited_fidelity_standard_error=0.0018,
+        cr_on_dissipative_limited_fidelity_standard_error=0.0024,
+        average_leakage_standard_error=0.0015,
+        output_covariance=np.zeros((4, 4)),
+        parameter_covariance=np.zeros((9, 9)),
+        jacobian=np.zeros((4, 9)),
+        parameter_names=tuple(f"p{index}" for index in range(9)),
+        output_names=tuple(f"y{index}" for index in range(4)),
+        finite_difference_steps=np.zeros(9),
+        finite_difference_schemes=("central",) * 9,
+        fixed_zero_parameters=(),
+        metadata={},
+    )
+    analysis = analysis_module.CrPulseFidelityAnalysis(
+        success=True,
+        message="ok",
+        cr_on_noise=None,
+        control_dephasing_fit=None,
+        target_dephasing_fit=None,
+        simulation=simulation,
+        linear_uncertainty=uncertainty,
+    )
+
+    module._print_fidelity_analysis(analysis, ())
+
+    output = capsys.readouterr().out
+    assert "98.200000% ± 0.180000%" in output
+    assert "97.300000% ± 0.240000%" in output
+    assert "0.800000% ± 0.150000%" in output
+    assert "Idle T1/T2 uncertainty was not propagated" in output
 
 
 def test_default_un_echoed_zx90_repeats_two_same_sign_cr_lobes(
@@ -204,7 +270,6 @@ def test_protocol_references_match_actual_evolution_durations() -> None:
     assert point.evolution_durations["target_t2rho_echo"] == pytest.approx(
         2 * 3 * (2 * 20.0)
     )
-    assert point.cr_pulse_count == 12
     for protocol in ("control_ground", "control_excited"):
         actual = point.sequences[protocol].get_sampled_sequence("Q0-Q1")
         reference = point.sequences[f"{protocol}_reference"].get_sampled_sequence(
@@ -302,7 +367,6 @@ def test_characterization_runs_requested_hardware_order(
         return module._PauliMeasurement(
             expectation=value,
             standard_error=0.01,
-            normalized_shots=np.array([value]),
             raw_iq=np.array([value + 0j]),
         )
 
@@ -335,18 +399,21 @@ def test_characterization_runs_requested_hardware_order(
     monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
     monkeypatch.setattr(module, "bootstrap_gef_populations", fake_bootstrap)
 
-    result = module.characterize_cr_pulse_coherence(
-        exp,  # type: ignore[arg-type]
-        "Q0",
-        "Q1",
-        measure_orthogonal_components=False,
-        n_values=[0, 1, 2],
-        zx90_no_echo=_schedule(8.0),
-        zx90_echo=_schedule(20.0),
-        n_bootstrap=8,
-        enable_tqdm=False,
-        plot=False,
-    )
+    with pytest.warns(RuntimeWarning, match="target F-state population"):
+        result = module.characterize_cr_pulse_coherence(
+            exp,  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            measure_orthogonal_components=False,
+            n_values=[0, 1, 2],
+            zx90_no_echo=_schedule(8.0),
+            zx90_echo=_schedule(20.0),
+            n_bootstrap=8,
+            target_leakage_warning_threshold=0.005,
+            propagate_fidelity_uncertainty=False,
+            enable_tqdm=False,
+            plot=False,
+        )
 
     expected_per_n: list[object] = [
         (
@@ -380,22 +447,38 @@ def test_characterization_runs_requested_hardware_order(
         "target_t2rho_echo",
     )
     assert measurements.cr_pulse_counts == (0, 4, 8)
+    assert_allclose(
+        measurements.target_polarizations["control_ground"]["actual"],
+        (0.79 - 0.2) / (0.79 + 0.2),
+    )
     assert analysis.transition_rates["unit"] == "1/ns"
     assert analysis.decay_times["unit"] == "ns"
     assert analysis.fidelity_analysis is None
     assert result.data["measurement_options"]["n_shots"] == 4096
     assert result.data["measurement_options"]["calibration_n_shots"] == 8192
-    assert "cr_duration" in result.data["analysis_options"]["forward_model_error"]
-    assert set(analysis.fits["target_t1rho"]) == {"actual", "reference"}
-    assert set(analysis.fits["target_leakage"]) == {"actual", "reference"}
-    assert all(
-        fit.model == "leakage_corrected"
-        for fit in analysis.fits["target_t1rho"].values()
+    assert result.data["analysis_options"]["target_leakage_warning_triggered"]
+    assert result.data["analysis_options"]["maximum_target_leakage"] == pytest.approx(
+        0.01
     )
-    assert analysis.fit_status["target_t1rho_model"] == "leakage_corrected"
-    assert measurements.sequence_durations["control_ground"][0] == pytest.approx(4.0)
-    assert measurements.sequence_durations["control_excited"][0] == pytest.approx(6.0)
-    assert measurements.sequence_durations["control_t2_echo"][0] == pytest.approx(2.0)
+    assert "leakage_ylim" not in result.data["analysis_options"]
+    assert "cr_duration" in result.data["analysis_options"]["forward_model_error"]
+    assert set(analysis.fits["target_t1rho"]) == {
+        "control_ground",
+        "control_excited",
+    }
+    assert set(analysis.fits["target_leakage"]) == {
+        "control_ground",
+        "control_excited",
+    }
+    assert all(
+        protocol_fits["actual"].model == "control_transition_forward"
+        and protocol_fits["reference"].model == "exponential"
+        for protocol_fits in analysis.fits["target_t1rho"].values()
+    )
+    assert analysis.fit_status["target_t1rho_model"] == {
+        "control_ground": "control_transition_forward",
+        "control_excited": "control_transition_forward",
+    }
     assert set(result.figures or {}) == {
         "control_ground_control_populations",
         "control_ground_target_polarization",
@@ -415,7 +498,7 @@ def test_characterization_runs_requested_hardware_order(
     ground_target = result.get_figure("control_ground_target_polarization")
     ground_target_layout: Any = ground_target.layout
     assert tuple(ground_target_layout.yaxis.range) == (-1.05, 1.05)
-    assert tuple(ground_target_layout.yaxis2.range) == (0.0, 1.0)
+    assert tuple(ground_target_layout.yaxis2.range) == (0.0, 0.05)
     assert tuple(ground_target_layout.xaxis3.ticktext) == ("0", "4", "8")
 
 
@@ -472,8 +555,8 @@ def test_pauli_measurement_uses_only_requested_basis_analyzer() -> None:
         assert call["state_classification"] is False
 
 
-def test_unavailable_bootstrap_does_not_report_polarization_error() -> None:
-    """An unavailable GEF bootstrap should yield no target-polarization error."""
+def test_unavailable_bootstrap_uses_analytic_polarization_error() -> None:
+    """An unavailable bootstrap should fall back to the analytic covariance."""
     bootstrap: Any = SimpleNamespace(
         unavailable_reason="success_rate_below_threshold",
         samples=np.array(
@@ -483,8 +566,47 @@ def test_unavailable_bootstrap_does_not_report_polarization_error() -> None:
             ]
         ),
     )
+    analytic_fit: Any = SimpleNamespace(
+        population=np.array([0.8, 0.18, 0.02]),
+        population_covariance=np.diag([4e-4, 1e-4, 1e-4]),
+    )
 
-    assert np.isnan(module._polarization_standard_error(bootstrap))
+    standard_error, source = module._polarization_standard_error(
+        bootstrap,
+        analytic_fit,
+    )
+
+    assert np.isfinite(standard_error)
+    assert source == "analytic"
+
+
+def test_population_error_prefers_bootstrap_then_analytic_fallback() -> None:
+    """Population errors should follow the documented source priority."""
+    analytic_fit: Any = SimpleNamespace(
+        population_standard_error=np.array([0.02, 0.03, 0.04]),
+    )
+    available_bootstrap: Any = SimpleNamespace(
+        unavailable_reason=None,
+        standard_error=np.array([0.01, 0.01, 0.01]),
+    )
+    unavailable_bootstrap: Any = SimpleNamespace(
+        unavailable_reason="disabled",
+        standard_error=None,
+    )
+
+    bootstrap_error, bootstrap_source = module._population_standard_error(
+        available_bootstrap,
+        analytic_fit,
+    )
+    analytic_error, analytic_source = module._population_standard_error(
+        unavailable_bootstrap,
+        analytic_fit,
+    )
+
+    assert_allclose(bootstrap_error, 0.01)
+    assert bootstrap_source == "bootstrap"
+    assert_allclose(analytic_error, [0.02, 0.03, 0.04])
+    assert analytic_source == "analytic"
 
 
 def test_error_bars_do_not_present_missing_uncertainty_as_zero() -> None:
@@ -555,6 +677,29 @@ def test_characterization_rejects_boolean_covariance_cutoff_before_calibration(
 
 
 @pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("measure_orthogonal_components", 1),
+        ("propagate_fidelity_uncertainty", 1),
+        ("enable_tqdm", 1),
+        ("plot", 1),
+    ],
+)
+def test_characterization_rejects_nonboolean_flags_before_measurement(
+    option: str,
+    value: Any,
+) -> None:
+    """Boolean workflow flags should not rely on Python truthiness."""
+    with pytest.raises(TypeError, match=option):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            **{option: value},
+        )
+
+
+@pytest.mark.parametrize(
     "protocols",
     [
         ["control_ground"],
@@ -599,6 +744,30 @@ def test_fidelity_simulation_requires_all_protocols_before_measurement() -> None
             idle_t2_echo={"Q0": 70_000.0, "Q1": 60_000.0},
             enable_tqdm=False,
             plot=False,
+        )
+
+
+def test_explicit_uncertainty_requires_all_protocols_before_measurement() -> None:
+    """Explicit uncertainty must reject a partial protocol selection."""
+    with pytest.raises(ValueError, match="requires all four protocols"):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            protocols="control_t2_echo",
+            propagate_fidelity_uncertainty=True,
+        )
+
+
+def test_explicit_uncertainty_conflicts_with_disabled_simulation() -> None:
+    """Uncertainty cannot be explicitly enabled while simulation is disabled."""
+    with pytest.raises(ValueError, match="requires fidelity simulation"):
+        module.characterize_cr_pulse_coherence(
+            _DummyExperiment(),  # type: ignore[arg-type]
+            "Q0",
+            "Q1",
+            run_fidelity_simulation=False,
+            propagate_fidelity_uncertainty=True,
         )
 
 
@@ -659,6 +828,7 @@ def test_characterization_rejects_contradictory_gate_echo_metadata(
             zx90_no_echo=no_echo,
             zx90_echo=echo,
             run_fidelity_simulation=False,
+            propagate_fidelity_uncertainty=False,
             enable_tqdm=False,
             plot=False,
         )
@@ -717,7 +887,6 @@ def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration
         return module._PauliMeasurement(
             expectation=value,
             standard_error=0.01,
-            normalized_shots=np.array([value]),
             raw_iq=np.array([value + 0j]),
         )
 
@@ -734,6 +903,7 @@ def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration
         measure_orthogonal_components=False,
         n_values=[0, 1, 2],
         zx90_echo=_schedule(20.0),
+        run_fidelity_simulation=False,
         enable_tqdm=False,
         plot=False,
     )
@@ -746,10 +916,6 @@ def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration
     assert analysis.fidelity_analysis is None
     assert result.data["raw_data"]["calibration"] is None
     assert measurements.populations == {}
-    assert set(measurements.sequence_durations) == {
-        protocol,
-        f"{protocol}_reference",
-    }
     assert set(result.figures or {}) == {protocol}
 
 
@@ -775,7 +941,6 @@ def test_characterization_measures_and_plots_orthogonal_components_by_default(
         return module._PauliMeasurement(
             expectation=value,
             standard_error=0.01,
-            normalized_shots=np.array([value]),
             raw_iq=np.array([value + 0j]),
         )
 
@@ -791,6 +956,7 @@ def test_characterization_measures_and_plots_orthogonal_components_by_default(
         protocols=["control_t2_echo", "target_t2rho_echo"],
         n_values=[0, 1, 2],
         zx90_echo=_schedule(20.0),
+        propagate_fidelity_uncertainty=False,
         enable_tqdm=False,
         plot=False,
     )
@@ -962,7 +1128,6 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
         return module._PauliMeasurement(
             expectation=value,
             standard_error=0.01,
-            normalized_shots=np.array([value, value]),
             raw_iq=np.array([value + 0j, value + 0j]),
         )
 
@@ -988,14 +1153,21 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
         ground_population,
         excited_population,
     )
-    t1rho_fit = analysis_module.fit_target_t1rho(
+    ground_t1rho_fit = analysis_module.fit_target_t1rho(
         fit_times,
         np.exp(-fit_times / 3),
-        -0.8 * np.exp(-fit_times / 3),
     )
-    leakage_fit = analysis_module.fit_target_leakage(
+    excited_t1rho_fit = analysis_module.fit_target_t1rho(
+        fit_times,
+        -0.8 * np.exp(-fit_times / 4),
+    )
+    ground_leakage_fit = analysis_module.fit_target_leakage(
         fit_times,
         np.array([0.01, 0.03, 0.05]),
+        relative_uncertainty_threshold=100.0,
+    )
+    excited_leakage_fit = analysis_module.fit_target_leakage(
+        fit_times,
         np.array([0.02, 0.04, 0.06]),
         relative_uncertainty_threshold=100.0,
     )
@@ -1008,8 +1180,26 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
         del args, kwargs
         return {
             "control_rate_model": {"actual": rate_fit, "reference": rate_fit},
-            "target_t1rho": {"actual": t1rho_fit, "reference": t1rho_fit},
-            "target_leakage": {"actual": leakage_fit, "reference": leakage_fit},
+            "target_t1rho": {
+                "control_ground": {
+                    "actual": ground_t1rho_fit,
+                    "reference": ground_t1rho_fit,
+                },
+                "control_excited": {
+                    "actual": excited_t1rho_fit,
+                    "reference": excited_t1rho_fit,
+                },
+            },
+            "target_leakage": {
+                "control_ground": {
+                    "actual": ground_leakage_fit,
+                    "reference": ground_leakage_fit,
+                },
+                "control_excited": {
+                    "actual": excited_leakage_fit,
+                    "reference": excited_leakage_fit,
+                },
+            },
             "phenomenological_echo_decay": {
                 "control_t2_echo": {
                     "actual": pauli_fit,
@@ -1053,9 +1243,6 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
         cr_on_coherence_limited_fidelity=0.995,
         cr_on_dissipative_limited_fidelity=0.99,
         average_leakage=0.004,
-        idle_average_survival=1.0,
-        cr_on_coherence_average_survival=1.0,
-        cr_on_dissipative_average_survival=0.996,
         model_metadata={},
     )
     captured_base_noise: list[Any] = []
@@ -1126,6 +1313,7 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
         idle_t1={"Q0": 50_000.0, "Q1": 40_000.0},
         idle_t2_echo={"Q0": 70_000.0, "Q1": 60_000.0},
         run_fidelity_simulation=run_fidelity_simulation,
+        propagate_fidelity_uncertainty=False,
         enable_tqdm=False,
         plot=False,
     )
@@ -1138,6 +1326,23 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
     assert noise.gamma_control_e_to_g == pytest.approx(rate_fit.gamma_ge_down)
     assert noise.gamma_control_e_to_f == pytest.approx(rate_fit.gamma_ef_up)
     assert noise.gamma_control_f_to_e == pytest.approx(rate_fit.gamma_ef_down)
+    assert noise.target_t1rho == pytest.approx(24 / 7)
+    assert noise.target_leakage_rate == pytest.approx(
+        0.5 * (ground_leakage_fit.leakage_rate + excited_leakage_fit.leakage_rate)
+    )
+    t1rho_summary = analysis.decay_times["T1rho"]
+    assert t1rho_summary["control_ground"]["actual"]["value"] == pytest.approx(3.0)
+    assert t1rho_summary["control_excited"]["actual"]["value"] == pytest.approx(4.0)
+    assert t1rho_summary["effective"]["actual"]["value"] == pytest.approx(24 / 7)
+    leakage_summary = analysis.transition_rates["target_leakage"]
+    assert leakage_summary["effective"]["actual"]["leakage_rate"][
+        "value"
+    ] == pytest.approx(noise.target_leakage_rate)
+    assert analysis.fit_status["target_effective_rate_aggregation"] == {
+        "target_t1rho": "arithmetic_mean_of_inverse_lifetimes",
+        "target_leakage_rate": "arithmetic_mean",
+        "target_seepage_rate": "arithmetic_mean",
+    }
     returned_control_fit = analysis.fits["cr_on_dephasing"]["control_t2_echo"]
     assert analysis.fits["cr_on_dephasing"]["target_t2rho_echo"] is (
         target_dephasing_fit
@@ -1175,13 +1380,18 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
         assert captured_fitted_noise[0].gamma_phi_rho_target == pytest.approx(2e-5)
         assert fidelity_analysis.simulation is simulation
         assert analysis.fit_status["fixed_zero_unresolved_rates"] == (
-            "target_seepage_rate",
+            "target_seepage_rate_ground",
+            "target_seepage_rate_excited",
         )
         assert "CR-pulse fidelity simulation" in output
-        assert "Idle coherence limit:       99.900000%" in output
-        assert "CR-on coherence limit:      99.500000%" in output
-        assert "CR-on dissipative limit:    99.000000%" in output
-        assert "Average leakage:             0.400000%" in output
+        assert "Idle coherence limit:" in output
+        assert "99.900000%" in output
+        assert "CR-on coherence limit:" in output
+        assert "99.500000%" in output
+        assert "CR-on dissipative limit:" in output
+        assert "99.000000%" in output
+        assert "Average leakage:" in output
+        assert "0.400000%" in output
         assert "unresolved rates were fixed to zero" in output
         assert "target_seepage_rate" in output
     elif simulation_fails and not control_fit_fails:

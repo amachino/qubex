@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
@@ -21,9 +22,9 @@ from qubex.pulse import Blank, PulseSchedule, Waveform
 
 from .cr_pulse_coherence_analysis import (
     CrPulseCoherenceMeasurements,
+    CrPulseFidelityAnalysis,
     analyze_cr_pulse_coherence,
     plot_cr_pulse_coherence,
-    print_cr_pulse_fidelity_analysis,
 )
 from .cr_pulse_fidelity_simulation import (
     IdleQubitNoise,
@@ -83,7 +84,6 @@ class _PauliMeasurement:
 
     expectation: float
     standard_error: float
-    normalized_shots: NDArray[np.float64]
     raw_iq: NDArray[np.complex128]
 
 
@@ -93,7 +93,6 @@ class _ProtocolSequences:
 
     sequences: dict[str, PulseSchedule]
     evolution_durations: dict[str, float]
-    cr_pulse_count: int
 
 
 def _reference_unit(
@@ -125,7 +124,7 @@ def _build_un_echoed_zx90(
     """
     Build a full ZX90 from two identical un-echoed CR primitives.
 
-    Qubex calibrates one ``echo=False`` CR primitive as one lobe of the
+    Qubex calibrates one `echo=False` CR primitive as one lobe of the
     echoed ZX90 (nominally ZX45). Repeating that schedule twice preserves the
     calibrated ramps, cancellation tone, rotary tone, sign, and phase while
     producing the intended un-echoed ZX90 rotation.
@@ -136,7 +135,7 @@ def _build_un_echoed_zx90(
         raise ValueError("exp.pulse.zx90(..., echo=False) returned an echoed CR gate.")
 
     zx90 = cr_lobe.repeated(2)
-    # ``repeated`` intentionally returns a plain PulseSchedule. Attach
+    # `repeated` intentionally returns a plain PulseSchedule. Attach
     # semantic metadata for the full, contiguous CR-active ZX90 so the
     # fidelity model interprets both physical lobes as one measured gate.
     zx90.cr_duration = 2 * timing.cr_lobe_duration  # type: ignore[attr-defined]
@@ -413,7 +412,6 @@ def _build_protocol_sequences(
         evolution_durations={
             name: evolution.duration for name, evolution in evolutions.items()
         },
-        cr_pulse_count=4 * n,
     )
 
 
@@ -466,7 +464,6 @@ def _measure_pauli_expectation(
     return _PauliMeasurement(
         expectation=expectation,
         standard_error=standard_error,
-        normalized_shots=normalized_shots,
         raw_iq=iq,
     )
 
@@ -561,11 +558,24 @@ def _unit_interval_real(
 
 def _population_standard_error(
     bootstrap: GefPopulationBootstrap,
-) -> NDArray[np.float64]:
-    """Return bootstrap population errors or NaNs when unavailable."""
-    if bootstrap.unavailable_reason is not None or bootstrap.standard_error is None:
-        return np.full(len(_STATE_NAMES), np.nan)
-    return np.asarray(bootstrap.standard_error, dtype=np.float64)
+    analytic_fit: GefPopulationFit,
+) -> tuple[NDArray[np.float64], Literal["bootstrap", "analytic", "unweighted"]]:
+    """Choose bootstrap SE, then analytic GLS SE, then an unweighted fallback."""
+    if bootstrap.unavailable_reason is None and bootstrap.standard_error is not None:
+        bootstrap_error = np.asarray(bootstrap.standard_error, dtype=np.float64)
+        if bootstrap_error.shape == (len(_STATE_NAMES),) and np.all(
+            np.isfinite(bootstrap_error) & (bootstrap_error >= 0)
+        ):
+            return bootstrap_error, "bootstrap"
+    analytic_error = np.asarray(
+        analytic_fit.population_standard_error,
+        dtype=np.float64,
+    )
+    if analytic_error.shape == (len(_STATE_NAMES),) and np.all(
+        np.isfinite(analytic_error) & (analytic_error >= 0)
+    ):
+        return analytic_error, "analytic"
+    return np.full(len(_STATE_NAMES), np.nan), "unweighted"
 
 
 def _polarization(
@@ -583,16 +593,59 @@ def _polarization(
 
 def _polarization_standard_error(
     bootstrap: GefPopulationBootstrap,
-) -> float:
-    """Propagate a GEF bootstrap distribution through the polarization ratio."""
+    analytic_fit: GefPopulationFit,
+) -> tuple[float, Literal["bootstrap", "analytic", "unweighted"]]:
+    """Choose bootstrap or analytic uncertainty for the GE polarization."""
     if bootstrap.unavailable_reason is not None:
-        return float("nan")
-    samples = np.asarray(bootstrap.samples, dtype=np.float64)
-    if samples.ndim != 2 or samples.shape[1] != len(_STATE_NAMES):
-        return float("nan")
-    values = _polarization(samples)
-    finite = values[np.isfinite(values)]
-    return float(np.std(finite, ddof=1)) if finite.size >= 2 else float("nan")
+        samples = np.empty((0, len(_STATE_NAMES)), dtype=np.float64)
+    else:
+        samples = np.asarray(bootstrap.samples, dtype=np.float64)
+    if samples.ndim == 2 and samples.shape[1] == len(_STATE_NAMES):
+        values = _polarization(samples)
+        finite = values[np.isfinite(values)]
+        if finite.size >= 2:
+            return float(np.std(finite, ddof=1)), "bootstrap"
+
+    population = np.asarray(analytic_fit.population, dtype=np.float64)
+    covariance = np.asarray(analytic_fit.population_covariance, dtype=np.float64)
+    if population.shape == (len(_STATE_NAMES),) and covariance.shape == (
+        len(_STATE_NAMES),
+        len(_STATE_NAMES),
+    ):
+        denominator = population[0] + population[1]
+        if (
+            denominator > np.finfo(float).eps
+            and np.all(np.isfinite(population))
+            and np.all(np.isfinite(covariance))
+        ):
+            gradient = np.array(
+                [
+                    -2 * population[1] / denominator**2,
+                    2 * population[0] / denominator**2,
+                    0.0,
+                ],
+                dtype=np.float64,
+            )
+            variance = float(gradient @ covariance @ gradient)
+            variance_scale = max(
+                float(np.linalg.norm(covariance, ord=2)),
+                np.finfo(float).eps,
+            )
+            if np.isfinite(variance) and variance >= -1e-12 * variance_scale:
+                return float(np.sqrt(max(variance, 0.0))), "analytic"
+    return float("nan"), "unweighted"
+
+
+def _optional_probability(value: float | None, *, name: str) -> float | None:
+    """Validate an optional probability threshold in [0, 1]."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(f"{name} must be a finite real number in [0, 1] or None.")
+    resolved = float(value)
+    if not np.isfinite(resolved) or not 0.0 <= resolved <= 1.0:
+        raise ValueError(f"{name} must be in [0, 1] or None.")
+    return resolved
 
 
 def _condition_name(protocol: str, reference: bool) -> str:
@@ -711,6 +764,85 @@ def _forward_fit_skip_reason(
     return "; ".join(reasons) or "required forward fits were not available."
 
 
+def _print_fidelity_analysis(
+    analysis: CrPulseFidelityAnalysis,
+    fixed_zero_unresolved_rates: tuple[str, ...],
+) -> None:
+    """Print simulated fidelity limits or the analysis failure reason."""
+    simulation = analysis.simulation
+    if not analysis.success:
+        print(f"CR-pulse fidelity analysis failed: {analysis.message}")
+        return
+    if simulation is None:
+        print(f"CR-pulse fidelity analysis: {analysis.message}")
+        return
+    print("CR-pulse fidelity simulation:")
+    uncertainty = analysis.linear_uncertainty
+    estimates = (
+        (
+            "Idle coherence limit",
+            simulation.idle_coherence_limited_fidelity,
+            None
+            if uncertainty is None
+            else uncertainty.idle_coherence_limited_fidelity_standard_error,
+        ),
+        (
+            "CR-on coherence limit",
+            simulation.cr_on_coherence_limited_fidelity,
+            None
+            if uncertainty is None
+            else uncertainty.cr_on_coherence_limited_fidelity_standard_error,
+        ),
+        (
+            "CR-on dissipative limit",
+            simulation.cr_on_dissipative_limited_fidelity,
+            None
+            if uncertainty is None
+            else uncertainty.cr_on_dissipative_limited_fidelity_standard_error,
+        ),
+        (
+            "Average leakage",
+            simulation.average_leakage,
+            None if uncertainty is None else uncertainty.average_leakage_standard_error,
+        ),
+    )
+    for label, estimate, standard_error in estimates:
+        if (
+            uncertainty is not None
+            and uncertainty.success
+            and standard_error is not None
+        ):
+            lower = np.clip(estimate - 1.96 * standard_error, 0.0, 1.0)
+            upper = np.clip(estimate + 1.96 * standard_error, 0.0, 1.0)
+            print(
+                f"  {label + ':':29} {estimate:.6%} ± {standard_error:.6%} "
+                f"(1 sigma; approx. 95% [{lower:.6%}, {upper:.6%}])"
+            )
+        else:
+            print(f"  {label + ':':29} {estimate:.6%}")
+    if uncertainty is not None:
+        if uncertainty.success:
+            print(
+                "    Local covariance propagation; fit-stage cross covariance ignored."
+            )
+            print("    Idle T1/T2 uncertainty was not propagated.")
+        else:
+            print(f"    Fidelity uncertainty unavailable: {uncertainty.message}")
+    conservative = analysis.conservative_simulation_95
+    if conservative is not None:
+        print("  Unresolved-outward-rate 95%-upper sensitivity scenario:")
+        print(
+            "    CR-on dissipative limit: "
+            f"{conservative.cr_on_dissipative_limited_fidelity:.6%}"
+        )
+        print(f"    Average leakage:          {conservative.average_leakage:.6%}")
+    if fixed_zero_unresolved_rates:
+        print(
+            "  Conditional result: unresolved rates were fixed to zero: "
+            + ", ".join(fixed_zero_unresolved_rates)
+        )
+
+
 def characterize_cr_pulse_coherence(
     exp: Experiment,
     control_qubit: str,
@@ -728,8 +860,10 @@ def characterize_cr_pulse_coherence(
     n_bootstrap: int = 1000,
     bootstrap_seed: int | None = 0,
     bootstrap_confidence_level: float = 0.95,
-    relative_uncertainty_threshold: float = 1.0,
+    relative_uncertainty_threshold: float = 0.5,
+    target_leakage_warning_threshold: float | None = 0.01,
     run_fidelity_simulation: bool | None = None,
+    propagate_fidelity_uncertainty: bool | None = None,
     idle_t1: Mapping[str, float] | None = None,
     idle_t2_echo: Mapping[str, float] | None = None,
     enable_tqdm: bool = True,
@@ -781,14 +915,25 @@ def characterize_cr_pulse_coherence(
     bootstrap_confidence_level
         Marginal bootstrap confidence level strictly between zero and one.
     relative_uncertainty_threshold
-        Maximum relative uncertainty retained by the shared target T1rho and
-        population-rate fits. Unresolved leakage/seepage rates use
-        reduced-model fallbacks. Defaults to one.
+        Maximum relative uncertainty retained by target T1rho and population-
+        rate fits. Unresolved leakage/seepage rates use reduced-model
+        fallbacks. Defaults to 0.5.
+    target_leakage_warning_threshold
+        Warn when the maximum actual target F-state population over the two
+        GEF protocols exceeds this value. Defaults to 0.01; `None` disables
+        the warning. This diagnostic does not stop analysis or simulation.
     run_fidelity_simulation
         Whether to calculate dissipative ZX90 fidelity limits from the fitted
         CR-on noise. The default `None` enables it automatically after both
         independent forward fits succeed. `True` requires all fit inputs;
         `False` disables only the final fidelity calculation.
+    propagate_fidelity_uncertainty
+        Whether to propagate the local block-diagonal fit covariance through
+        the fidelity simulator using numerical derivatives. `None` (default)
+        enables propagation automatically only when the nominal fidelity
+        simulation runs; `True` explicitly requires propagation and raises
+        `ValueError` when its inputs are unavailable; `False` disables it.
+        A/B/C/D fits are not repeated.
     idle_t1
         Optional qubit-to-T1 mapping in ns for the echo forward fits and
         fidelity simulation. When omitted, the stored `t1` parameters are
@@ -805,12 +950,12 @@ def characterize_cr_pulse_coherence(
     Returns
     -------
     Result
-        ``data["measurements"]`` is a reusable
-        `CrPulseCoherenceMeasurements`; ``data["analysis"]`` contains all fit
-        results and the optional fidelity analysis; ``data["raw_data"]``
+        `data["measurements"]` is a reusable
+        `CrPulseCoherenceMeasurements`; `data["analysis"]` contains all fit
+        results and the optional fidelity analysis; `data["raw_data"]`
         contains calibration, IQ, and bootstrap details. Measurement and
         analysis settings are kept separately. `Result.figures` contains the
-        fixed-scale data-and-fit figures for the selected protocols.
+        explicitly ranged data-and-fit figures for the selected protocols.
 
     Notes
     -----
@@ -836,19 +981,36 @@ def characterize_cr_pulse_coherence(
     primary components. Orthogonal components are plotted as reference
     information without fitting. The upper plot axis counts ZX90 schedule
     calls; one echoed ZX90 internally contains two physical CR lobes in the
-    current pulse implementation. Fitted rates use `1/ns`; all returned decay
-    times use ns. Scalar summaries are available as
+    current pulse implementation. Each target F-population panel chooses its
+    own explicit `[0, upper]` range from the measurements, upper error bars,
+    and fitted curves. Fitted rates use `1/ns`; all returned decay times use
+    ns. Scalar summaries are available as
     `result.data["analysis"].transition_rates` and
     `result.data["analysis"].decay_times`.
+    Population error bars prefer the final joint bootstrap. If that is
+    unavailable, the analytic GLS covariance from each
+    `GefPopulationFit` is used; this analytic fallback conditions on the GEF
+    calibration and therefore does not include its finite-shot uncertainty.
     The control-X and target-Z actual curves are forward-fitted independently;
     each fit varies only its corresponding CR-on dephasing rate. Both require
     the dissipation model inferred from `control_ground` and
     `control_excited`. References remain exponential diagnostics and are never
     subtracted from CR-on rates. Successful fidelity limits are printed after
-    fitting.
+    fitting. When requested, their standard errors come from a local
+    nine-rate delta method that retains covariance within each fit but ignores
+    covariance between the A/B control, A/B target, C, and D fit stages. It
+    does not repeat those fits or propagate idle T1/T2 uncertainty.
 
-    The two control-state target-polarization curves share one zero-asymptote
-    T1rho fit, and their F populations share one effective leakage/seepage fit.
+    Actual A/B target-polarization and F-population curves are fitted jointly
+    with a two-qutrit Lindblad model after fixing the control-transition rates
+    obtained from the A/B control populations. Target T1rho, leakage, and
+    seepage may differ for instantaneous control g/e states; their rates are
+    averaged to form the effective single-target model used by C/D and the
+    fidelity simulation. The unobserved control-f-conditioned target rate is
+    approximated by the arithmetic mean of its g/e values. References retain
+    phenomenological fits and are never subtracted from CR-on rates. The
+    resulting CR-on model is applied to both CR drive signs because this
+    workflow does not identify sign-dependent dissipative rates.
     When an independent forward fit succeeds, that protocol's actual plot
     curve comes from the physical model with affine SPAM nuisance parameters,
     even if final fidelity calculation is disabled. Offset exponential fits
@@ -856,12 +1018,29 @@ def characterize_cr_pulse_coherence(
     are not substitutes for unavailable CR-on dephasing rates.
     """
     selected_protocols = _validate_protocols(protocols)
-    if not isinstance(measure_orthogonal_components, bool):
-        raise TypeError("measure_orthogonal_components must be a boolean.")
+    for name, value in (
+        ("measure_orthogonal_components", measure_orthogonal_components),
+        ("enable_tqdm", enable_tqdm),
+        ("plot", plot),
+    ):
+        if not isinstance(value, bool):
+            raise TypeError(f"{name} must be a boolean.")
     if run_fidelity_simulation is not None and not isinstance(
         run_fidelity_simulation, bool
     ):
         raise TypeError("run_fidelity_simulation must be a boolean or None.")
+    if propagate_fidelity_uncertainty is not None and not isinstance(
+        propagate_fidelity_uncertainty, bool
+    ):
+        raise TypeError("propagate_fidelity_uncertainty must be a boolean or None.")
+    if propagate_fidelity_uncertainty is True and selected_protocols != _PROTOCOLS:
+        raise ValueError(
+            "Fidelity uncertainty propagation requires all four protocols."
+        )
+    if propagate_fidelity_uncertainty is True and run_fidelity_simulation is False:
+        raise ValueError(
+            "propagate_fidelity_uncertainty requires fidelity simulation to be enabled."
+        )
     if run_fidelity_simulation is True and selected_protocols != _PROTOCOLS:
         raise ValueError("Fidelity simulation requires all four protocols.")
     selected_gef_protocols: tuple[_GefProtocol, ...] = tuple(
@@ -912,10 +1091,13 @@ def characterize_cr_pulse_coherence(
     )
     resolved_relative_uncertainty_threshold = _positive_real(
         relative_uncertainty_threshold,
-        default=1.0,
+        default=0.5,
         name="relative_uncertainty_threshold",
     )
-
+    resolved_target_leakage_warning_threshold = _optional_probability(
+        target_leakage_warning_threshold,
+        name="target_leakage_warning_threshold",
+    )
     control = exp.ctx.resolve_qubit_label(control_qubit)
     target = exp.ctx.resolve_qubit_label(target_qubit)
     if control == target:
@@ -952,7 +1134,9 @@ def characterize_cr_pulse_coherence(
             )
         except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
             forward_model_error = str(exc)
-    if run_fidelity_simulation is True and forward_model_error is not None:
+    if (
+        run_fidelity_simulation is True or propagate_fidelity_uncertainty is True
+    ) and forward_model_error is not None:
         raise ValueError(
             forward_model_error or "Fidelity simulation inputs are unavailable."
         )
@@ -989,12 +1173,6 @@ def characterize_cr_pulse_coherence(
     times_buffer: dict[str, list[float]] = {
         protocol: [] for protocol in selected_protocols
     }
-    cr_pulse_counts_buffer: list[int] = []
-    sequence_durations: dict[str, list[float]] = {
-        condition: []
-        for protocol in selected_protocols
-        for condition in (protocol, f"{protocol}_reference")
-    }
     pauli_components = {
         protocol: _pauli_components(protocol, measure_orthogonal_components)
         for protocol in selected_pauli_protocols
@@ -1023,13 +1201,8 @@ def characterize_cr_pulse_coherence(
             zx90_echo=zx90_echo,
             protocols=selected_protocols,
         )
-        cr_pulse_counts_buffer.append(point.cr_pulse_count)
         for protocol in selected_protocols:
             times_buffer[protocol].append(point.evolution_durations[protocol])
-            for condition in (protocol, f"{protocol}_reference"):
-                sequence_durations[condition].append(
-                    point.sequences[condition].duration
-                )
 
         if calibration is not None:
             gef_sequences = {
@@ -1078,6 +1251,7 @@ def characterize_cr_pulse_coherence(
 
     bootstrap: dict[str, dict[str, GefPopulationBootstrap]] = {}
     bootstrap_lookup: dict[tuple[int, str, str], GefPopulationBootstrap] = {}
+    population_standard_error_sources: dict[str, dict[str, str]] = {}
     if calibration is not None:
         bootstrap = bootstrap_gef_populations(
             calibration,
@@ -1088,12 +1262,16 @@ def characterize_cr_pulse_coherence(
             covariance_rcond=resolved_covariance_rcond,
         )
         for point_index, condition, global_name in bootstrap_key_order:
+            population_standard_error_sources[global_name] = {}
             for qubit in (control, target):
                 population_bootstrap = bootstrap[global_name][qubit]
                 bootstrap_lookup[(point_index, condition, qubit)] = population_bootstrap
-                point_errors[condition][qubit].append(
-                    _population_standard_error(population_bootstrap)
+                population_error, error_source = _population_standard_error(
+                    population_bootstrap,
+                    aggregate_gef_fits[global_name][qubit],
                 )
+                point_errors[condition][qubit].append(population_error)
+                population_standard_error_sources[global_name][qubit] = error_source
 
         populations, population_errors = _collect_gef_arrays(
             point_populations,
@@ -1108,25 +1286,53 @@ def characterize_cr_pulse_coherence(
         protocol: np.asarray(values, dtype=np.float64)
         for protocol, values in times_buffer.items()
     }
-    cr_pulse_counts = tuple(cr_pulse_counts_buffer)
-    target_polarizations: dict[str, dict[str, NDArray[np.float64]]] = {}
     target_polarization_errors: dict[str, dict[str, NDArray[np.float64]]] = {}
+    target_polarization_standard_error_sources: dict[
+        str,
+        dict[str, tuple[str, ...]],
+    ] = {}
     for protocol in selected_gef_protocols:
-        target_polarizations[protocol] = {}
         target_polarization_errors[protocol] = {}
+        target_polarization_standard_error_sources[protocol] = {}
         for kind in ("actual", "reference"):
             condition = _condition_name(protocol, kind == "reference")
-            target_polarizations[protocol][kind] = _polarization(
-                populations[protocol][kind][target]
-            )
-            target_polarization_errors[protocol][kind] = np.array(
-                [
-                    _polarization_standard_error(
-                        bootstrap_lookup[(point_index, condition, target)]
-                    )
-                    for point_index in range(len(normalized_n_values))
-                ],
+            polarization_errors: list[float] = []
+            polarization_error_sources: list[str] = []
+            for point_index, n in enumerate(normalized_n_values):
+                global_name = _bootstrap_name(n, condition)
+                error, source = _polarization_standard_error(
+                    bootstrap_lookup[(point_index, condition, target)],
+                    aggregate_gef_fits[global_name][target],
+                )
+                polarization_errors.append(error)
+                polarization_error_sources.append(source)
+            target_polarization_errors[protocol][kind] = np.asarray(
+                polarization_errors,
                 dtype=np.float64,
+            )
+            target_polarization_standard_error_sources[protocol][kind] = tuple(
+                polarization_error_sources
+            )
+
+    maximum_target_leakage: float | None = None
+    target_leakage_warning_triggered = False
+    if selected_gef_protocols:
+        maximum_target_leakage = max(
+            float(np.max(populations[protocol]["actual"][target][:, 2]))
+            for protocol in selected_gef_protocols
+        )
+        target_leakage_warning_triggered = bool(
+            resolved_target_leakage_warning_threshold is not None
+            and maximum_target_leakage > resolved_target_leakage_warning_threshold
+        )
+        if target_leakage_warning_triggered:
+            warnings.warn(
+                "Maximum measured target F-state population "
+                f"({maximum_target_leakage:.3%}) exceeds "
+                "target_leakage_warning_threshold "
+                f"({resolved_target_leakage_warning_threshold:.3%}).",
+                RuntimeWarning,
+                stacklevel=2,
             )
 
     pauli_expectations: dict[
@@ -1138,20 +1344,14 @@ def characterize_cr_pulse_coherence(
         str,
         dict[str, dict[str, list[NDArray[np.complex128]]]],
     ] = {}
-    pauli_normalized_shots: dict[
-        str,
-        dict[str, dict[str, list[NDArray[np.float64]]]],
-    ] = {}
     for protocol in selected_pauli_protocols:
         pauli_expectations[protocol] = {}
         pauli_errors[protocol] = {}
         pauli_raw_iq[protocol] = {}
-        pauli_normalized_shots[protocol] = {}
         for basis in pauli_components[protocol]:
             pauli_expectations[protocol][basis] = {}
             pauli_errors[protocol][basis] = {}
             pauli_raw_iq[protocol][basis] = {}
-            pauli_normalized_shots[protocol][basis] = {}
             for kind in ("actual", "reference"):
                 condition = _condition_name(protocol, kind == "reference")
                 measurements = pauli_measurements[condition][basis]
@@ -1166,9 +1366,6 @@ def characterize_cr_pulse_coherence(
                 pauli_raw_iq[protocol][basis][kind] = [
                     measurement.raw_iq for measurement in measurements
                 ]
-                pauli_normalized_shots[protocol][basis][kind] = [
-                    measurement.normalized_shots for measurement in measurements
-                ]
 
     measurements = CrPulseCoherenceMeasurements(
         control_qubit=control,
@@ -1176,21 +1373,15 @@ def characterize_cr_pulse_coherence(
         protocols=selected_protocols,
         pauli_components=pauli_components,
         n_values=normalized_n_values,
-        cr_pulse_counts=cr_pulse_counts,
         times=times,
-        sequence_durations={
-            name: np.asarray(values, dtype=np.float64)
-            for name, values in sequence_durations.items()
-        },
         populations=populations,
         population_standard_errors=population_errors,
-        target_polarizations=target_polarizations,
         target_polarization_standard_errors=target_polarization_errors,
         pauli_expectations=pauli_expectations,
         pauli_standard_errors=pauli_errors,
     )
-    control_x180_duration = 0.0
-    target_x180_duration = 0.0
+    control_x180_duration: float | None = None
+    target_x180_duration: float | None = None
     if _CONTROL_T2_ECHO in selected_pauli_protocols:
         control_x180_duration = exp.pulse.x180(control).duration
         target_x180_duration = exp.pulse.x180(target).duration
@@ -1203,12 +1394,37 @@ def characterize_cr_pulse_coherence(
         control_x180_duration=control_x180_duration,
         target_x180_duration=target_x180_duration,
         run_fidelity_simulation=run_fidelity_simulation,
+        propagate_fidelity_uncertainty=propagate_fidelity_uncertainty,
     )
+    maximum_control_f = analysis.fit_status.get(
+        "maximum_control_f_population_in_target_fit"
+    )
+    maximum_control_f_value = (
+        float(maximum_control_f)
+        if isinstance(maximum_control_f, (int, float, np.floating))
+        and not isinstance(maximum_control_f, bool)
+        else float("nan")
+    )
+    if (
+        np.isfinite(maximum_control_f_value)
+        and analysis.fit_status.get(
+            "control_f_target_rate_approximation_material",
+            False,
+        )
+        is True
+    ):
+        warnings.warn(
+            "Control F population in the A/B target forward fit reached "
+            f"{maximum_control_f_value:.3%}; inferred target rates depend on "
+            "the control-F arithmetic-mean approximation.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     fidelity_analysis = analysis.fidelity_analysis
     if fidelity_analysis is not None and (
         fidelity_analysis.simulation is not None or not fidelity_analysis.success
     ):
-        print_cr_pulse_fidelity_analysis(
+        _print_fidelity_analysis(
             fidelity_analysis,
             cast(
                 tuple[str, ...],
@@ -1235,10 +1451,15 @@ def characterize_cr_pulse_coherence(
                 "calibration": calibration,
                 "gef_bootstrap": bootstrap,
                 "gef_population_fits": aggregate_gef_fits,
+                "population_standard_error_sources": (
+                    population_standard_error_sources
+                ),
+                "target_polarization_standard_error_sources": (
+                    target_polarization_standard_error_sources
+                ),
                 "gef_raw_iq": aggregate_raw_iq,
                 "gef_moment_summaries": aggregate_moment_summaries,
                 "pauli_raw_iq": pauli_raw_iq,
-                "pauli_normalized_shots": pauli_normalized_shots,
             },
             "measurement_options": {
                 "n_shots": resolved_n_shots,
@@ -1249,13 +1470,35 @@ def characterize_cr_pulse_coherence(
                 "bootstrap_seed": resolved_bootstrap_seed,
                 "bootstrap_confidence_level": resolved_bootstrap_confidence_level,
                 "measure_orthogonal_components": measure_orthogonal_components,
+                "population_standard_error_priority": (
+                    "bootstrap",
+                    "analytic",
+                    "unweighted",
+                ),
+                "analytic_population_standard_error_includes_calibration_uncertainty": False,
             },
             "analysis_options": {
                 "relative_uncertainty_threshold": (
                     resolved_relative_uncertainty_threshold
                 ),
                 "run_fidelity_simulation": run_fidelity_simulation,
+                "propagate_fidelity_uncertainty": (propagate_fidelity_uncertainty),
+                "propagate_fidelity_uncertainty_mode": (
+                    "auto"
+                    if propagate_fidelity_uncertainty is None
+                    else "explicitly_enabled"
+                    if propagate_fidelity_uncertainty
+                    else "disabled"
+                ),
+                "propagate_fidelity_uncertainty_enabled": analysis.fit_status[
+                    "fidelity_uncertainty_enabled"
+                ],
                 "forward_model_error": forward_model_error,
+                "target_leakage_warning_threshold": (
+                    resolved_target_leakage_warning_threshold
+                ),
+                "maximum_target_leakage": maximum_target_leakage,
+                "target_leakage_warning_triggered": (target_leakage_warning_triggered),
             },
             "pulse_durations": {
                 "zx90_no_echo": (

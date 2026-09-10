@@ -29,13 +29,21 @@ _CR_MODULE_ONLY_API = {
     "CrOnDephasingFit",
     "CrPulseCoherenceAnalysis",
     "CrPulseFidelityAnalysis",
+    "CrPulseFidelityLinearUncertainty",
     "CrPulseFidelitySimulationResult",
+    "CrTargetDecayModel",
+    "CrTargetDecayPrediction",
     "ExponentialDecayFit",
+    "TargetABForwardFit",
+    "TargetABLeakageModel",
     "TargetLeakageFit",
     "TargetLeakageModel",
     "TargetT1RhoFit",
     "TargetT1RhoModel",
     "ThreeLevelRateFit",
+    "fit_cr_target_decay",
+    "prepare_cr_target_decay_model",
+    "propagate_cr_pulse_fidelity_uncertainty",
 }
 
 

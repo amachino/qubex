@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, replace
 from numbers import Real
 from typing import Literal
@@ -35,6 +36,17 @@ _CONTROL_Z = np.kron(_Z_GE, _IDENTITY_QUTRIT)
 _TARGET_Z = np.kron(_IDENTITY_QUTRIT, _Z_GE)
 _ZX = np.kron(_Z_GE, _X_GE)
 _SUPEROPERATOR_DIMENSION = _FULL_DIMENSION**2
+_CONTROL_DIAGONAL_VECTOR_INDICES = np.asarray(
+    [
+        control * _QUTRIT_DIMENSION
+        + target_row
+        + (control * _QUTRIT_DIMENSION + target_column) * _FULL_DIMENSION
+        for control in range(_QUTRIT_DIMENSION)
+        for target_column in range(_QUTRIT_DIMENSION)
+        for target_row in range(_QUTRIT_DIMENSION)
+    ],
+    dtype=np.int64,
+)
 
 
 @dataclass(frozen=True)
@@ -48,17 +60,27 @@ class IdleQubitNoise:
         """Validate positive finite or infinite coherence times."""
         _validate_lifetime(self.t1, name="t1")
         _validate_lifetime(self.t2_echo, name="t2_echo")
+        if not np.isinf(self.t1) and (
+            np.isinf(self.t2_echo) or self.t2_echo > 2 * self.t1
+        ):
+            warnings.warn(
+                "t2_echo exceeds 2 * t1; idle pure dephasing will be clamped to zero.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
 
 @dataclass(frozen=True)
 class CrOnNoise:
     """
-    Describe sign-independent CR-active lifetimes and transition rates.
+    Describe effective CR-active lifetimes and transition rates for one lobe.
 
-    Lifetimes use ns and rates use inverse ns. One instance is applied to both
-    positive- and negative-amplitude lobes of an echoed CR gate; callers that
-    infer it from only one drive sign therefore assume that the dissipative
-    rates are invariant under CR sign reversal.
+    Lifetimes use ns and rates use inverse ns. Simulation APIs accept an
+    optional separate noise model for the negative-amplitude lobe. By default,
+    this instance is applied to both CR signs, assuming that dissipative rates
+    are invariant under drive-phase reversal. The target fields describe one
+    effective model; the simulator does not explicitly condition them on the
+    control state.
     """
 
     gamma_control_g_to_e: float
@@ -83,7 +105,7 @@ class CrOnNoise:
             "gamma_phi_control",
             "gamma_phi_rho_target",
         ):
-            _validate_rate(getattr(self, name), name=name)
+            _validate_nonnegative_finite(getattr(self, name), name=name)
         _validate_lifetime(self.target_t1rho, name="target_t1rho")
 
 
@@ -93,7 +115,7 @@ class ZX90GateTiming:
 
     cr_lobe_duration: float
     echo: bool
-    control_pi_duration: float = 0.0
+    control_pi_duration: float | None = None
     echo_margin_duration: float = 0.0
 
     def __post_init__(self) -> None:
@@ -101,16 +123,28 @@ class ZX90GateTiming:
         _validate_positive_finite(self.cr_lobe_duration, name="cr_lobe_duration")
         if not isinstance(self.echo, bool):
             raise TypeError("echo must be a boolean.")
-        _validate_nonnegative_finite(
-            self.control_pi_duration,
-            name="control_pi_duration",
-        )
+        if self.echo and self.control_pi_duration is None:
+            raise ValueError(
+                "control_pi_duration is required when constructing echoed timing."
+            )
+        if self.control_pi_duration is not None:
+            if self.echo:
+                _validate_positive_finite(
+                    self.control_pi_duration,
+                    name="control_pi_duration",
+                )
+            else:
+                _validate_nonnegative_finite(
+                    self.control_pi_duration,
+                    name="control_pi_duration",
+                )
         _validate_nonnegative_finite(
             self.echo_margin_duration,
             name="echo_margin_duration",
         )
         if not self.echo and (
-            self.control_pi_duration > 0 or self.echo_margin_duration > 0
+            (self.control_pi_duration is not None and self.control_pi_duration > 0)
+            or self.echo_margin_duration > 0
         ):
             raise ValueError(
                 "An un-echoed ZX90 cannot contain an echo pi pulse or margin."
@@ -121,25 +155,32 @@ class ZX90GateTiming:
         """Return the total semantic gate duration in ns."""
         if not self.echo:
             return self.cr_lobe_duration
+        control_pi_duration = self.control_pi_duration
+        if control_pi_duration is None:  # pragma: no cover - dataclass invariant
+            raise RuntimeError("Echoed timing has no control pi duration.")
         return 2 * (
-            self.cr_lobe_duration
-            + self.control_pi_duration
-            + 2 * self.echo_margin_duration
+            self.cr_lobe_duration + control_pi_duration + 2 * self.echo_margin_duration
         )
 
 
 @dataclass(frozen=True)
 class CrPulseFidelitySimulationResult:
-    """Store the three fidelity limits and dissipative average leakage."""
+    """Store the three fidelity limits, average leakage, and model metadata."""
 
     idle_coherence_limited_fidelity: float
     cr_on_coherence_limited_fidelity: float
     cr_on_dissipative_limited_fidelity: float
     average_leakage: float
-    idle_average_survival: float
-    cr_on_coherence_average_survival: float
-    cr_on_dissipative_average_survival: float
     model_metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class CrTargetDecayPrediction:
+    """Store A/B control populations and target observables at each n value."""
+
+    control_populations: NDArray[np.float64]
+    target_x: NDArray[np.float64]
+    target_f: NDArray[np.float64]
 
 
 def _validate_positive_finite(value: float, *, name: str) -> None:
@@ -166,15 +207,29 @@ def _validate_lifetime(value: float, *, name: str) -> None:
         raise ValueError(f"{name} must be positive.")
 
 
-def _validate_rate(value: float, *, name: str) -> None:
-    """Validate a nonnegative finite rate."""
-    _validate_nonnegative_finite(value, name=name)
-
-
 def extract_zx90_gate_timing(gate: PulseSchedule) -> ZX90GateTiming:
     """
     Extract semantic CR and echo timing from a Qubex ZX90 gate object.
 
+    Parameters
+    ----------
+    gate
+        ZX90 schedule exposing Qubex cross-resonance timing metadata.
+
+    Returns
+    -------
+    ZX90GateTiming
+        CR-lobe, echo-pulse, and echo-margin durations in ns.
+
+    Raises
+    ------
+    TypeError
+        If the gate's echo marker is not boolean.
+    ValueError
+        If required metadata are absent or inconsistent with the schedule.
+
+    Notes
+    -----
     A supported gate exposes the `cr_duration` and `echo` metadata used by
     Qubex `CrossResonance` objects. Echoed gates must also expose their
     physical control `pi_pulse`. Any remaining duration surrounding each pi
@@ -234,7 +289,10 @@ def _target(operator: NDArray[np.complex128]) -> NDArray[np.complex128]:
     return np.kron(_IDENTITY_QUTRIT, operator)
 
 
-def _collapse(rate: float, operator: NDArray[np.complex128]):
+def _collapse(
+    rate: float,
+    operator: NDArray[np.complex128],
+) -> NDArray[np.complex128] | None:
     """Return a scaled collapse operator, omitting a zero-rate channel."""
     return None if rate == 0 else np.sqrt(rate) * operator
 
@@ -411,6 +469,402 @@ def _parallel_x_layer_map(
     return _compose(*maps)
 
 
+def _control_diagonal_generator(
+    generator: NDArray[np.complex128],
+) -> NDArray[np.complex128]:
+    """Restrict a two-qutrit generator to control-diagonal density blocks."""
+    return generator[
+        np.ix_(
+            _CONTROL_DIAGONAL_VECTOR_INDICES,
+            _CONTROL_DIAGONAL_VECTOR_INDICES,
+        )
+    ]
+
+
+def _conditioned_target_generator(
+    control_state: int,
+    target_operators: tuple[NDArray[np.complex128], ...],
+) -> NDArray[np.complex128]:
+    """Build one unit-rate target dissipator conditioned on a control state."""
+    projector = _transition(control_state, control_state)
+    operators = tuple(np.kron(projector, operator) for operator in target_operators)
+    zero_hamiltonian = np.zeros((_FULL_DIMENSION,) * 2, dtype=np.complex128)
+    return _control_diagonal_generator(_liouvillian(zero_hamiltonian, operators))
+
+
+@dataclass(frozen=True)
+class CrTargetDecayModel:
+    """Cache the control-transition-aware physical model for A/B target decay."""
+
+    zx90_duration: float
+    control_population_generator: NDArray[np.float64]
+    control_population_map: NDArray[np.float64]
+    base_generator: NDArray[np.complex128]
+    t1rho_generators: tuple[NDArray[np.complex128], NDArray[np.complex128]]
+    leakage_generators: tuple[NDArray[np.complex128], NDArray[np.complex128]]
+    seepage_generators: tuple[NDArray[np.complex128], NDArray[np.complex128]]
+
+    def gate_map(
+        self,
+        gamma_1rho: tuple[float, float],
+        leakage_rates: tuple[float, float],
+        seepage_rates: tuple[float, float],
+    ) -> NDArray[np.complex128]:
+        """Build one full un-echoed ZX90 map for state-conditioned target rates."""
+        rates = (*gamma_1rho, *leakage_rates, *seepage_rates)
+        for index, rate in enumerate(rates):
+            _validate_nonnegative_finite(rate, name=f"target_rate[{index}]")
+        generator = self.base_generator.copy()
+        for rate, component in zip(
+            gamma_1rho,
+            self.t1rho_generators,
+            strict=True,
+        ):
+            generator += rate * component
+        for rate, component in zip(
+            leakage_rates,
+            self.leakage_generators,
+            strict=True,
+        ):
+            generator += rate * component
+        for rate, component in zip(
+            seepage_rates,
+            self.seepage_generators,
+            strict=True,
+        ):
+            generator += rate * component
+        return np.asarray(expm(generator * self.zx90_duration), dtype=np.complex128)
+
+    def predict_pair(
+        self,
+        n_values: NDArray[np.int64],
+        initial_control_populations: tuple[
+            NDArray[np.float64],
+            NDArray[np.float64],
+        ],
+        initial_target_x: tuple[float, float],
+        initial_target_f: tuple[float, float],
+        gamma_1rho: tuple[float, float],
+        leakage_rates: tuple[float, float],
+        seepage_rates: tuple[float, float],
+    ) -> tuple[CrTargetDecayPrediction, CrTargetDecayPrediction]:
+        """Predict the A/B observables while sharing one finite-duration map."""
+        counts = np.asarray(n_values)
+        if counts.ndim != 1 or not np.issubdtype(counts.dtype, np.integer):
+            raise ValueError("n_values must be a one-dimensional integer array.")
+        counts = np.asarray(counts, dtype=np.int64)
+        if np.any(counts < 0) or np.any(np.diff(counts) < 0):
+            raise ValueError("n_values must be nonnegative and nondecreasing.")
+        rates = (*gamma_1rho, *leakage_rates, *seepage_rates)
+        for index, rate in enumerate(rates):
+            _validate_nonnegative_finite(rate, name=f"target_rate[{index}]")
+        gamma_by_control = np.asarray(
+            (*gamma_1rho, 0.5 * sum(gamma_1rho)),
+            dtype=np.float64,
+        )
+        leakage_by_control = np.asarray(
+            (*leakage_rates, 0.5 * sum(leakage_rates)),
+            dtype=np.float64,
+        )
+        seepage_by_control = np.asarray(
+            (*seepage_rates, 0.5 * sum(seepage_rates)),
+            dtype=np.float64,
+        )
+        control_generator = self.control_population_generator
+        target_x_generator = control_generator - np.diag(
+            gamma_by_control + leakage_by_control
+        )
+        target_f_generator = np.block(
+            [
+                [control_generator, np.zeros((3, 3))],
+                [
+                    np.diag(leakage_by_control),
+                    control_generator
+                    - np.diag(leakage_by_control + seepage_by_control),
+                ],
+            ]
+        )
+        x_map = np.asarray(
+            expm(target_x_generator * self.zx90_duration),
+            dtype=np.float64,
+        )
+        f_map = np.asarray(
+            expm(target_f_generator * self.zx90_duration),
+            dtype=np.float64,
+        )
+        return (
+            self._predict_observables(
+                x_map,
+                f_map,
+                4 * counts,
+                initial_control_populations[0],
+                initial_target_x[0],
+                initial_target_f[0],
+            ),
+            self._predict_observables(
+                x_map,
+                f_map,
+                4 * counts,
+                initial_control_populations[1],
+                initial_target_x[1],
+                initial_target_f[1],
+            ),
+        )
+
+    def _predict_observables(
+        self,
+        x_map: NDArray[np.float64],
+        f_map: NDArray[np.float64],
+        repetition_counts: NDArray[np.int64],
+        initial_control_population: NDArray[np.float64],
+        initial_target_x: float,
+        initial_target_f: float,
+    ) -> CrTargetDecayPrediction:
+        """Propagate the exact closed observable subspace of the Lindblad model."""
+        control = np.asarray(initial_control_population, dtype=np.float64)
+        if (
+            control.shape != (_QUTRIT_DIMENSION,)
+            or not np.all(np.isfinite(control))
+            or np.any(control < 0)
+            or not np.isclose(np.sum(control), 1.0)
+        ):
+            raise ValueError("initial_control_population must be a probability vector.")
+        if not -1.0 <= initial_target_x <= 1.0:
+            raise ValueError("initial_target_x must lie in [-1, 1].")
+        if not 0.0 <= initial_target_f < 1.0:
+            raise ValueError("initial_target_f must lie in [0, 1).")
+        x_state = control * (1 - initial_target_f) * initial_target_x
+        f_state = np.concatenate((control, control * initial_target_f))
+        control_populations = np.empty((repetition_counts.size, 3))
+        target_x = np.empty(repetition_counts.size)
+        target_f = np.empty(repetition_counts.size)
+        previous_count = 0
+        for index, count_value in enumerate(repetition_counts):
+            count = int(count_value)
+            for _ in range(count - previous_count):
+                control = self.control_population_map @ control
+                x_state = x_map @ x_state
+                f_state = f_map @ f_state
+            f_population = float(np.sum(f_state[3:]))
+            survival = 1 - f_population
+            if survival <= np.finfo(float).eps:
+                raise ValueError("Target computational survival reached zero.")
+            control_populations[index] = control
+            target_f[index] = f_population
+            target_x[index] = float(np.sum(x_state) / survival)
+            previous_count = count
+        return CrTargetDecayPrediction(control_populations, target_x, target_f)
+
+    def _predict_one(
+        self,
+        gate_map: NDArray[np.complex128],
+        repetition_counts: NDArray[np.int64],
+        initial_control_population: NDArray[np.float64],
+        initial_target_x: float,
+        initial_target_f: float,
+    ) -> CrTargetDecayPrediction:
+        """Propagate one control preparation through a shared ZX90 map."""
+        control_population = np.asarray(
+            initial_control_population,
+            dtype=np.float64,
+        )
+        if (
+            control_population.shape != (_QUTRIT_DIMENSION,)
+            or not np.all(np.isfinite(control_population))
+            or np.any(control_population < 0)
+            or not np.isclose(np.sum(control_population), 1.0)
+        ):
+            raise ValueError("initial_control_population must be a probability vector.")
+        if not -1.0 <= initial_target_x <= 1.0:
+            raise ValueError("initial_target_x must lie in [-1, 1].")
+        if not 0.0 <= initial_target_f < 1.0:
+            raise ValueError("initial_target_f must lie in [0, 1).")
+
+        target_density = np.zeros(
+            (_QUTRIT_DIMENSION, _QUTRIT_DIMENSION),
+            dtype=np.complex128,
+        )
+        computational_population = 1 - initial_target_f
+        target_density[:2, :2] = (
+            0.5
+            * computational_population
+            * np.array(
+                [[1.0, initial_target_x], [initial_target_x, 1.0]],
+                dtype=np.complex128,
+            )
+        )
+        target_density[2, 2] = initial_target_f
+        target_vector = target_density.reshape(-1, order="F")
+        state = np.concatenate(
+            [population * target_vector for population in control_population]
+        )
+
+        n_points = repetition_counts.size
+        control_populations = np.empty(
+            (n_points, _QUTRIT_DIMENSION),
+            dtype=np.float64,
+        )
+        target_x = np.empty(n_points, dtype=np.float64)
+        target_f = np.empty(n_points, dtype=np.float64)
+        previous_count = 0
+        for point_index, count_value in enumerate(repetition_counts):
+            count = int(count_value)
+            for _ in range(count - previous_count):
+                state = gate_map @ state
+            block_vectors = state.reshape((_QUTRIT_DIMENSION, -1))
+            target_state = np.sum(block_vectors, axis=0).reshape(
+                (_QUTRIT_DIMENSION,) * 2,
+                order="F",
+            )
+            control_populations[point_index] = np.real(
+                [
+                    np.trace(
+                        block_vector.reshape(
+                            (_QUTRIT_DIMENSION,) * 2,
+                            order="F",
+                        )
+                    )
+                    for block_vector in block_vectors
+                ]
+            )
+            target_f[point_index] = float(np.real(target_state[2, 2]))
+            computational_survival = 1 - target_f[point_index]
+            if computational_survival <= np.finfo(float).eps:
+                raise ValueError("Target computational survival reached zero.")
+            target_x[point_index] = float(
+                np.real(np.trace(_X_GE @ target_state)) / computational_survival
+            )
+            previous_count = count
+        return CrTargetDecayPrediction(
+            control_populations=control_populations,
+            target_x=target_x,
+            target_f=target_f,
+        )
+
+
+def prepare_cr_target_decay_model(
+    zx90_duration: float,
+    gamma_control_g_to_e: float,
+    gamma_control_e_to_g: float,
+    gamma_control_e_to_f: float,
+    gamma_control_f_to_e: float,
+) -> CrTargetDecayModel:
+    """
+    Prepare the control-transition-aware physical predictor for A/B.
+
+    The full un-echoed ZX90 is modeled as a single `pi/2` ZX segment. Target
+    rotating-frame relaxation and leakage/seepage are conditioned on the
+    instantaneous control state. The unmeasured control-F target rate is the
+    arithmetic mean of the corresponding control-G and control-E rates.
+
+    Parameters
+    ----------
+    zx90_duration
+        Duration in ns of one full un-echoed ZX90.
+    gamma_control_g_to_e, gamma_control_e_to_g
+        Control GE transition rates in `1/ns`.
+    gamma_control_e_to_f, gamma_control_f_to_e
+        Control EF transition rates in `1/ns`.
+
+    Returns
+    -------
+    CrTargetDecayModel
+        Reusable model that predicts target X/F and control populations for
+        the two control preparations.
+
+    Notes
+    -----
+    The model retains the full 27-dimensional control-diagonal Lindblad
+    generator for validation. Repeated fitting propagates its exact closed
+    observable subspace instead: three control populations, three
+    control-conditioned target-X contributions, and six joint control/target-F
+    populations. This avoids repeated 27-by-27 exponentials without changing
+    the predicted A/B observables.
+    """
+    _validate_positive_finite(zx90_duration, name="zx90_duration")
+    control_rates = (
+        gamma_control_g_to_e,
+        gamma_control_e_to_g,
+        gamma_control_e_to_f,
+        gamma_control_f_to_e,
+    )
+    for name, rate in zip(
+        (
+            "gamma_control_g_to_e",
+            "gamma_control_e_to_g",
+            "gamma_control_e_to_f",
+            "gamma_control_f_to_e",
+        ),
+        control_rates,
+        strict=True,
+    ):
+        _validate_nonnegative_finite(rate, name=name)
+
+    control_operators = tuple(
+        operator
+        for operator in (
+            _collapse(gamma_control_g_to_e, _control(_transition(1, 0))),
+            _collapse(gamma_control_e_to_g, _control(_transition(0, 1))),
+            _collapse(gamma_control_e_to_f, _control(_transition(2, 1))),
+            _collapse(gamma_control_f_to_e, _control(_transition(1, 2))),
+        )
+        if operator is not None
+    )
+    hamiltonian = np.pi * _ZX / (4 * zx90_duration)
+    base_generator = _control_diagonal_generator(
+        _liouvillian(hamiltonian, control_operators)
+    )
+
+    plus = np.array([1.0, 1.0, 0.0], dtype=np.complex128) / np.sqrt(2)
+    minus = np.array([1.0, -1.0, 0.0], dtype=np.complex128) / np.sqrt(2)
+    dressed_operators = (
+        np.outer(minus, plus.conj()) / np.sqrt(2),
+        np.outer(plus, minus.conj()) / np.sqrt(2),
+    )
+    leakage_operators = (_transition(2, 0), _transition(2, 1))
+    seepage_operators = (
+        _transition(0, 2) / np.sqrt(2),
+        _transition(1, 2) / np.sqrt(2),
+    )
+
+    def averaged_control_f_generators(
+        target_operators: tuple[NDArray[np.complex128], ...],
+    ) -> tuple[NDArray[np.complex128], NDArray[np.complex128]]:
+        generators = tuple(
+            _conditioned_target_generator(control_state, target_operators)
+            for control_state in range(_QUTRIT_DIMENSION)
+        )
+        return (
+            generators[0] + 0.5 * generators[2],
+            generators[1] + 0.5 * generators[2],
+        )
+
+    control_population_generator = np.array(
+        [
+            [-gamma_control_g_to_e, gamma_control_e_to_g, 0.0],
+            [
+                gamma_control_g_to_e,
+                -(gamma_control_e_to_g + gamma_control_e_to_f),
+                gamma_control_f_to_e,
+            ],
+            [0.0, gamma_control_e_to_f, -gamma_control_f_to_e],
+        ],
+        dtype=np.float64,
+    )
+    return CrTargetDecayModel(
+        zx90_duration=float(zx90_duration),
+        control_population_generator=control_population_generator,
+        control_population_map=np.asarray(
+            expm(control_population_generator * zx90_duration),
+            dtype=np.float64,
+        ),
+        base_generator=base_generator,
+        t1rho_generators=averaged_control_f_generators(dressed_operators),
+        leakage_generators=averaged_control_f_generators(leakage_operators),
+        seepage_generators=averaged_control_f_generators(seepage_operators),
+    )
+
+
 @dataclass(frozen=True)
 class CrEchoDecayModel:
     """Cache the physical model used to predict CR echo-decay protocols."""
@@ -510,17 +964,46 @@ def prepare_cr_echo_decay_model(
     cr_noise: CrOnNoise,
     control_x180_duration: float,
     target_x180_duration: float,
+    *,
+    cr_noise_negative: CrOnNoise | None = None,
 ) -> CrEchoDecayModel:
     """
     Prepare a reusable physical predictor for the CR echo-decay curves.
 
+    Parameters
+    ----------
+    timing
+        Semantic timing of an echoed ZX90 gate in ns.
+    control_idle, target_idle
+        Idle-noise models used during CR-off intervals.
+    cr_noise
+        Effective noise model for the positive-amplitude CR lobe.
+    control_x180_duration, target_x180_duration
+        Physical X180 durations in ns for the control-echo protocol.
+    cr_noise_negative
+        Optional separate noise model for the negative-amplitude CR lobe.
+
+    Returns
+    -------
+    CrEchoDecayModel
+        Cached generators and maps for the control-T2-echo and
+        target-T2rho-echo protocols.
+
+    Notes
+    -----
     Every map and generator independent of the variable CR-on dephasing rate
-    is precomputed here. Control and target predictions vary their respective
-    rates independently. Measurement fitting is deliberately left to
+    is precomputed here. `cr_noise` applies to the positive CR lobe;
+    `cr_noise_negative` applies to the negative lobe and defaults to the
+    positive model. The fitted dephasing parameter remains common to both
+    signs because the current echo protocols do not distinguish them.
+    Measurement fitting is deliberately left to
     `cr_pulse_coherence_analysis`.
     """
     if not timing.echo:
         raise ValueError("Echo-decay forward modeling requires an echoed ZX90 gate.")
+    control_pi_duration = timing.control_pi_duration
+    if control_pi_duration is None:  # pragma: no cover - dataclass invariant
+        raise ValueError("Echoed ZX90 timing requires control_pi_duration.")
     _validate_nonnegative_finite(
         control_x180_duration,
         name="control_x180_duration",
@@ -536,19 +1019,32 @@ def prepare_cr_echo_decay_model(
         idle_operators,
     )
     control_pi = _x_layer_map(
-        timing.control_pi_duration,
+        control_pi_duration,
         np.pi,
         0.0,
         idle_operators,
     )
     echo_layer = _compose(margin, control_pi, margin)
 
-    base_noise = replace(
+    negative_noise = cr_noise if cr_noise_negative is None else cr_noise_negative
+    positive_base_noise = replace(
         cr_noise,
         gamma_phi_control=0.0,
         gamma_phi_rho_target=0.0,
     )
-    active_operators = _cr_collapse_operators(base_noise, include_leakage=True)
+    negative_base_noise = replace(
+        negative_noise,
+        gamma_phi_control=0.0,
+        gamma_phi_rho_target=0.0,
+    )
+    positive_operators = _cr_collapse_operators(
+        positive_base_noise,
+        include_leakage=True,
+    )
+    negative_operators = _cr_collapse_operators(
+        negative_base_noise,
+        include_leakage=True,
+    )
     positive_hamiltonian = np.pi * _ZX / (8 * timing.cr_lobe_duration)
     zero_hamiltonian = np.zeros((_FULL_DIMENSION,) * 2, dtype=np.complex128)
     control_dephasing_operator = _CONTROL_Z / np.sqrt(2)
@@ -559,8 +1055,8 @@ def prepare_cr_echo_decay_model(
     )
     return CrEchoDecayModel(
         cr_lobe_duration=timing.cr_lobe_duration,
-        positive_generator=_liouvillian(positive_hamiltonian, active_operators),
-        negative_generator=_liouvillian(-positive_hamiltonian, active_operators),
+        positive_generator=_liouvillian(positive_hamiltonian, positive_operators),
+        negative_generator=_liouvillian(-positive_hamiltonian, negative_operators),
         control_dephasing_generator=_liouvillian(
             zero_hamiltonian,
             (control_dephasing_operator,),
@@ -593,39 +1089,53 @@ def _zx90_map(
     target_idle: IdleQubitNoise,
     cr_noise: CrOnNoise,
     mode: _SimulationMode,
+    cr_noise_negative: CrOnNoise | None = None,
 ) -> NDArray[np.complex128]:
     """Build a semantic ZX90 map with CR-on/off noise switching."""
     idle_operators = (
         () if mode == "ideal" else _idle_collapse_operators(control_idle, target_idle)
     )
+    negative_noise = cr_noise if cr_noise_negative is None else cr_noise_negative
     if mode in ("ideal", "idle_coherence"):
-        active_operators = idle_operators
+        positive_operators = idle_operators
     else:
-        active_operators = _cr_collapse_operators(
+        include_leakage = mode == "cr_on_dissipative"
+        positive_operators = _cr_collapse_operators(
             cr_noise,
-            include_leakage=mode == "cr_on_dissipative",
+            include_leakage=include_leakage,
         )
 
     lobe_angle = np.pi / 4 if timing.echo else np.pi / 2
     positive_cr = _segment_map(
         lobe_angle * _ZX / (2 * timing.cr_lobe_duration),
         timing.cr_lobe_duration,
-        active_operators,
+        positive_operators,
     )
     if not timing.echo:
         return positive_cr
+    negative_operators = (
+        idle_operators
+        if mode in ("ideal", "idle_coherence")
+        else _cr_collapse_operators(
+            negative_noise,
+            include_leakage=mode == "cr_on_dissipative",
+        )
+    )
     negative_cr = _segment_map(
         -lobe_angle * _ZX / (2 * timing.cr_lobe_duration),
         timing.cr_lobe_duration,
-        active_operators,
+        negative_operators,
     )
     margin = _segment_map(
         np.zeros((_FULL_DIMENSION,) * 2, dtype=np.complex128),
         timing.echo_margin_duration,
         idle_operators,
     )
+    control_pi_duration = timing.control_pi_duration
+    if control_pi_duration is None:  # pragma: no cover - dataclass invariant
+        raise ValueError("Echoed ZX90 timing requires control_pi_duration.")
     control_pi = _x_layer_map(
-        timing.control_pi_duration,
+        control_pi_duration,
         np.pi,
         0.0,
         idle_operators,
@@ -709,13 +1219,38 @@ def simulate_cr_pulse_fidelity(
     control_idle: IdleQubitNoise,
     target_idle: IdleQubitNoise,
     cr_noise: CrOnNoise,
+    *,
+    cr_noise_negative: CrOnNoise | None = None,
 ) -> CrPulseFidelitySimulationResult:
     """
     Calculate three dissipative ZX90 fidelity limits and average leakage.
 
+    Parameters
+    ----------
+    gate
+        Echoed or un-echoed ZX90 schedule, or its semantic timing.
+    control_idle, target_idle
+        Idle-noise models used during CR-off intervals.
+    cr_noise
+        Effective noise model for the positive-amplitude CR lobe.
+    cr_noise_negative
+        Optional noise model for the negative-amplitude lobe. Defaults to
+        `cr_noise`.
+
+    Returns
+    -------
+    CrPulseFidelitySimulationResult
+        Idle, CR-on coherence, and CR-on dissipative fidelity limits together
+        with average leakage and model assumptions.
+
+    Notes
+    -----
     The two qutrits are propagated with piecewise Lindblad superoperators.
-    CR-active intervals use either idle noise or the supplied CR-on model;
-    echo pulses and margins use idle noise. A noise-free simulation of the
+    CR-active intervals use either idle noise or the supplied CR-on models;
+    `cr_noise` applies to the positive lobe and `cr_noise_negative` to the
+    negative lobe. By default both signs use `cr_noise`, which is a
+    reasonable first approximation when rates depend primarily on CR power.
+    Echo pulses and margins use idle noise. A noise-free simulation of the
     same semantic gate is removed before the channel is projected onto the
     four-dimensional computational subspace.
 
@@ -727,13 +1262,22 @@ def simulate_cr_pulse_fidelity(
     timing = (
         gate if isinstance(gate, ZX90GateTiming) else extract_zx90_gate_timing(gate)
     )
-    ideal_map = _zx90_map(timing, control_idle, target_idle, cr_noise, "ideal")
+    negative_noise = cr_noise if cr_noise_negative is None else cr_noise_negative
+    ideal_map = _zx90_map(
+        timing,
+        control_idle,
+        target_idle,
+        cr_noise,
+        "ideal",
+        negative_noise,
+    )
     idle_map = _zx90_map(
         timing,
         control_idle,
         target_idle,
         cr_noise,
         "idle_coherence",
+        negative_noise,
     )
     coherence_map = _zx90_map(
         timing,
@@ -741,6 +1285,7 @@ def simulate_cr_pulse_fidelity(
         target_idle,
         cr_noise,
         "cr_on_coherence",
+        negative_noise,
     )
     dissipative_map = _zx90_map(
         timing,
@@ -748,9 +1293,10 @@ def simulate_cr_pulse_fidelity(
         target_idle,
         cr_noise,
         "cr_on_dissipative",
+        negative_noise,
     )
-    idle_fidelity, idle_survival = _fidelity_and_survival(idle_map, ideal_map)
-    coherence_fidelity, coherence_survival = _fidelity_and_survival(
+    idle_fidelity, _ = _fidelity_and_survival(idle_map, ideal_map)
+    coherence_fidelity, _ = _fidelity_and_survival(
         coherence_map,
         ideal_map,
     )
@@ -760,14 +1306,17 @@ def simulate_cr_pulse_fidelity(
     )
     _, _, control_idle_clamped = _idle_rates(control_idle)
     _, _, target_idle_clamped = _idle_rates(target_idle)
+    if not timing.echo:
+        cr_lobe_rate_model = "positive_lobe_only"
+    elif negative_noise == cr_noise:
+        cr_lobe_rate_model = "same_for_positive_and_negative_drive_signs"
+    else:
+        cr_lobe_rate_model = "independent_positive_and_negative_drive_signs"
     return CrPulseFidelitySimulationResult(
         idle_coherence_limited_fidelity=idle_fidelity,
         cr_on_coherence_limited_fidelity=coherence_fidelity,
         cr_on_dissipative_limited_fidelity=dissipative_fidelity,
         average_leakage=1 - dissipative_survival,
-        idle_average_survival=idle_survival,
-        cr_on_coherence_average_survival=coherence_survival,
-        cr_on_dissipative_average_survival=dissipative_survival,
         model_metadata={
             "time_unit": "ns",
             "rate_unit": "1/ns",
@@ -777,8 +1326,10 @@ def simulate_cr_pulse_fidelity(
             "target_polarization_asymptote": 0.0,
             "target_leakage_outward_model": "equal_incoherent_from_g_and_e",
             "target_seepage_return_model": "equal_incoherent_to_g_and_e",
-            "cr_lobe_rate_model": "same_for_positive_and_negative_drive_signs",
-            "cr_on_rate_target_state_dependence": "not_modeled",
+            "cr_lobe_rate_model": cr_lobe_rate_model,
+            "cr_on_rate_target_state_dependence": (
+                "effective_average_not_explicitly_modeled"
+            ),
             "reference_operation": "noise_off_same_semantic_gate",
             "gate_schedule_interpretation": "semantic_cr_echo_timing",
             "zx_hamiltonian_qutrit_extension": (
@@ -839,9 +1390,12 @@ __all__ = [
     "CrEchoDecayModel",
     "CrOnNoise",
     "CrPulseFidelitySimulationResult",
+    "CrTargetDecayModel",
+    "CrTargetDecayPrediction",
     "IdleQubitNoise",
     "ZX90GateTiming",
     "extract_zx90_gate_timing",
     "prepare_cr_echo_decay_model",
+    "prepare_cr_target_decay_model",
     "simulate_cr_pulse_fidelity",
 ]
