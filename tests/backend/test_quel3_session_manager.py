@@ -15,6 +15,7 @@ from qubex.backend.quel3.managers import (
 from qubex.backend.quel3.managers.session_workarounds import (
     QuelwareSessionError,
     is_resource_allocation_error,
+    quelware_exception_summary,
     quelware_session_token,
 )
 
@@ -128,12 +129,75 @@ def test_session_token_helper_handles_unopened_session_property() -> None:
     assert quelware_session_token(_UnopenedSession()) == "<unavailable>"
 
 
+@pytest.mark.parametrize("kind", ["direct", "subclass", "wrapped"])
+def test_exception_summary_uses_user_defined_hints(monkeypatch, kind):
+    """Registered hints should apply to exception classes, subclasses, and explicit causes."""
+    error_type = type(
+        "LockConflictError",
+        (Exception,),
+        {"__module__": "quelware_client.core.exceptions"},
+    )
+    monkeypatch.setitem(
+        session_workarounds_module.QUELWARE_EXCEPTION_HINTS,
+        "quelware_client.core.exceptions.LockConflictError",
+        "user-defined cause",
+    )
+    if kind == "subclass":
+        error_type = type("SpecializedError", (error_type,), {})
+    cause = error_type("original message")
+    error = cause
+    if kind == "wrapped":
+        error = RuntimeError("request failed")
+        error.__cause__ = cause
+
+    summary = quelware_exception_summary(error)
+
+    assert (
+        summary
+        == f"{type(error).__name__}: {error}; possible cause: user-defined cause"
+    )
+    assert str(cause) == "original message"
+    if kind == "wrapped":
+        assert error.__cause__ is cause
+
+
+def test_exception_summary_leaves_unregistered_errors_unchanged(monkeypatch):
+    """Unregistered classes and cyclic causes should retain the original exception summary."""
+    monkeypatch.setitem(
+        session_workarounds_module.QUELWARE_EXCEPTION_HINTS,
+        "quelware_client.core.exceptions.LockConflictError",
+        "user-defined cause",
+    )
+    unknown = RuntimeError("unknown")
+    unknown.__cause__ = unknown
+    assert quelware_exception_summary(unknown) == "RuntimeError: unknown"
+    lookalike = type("LockConflictError", (Exception,), {})("locked")
+    assert quelware_exception_summary(lookalike) == "LockConflictError: locked"
+
+
+def test_exception_hint_does_not_change_retry_classification(monkeypatch):
+    """Hint text should not affect resource-allocation retry classification."""
+    monkeypatch.setitem(
+        session_workarounds_module.QUELWARE_EXCEPTION_HINTS,
+        "builtins.RuntimeError",
+        "resource unavailable",
+    )
+    error = RuntimeError("unknown failure")
+    assert "resource unavailable" in quelware_exception_summary(error)
+    assert not is_resource_allocation_error(error)
+
+
 @pytest.mark.parametrize("fail_close", [False, True])
 def test_close_safely_releases_resources_and_logs_cleanup_failure(
-    caplog: pytest.LogCaptureFixture, fail_close: bool
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch, fail_close: bool
 ) -> None:
     """Safe close should release the client and report cleanup failure with the saved token."""
     changed_session_id = "changed-during-close"
+    monkeypatch.setitem(
+        session_workarounds_module.QUELWARE_EXCEPTION_HINTS,
+        "builtins.RuntimeError",
+        "user-defined cleanup cause",
+    )
 
     class ClosingSession(_SuccessfulSession):
         async def __aexit__(self, exc_type, exc, tb):
@@ -163,6 +227,7 @@ def test_close_safely_releases_resources_and_logs_cleanup_failure(
         assert "session_token=saved-session" in caplog.text
         assert "session close failed" in caplog.text
         assert "changed-during-close" not in caplog.text
+        assert "possible cause: user-defined cleanup cause" in caplog.text
     else:
         assert not caplog.records
 
@@ -250,10 +315,21 @@ def test_request_retry_preserves_separate_session_creation_budget(
 
 
 def test_request_retry_preserves_previous_session_token_on_reopen_failure(
+    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed close before reopening should retain the previous session token and cause."""
-    cause = RuntimeError("close before reopening failed")
+    error_type = type(
+        "LockNotFoundError",
+        (Exception,),
+        {"__module__": "quelware_client.core.exceptions"},
+    )
+    cause = error_type("close before reopening failed")
+    monkeypatch.setitem(
+        session_workarounds_module.QUELWARE_EXCEPTION_HINTS,
+        "quelware_client.core.exceptions.LockNotFoundError",
+        "user-defined reopening cause",
+    )
     expected_session_id = "previous-session"
 
     class ClosingSession(_SuccessfulSession):
@@ -288,6 +364,7 @@ def test_request_retry_preserves_previous_session_token_on_reopen_failure(
     assert error.value.session_token == expected_session_id
     assert error.value.__cause__ is cause
     assert context.exit_calls == 1
+    assert "possible cause: user-defined reopening cause" in caplog.text
 
 
 def test_open_retries_when_failed_session_token_is_unavailable(
