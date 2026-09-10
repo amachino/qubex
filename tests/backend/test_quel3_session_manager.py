@@ -196,6 +196,100 @@ def test_open_retries_transient_resource_allocation_failure(
     assert client_context.exit_calls == 1
 
 
+@pytest.mark.parametrize("creation_failures", [3, 4])
+def test_request_retry_preserves_separate_session_creation_budget(
+    monkeypatch: pytest.MonkeyPatch, creation_failures: int
+) -> None:
+    """Each request attempt should retain its own session creation retry budget."""
+    delays = _patch_session_retry_sleep(monkeypatch)
+    contexts: list[_FakeClientContext] = []
+    clients: list[_FakeClient] = []
+    manager = Quel3SessionManager()
+    result = object()
+    calls = 0
+
+    def factory(endpoint, port):
+        client = _FakeClient(
+            successful_session=_SuccessfulSession(),
+            failures_before_success=creation_failures,
+        )
+        clients.append(client)
+        context = _FakeClientContext(client)
+        contexts.append(context)
+        return context
+
+    async def operation(session):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("request failed")
+        return result
+
+    async def run():
+        try:
+            return await session_workarounds_module.run_with_session_request_retry(
+                manager=manager,
+                client_factory=cast(Any, factory),
+                resource_ids=("inst-a",),
+                operation=operation,
+            )
+        finally:
+            await manager.close_safely()
+
+    if creation_failures == 3:
+        assert asyncio.run(run()) is result
+        assert calls == len(clients) == 2
+    else:
+        with pytest.raises(QuelwareSessionError, match="session creation failed"):
+            asyncio.run(run())
+        assert calls == 0
+        assert len(clients) == 4
+    assert all(len(client.create_session_calls) == 4 for client in clients)
+    assert all(context.exit_calls == 1 for context in contexts)
+    assert delays == pytest.approx([0.5, 0.75, 1.125] * len(clients))
+
+
+def test_request_retry_preserves_previous_session_token_on_reopen_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed close before reopening should retain the previous session token and cause."""
+    cause = RuntimeError("close before reopening failed")
+    expected_session_id = "previous-session"
+
+    class ClosingSession(_SuccessfulSession):
+        async def __aexit__(self, exc_type, exc, tb):
+            raise cause
+
+    client = _FakeClient(
+        successful_session=ClosingSession(session_id=expected_session_id),
+        failures_before_success=0,
+    )
+    context = _FakeClientContext(client)
+    factory = cast(Any, lambda endpoint, port: context)
+    manager = Quel3SessionManager()
+    monkeypatch.setattr(
+        session_workarounds_module, "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS", 1
+    )
+
+    async def operation(session):
+        pytest.fail("Execution must not start when session reopening fails.")
+
+    async def run():
+        await manager.open(("inst-a",), client_factory=factory)
+        await session_workarounds_module.run_with_session_request_retry(
+            manager=manager,
+            client_factory=factory,
+            resource_ids=("inst-a",),
+            operation=operation,
+        )
+
+    with pytest.raises(QuelwareSessionError) as error:
+        asyncio.run(run())
+    assert error.value.session_token == expected_session_id
+    assert error.value.__cause__ is cause
+    assert context.exit_calls == 1
+
+
 def test_open_retries_when_failed_session_token_is_unavailable(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
