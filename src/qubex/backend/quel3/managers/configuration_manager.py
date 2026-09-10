@@ -129,7 +129,72 @@ class Quel3ConfigurationManager:
         Failed deployment or readback leaves those ports absent from the cache.
         Other ports are retained, and an empty configuration performs no work.
         """
-        specifications = configuration.instruments
+        return self._deploy_and_refresh(
+            specifications=configuration.instruments,
+            instrument_cache=instrument_cache,
+            hardware_state_reader=hardware_state_reader,
+            append=False,
+            parallel=parallel,
+        )
+
+    def deploy_instrument(
+        self,
+        *,
+        instrument: InstrumentSpec,
+        instrument_cache: InstrumentCache,
+        hardware_state_reader: Quel3HardwareStateReader,
+        append: bool = True,
+        parallel: bool = True,
+    ) -> InstrumentInfoProtocol:
+        """
+        Deploy one instrument and return its complete hardware readback.
+
+        Parameters
+        ----------
+        instrument : InstrumentSpec
+            Instrument definition and its unit-qualified port ID.
+        instrument_cache : InstrumentCache
+            Controller-owned cache to update after deployment.
+        hardware_state_reader : Quel3HardwareStateReader
+            Reader for complete port readback after deployment.
+        append : bool, default=True
+            Add or replace this alias while preserving the port's other
+            instruments. If false, replace every instrument on the port
+            with this one.
+        parallel : bool, default=True
+            Whether hardware reads may run concurrently.
+
+        Raises
+        ------
+        ValueError
+            Hardware readback is invalid.
+
+        Notes
+        -----
+        Alias replacement is handled by quelware without a pre-deployment read.
+        Append does not retry the deployment request. After either operation,
+        read the entire port into the cache. Write or readback failure leaves
+        that port uncached.
+        """
+        instrument_infos = self._deploy_and_refresh(
+            specifications=(instrument,),
+            instrument_cache=instrument_cache,
+            hardware_state_reader=hardware_state_reader,
+            append=append,
+            parallel=parallel,
+        )
+        return instrument_infos[instrument.alias]
+
+    def _deploy_and_refresh(
+        self,
+        *,
+        specifications: tuple[InstrumentSpec, ...],
+        instrument_cache: InstrumentCache,
+        hardware_state_reader: Quel3HardwareStateReader,
+        append: bool,
+        parallel: bool,
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """Invalidate touched ports, deploy definitions, and publish complete readback."""
         if not specifications:
             return {}
         port_ids = tuple(dict.fromkeys(spec.port_id for spec in specifications))
@@ -137,6 +202,7 @@ class Quel3ConfigurationManager:
         _run_async(
             lambda: self._deploy_instruments(
                 specifications=specifications,
+                append=append,
                 parallel=parallel,
             )
         )
@@ -215,6 +281,7 @@ class Quel3ConfigurationManager:
         self,
         *,
         specifications: tuple[InstrumentSpec, ...],
+        append: bool = False,
         parallel: bool = True,
     ) -> None:
         """Deploy instruments through quelware session APIs."""
@@ -231,13 +298,14 @@ class Quel3ConfigurationManager:
             (port_id, tuple(port_specifications))
             for port_id, port_specifications in specifications_by_port.items()
         )
-        max_attempts = QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS
+        max_attempts = 1 if append else QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS
         for attempt in range(max_attempts):
             try:
                 await self._deploy_port_batches(
                     client_factory=client_factory,
                     port_batches=port_batches,
                     instrument_entities=instrument_entities,
+                    append=append,
                     parallel=parallel,
                     attempt=attempt + 1,
                     max_attempts=max_attempts,
@@ -249,7 +317,9 @@ class Quel3ConfigurationManager:
                         raise
                     missing_session_id = "<unavailable>"
                     raise QuelwareSessionError(
-                        "QuEL-3 quelware deploy request failed after retries",
+                        "QuEL-3 quelware append request failed without retry"
+                        if append
+                        else "QuEL-3 quelware deploy request failed after retries",
                         session_token=missing_session_id,
                         cause=exc,
                     ) from exc
@@ -260,6 +330,7 @@ class Quel3ConfigurationManager:
         client_factory: QuelwareClientFactory,
         port_batches: tuple[tuple[str, tuple[InstrumentSpec, ...]], ...],
         instrument_entities: _QuelwareInstrumentEntities,
+        append: bool,
         parallel: bool,
         attempt: int,
         max_attempts: int,
@@ -285,6 +356,7 @@ class Quel3ConfigurationManager:
                                 port_id=port_id,
                                 port_specifications=port_specifications,
                                 instrument_entities=instrument_entities,
+                                append=append,
                             )
                             for port_id, port_specifications in port_batches
                         ),
@@ -300,11 +372,14 @@ class Quel3ConfigurationManager:
                             port_id=port_id,
                             port_specifications=port_specifications,
                             instrument_entities=instrument_entities,
+                            append=append,
                         )
             except Exception as exc:
                 if attempt >= max_attempts:
                     raise QuelwareSessionError(
-                        "QuEL-3 quelware deploy request failed after retries",
+                        "QuEL-3 quelware append request failed without retry"
+                        if append
+                        else "QuEL-3 quelware deploy request failed after retries",
                         session_token=session_token,
                         cause=exc,
                     ) from exc
@@ -335,6 +410,7 @@ class Quel3ConfigurationManager:
         port_id: str,
         port_specifications: tuple[InstrumentSpec, ...],
         instrument_entities: _QuelwareInstrumentEntities,
+        append: bool,
     ) -> None:
         """Deploy one port batch through the active quelware session."""
         definitions: list[InstrumentDefinitionProtocol] = []
@@ -355,7 +431,7 @@ class Quel3ConfigurationManager:
         await session.deploy_instruments(
             port_id,
             definitions=definitions,
-            append=False,
+            append=append,
         )
 
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:

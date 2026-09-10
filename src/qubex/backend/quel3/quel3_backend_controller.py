@@ -29,6 +29,7 @@ from .managers import (
 )
 from .models import (
     InstrumentConfiguration,
+    InstrumentSpec,
     Quel3HardwareState,
     Quel3HardwareStateView,
 )
@@ -243,6 +244,47 @@ class Quel3BackendController(BackendController):
         """Disconnect backend resources."""
         self._connection_manager.disconnect()
         self._instrument_cache.clear()
+
+    def deploy_instrument(
+        self,
+        *,
+        instrument: InstrumentSpec,
+        append: bool = True,
+        parallel: bool = True,
+    ) -> InstrumentInfoProtocol:
+        """
+        Deploy one instrument and return its complete hardware information.
+
+        Parameters
+        ----------
+        instrument : InstrumentSpec
+            Instrument definition with a unit-qualified port ID.
+        append : bool, default=True
+            Add or replace this alias while preserving the port's other
+            instruments. If false, replace every instrument on the specified
+            port with this one.
+        parallel : bool, default=True
+            Whether hardware reads may run concurrently.
+
+        Raises
+        ------
+        ValueError
+            Hardware readback is invalid.
+
+        Notes
+        -----
+        Alias replacement is handled by quelware without a pre-deployment read.
+        Append does not retry the deployment request. Both modes refresh the
+        entire touched port. Write or readback failure leaves that port absent
+        from the execution cache.
+        """
+        return self._configuration_manager.deploy_instrument(
+            instrument=instrument,
+            instrument_cache=self._instrument_cache,
+            hardware_state_reader=self._hardware_state_reader,
+            append=append,
+            parallel=parallel,
+        )
 
     def deploy_instruments(
         self,

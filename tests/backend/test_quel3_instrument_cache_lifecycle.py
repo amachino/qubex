@@ -58,8 +58,10 @@ class _ConfigurationManager(Quel3ConfigurationManager):
         self,
         *,
         specifications: tuple[InstrumentSpec, ...],
+        append: bool = False,
         parallel: bool = True,
     ) -> None:
+        assert append is False
         self.calls.append(("deploy", specifications, parallel))
         if self.fail:
             raise RuntimeError("deploy failed")
