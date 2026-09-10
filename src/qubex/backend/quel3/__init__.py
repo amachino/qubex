@@ -10,7 +10,6 @@ from .managers import (
 )
 from .models import (
     InstrumentConfiguration,
-    InstrumentDeployRequest,
     InstrumentRoleName,
     InstrumentSpec,
     Quel3BackendExecutionResult,
@@ -34,7 +33,6 @@ from .quel3_backend_controller import Quel3BackendController
 
 __all__ = [
     "InstrumentConfiguration",
-    "InstrumentDeployRequest",
     "InstrumentRoleName",
     "InstrumentSpec",
     "Quel3BackendController",

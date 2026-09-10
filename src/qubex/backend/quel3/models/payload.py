@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
@@ -58,12 +58,10 @@ class Quel3CaptureMode(str, Enum):
 
 @dataclass(frozen=True)
 class Quel3ExecutionPayload:
-    """Execution payload for translating measurement requests to fixed timeline."""
+    """Execution payload with fixed timelines keyed by target/instrument alias."""
 
     waveform_library: dict[str, Quel3Waveform]
     fixed_timelines: dict[str, Quel3FixedTimeline]
     n_iterations: int
     shot_interval_ns: float
     capture_mode: Quel3CaptureMode
-    instrument_bindings: dict[str, str] = field(default_factory=dict)
-    capture_port_bindings: dict[str, str] = field(default_factory=dict)

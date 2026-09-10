@@ -1,6 +1,5 @@
 """Data models for QuEL-3 backend payloads, deployment, state, and results."""
 
-from .deploy import InstrumentDeployRequest, RoleName
 from .hardware_state import (
     Quel3HardwareState,
     Quel3HardwareStateIssue,
@@ -26,7 +25,6 @@ from .result import Quel3BackendExecutionResult
 
 __all__ = [
     "InstrumentConfiguration",
-    "InstrumentDeployRequest",
     "InstrumentRoleName",
     "InstrumentSpec",
     "Quel3BackendExecutionResult",
@@ -45,5 +43,4 @@ __all__ = [
     "Quel3UnitState",
     "Quel3Waveform",
     "Quel3WaveformEvent",
-    "RoleName",
 ]

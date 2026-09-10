@@ -837,12 +837,10 @@ def test_init_uses_quel3_adapter_when_backend_controller_is_quel3(
             backend_controller: object,
             experiment_system: object,
             constraint_profile: MeasurementConstraintProfile,
-            instrument_alias_map: dict[tuple[str, str], str],
         ) -> None:
             called["adapter_backend_controller"] = backend_controller
             called["adapter_experiment_system"] = experiment_system
             called["adapter_constraint_profile"] = constraint_profile
-            called["instrument_alias_map"] = instrument_alias_map
 
     def _unexpected_quel1_adapter(**kwargs: object) -> object:
         raise AssertionError("Quel1 adapter fallback should not be used for quel3.")
@@ -858,9 +856,6 @@ def test_init_uses_quel3_adapter_when_backend_controller_is_quel3(
 
     class _Quel3Controller:
         sampling_period_ns: ClassVar[float] = 0.4
-        target_alias_map: ClassVar[dict[tuple[str, str], str]] = {
-            ("BOX1", "Q00"): "quel3-02-a01:Q00"
-        }
 
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel3BackendController",
@@ -878,7 +873,6 @@ def test_init_uses_quel3_adapter_when_backend_controller_is_quel3(
     assert isinstance(runner, MeasurementScheduleRunner)
     assert called["adapter_backend_controller"] is backend_controller
     assert called["adapter_experiment_system"] is experiment_system
-    assert called["instrument_alias_map"] == {("BOX1", "Q00"): "quel3-02-a01:Q00"}
     profile = cast(MeasurementConstraintProfile, called["adapter_constraint_profile"])
     assert profile.sampling_period_ns == 0.4
     assert profile.enforce_block_alignment is False
