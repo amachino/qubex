@@ -121,11 +121,10 @@ def test_deploy_instruments_calls_session_api(
             deploy_calls.append((port_id, definitions))
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{index}",
+                    id=f"id:{port_id}",
                     port_id=port_id,
-                    definition=definition,
+                    definition=definitions[0],
                 )
-                for index, definition in enumerate(definitions)
             ]
 
     class _FakeClient:
@@ -172,30 +171,14 @@ def test_deploy_instruments_calls_session_api(
     assert len(deploy_calls) == 1
     port_id, definitions = deploy_calls[0]
     assert port_id == "quel3-02-a01:tx_p02"
-    assert [definition.alias for definition in definitions] == [
-        "Q00-0",
-        "Q00-1",
-        "Q00-2",
-        "Q00-3",
-    ]
-    assert all(definition.mode == "fixed_timeline" for definition in definitions)
-    assert all(definition.role == "transmitter" for definition in definitions)
-    assert all(
-        definition.profile.frequency_range_min == pytest.approx(4.1e9)
-        for definition in definitions
-    )
-    assert all(
-        definition.profile.frequency_range_max == pytest.approx(4.3e9)
-        for definition in definitions
-    )
-    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00-0"}
-    assert set(deployed) == {"Q00"}
-    assert [info.definition.alias for info in deployed["Q00"]] == [
-        "Q00-0",
-        "Q00-1",
-        "Q00-2",
-        "Q00-3",
-    ]
+    definition = definitions[0]
+    assert definition.mode == "fixed_timeline"
+    assert definition.role == "transmitter"
+    assert definition.profile.frequency_range_min == pytest.approx(4.1e9)
+    assert definition.profile.frequency_range_max == pytest.approx(4.3e9)
+    assert definition.alias == "Q00"
+    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00"}
+    assert definition.alias in deployed
 
 
 def test_deploy_instruments_recreates_session_after_transient_request_failure(
@@ -275,11 +258,10 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
                 raise RuntimeError("quelware request failed")
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"id:{port_id}",
                     port_id=port_id,
-                    definition=definition,
+                    definition=definitions[0],
                 )
-                for definition in definitions
             ]
 
     class _FakeClient:
@@ -419,11 +401,10 @@ def test_deploy_instruments_ignores_session_close_failure_after_success(
             del append
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"id:{port_id}",
                     port_id=port_id,
-                    definition=definition,
+                    definition=definitions[0],
                 )
-                for definition in definitions
             ]
 
     class _FakeClient:
@@ -674,11 +655,10 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
             del append
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"id:{port_id}",
                     port_id=port_id,
-                    definition=definition,
+                    definition=definitions[0],
                 )
-                for definition in definitions
             ]
 
     class _FakeClient:
@@ -791,18 +771,18 @@ def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
         ) -> list[_InstrumentInfo]:
             del append
             deploy_definitions.extend(definitions)
+            returned_definition = _Definition(
+                alias="quel3-02-a01:Q00",
+                mode=definitions[0].mode,
+                role=definitions[0].role,
+                profile=definitions[0].profile,
+            )
             return [
                 _InstrumentInfo(
-                    id=f"inst-{definition.alias.lower()}",
+                    id="inst-q00",
                     port_id=port_id,
-                    definition=_Definition(
-                        alias=f"quel3-02-a01:{definition.alias}",
-                        mode=definition.mode,
-                        role=definition.role,
-                        profile=definition.profile,
-                    ),
+                    definition=returned_definition,
                 )
-                for definition in definitions
             ]
 
     class _FakeClient:
@@ -844,20 +824,10 @@ def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
 
     deployed = manager.deploy_instruments(requests=(request,))
 
-    assert [definition.alias for definition in deploy_definitions] == [
-        "Q00-0",
-        "Q00-1",
-        "Q00-2",
-        "Q00-3",
-    ]
+    assert [definition.alias for definition in deploy_definitions] == ["Q00"]
     assert set(deployed) == {"Q00"}
-    assert [info.definition.alias for info in deployed["Q00"]] == [
-        "quel3-02-a01:Q00-0",
-        "quel3-02-a01:Q00-1",
-        "quel3-02-a01:Q00-2",
-        "quel3-02-a01:Q00-3",
-    ]
-    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00-0"}
+    assert deployed["Q00"][0].definition.alias == "quel3-02-a01:Q00"
+    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00"}
 
 
 def test_deploy_instruments_clears_cache_for_empty_requests() -> None:
@@ -1008,22 +978,16 @@ def test_deploy_instruments_groups_requests_by_port(
     assert deploy_calls[0][0] == "quel3-02-a01:tx_p04"
     assert deploy_calls[0][2] is False
     assert [definition.alias for definition in deploy_calls[0][1]] == [
-        "Q00-0",
-        "Q00-1",
-        "Q00-2",
-        "Q00-3",
-        "Q00-CR-0",
-        "Q00-CR-1",
-        "Q00-CR-2",
-        "Q00-CR-3",
+        "Q00",
+        "Q00-CR",
     ]
     assert manager.target_alias_map == {
-        ("BOX1", "Q00"): "quel3-02-a01:Q00-0",
-        ("BOX1", "Q00-CR"): "quel3-02-a01:Q00-CR-0",
+        ("BOX1", "Q00"): "quel3-02-a01:Q00",
+        ("BOX1", "Q00-CR"): "quel3-02-a01:Q00-CR",
     }
     assert set(deployed) == {"Q00", "Q00-CR"}
     assert deployed["Q00"][0].id == "id:quel3-02-a01:tx_p04:0"
-    assert deployed["Q00-CR"][0].id == "id:quel3-02-a01:tx_p04:4"
+    assert deployed["Q00-CR"][0].id == "id:quel3-02-a01:tx_p04:1"
 
 
 def test_deploy_instruments_uses_one_session_for_all_ports(
@@ -1489,14 +1453,12 @@ def test_refresh_instrument_cache_loads_existing_instruments(
             self.category = _Category()
 
     class _Definition:
-        def __init__(self, alias: str, role: str) -> None:
+        def __init__(self, alias: str) -> None:
             self.alias = alias
-            self.role = role
 
     class _InstrumentInfo:
-        def __init__(self, alias: str, port_id: str, role: str) -> None:
-            self.id = f"inst-{alias.lower()}"
-            self.definition = _Definition(alias, role)
+        def __init__(self, alias: str, port_id: str) -> None:
+            self.definition = _Definition(alias)
             self.port_id = port_id
 
     class _FakeClient:
@@ -1512,26 +1474,12 @@ def test_refresh_instrument_cache_loads_existing_instruments(
             _ = (exc_type, exc, tb)
 
         async def list_resource_infos(self) -> list[object]:
-            return [
-                *(_ResourceInfo(f"inst-q00-{index}") for index in range(4)),
-                _ResourceInfo("inst-rq00"),
-            ]
+            return [_ResourceInfo("inst-q00"), _ResourceInfo("inst-rq00")]
 
         async def get_instrument_info(self, resource_id: str) -> object:
             infos = {
-                **{
-                    f"inst-q00-{index}": _InstrumentInfo(
-                        f"Q00-{index}",
-                        "quel3-02-a01:tx_p04",
-                        "TRANSMITTER",
-                    )
-                    for index in range(4)
-                },
-                "inst-rq00": _InstrumentInfo(
-                    "RQ00",
-                    "quel3-02-a01:trx_p00p04",
-                    "TRANSCEIVER",
-                ),
+                "inst-q00": _InstrumentInfo("Q00", "quel3-02-a01:tx_p04"),
+                "inst-rq00": _InstrumentInfo("RQ00", "quel3-02-a01:trx_p00p04"),
             }
             return infos[resource_id]
 
@@ -1544,7 +1492,6 @@ def test_refresh_instrument_cache_loads_existing_instruments(
     cached = manager.refresh_instrument_cache()
 
     assert set(cached.keys()) == {"Q00", "RQ00"}
-    assert len(cached["Q00"]) == 4
     assert manager.target_alias_map == {}
     assert set(manager.last_deployed_instrument_infos.keys()) == {"Q00", "RQ00"}
 
@@ -1652,28 +1599,26 @@ def test_fetch_backend_settings_from_hardware_delegates_to_state_reader(
 def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -> None:
     """Given hardware snapshot, cache sync should restore alias mappings."""
     manager = Quel3ConfigurationManager()
-    transmitter_instruments = {
-        f"Q00-{index}": {
-            "resource_id": f"inst-q00-{index}",
-            "port_id": "quel3-02-a01:tx_p04",
-            "role": "TRANSMITTER",
-            "definition": {
-                "alias": f"Q00-{index}",
-                "role": "TRANSMITTER",
-                "mode": "FIXED_TIMELINE",
-                "profile": {
-                    "frequency_range_min": 4.1e9,
-                    "frequency_range_max": 4.3e9,
-                },
-            },
-        }
-        for index in range(4)
-    }
 
     manager.sync_backend_settings_to_cache(
         backend_settings={
             "BOX1": {
-                "instruments": transmitter_instruments,
+                "instruments": {
+                    "Q00": {
+                        "resource_id": "inst-q00",
+                        "port_id": "quel3-02-a01:tx_p04",
+                        "role": "TRANSMITTER",
+                        "definition": {
+                            "alias": "Q00",
+                            "role": "TRANSMITTER",
+                            "mode": "FIXED_TIMELINE",
+                            "profile": {
+                                "frequency_range_min": 4.1e9,
+                                "frequency_range_max": 4.3e9,
+                            },
+                        },
+                    }
+                }
             },
             "BOX2": {
                 "instruments": {
@@ -1697,22 +1642,15 @@ def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -
     )
 
     assert manager.target_alias_map == {
-        ("BOX1", "Q00"): "quel3-02-a01:Q00-0",
+        ("BOX1", "Q00"): "quel3-02-a01:Q00",
         ("BOX2", "RQ00"): "quel3-02-a02:RQ00",
     }
-    assert [info.id for info in manager.last_deployed_instrument_infos["Q00"]] == [
-        "inst-q00-0",
-        "inst-q00-1",
-        "inst-q00-2",
-        "inst-q00-3",
-    ]
+    assert manager.last_deployed_instrument_infos["Q00"][0].id == "inst-q00"
     assert (
         manager.last_deployed_instrument_infos["Q00"][0].port_id
         == "quel3-02-a01:tx_p04"
     )
-    assert [
-        info.definition.alias for info in manager.last_deployed_instrument_infos["Q00"]
-    ] == ["Q00-0", "Q00-1", "Q00-2", "Q00-3"]
+    assert manager.last_deployed_instrument_infos["Q00"][0].definition.alias == "Q00"
     assert (
         manager.last_deployed_instrument_infos["RQ00"][0].definition.role
         == "TRANSCEIVER"
@@ -1764,7 +1702,12 @@ def test_deploy_instruments_replaces_cached_alias(
         ),
     )
     manager._last_deployed_instrument_infos = {"Q00": (cached_info,)}  # noqa: SLF001
-    deploy_calls: list[tuple[str, list[_Definition], bool]] = []
+    deploy_calls: list[tuple[str, list[object], bool]] = []
+    returned_info = _CachedInstrumentInfo(
+        id="inst-q00-new",
+        port_id="quel3-02-a01:tx_p04",
+        definition=_CachedDefinition(alias="Q00"),
+    )
 
     class _FakeSession:
         async def __aenter__(self) -> _FakeSession:
@@ -1782,18 +1725,11 @@ def test_deploy_instruments_replaces_cached_alias(
             self,
             port_id: str,
             *,
-            definitions: list[_Definition],
+            definitions: list[object],
             append: bool = False,
-        ) -> list[_CachedInstrumentInfo]:
+        ) -> list[object]:
             deploy_calls.append((port_id, definitions, append))
-            return [
-                _CachedInstrumentInfo(
-                    id=f"inst-{definition.alias.lower()}-new",
-                    port_id=port_id,
-                    definition=_CachedDefinition(alias=definition.alias),
-                )
-                for definition in definitions
-            ]
+            return [returned_info]
 
     class _FakeClient:
         async def __aenter__(self) -> _FakeClient:
@@ -1838,13 +1774,8 @@ def test_deploy_instruments_replaces_cached_alias(
 
     assert len(deploy_calls) == 1
     assert deploy_calls[0][2] is False
-    assert [info.definition.alias for info in deployed["Q00"]] == [
-        "Q00-0",
-        "Q00-1",
-        "Q00-2",
-        "Q00-3",
-    ]
-    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00-0"}
+    assert deployed == {"Q00": (returned_info,)}
+    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00"}
 
 
 def test_deploy_instruments_replaces_cached_port_in_one_batched_deploy(
@@ -1977,14 +1908,5 @@ def test_deploy_instruments_replaces_cached_port_in_one_batched_deploy(
 
     assert len(deploy_calls) == 1
     assert deploy_calls[0][2] is False
-    assert [definition.alias for definition in deploy_calls[0][1]] == [
-        "Q00-0",
-        "Q00-1",
-        "Q00-2",
-        "Q00-3",
-        "Q00-CR-0",
-        "Q00-CR-1",
-        "Q00-CR-2",
-        "Q00-CR-3",
-    ]
+    assert [definition.alias for definition in deploy_calls[0][1]] == ["Q00", "Q00-CR"]
     assert set(deployed) == {"Q00", "Q00-CR"}
