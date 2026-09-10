@@ -233,12 +233,27 @@ class Quel3BackendController(BackendController):
         *,
         parallel: bool | None = None,
     ) -> None:
-        """Connect backend resources for selected boxes."""
-        self._connection_manager.connect(
-            box_names=box_names,
-            parallel=parallel,
-        )
+        """
+        Connect to quelware and load existing instruments into the execution cache.
+
+        Notes
+        -----
+        Each call discards the previous cache and reads all instruments exposed
+        by the endpoint. Connection or readback failure leaves the controller
+        disconnected with an empty cache and propagates the error.
+        """
         self._instrument_cache.clear()
+        try:
+            self._connection_manager.connect(
+                box_names=box_names,
+                parallel=parallel,
+            )
+            self.refresh_instrument_cache(
+                parallel=True if parallel is None else parallel
+            )
+        except Exception:
+            self.disconnect()
+            raise
 
     def disconnect(self) -> None:
         """Disconnect backend resources."""
@@ -308,7 +323,7 @@ class Quel3BackendController(BackendController):
 
     def get_instrument_configuration(self) -> InstrumentConfiguration:
         """
-        Return deployable settings from the last successful deploy or refresh.
+        Return deployable settings from the last successful connect, deploy, or refresh.
 
         This method reads the instrument cache without contacting hardware.
         """
