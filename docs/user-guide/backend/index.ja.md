@@ -27,6 +27,19 @@ QuEL-1 / QuEL-3 の具体実装を定義するモジュールです。低レベ�
 [`measurement`](../measurement/index.md) から始めるのが適切です。
 `backend` を直接使うのは、controller レベルの挙動そのものが主題のときに限るのが適切です。
 
+## QuEL-3 の実行セッション
+
+実行ログには、session を開いた時点の session ID とリクエストの試行番号を
+`INFO` で記録します。リトライと後始末の失敗は `WARNING`、最終的なリクエストの
+失敗は session ID と traceback 付きの `ERROR` で記録します。
+
+session 作成では、既知の resource / unit 利用不可を待機時間を延ばしながら最大4回
+試行します。外側では `Exception` が発生した payload を client / session を作り直して
+最大4回試行し、その各試行で session 作成の試行枠を使います。キャンセルは再試行しません。
+trigger 後の失敗では同じ payload が実機で再実行される場合があります。
+正常な client はバッチ内で再利用し、最後の後始末の失敗は結果や元の例外を上書きせず
+ログに記録します。
+
 ## 推奨する進み方
 
 1. [低レベル API 概要](../low-level-apis/index.md) で全体像を確認する
