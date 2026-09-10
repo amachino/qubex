@@ -9,7 +9,10 @@ from .managers import (
     Quel3RuntimeConfig,
 )
 from .models import (
+    InstrumentConfiguration,
     InstrumentDeployRequest,
+    InstrumentRoleName,
+    InstrumentSpec,
     Quel3BackendExecutionResult,
     Quel3CaptureMode,
     Quel3CaptureWindow,
@@ -30,7 +33,10 @@ from .models import (
 from .quel3_backend_controller import Quel3BackendController
 
 __all__ = [
+    "InstrumentConfiguration",
     "InstrumentDeployRequest",
+    "InstrumentRoleName",
+    "InstrumentSpec",
     "Quel3BackendController",
     "Quel3BackendExecutionResult",
     "Quel3CaptureMode",

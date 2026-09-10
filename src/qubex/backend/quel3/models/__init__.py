@@ -12,6 +12,8 @@ from .hardware_state import (
     Quel3UnitControlState,
     Quel3UnitState,
 )
+from .instrument import InstrumentRoleName, InstrumentSpec
+from .instrument_configuration import InstrumentConfiguration
 from .payload import (
     Quel3CaptureMode,
     Quel3CaptureWindow,
@@ -23,7 +25,10 @@ from .payload import (
 from .result import Quel3BackendExecutionResult
 
 __all__ = [
+    "InstrumentConfiguration",
     "InstrumentDeployRequest",
+    "InstrumentRoleName",
+    "InstrumentSpec",
     "Quel3BackendExecutionResult",
     "Quel3CaptureMode",
     "Quel3CaptureWindow",
