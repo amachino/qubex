@@ -36,7 +36,10 @@ from qubex.backend.quel3 import (
     Quel3WaveformEvent,
 )
 from qubex.backend.quel3.instrument_cache import InstrumentCache
-from qubex.backend.quel3.managers import execution_manager as execution_manager_module
+from qubex.backend.quel3.managers import (
+    execution_manager as execution_manager_module,
+    session_workarounds as session_workarounds_module,
+)
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
 
@@ -1385,7 +1388,7 @@ def test_execute_recreates_session_after_transient_request_failure(
     """Given transient quelware request failure, execute should retry with a new session."""
     caplog.set_level(
         logging.WARNING,
-        logger="qubex.backend.quel3.managers.execution_manager",
+        logger="qubex.backend.quel3.managers.session_workarounds",
     )
     payload = _make_payload()
     manager = Quel3ExecutionManager(
@@ -1542,7 +1545,7 @@ def test_execute_preserves_request_failure_when_session_close_also_fails(
     client = _FakeClient(session)
 
     monkeypatch.setattr(
-        execution_manager_module,
+        session_workarounds_module,
         "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS",
         1,
     )
@@ -1608,7 +1611,7 @@ def test_execute_uses_configured_session_request_retry_limit(
         return client
 
     monkeypatch.setattr(
-        execution_manager_module,
+        session_workarounds_module,
         "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS",
         2,
     )

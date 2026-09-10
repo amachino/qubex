@@ -4,15 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Collection
+from collections.abc import Awaitable, Callable, Collection
 from contextlib import AbstractAsyncContextManager, suppress
+from typing import TYPE_CHECKING, TypeVar
 
 from qubex.backend.quel3.interfaces.client import (
+    QuelwareClientFactory,
     QuelwareClientProtocol,
     ResourceIdProtocol,
     SessionProtocol,
 )
 
+if TYPE_CHECKING:
+    from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
+
+T = TypeVar("T")
+
+QUEL3_SESSION_REQUEST_MAX_ATTEMPTS = 4
 QUELWARE_SESSION_CREATE_TTL_MS = 30_000
 QUELWARE_SESSION_EXTEND_TTL_MS = 30_000
 QUELWARE_SESSION_CREATE_TENTATIVE_TTL_MS = 5_000
@@ -43,6 +51,67 @@ class QuelwareSessionError(RuntimeError):
             f"{message}; session_token={session_token}; "
             f"cause={type(cause).__name__}: {cause}"
         )
+
+
+async def run_with_session_request_retry(
+    *,
+    manager: Quel3SessionManager,
+    client_factory: QuelwareClientFactory,
+    resource_ids: tuple[ResourceIdProtocol, ...],
+    operation: Callable[[SessionProtocol], Awaitable[T]],
+) -> T:
+    """
+    Run one operation, recreating the client and session after request failures.
+
+    Session creation retains its own retry budget. Successful sessions remain
+    open until the next operation or the caller's batch cleanup.
+    """
+    max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
+    for attempt in range(max_attempts):
+        attempt_number = attempt + 1
+        try:
+            if not manager.is_open:
+                await manager.open(client_factory=client_factory)
+            session_token = manager.session_token or "<unavailable>"
+            try:
+                session = await manager.reopen_session(resource_ids)
+            except QuelwareSessionError:
+                raise
+            except Exception as exc:
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session reopen failed",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+            if session is None:
+                raise RuntimeError(  # noqa: TRY301
+                    "QuEL-3 session reopen did not return an execution session."
+                )
+            return await operation(session)
+        except Exception as exc:
+            session_token = (
+                exc.session_token
+                if isinstance(exc, QuelwareSessionError)
+                else manager.session_token or "<unavailable>"
+            )
+            await manager.close_safely()
+            if attempt_number >= max_attempts:
+                if isinstance(exc, QuelwareSessionError):
+                    raise
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session request failed after retries",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+            logger.warning(
+                "QuEL-3 quelware session request failed; session_token=%s; "
+                "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                session_token,
+                attempt_number,
+                max_attempts,
+                quelware_exception_summary(exc),
+            )
+    raise RuntimeError("unreachable QuEL-3 session request retry state")
 
 
 def quelware_session_token(session: object | None) -> str:
