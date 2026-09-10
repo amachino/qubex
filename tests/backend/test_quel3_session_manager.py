@@ -129,6 +129,19 @@ def test_session_token_helper_handles_unopened_session_property() -> None:
     assert quelware_session_token(_UnopenedSession()) == "<unavailable>"
 
 
+def test_lock_conflict_hint_mentions_other_users_and_unreleased_sessions():
+    """A lock conflict should suggest both other users and the caller's unreleased sessions."""
+    error_type = type(
+        "LockConflictError",
+        (Exception,),
+        {"__module__": "quelware_client.core.exceptions"},
+    )
+    summary = quelware_exception_summary(error_type("locked"))
+    assert "Another user" in summary
+    assert "your own sessions" in summary
+    assert "not been released" in summary
+
+
 @pytest.mark.parametrize("kind", ["direct", "subclass", "wrapped"])
 def test_exception_summary_uses_user_defined_hints(monkeypatch, kind):
     """Registered hints should apply to exception classes, subclasses, and explicit causes."""

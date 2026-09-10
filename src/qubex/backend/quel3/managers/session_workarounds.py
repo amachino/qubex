@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Callable, Collection
 from contextlib import AbstractAsyncContextManager, suppress
 from typing import TYPE_CHECKING, TypeVar
@@ -36,7 +37,22 @@ QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS = 4
 # Add diagnoses here using module-qualified exception class names.
 # String keys keep quelware-client optional and avoid importing it for logging.
 QUELWARE_EXCEPTION_HINTS: dict[str, str] = {
-    # "quelware_client.core.exceptions.LockConflictError": "Your possible cause",
+    "quelware_client.core.exceptions.LockConflictError": (
+        "Another user may be using these resources, or one of your own sessions "
+        "may still hold their locks. Check for sessions that have not been released."
+    ),
+}
+
+# Exact HTTP status codes take precedence over status families such as "5xx".
+QUELWARE_HTTP_STATUS_HINTS: dict[str, str] = {
+    "413": (
+        "The payload may be too large. Check whether an IQ array contains "
+        "more than 65536 samples."
+    ),
+    "5xx": (
+        "The QuEL server may have failed internally, possibly due to a server bug. "
+        "Check server and proxy logs for this session."
+    ),
 }
 
 logger = logging.getLogger(__name__)
@@ -165,11 +181,34 @@ def _exception_hint(exc: BaseException) -> str | None:
     while current is not None and id(current) not in visited:
         visited.add(id(current))
         for cls in type(current).__mro__:
-            hint = QUELWARE_EXCEPTION_HINTS.get(f"{cls.__module__}.{cls.__qualname__}")
+            class_name = f"{cls.__module__}.{cls.__qualname__}"
+            hint = QUELWARE_EXCEPTION_HINTS.get(class_name)
             if hint:
                 return hint
+            if class_name in {"urllib.error.HTTPError", "grpclib.exceptions.GRPCError"}:
+                hint = _http_status_hint(current)
+                if hint:
+                    return hint
         current = current.__cause__
     return None
+
+
+def _http_status_hint(exc: BaseException) -> str | None:
+    """Look up an HTTP status from an HTTPError or a gRPC transport error message."""
+    code = getattr(exc, "code", None)
+    if isinstance(code, int):
+        status = str(code)
+    else:
+        message = getattr(exc, "message", None)
+        if not isinstance(message, str):
+            return None
+        match = re.search(r"(?:\bHTTP\s+|:status\s*=\s*['\"]?)([1-5]\d{2})\b", message)
+        if match is None:
+            return None
+        status = match[1]
+    return QUELWARE_HTTP_STATUS_HINTS.get(status) or QUELWARE_HTTP_STATUS_HINTS.get(
+        f"{status[0]}xx"
+    )
 
 
 def is_resource_allocation_error(exc: BaseException) -> bool:

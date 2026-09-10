@@ -36,8 +36,15 @@ QuEL-1 / QuEL-3 の具体実装を定義するモジュールです。低レベ�
 原因候補は `qubex.backend.quel3.managers.session_workarounds` の
 `QUELWARE_EXCEPTION_HINTS` に追加できます。キーにはモジュール名を含む例外クラス名
 （例: `quelware_client.core.exceptions.LockConflictError`）、値には表示したい文面を
-指定します。初期状態は空です。登録した文面は失敗ログに `possible cause` として表示し、
+指定します。LockConflictError には、他の利用者による使用や未解放セッションを候補として
+登録しています。登録した文面は失敗ログに `possible cause` として表示し、
 サブクラスや明示的に連鎖した原因例外にも適用します。リトライの判断や例外は変更しません。
+
+HTTP ステータス別の候補は、同じモジュールの `QUELWARE_HTTP_STATUS_HINTS` で編集できます。
+gRPC 経由で報告される HTTP エラーにも対応します。`"413"` では payload のサイズと
+IQ 配列が 65536 要素を超えていないかの確認、`"5xx"` では QuEL サーバーのバグの可能性と
+サーバー・プロキシのログ確認を案内します。`"503"` などの個別登録は `"5xx"` より優先します。
+これらは診断の候補であり、配列サイズの検証や原因の断定は行いません。
 
 session 作成では、既知の resource / unit 利用不可を待機時間を延ばしながら最大4回
 試行します。外側では `Exception` が発生した payload を client / session を作り直して
