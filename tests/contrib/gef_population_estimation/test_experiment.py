@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from types import SimpleNamespace
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -66,6 +67,10 @@ class _DummyContext:
 class _DummyPulseService:
     """Provide analysis pulses with distinct durations."""
 
+    readout_duration = 0.0
+    readout_pre_margin = 0.0
+    readout_post_margin = 0.0
+
     def x180(self, target: str) -> Arbitrary:
         """Return visible GE and EF pulse stand-ins."""
         durations = {
@@ -87,6 +92,27 @@ class _DummyMeasurementService:
     ) -> None:
         self.iq_queue = list(iq_queue)
         self.calls: list[dict[str, object]] = []
+        self.batch_calls: list[int] = []
+
+    async def run_sweep_measurement(self, schedule, *, sweep_values, **kwargs):
+        """Record one acquisition and return ordered single-shot captures."""
+        self.batch_calls.append(len(sweep_values))
+        results = []
+        for value in sweep_values:
+            result = self.measure(schedule(value), mode="single", **kwargs)
+            results.append(
+                SimpleNamespace(
+                    data={
+                        target: [
+                            SimpleNamespace(
+                                data=np.resize(data.kerneled, kwargs["n_shots"])
+                            )
+                        ]
+                        for target, data in result.data.items()
+                    }
+                )
+            )
+        return SimpleNamespace(results=results)
 
     def measure(self, sequence: PulseSchedule, **kwargs: object) -> SimpleNamespace:
         """Return the next queued single-shot result."""
@@ -148,6 +174,7 @@ def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
         bootstrap_confidence_level=0.90,
     )
 
+    assert exp.measurement_service.batch_calls == [6, 3]
     assert len(exp.measurement_service.calls) == 9
     assert not exp.measurement_service.iq_queue
     assert (
@@ -179,7 +206,7 @@ def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
         for waveform in s1_sequence.get_sequence("Q0").flattened_elements
         if isinstance(waveform, (Arbitrary, Blank))
     ]
-    assert s1_durations[-2:] == pytest.approx([10.0, 0.0])
+    assert s1_durations == pytest.approx([8.0, 10.0])
     for call in exp.measurement_service.calls:
         assert call["mode"] == "single"
         assert call["time_integration"] is True
@@ -264,6 +291,7 @@ def test_measure_gef_populations_reuses_supplied_calibration() -> None:
         n_bootstrap=0,
     )
 
+    assert measurement_exp.measurement_service.batch_calls == [3]
     assert len(measurement_exp.measurement_service.calls) == 3
     assert result.data["sequence_names"] == ("sequence_0",)
     assert_allclose(
@@ -311,6 +339,7 @@ def test_measure_gef_populations_estimates_multiple_targets_in_the_same_shots() 
         n_bootstrap=0,
     )
 
+    assert exp.measurement_service.batch_calls == [6, 3]
     assert len(exp.measurement_service.calls) == 9
     assert (
         [
@@ -441,3 +470,73 @@ def test_measure_gef_populations_validates_reused_bootstrap_calibration_first() 
         )
 
     assert not measurement_exp.measurement_service.calls
+
+
+def test_measure_gef_populations_rejects_missing_batch_target() -> None:
+    """Every batch configuration should return each requested target."""
+    samples = _state_samples()
+    exp = _DummyExperiment([{"Q1": _pure(samples, "g")} for _ in range(6)])
+    preparation = PulseSchedule(["Q0"])
+
+    with pytest.raises(ValueError, match="did not return `Q0`"):
+        measure_gef_populations(
+            exp,  # type: ignore[arg-type]
+            targets="Q0",
+            sequences=[preparation],
+            calibration_n_shots=100,
+            n_bootstrap=0,
+        )
+
+    assert exp.measurement_service.batch_calls == [6]
+    assert len(exp.measurement_service.calls) == 6
+
+
+def test_multiple_sequences_share_one_measurement_batch() -> None:
+    """Named preparations should share one sweep without mixing configurations."""
+    samples = _state_samples()
+    weights = [(2, 3, 5), (6, 1, 3)]
+    queue = [_pure(samples, state) for state in ("g", "g", "e", "f", "e", "f")]
+    for g, e, f in weights:
+        queue.extend(_mixture(samples, w) for w in ((g, e, f), (e, f, g), (f, g, e)))
+    exp = _DummyExperiment(queue)
+    preparation = PulseSchedule(["Q0"])
+    preparation.add("Q0", Blank(8))
+    result = measure_gef_populations(
+        cast(Any, exp),
+        targets="Q0",
+        sequences={"name/s1": preparation, "other": preparation},
+        n_shots=100,
+        calibration_n_shots=100,
+        n_bootstrap=0,
+    )
+    assert exp.measurement_service.batch_calls == [6, 6]
+    for name, expected in zip(("name/s1", "other"), weights, strict=True):
+        assert_allclose(
+            result.data["populations"][name]["Q0"],
+            np.array(expected) / 10,
+            rtol=1e-6,
+            atol=1e-7,
+        )
+    assert preparation.duration == 8
+    assert preparation.labels == ["Q0"]
+    for group in (exp.measurement_service.calls[:6], exp.measurement_service.calls[6:]):
+        expected_labels = cast(PulseSchedule, group[0]["sequence"]).labels
+        assert all(
+            cast(PulseSchedule, call["sequence"]).labels == expected_labels
+            for call in group
+        )
+
+
+def test_appended_analyzer_preserves_preparation_frequency() -> None:
+    """GEF acquisition should retain an explicitly detuned preparation channel."""
+    from qubex.contrib.experiment.gef_population_estimation import _append_analyzer
+
+    preparation = PulseSchedule(["Q0"])
+    preparation.add("Q0", Blank(8))
+    preparation.set_frequency("Q0", 4.91)
+    analyzer = PulseSchedule(["Q0"])
+    analyzer.add("Q0", Blank(4))
+    combined = _append_analyzer(preparation, analyzer)
+    assert combined.get_frequency("Q0") == 4.91
+    assert combined.duration == 12
+    assert preparation.duration == 8

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 from numbers import Integral, Real
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -15,7 +15,9 @@ from scipy.linalg import block_diag
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import DEFAULT_INTERVAL
 from qubex.experiment.models.result import Result
-from qubex.pulse import Blank, PulseSchedule
+from qubex.pulse import PulseSchedule
+
+from ._single_shot_batch import measure_single_shot_batch
 
 _CALIBRATION_STEPS = {
     "c1": (),
@@ -30,6 +32,7 @@ _MEASUREMENT_STEPS = {
     "s4": ("ge", "ef"),
     "s5": ("ef", "ge"),
 }
+_ConfigurationKey = TypeVar("_ConfigurationKey", bound=Hashable)
 _FEATURE_COUNT = 5
 _STATE_COUNT = 3
 _DEFAULT_N_SHOTS = 4096
@@ -123,7 +126,8 @@ class GefPopulationFit:
     Attributes
     ----------
     population
-        Constrained population `[P_g, P_e, P_f]`.
+        Physical population `[P_g, P_e, P_f]`, constrained to be nonnegative
+        and sum to one.
     population_unconstrained
         GLS estimate constrained to `P_g + P_e + P_f = 1` but allowing
         negative components.
@@ -137,9 +141,10 @@ class GefPopulationFit:
     residual
         Residual vector ordered by the S1, S4, and S5 feature blocks.
     success
-        Whether the constrained optimizer reported success.
+        Whether the probability-simplex solver completed successfully. Returned
+        fits are successful; failures raise an exception.
     message
-        Optimizer status message.
+        Solver status message.
     design_rank
         Rank of the covariance-weighted design on the two-dimensional simplex
         tangent space `P_g + P_e + P_f = 1`.
@@ -640,8 +645,10 @@ def calibrate_gef_population(
 
     Notes
     -----
-    This function performs six hardware measurements. It assumes the initial
-    population is `(p, q, 0)` and that the calibrated GE and EF pi pulses act as
+    This function submits all six configurations as one single-shot sweep.
+    Hardware execution may split the sweep according to backend support and
+    `measurement.schedule_packing` settings. The initial population is assumed
+    to be `(p, q, 0)`, and calibrated GE and EF pi pulses are assumed to act as
     ideal population swaps. Analyzers are left-padded so population-permutation
     pulses occur as close as possible to readout.
     """
@@ -735,8 +742,10 @@ def measure_gef_populations(
 
     Notes
     -----
-    This function performs six calibration measurements when needed, followed by
-    three hardware measurements per input sequence. Analyzers are left-padded so
+    This function submits calibration as one sweep when needed, followed by one
+    sweep containing three configurations per input sequence. Hardware
+    execution may split a sweep according to backend support and
+    `measurement.schedule_packing` settings. Analyzers are left-padded so
     population-permutation pulses occur as close as possible to readout while
     readout starts at a common time within each group.
     Populations are modeled only in the g/e/f subspace and sum to one. The method
@@ -796,21 +805,35 @@ def measure_gef_populations(
     analyzers = _build_padded_analyzers(exp, target_list, _MEASUREMENT_STEPS)
     populations: dict[str, dict[str, NDArray[np.float64]]] = {}
     fits: dict[str, dict[str, GefPopulationFit]] = {}
-    raw_iq: dict[str, dict[str, dict[str, NDArray[np.complex128]]]] = {}
-    all_summaries: dict[str, dict[str, dict[str, IQMomentSummary]]] = {}
-
-    for sequence_name, preparation in named_sequences.items():
-        schedules = {
-            configuration: _append_analyzer(preparation, analyzer)
-            for configuration, analyzer in analyzers.items()
+    schedules = {
+        (sequence_name, configuration): _append_analyzer(preparation, analyzer)
+        for sequence_name, preparation in named_sequences.items()
+        for configuration, analyzer in analyzers.items()
+    }
+    batch_iq, batch_summaries = _measure_configurations(
+        exp,
+        target_list,
+        schedules,
+        n_shots=resolved_n_shots,
+        shot_interval=resolved_shot_interval,
+    )
+    raw_iq = {
+        sequence_name: {
+            configuration: batch_iq[sequence_name, configuration]
+            for configuration in analyzers
         }
-        sequence_raw_iq, sequence_summaries = _measure_configurations(
-            exp,
-            target_list,
-            schedules,
-            n_shots=resolved_n_shots,
-            shot_interval=resolved_shot_interval,
-        )
+        for sequence_name in named_sequences
+    }
+    all_summaries = {
+        sequence_name: {
+            configuration: batch_summaries[sequence_name, configuration]
+            for configuration in analyzers
+        }
+        for sequence_name in named_sequences
+    }
+
+    for sequence_name in named_sequences:
+        sequence_summaries = all_summaries[sequence_name]
         sequence_fits = {
             target: fit_gef_population(
                 {name: sequence_summaries[name][target] for name in _MEASUREMENT_STEPS},
@@ -823,8 +846,6 @@ def measure_gef_populations(
             target: sequence_fits[target].population for target in target_list
         }
         fits[sequence_name] = sequence_fits
-        raw_iq[sequence_name] = sequence_raw_iq
-        all_summaries[sequence_name] = sequence_summaries
 
     bootstrap = bootstrap_gef_populations(
         calibration_by_target,
@@ -1251,10 +1272,8 @@ def _build_analyzer(
     """Build right-aligned GE/EF population-permutation layers."""
     ge_labels = {target: exp.ctx.resolve_ge_label(target) for target in targets}
     ef_labels = {target: exp.ctx.resolve_ef_label(target) for target in targets}
-    with PulseSchedule() as schedule:
-        if not steps:
-            for target in targets:
-                schedule.add(ge_labels[target], Blank(0))
+    # Keep GE/EF channels in the same order for all packed configurations.
+    with PulseSchedule([*ge_labels.values(), *ef_labels.values()]) as schedule:
         for transition in steps:
             labels = ge_labels if transition == "ge" else ef_labels
             pulses = {
@@ -1275,8 +1294,8 @@ def _append_analyzer(
     analyzer: PulseSchedule,
 ) -> PulseSchedule:
     """Append a copied analyzer to a copied state-preparation schedule."""
-    with PulseSchedule() as schedule:
-        schedule.call(preparation, copy=True)
+    schedule = preparation.copy()
+    with schedule:
         schedule.barrier()
         schedule.call(analyzer, copy=True)
     return schedule
@@ -1285,39 +1304,34 @@ def _append_analyzer(
 def _measure_configurations(
     exp: Experiment,
     targets: list[str],
-    schedules: Mapping[str, PulseSchedule],
+    schedules: Mapping[_ConfigurationKey, PulseSchedule],
     *,
     n_shots: int,
     shot_interval: float,
 ) -> tuple[
-    dict[str, dict[str, NDArray[np.complex128]]],
-    dict[str, dict[str, IQMomentSummary]],
+    dict[_ConfigurationKey, dict[str, NDArray[np.complex128]]],
+    dict[_ConfigurationKey, dict[str, IQMomentSummary]],
 ]:
-    """Measure configuration schedules and summarize target IQ shots."""
-    raw_iq: dict[str, dict[str, NDArray[np.complex128]]] = {}
-    summaries: dict[str, dict[str, IQMomentSummary]] = {}
-    for name, schedule in schedules.items():
-        result = exp.measurement_service.measure(
-            sequence=schedule,
-            mode="single",
-            n_shots=n_shots,
-            shot_interval=shot_interval,
-            time_integration=True,
-            state_classification=False,
-            plot=False,
-        )
-        raw_iq[name] = {}
-        summaries[name] = {}
+    """Acquire one sweep and summarize IQ while preserving configuration keys."""
+    raw_iq: dict[_ConfigurationKey, dict[str, NDArray[np.complex128]]] = {}
+    summaries: dict[_ConfigurationKey, dict[str, IQMomentSummary]] = {}
+    results = measure_single_shot_batch(
+        exp,
+        list(schedules.values()),
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+    )
+    for key, result in zip(schedules, results, strict=True):
+        raw_iq[key] = {}
+        summaries[key] = {}
         for target in targets:
-            if target not in result.data:
+            if target not in result:
                 raise ValueError(
-                    f"Measurement configuration `{name}` did not return `{target}`."
+                    f"Measurement configuration `{key}` did not return `{target}`."
                 )
-            iq = np.asarray(result.data[target].kerneled, dtype=np.complex128)
-            if iq.ndim == 0:
-                iq = np.atleast_1d(iq)
-            raw_iq[name][target] = iq
-            summaries[name][target] = summarize_iq_shots(iq)
+            iq = result[target]
+            raw_iq[key][target] = iq
+            summaries[key][target] = summarize_iq_shots(iq)
     return raw_iq, summaries
 
 

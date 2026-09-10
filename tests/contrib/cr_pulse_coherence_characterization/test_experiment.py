@@ -7,7 +7,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -30,6 +30,10 @@ from qubex.pulse import Blank, PulseSchedule, Rect, VirtualZ
 
 class _DummyPulseService:
     """Provide deterministic pulse durations for schedule construction."""
+
+    readout_duration = 0.0
+    readout_pre_margin = 0.0
+    readout_post_margin = 0.0
 
     def __init__(self) -> None:
         self.rabi_params = {
@@ -76,6 +80,14 @@ class _DummyContext:
         if target not in {"Q0", "Q1"}:
             raise ValueError(target)
         return target
+
+    def resolve_ge_label(self, target: str) -> str:
+        """Return the dummy GE drive label."""
+        return target
+
+    def resolve_ef_label(self, target: str) -> str:
+        """Return the dummy EF drive label."""
+        return f"{target}/ef"
 
 
 class _DummyExperiment:
@@ -396,7 +408,13 @@ def test_characterization_runs_requested_hardware_order(
 
     monkeypatch.setattr(module, "calibrate_gef_population", fake_calibrate)
     monkeypatch.setattr(module, "measure_gef_populations", fake_measure_gef)
-    monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
+    monkeypatch.setattr(
+        module,
+        "_measure_pauli_batch",
+        lambda exp, requests, **kwargs: [
+            fake_measure_pauli(exp, *request, **kwargs) for request in requests
+        ],
+    )
     monkeypatch.setattr(module, "bootstrap_gef_populations", fake_bootstrap)
 
     with pytest.warns(RuntimeWarning, match="target F-state population"):
@@ -507,36 +525,22 @@ def test_pauli_measurement_uses_only_requested_basis_analyzer() -> None:
     exp = _DummyExperiment()
     calls: list[dict[str, object]] = []
 
-    def measure(sequence: PulseSchedule, **kwargs: object) -> SimpleNamespace:
-        calls.append({"sequence": sequence, **kwargs})
+    async def sweep(schedule, *, sweep_values, **kwargs):
+        calls.extend({"sequence": schedule(value), **kwargs} for value in sweep_values)
         return SimpleNamespace(
-            data={"Q0": SimpleNamespace(kerneled=np.array([1.0, 3.0]) + 0j)}
+            results=[
+                SimpleNamespace(
+                    data={"Q0": [SimpleNamespace(data=np.array([1.0, 3.0]) + 0j)]}
+                )
+                for _ in sweep_values
+            ]
         )
 
-    exp.measurement_service.measure = measure
+    exp.measurement_service.run_sweep_measurement = sweep
     preparation = _schedule(8.0)
-
-    measured_x = module._measure_pauli_expectation(
+    measured_x, measured_y, measured_z = module._measure_pauli_batch(
         exp,  # type: ignore[arg-type]
-        preparation,
-        "Q0",
-        "X",
-        n_shots=2,
-        shot_interval=1.0,
-    )
-    measured_y = module._measure_pauli_expectation(
-        exp,  # type: ignore[arg-type]
-        preparation,
-        "Q0",
-        "Y",
-        n_shots=2,
-        shot_interval=1.0,
-    )
-    measured_z = module._measure_pauli_expectation(
-        exp,  # type: ignore[arg-type]
-        preparation,
-        "Q0",
-        "Z",
+        [(preparation, "Q0", basis) for basis in ("X", "Y", "Z")],
         n_shots=2,
         shot_interval=1.0,
     )
@@ -551,7 +555,7 @@ def test_pauli_measurement_uses_only_requested_basis_analyzer() -> None:
     y_sequence: Any = calls[1]["sequence"]
     assert np.max(y_sequence.get_sampled_sequence("Q0").real) > 0
     for call in calls:
-        assert call["mode"] == "single"
+        assert call["shot_averaging"] is False
         assert call["state_classification"] is False
 
 
@@ -893,7 +897,13 @@ def test_characterization_can_measure_one_pauli_protocol_without_gef_calibration
     monkeypatch.setattr(module, "calibrate_gef_population", forbidden)
     monkeypatch.setattr(module, "measure_gef_populations", forbidden)
     monkeypatch.setattr(module, "bootstrap_gef_populations", forbidden)
-    monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
+    monkeypatch.setattr(
+        module,
+        "_measure_pauli_batch",
+        lambda exp, requests, **kwargs: [
+            fake_measure_pauli(exp, *request, **kwargs) for request in requests
+        ],
+    )
 
     result = module.characterize_cr_pulse_coherence(
         _DummyExperiment(),  # type: ignore[arg-type]
@@ -947,7 +957,13 @@ def test_characterization_measures_and_plots_orthogonal_components_by_default(
     monkeypatch.setattr(module, "calibrate_gef_population", forbidden)
     monkeypatch.setattr(module, "measure_gef_populations", forbidden)
     monkeypatch.setattr(module, "bootstrap_gef_populations", forbidden)
-    monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
+    monkeypatch.setattr(
+        module,
+        "_measure_pauli_batch",
+        lambda exp, requests, **kwargs: [
+            fake_measure_pauli(exp, *request, **kwargs) for request in requests
+        ],
+    )
 
     result = module.characterize_cr_pulse_coherence(
         _DummyExperiment(),  # type: ignore[arg-type]
@@ -1279,7 +1295,13 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
     monkeypatch.setattr(module, "calibrate_gef_population", fake_calibrate)
     monkeypatch.setattr(module, "measure_gef_populations", fake_measure_gef)
     monkeypatch.setattr(module, "bootstrap_gef_populations", fake_bootstrap)
-    monkeypatch.setattr(module, "_measure_pauli_expectation", fake_measure_pauli)
+    monkeypatch.setattr(
+        module,
+        "_measure_pauli_batch",
+        lambda exp, requests, **kwargs: [
+            fake_measure_pauli(exp, *request, **kwargs) for request in requests
+        ],
+    )
     monkeypatch.setattr(analysis_module, "_fit_measured_observables", fake_fit_all)
     monkeypatch.setattr(analysis_module, "prepare_cr_echo_decay_model", fake_prepare)
     monkeypatch.setattr(
@@ -1427,3 +1449,101 @@ def test_characterization_integrates_fidelity_simulation_and_forward_curves(
     assert np.asarray(target_actual_fit.y) == pytest.approx(
         target_dephasing_fit.curve_values
     )
+
+
+def test_default_workflow_uses_twenty_one_sweeps_with_n_progress(monkeypatch):
+    """All four protocols should use two sweeps per n after one calibration sweep."""
+    exp = _DummyExperiment()
+    calls = []
+    completed = []
+    rng = np.random.default_rng(123)
+    states = [
+        rng.normal(center, 0.3, 100) + 1j * rng.normal(center * 0.2, 0.4, 100)
+        for center in (-2, 0, 2)
+    ]
+
+    async def sweep(schedule, *, sweep_values, **options):
+        schedules = [schedule(value) for value in sweep_values]
+        calls.append((schedules, options))
+        if len(calls) == 1:
+            values = [states[index] for index in (0, 0, 1, 2, 1, 2)]
+        elif len(calls) % 2 == 0:
+            values = [states[index] for index in (0, 2, 1)] * 4
+        else:
+            values = [states[0]] * 12
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    data={
+                        target: [SimpleNamespace(data=value)] for target in ("Q0", "Q1")
+                    }
+                )
+                for value in values
+            ]
+        )
+
+    def progress(values, **kwargs):
+        assert kwargs["disable"] is False
+        for index, n in enumerate(values):
+            assert len(calls) == 1 + 2 * index
+            yield n
+            assert len(calls) == 1 + 2 * (index + 1)
+            completed.append(n)
+
+    exp.measurement_service.run_sweep_measurement = sweep
+    monkeypatch.setattr(module, "tqdm", progress)
+    monkeypatch.setattr(
+        module,
+        "analyze_cr_pulse_coherence",
+        lambda *a, **kw: SimpleNamespace(
+            fit_status={"fidelity_uncertainty_enabled": False},
+            fidelity_analysis=None,
+        ),
+    )
+    monkeypatch.setattr(module, "plot_cr_pulse_coherence", lambda *a: {"test": None})
+    result = module.characterize_cr_pulse_coherence(
+        cast(Any, exp),
+        "Q0",
+        "Q1",
+        zx90_no_echo=_schedule(8),
+        zx90_echo=_schedule(20),
+        n_shots=100,
+        calibration_n_shots=100,
+        n_bootstrap=0,
+        run_fidelity_simulation=False,
+        plot=False,
+    )
+    assert completed == list(module.DEFAULT_N_VALUES)
+    assert [len(schedules) for schedules, _ in calls] == [6] + [12] * 20
+    assert result.data["measurements"].n_values == module.DEFAULT_N_VALUES
+    for _, options in calls:
+        assert options["shot_averaging"] is False
+        assert options["enable_tqdm"] is False
+
+
+@pytest.mark.parametrize("protocol", module._PROTOCOLS)
+@pytest.mark.parametrize("n", [0, 1, 2])
+def test_protocol_preserves_explicit_drive_frequencies(protocol, n):
+    """Actual protocol schedules and Pauli analyzers should retain drive frequencies."""
+    exp = _DummyExperiment()
+    gate = _schedule(20)
+    gate.set_frequency("Q0", 4.91)
+    point = module._build_protocol_sequences(
+        cast(Any, exp),
+        "Q0",
+        "Q1",
+        n=n,
+        zx90_no_echo=gate,
+        zx90_echo=gate,
+        protocols=[protocol],
+    )
+    sequence = point.sequences[protocol]
+    assert sequence.get_frequency("Q0") == 4.91
+    if protocol in module._PAULI_PROTOCOLS:
+        analyzed = module._build_pauli_measurement_sequence(
+            cast(Any, exp), sequence, "Q0", "X"
+        )
+        assert analyzed.get_frequency("Q0") == 4.91
+        assert analyzed.duration == sequence.duration + 2
+    assert gate.duration == 20
+    assert gate.get_frequency("Q0") == 4.91

@@ -20,6 +20,7 @@ from qubex.experiment.experiment_constants import (
 from qubex.experiment.models.result import Result
 from qubex.pulse import Blank, PulseSchedule, Waveform
 
+from ._single_shot_batch import measure_single_shot_batch
 from .cr_pulse_coherence_analysis import (
     CrPulseCoherenceMeasurements,
     CrPulseFidelityAnalysis,
@@ -184,6 +185,7 @@ def _gef_sequence(
         schedule.call(evolution, copy=True)
         schedule.barrier()
         schedule.add(target_qubit, exp.pulse.y90(target_qubit))
+    schedule.set_frequencies(evolution.get_frequencies())
     return schedule
 
 
@@ -212,6 +214,7 @@ def _control_t2_echo_block(
         block.barrier()
 
         block.call(zx90, copy=True)
+    block.set_frequencies(zx90.get_frequencies())
     return block
 
 
@@ -227,6 +230,7 @@ def _target_t2rho_echo_block(
         block.add(target_qubit, exp.pulse.z180())
         block.barrier()
         block.call(zx90, copy=True)
+    block.set_frequencies(zx90.get_frequencies())
     return block
 
 
@@ -249,6 +253,7 @@ def _pauli_sequence(
     with PulseSchedule() as schedule:
         schedule.call(preparation, copy=True)
         schedule.call(evolution, copy=True)
+    schedule.set_frequencies(evolution.get_frequencies())
     return schedule
 
 
@@ -415,18 +420,15 @@ def _build_protocol_sequences(
     )
 
 
-def _measure_pauli_expectation(
+def _build_pauli_measurement_sequence(
     exp: Experiment,
     sequence: PulseSchedule,
     target: str,
     basis: _PauliBasis,
-    *,
-    n_shots: int,
-    shot_interval: float,
-) -> _PauliMeasurement:
-    """Measure only one requested Pauli basis and estimate its shot error."""
-    with PulseSchedule() as measurement_sequence:
-        measurement_sequence.call(sequence, copy=True)
+) -> PulseSchedule:
+    """Append the requested Pauli analyzer to a copied preparation."""
+    measurement_sequence = sequence.copy()
+    with measurement_sequence:
         analyzer: Waveform | None = None
         if basis == "X":
             analyzer = exp.pulse.y90m(target)
@@ -435,22 +437,41 @@ def _measure_pauli_expectation(
         if analyzer is not None:
             measurement_sequence.barrier()
             measurement_sequence.add(target, analyzer)
-    measurement = exp.measurement_service.measure(
-        sequence=measurement_sequence,
-        mode="single",
+    return measurement_sequence
+
+
+def _measure_pauli_batch(
+    exp: Experiment,
+    requests: Sequence[tuple[PulseSchedule, str, _PauliBasis]],
+    *,
+    n_shots: int,
+    shot_interval: float,
+) -> list[_PauliMeasurement]:
+    """Acquire all requested Pauli configurations in one single-shot sweep."""
+    schedules = [
+        _build_pauli_measurement_sequence(exp, sequence, target, basis)
+        for sequence, target, basis in requests
+    ]
+    results = measure_single_shot_batch(
+        exp,
+        schedules,
         n_shots=n_shots,
         shot_interval=shot_interval,
-        time_integration=True,
-        state_classification=False,
-        plot=False,
     )
-    if target not in measurement.data:
-        raise ValueError(f"Pauli measurement did not return `{target}`.")
-    iq = np.asarray(measurement.data[target].kerneled, dtype=np.complex128)
-    if iq.ndim == 0:
-        iq = np.atleast_1d(iq)
-    if iq.ndim != 1 or iq.size < 2 or not np.all(np.isfinite(iq)):
-        raise ValueError("Pauli measurement must return at least two finite IQ shots.")
+    measurements = []
+    for (_, target, _), result in zip(requests, results, strict=True):
+        if target not in result:
+            raise ValueError(f"Pauli measurement did not return `{target}`.")
+        measurements.append(_summarize_pauli_iq(exp, result[target], target))
+    return measurements
+
+
+def _summarize_pauli_iq(
+    exp: Experiment,
+    iq: NDArray[np.complex128],
+    target: str,
+) -> _PauliMeasurement:
+    """Normalize single-shot IQ and compute a Pauli mean and standard error."""
     rabi_param = exp.pulse.rabi_params.get(target)
     if rabi_param is None:
         raise ValueError(f"Rabi parameters for {target} are not stored.")
@@ -959,6 +980,13 @@ def characterize_cr_pulse_coherence(
 
     Notes
     -----
+    Acquisition uses one calibration sweep when A/B are selected, then at
+    most two single-shot sweeps per n: one for all GEF configurations and
+    one for all selected Pauli configurations. Progress advances after each
+    n completes. The default ten-point, four-protocol run uses 21 sweeps.
+    Backend support and `measurement.schedule_packing` settings determine
+    hardware execution counts and timeline chunking.
+
     `control_ground` prepares control `|0>` and target `|+>`, applies an
     un-echoed ZX90 `4n` times, and finishes with target Y90. The default
     un-echoed ZX90 is two consecutive, same-sign `echo=False` CR primitives;
@@ -1173,7 +1201,7 @@ def characterize_cr_pulse_coherence(
     times_buffer: dict[str, list[float]] = {
         protocol: [] for protocol in selected_protocols
     }
-    pauli_components = {
+    pauli_components: dict[_PauliProtocol, tuple[_PauliBasis, ...]] = {
         protocol: _pauli_components(protocol, measure_orthogonal_components)
         for protocol in selected_pauli_protocols
     }
@@ -1185,6 +1213,13 @@ def characterize_cr_pulse_coherence(
         for protocol in selected_pauli_protocols
         for condition in (f"{protocol}_reference", protocol)
     }
+
+    pauli_keys: list[tuple[_PauliProtocol, str, _PauliBasis]] = [
+        (protocol, condition, basis)
+        for protocol in selected_pauli_protocols
+        for condition in (f"{protocol}_reference", protocol)
+        for basis in pauli_components[protocol]
+    ]
 
     progress = tqdm(
         normalized_n_values,
@@ -1234,20 +1269,25 @@ def characterize_cr_pulse_coherence(
                         )
                     )
 
-        for protocol in selected_pauli_protocols:
-            measured_qubit = control if protocol == _CONTROL_T2_ECHO else target
-            for condition in (f"{protocol}_reference", protocol):
-                for basis in pauli_components[protocol]:
-                    pauli_measurements[condition][basis].append(
-                        _measure_pauli_expectation(
-                            exp,
-                            point.sequences[condition],
-                            measured_qubit,
-                            basis,
-                            n_shots=resolved_n_shots,
-                            shot_interval=resolved_shot_interval,
-                        )
-                    )
+        if pauli_keys:
+            requests: list[tuple[PulseSchedule, str, _PauliBasis]] = [
+                (
+                    point.sequences[condition],
+                    control if protocol == _CONTROL_T2_ECHO else target,
+                    basis,
+                )
+                for protocol, condition, basis in pauli_keys
+            ]
+            results = _measure_pauli_batch(
+                exp,
+                requests,
+                n_shots=resolved_n_shots,
+                shot_interval=resolved_shot_interval,
+            )
+            for (_, condition, basis), measurement in zip(
+                pauli_keys, results, strict=True
+            ):
+                pauli_measurements[condition][basis].append(measurement)
 
     bootstrap: dict[str, dict[str, GefPopulationBootstrap]] = {}
     bootstrap_lookup: dict[tuple[int, str, str], GefPopulationBootstrap] = {}
@@ -1371,7 +1411,7 @@ def characterize_cr_pulse_coherence(
         control_qubit=control,
         target_qubit=target,
         protocols=selected_protocols,
-        pauli_components=pauli_components,
+        pauli_components=cast(Mapping[str, tuple[str, ...]], pauli_components),
         n_values=normalized_n_values,
         times=times,
         populations=populations,
