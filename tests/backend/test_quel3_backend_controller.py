@@ -1467,7 +1467,7 @@ def test_execute_ignores_session_close_failure_after_success(
     """Given request succeeds but close fails, execute should preserve the result."""
     caplog.set_level(
         logging.WARNING,
-        logger="qubex.backend.quel3.managers.execution_manager",
+        logger="qubex.backend.quel3.managers.session_manager",
     )
     payload = _make_payload()
     manager = Quel3ExecutionManager(

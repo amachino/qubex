@@ -266,18 +266,6 @@ class Quel3ExecutionManager:
         )
         return results[0]
 
-    async def _close_session_manager_after_attempt(self) -> None:
-        """Close session state without masking request success or failure."""
-        session_token = self._active_session_token()
-        try:
-            await self._session_manager.close()
-        except Exception as exc:
-            logger.warning(
-                "QuEL-3 quelware session cleanup failed; session_token=%s; cause=%s",
-                session_token,
-                quelware_exception_summary(exc),
-            )
-
     def _active_session_token(self) -> str:
         """Return the currently open session token for diagnostics."""
         return self._session_manager.session_token or "<unavailable>"
@@ -300,7 +288,7 @@ class Quel3ExecutionManager:
                 for payload_plan in payload_plans
             ]
         finally:
-            await self._close_session_manager_after_attempt()
+            await self._session_manager.close_safely()
 
     async def _execute_payload_plan_with_session_request_retry(
         self,
@@ -336,7 +324,7 @@ class Quel3ExecutionManager:
                     if isinstance(exc, QuelwareSessionError)
                     else self._active_session_token()
                 )
-                await self._close_session_manager_after_attempt()
+                await self._session_manager.close_safely()
                 if attempt_number >= max_attempts:
                     if isinstance(exc, QuelwareSessionError):
                         raise

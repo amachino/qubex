@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
@@ -17,8 +18,11 @@ from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_workarounds import (
     QuelwareSessionError,
     enter_quelware_session_with_resource_retry,
+    quelware_exception_summary,
     quelware_session_token,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class Quel3SessionManager:
@@ -164,6 +168,18 @@ class Quel3SessionManager:
                     cause=exc,
                 ) from exc
         return await self.open(resource_ids)
+
+    async def close_safely(self) -> None:
+        """Close session state without masking request success or failure."""
+        session_token = self.session_token or "<unavailable>"
+        try:
+            await self.close()
+        except Exception as exc:
+            logger.warning(
+                "QuEL-3 quelware session cleanup failed; session_token=%s; cause=%s",
+                session_token,
+                quelware_exception_summary(exc),
+            )
 
     async def close(self) -> None:
         """Close any open quelware session and client contexts."""

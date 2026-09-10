@@ -128,6 +128,45 @@ def test_session_token_helper_handles_unopened_session_property() -> None:
     assert quelware_session_token(_UnopenedSession()) == "<unavailable>"
 
 
+@pytest.mark.parametrize("fail_close", [False, True])
+def test_close_safely_releases_resources_and_logs_cleanup_failure(
+    caplog: pytest.LogCaptureFixture, fail_close: bool
+) -> None:
+    """Safe close should release the client and report cleanup failure with the saved token."""
+    changed_session_id = "changed-during-close"
+
+    class ClosingSession(_SuccessfulSession):
+        async def __aexit__(self, exc_type, exc, tb):
+            await super().__aexit__(exc_type, exc, tb)
+            self.token = changed_session_id
+            if fail_close:
+                raise RuntimeError("session close failed")
+
+    session = ClosingSession(session_id="saved-session")
+    client = _FakeClient(successful_session=session, failures_before_success=0)
+    client_context = _FakeClientContext(client)
+    manager = Quel3SessionManager()
+
+    async def run() -> None:
+        await manager.open(
+            ("inst-a",),
+            client_factory=cast(Any, lambda endpoint, port: client_context),
+        )
+        await manager.close_safely()
+
+    asyncio.run(run())
+
+    assert session.exit_calls == client_context.exit_calls == 1
+    assert not manager.is_open
+    assert manager.session_token is None
+    if fail_close:
+        assert "session_token=saved-session" in caplog.text
+        assert "session close failed" in caplog.text
+        assert "changed-during-close" not in caplog.text
+    else:
+        assert not caplog.records
+
+
 def test_open_retries_transient_resource_allocation_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
