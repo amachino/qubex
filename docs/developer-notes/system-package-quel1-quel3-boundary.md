@@ -1,4 +1,4 @@
-# System Package QuEL-1/QuEL-3 Boundary
+# System package QuEL-1/QuEL-3 boundary
 
 ## Purpose
 
@@ -9,7 +9,8 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 
 - Shared entrypoint (`SystemManager`) already selects backend family per session.
 - QuEL-1 has full synchronizer and backend-settings pull path (`dump_box`-based).
-- QuEL-3 synchronizer is currently no-op; backend-settings pull path is absent.
+- QuEL-3 synchronizer plans deployment and supports instrument snapshot pull.
+  Its saved-settings synchronization leaves live instruments unchanged.
 - Core model classes still include QuEL-1-oriented constants/traits in
   `control_system.py` and `experiment_system.py`.
 - QuEL-1 rebuilds controller-side runtime model from `ExperimentSystem`.
@@ -37,12 +38,14 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 - clock/trigger/device-control semantics not representable in shared contract
 - operational tools that depend on QuEL-1-only APIs (`experiment_tool.dump_box`, etc.)
 - QuEL-3 quelware session ownership and `deploy_instruments(...)` execution
-- runtime deployment cache ownership (`target_alias_map`, deployed instrument infos)
+- QuEL-3 instrument cache ownership: `Quel3BackendController` owns one
+  private `InstrumentCache`; managers receive it when needed. Applications use
+  controller configuration APIs.
 
 ## v1.5.0 required actions
 
 1. Introduce explicit capability labels in docs and API behavior:
-   - `backend_settings_pull`: supported on QuEL-1, unsupported on QuEL-3 (current)
+   - `backend_settings_pull`: QuEL-1 box settings and QuEL-3 instrument snapshots
    - `hardware_push_configure`: supported on QuEL-1 and QuEL-3
 2. Gate QuEL-1-only utility paths with clear unsupported errors on QuEL-3.
 3. Keep `ExperimentSystem` logical readout split (`read_out`, `read_in`) as common
@@ -53,9 +56,13 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
    capabilities/strategy; do not hard-require QuEL-1-only LO/CNCO cache APIs on
    QuEL-3.
 6. Implement QuEL-3 `push()` deploy flow with an explicit split:
-   - system-side planner converts logical targets to deploy requests
-   - backend-side configuration manager owns quelware deploy execution and cache
-   while keeping backend-settings pull unsupported.
+   - system-side planner converts logical targets to `InstrumentConfiguration`
+   - backend-side configuration manager owns quelware deploy execution
+   - configuration manager reads hardware back and replaces touched ports in
+     the controller-owned cache.
+   Pull, push snapshot collection, and `is_synced()` use the shared snapshot
+   fetch flow. Explicit instrument refresh belongs to the QuEL-3 controller;
+   diagnostic snapshots never populate its execution cache.
 7. Keep `sync_experiment_system_to_backend_controller(...)` meaningful for
    QuEL-1 rebuilds, but avoid using it as a fake pre-push cache step on
    QuEL-3.

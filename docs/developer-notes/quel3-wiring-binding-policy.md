@@ -1,4 +1,4 @@
-# QuEL-3 Wiring And Binding Policy
+# QuEL-3 wiring and instrument identity policy
 
 ## Purpose
 
@@ -30,8 +30,9 @@ Define the configuration split for QuEL-3 so that:
 ### Target-to-instrument mapping policy
 
 - A dedicated target-binding configuration file is not required for v1.5.0.
-- Qubex resolves target-to-instrument mapping automatically at runtime.
-- Manual override config can be reconsidered later only if field requirements appear.
+- The planner uses physical wiring to select a deployment port.
+- The deployed instrument alias is exactly the target name; execution uses that
+  name to read the shared `InstrumentCache`. No target-to-alias map is stored.
 
 ## Rationale
 
@@ -58,43 +59,59 @@ schema_version: 2
 chip_id: 64Q
 
 control:
-  0: unit-a:p2tx
-  1: unit-a:p3tx
+  0: unit-a:tx_p02
+  1: unit-a:tx_p03
 
 readout:
   0:
-    out: unit-a:p0p1trx
-    in: unit-a:p0p1trx
-    pump: unit-a:p4tx
+    out: unit-a:trx_p00p01
+    in: unit-a:trx_p00p01
+    pump: unit-a:tx_p04
 ```
 
-## Runtime resolution policy
+## Deployment and execution policy
 
-1. Resolve target properties from `TargetRegistry` (no label parsing dependency).
-2. Resolve physical port from wiring map.
-3. Convert runtime bindings to `<unit>:<port>` using physical port metadata:
-   - `port.box_id`
-   - integer `port.number`
-   - `experiment_system.get_box(box_id).name`
-4. Resolve instrument alias automatically in runtime from deployed alias map when available.
-5. Validate consistency (`instrument.port_id` matches expected port when port constraints are required).
-6. Fail fast on unresolved or inconsistent mapping.
+1. Resolve target metadata from `TargetRegistry`.
+2. During planning, derive the unit-qualified port from `port.box_id`, integer
+   `port.number`, and `experiment_system.get_box(box_id).name`. Pair readout
+   output/input wiring into the transceiver port.
+3. Build an `InstrumentConfiguration` containing one five-field `InstrumentSpec`
+   per target, using the target name as alias. Deploy the configuration through
+   the controller; definitions for each port form one call with `append=False`.
+4. Read complete instrument information back from hardware into the
+   controller-owned `InstrumentCache`, replacing only the touched ports.
+5. Execute timelines keyed by target name using the cached resource ID and
+   driver configuration. A missing target requires deploy or explicit refresh.
 
 ## Runtime contract
 
-- QuEL-3 execution does not fall back to logical `port.id` strings such as `QT1.CTRL1`.
-- Missing physical port metadata is a configuration error and must raise immediately.
-- Measurement execution should prefer deployed `target_alias_map` over port-based alias inference.
-- Port-based inference remains a validation path, not the primary happy path.
-- Deploy-time instrument alias is identical to `target_label`.
+- Physical metadata is required by deployment planning; execution does not
+  reconstruct a port or infer an alias from wiring.
+- Local target aliases are unique across the controller's instrument cache.
+  Duplicate aliases fail explicitly, including duplicates on different units.
+- Unit decoration belongs to resource/port IDs. When quelware returns a
+  unit-decorated alias, cache insertion strips only the matching unit prefix.
+- A partial deploy replaces every instrument on each touched port. Include all
+  targets that must remain on a shared port. Other cached ports are preserved.
+- Connect acquires all existing instruments, and explicit refresh acquires all
+  or selected units. Pull and inspection collect
+  diagnostic snapshots independently of the execution cache.
+- Applications use the controller's get/save/load instrument configuration APIs.
+  Get and save export cached specifications; load reads YAML without changing
+  hardware or runtime state.
 
 ## Deployed instrument `port_id` contract
 
-- Runtime resolver accepts current deploy-time resource identifiers only:
-  - `unit-a:tx_p04`
-  - `unit-a:rx_p00`
-  - `unit-a:trx_p00p01`
-- Legacy formats are intentionally unsupported in the current unreleased implementation.
+Current deployment identifiers are unit-qualified:
+
+- `unit-a:tx_p04`
+- `unit-a:rx_p00`
+- `unit-a:trx_p00p01`
+
+`InstrumentSpec` carries this full port ID, alias, role, and minimum/maximum
+frequency in Hz. `InstrumentConfiguration` holds the selected specifications.
+Its YAML representation contains these fields only; resource IDs and driver
+configuration are acquired from hardware during connect, deploy, or explicit refresh.
 
 ## Impact on v1.5.0 scope
 
@@ -103,4 +120,4 @@ readout:
 - It should be reflected in:
   - QuEL-3 configuration loader design,
   - `TargetRegistry` introduction plan,
-  - integration tests for missing/ambiguous binding cases.
+  - integration tests for missing instruments, duplicate aliases, and scoped cache replacement.

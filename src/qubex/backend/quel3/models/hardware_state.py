@@ -90,7 +90,13 @@ class Quel3HardwareStateIssue:
 
 @dataclass(frozen=True)
 class Quel3HardwareState:
-    """Structured QuEL-3 hardware state snapshot."""
+    """
+    Report observed QuEL-3 hardware resources and diagnostic issues.
+
+    A snapshot may omit resources outside the requested view or contain partial
+    results after acquisition errors. It does not populate the execution cache
+    or represent a deployable `InstrumentConfiguration`.
+    """
 
     generated_at: str
     endpoint: str
