@@ -28,6 +28,19 @@ Most hardware-backed workflows should start from `Experiment` or
 [`measurement`](../measurement/index.md). Use `backend` directly only when
 controller-level behavior itself is the subject.
 
+## QuEL-3 execution sessions
+
+Execution logs record the session ID captured on opening and the request attempt
+number at `INFO`. Retries and cleanup failures are logged at `WARNING`; a final
+request failure is logged at `ERROR` with its traceback and session ID.
+
+Session creation retries known resource or unit availability failures up to four
+times with backoff. A separate loop retries each payload up to four times after
+an `Exception`, recreating the client and session. Each outer attempt retains its
+own session creation budget; cancellation is not retried. A failure after trigger
+can therefore execute the same payload again. Healthy clients are reused within
+a batch. Final cleanup failures are logged without replacing the result or error.
+
 ## Recommended path
 
 1. Read the section overview: [Low-level APIs](../low-level-apis/index.md)

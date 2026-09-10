@@ -1381,13 +1381,15 @@ class _CloseFailingSession(_FakeSession):
         return trigger_id
 
 
+@pytest.mark.parametrize("log_level", [logging.INFO, logging.WARNING])
 def test_execute_recreates_session_after_transient_request_failure(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
+    log_level: int,
 ) -> None:
     """Given transient quelware request failure, execute should retry with a new session."""
     caplog.set_level(
-        logging.WARNING,
+        log_level,
         logger="qubex.backend.quel3.managers.session_workarounds",
     )
     payload = _make_payload()
@@ -1453,7 +1455,17 @@ def test_execute_recreates_session_after_transient_request_failure(
     assert "QuEL-3 quelware session request failed" in caplog.text
     assert "failed-trigger-session" in caplog.text
     assert "mutated-trigger-session" not in caplog.text
-    assert "retry-trigger-session" not in caplog.text
+    if log_level == logging.INFO:
+        opened = [
+            record.message
+            for record in caplog.records
+            if record.levelno == logging.INFO
+        ]
+        assert len(opened) == 2
+        assert "session_token=failed-trigger-session; attempt=1/4" in opened[0]
+        assert "session_token=retry-trigger-session; attempt=2/4" in opened[1]
+    else:
+        assert "retry-trigger-session" not in caplog.text
     assert "attempt=1/4" in caplog.text
     assert all(record.exc_info is None for record in caplog.records)
     assert len(drivers) == 2
@@ -1580,6 +1592,7 @@ def test_execute_preserves_request_failure_when_session_close_also_fails(
 
 
 def test_execute_uses_configured_session_request_retry_limit(
+    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given configured retry limit, execute should stop after that many attempts."""
@@ -1640,6 +1653,11 @@ def test_execute_uses_configured_session_request_retry_limit(
     assert exc_info.value.session_token == failed_session_ids[1]
     assert isinstance(exc_info.value.__cause__, RuntimeError)
     assert str(exc_info.value.__cause__) == "quelware request failed"
+    failures = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert len(failures) == 1
+    assert f"session_token={failed_session_ids[1]}; attempt=2/2" in failures[0].message
+    assert failures[0].exc_info is not None
+    assert failures[0].exc_info[1] is exc_info.value.__cause__
     assert len(clients) == 2
     assert [client.exit_calls for client in clients] == [1, 1]
     assert [session.exit_calls for session in sessions] == [1, 1]

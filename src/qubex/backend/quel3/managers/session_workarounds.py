@@ -87,6 +87,12 @@ async def run_with_session_request_retry(
                 raise RuntimeError(  # noqa: TRY301
                     "QuEL-3 session reopen did not return an execution session."
                 )
+            logger.info(
+                "QuEL-3 quelware session opened; session_token=%s; attempt=%d/%d",
+                manager.session_token or "<unavailable>",
+                attempt_number,
+                max_attempts,
+            )
             return await operation(session)
         except Exception as exc:
             session_token = (
@@ -96,6 +102,13 @@ async def run_with_session_request_retry(
             )
             await manager.close_safely()
             if attempt_number >= max_attempts:
+                logger.exception(
+                    "QuEL-3 quelware session request failed after retries; "
+                    "session_token=%s; attempt=%d/%d",
+                    session_token,
+                    attempt_number,
+                    max_attempts,
+                )
                 if isinstance(exc, QuelwareSessionError):
                     raise
                 raise QuelwareSessionError(
