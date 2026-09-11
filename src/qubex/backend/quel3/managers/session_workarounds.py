@@ -109,7 +109,7 @@ async def run_with_session_request_retry(
                 raise RuntimeError(  # noqa: TRY301
                     "QuEL-3 session reopen did not return an execution session."
                 )
-            logger.info(
+            logger.debug(
                 "QuEL-3 quelware session opened; session_token=%s; attempt=%d/%d",
                 manager.session_token or "<unavailable>",
                 attempt_number,
