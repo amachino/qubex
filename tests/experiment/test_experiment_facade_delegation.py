@@ -1283,3 +1283,16 @@ def test_spectroscopy_delegates_drive_timing(method, simultaneous_drive) -> None
     assert delegate.call_args.kwargs["simultaneous_drive"] is simultaneous_drive
     assert delegate.call_args.kwargs["shots"] == 32
     assert delegate.call_args.kwargs["interval"] == 100.0
+
+
+@pytest.mark.parametrize("delay", [None, {}, {0: 0}, {0: 24, 1: 26}, {0: 24.0}])
+def test_check_waveform_delegates_capture_delay(
+    delay: dict[int, int | float] | None,
+) -> None:
+    """Waveform checks forward the capture-delay override and preserve the result."""
+    exp = object.__new__(Experiment)
+    service = Mock()
+    exp.__dict__["_measurement_service"] = service
+    result = exp.check_waveform("Q00", capture_delay=delay, plot=False)
+    assert result is service.check_waveform.return_value
+    assert service.check_waveform.call_args.kwargs["capture_delay"] == delay
