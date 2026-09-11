@@ -238,18 +238,22 @@ class Quel3BackendController(BackendController):
 
         Notes
         -----
-        Each call discards the previous cache and reads all instruments exposed
-        by the endpoint. Connection or readback failure leaves the controller
-        disconnected with an empty cache and propagates the error.
+        Each call validates the selected unit labels and replaces the cache with
+        instruments from those units. `box_names` contains QuEL-3 unit labels;
+        a string selects one unit, `None` selects all units, and an empty list
+        probes the endpoint without loading instruments. Connection, unit-label
+        validation, or readback failure leaves the controller disconnected with
+        an empty cache and propagates the error.
         """
         self._instrument_cache.clear()
+        unit_labels = [box_names] if isinstance(box_names, str) else box_names
         try:
             self._connection_manager.connect(
-                box_names=box_names,
+                unit_labels=unit_labels,
                 parallel=parallel,
             )
             self.refresh_instrument_cache(
-                parallel=True if parallel is None else parallel
+                unit_labels=unit_labels, parallel=True if parallel is None else parallel
             )
         except Exception:
             self.disconnect()

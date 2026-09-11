@@ -40,11 +40,11 @@ class _ConnectionManager:
 
     def connect(
         self,
-        box_names: str | list[str] | None = None,
+        unit_labels: str | list[str] | None = None,
         *,
         parallel: bool | None = None,
     ) -> None:
-        self.calls.append(("connect", box_names, parallel))
+        self.calls.append(("connect", unit_labels, parallel))
         if self.fail:
             raise RuntimeError("connection failed")
         self.is_connected = True
@@ -74,9 +74,11 @@ class _Reader:
         return self.infos
 
 
+@pytest.mark.parametrize("selection", ["unit-a", ["unit-a"]])
 @pytest.mark.parametrize("parallel", [None, False, True])
 def test_connect_makes_existing_instruments_available_to_execution(
     parallel: bool | None,
+    selection: str | list[str],
 ) -> None:
     """Connecting should make observed instruments executable without a separate refresh."""
     calls: list[object] = []
@@ -99,7 +101,7 @@ def test_connect_makes_existing_instruments_available_to_execution(
         ),
     )
 
-    controller.connect(["BOX1"], parallel=parallel)
+    controller.connect(selection, parallel=parallel)
     result = controller.execute_sync(request=BackendExecutionRequest(payload=object()))
 
     assert controller.is_connected
@@ -107,8 +109,8 @@ def test_connect_makes_existing_instruments_available_to_execution(
     assert observed == [info]
     assert observed[0] is info
     assert calls == [
-        ("connect", ["BOX1"], parallel),
-        ("read", (), (), True if parallel is None else parallel),
+        ("connect", ["unit-a"], parallel),
+        ("read", ("unit-a",), (), True if parallel is None else parallel),
     ]
 
 
@@ -160,3 +162,57 @@ def test_repeated_connect_reloads_instruments_from_hardware() -> None:
         ("connect", None, None),
         ("read", (), (), True),
     ]
+
+
+@pytest.mark.parametrize("already_connected", [False, True])
+def test_connect_rejects_missing_units_before_reading_instruments(
+    monkeypatch: pytest.MonkeyPatch,
+    already_connected: bool,
+) -> None:
+    """Missing units should reject initial and repeated connections without reading instruments."""
+    from qubex.backend.quel3.managers.connection_manager import Quel3ConnectionManager
+
+    connection = Quel3ConnectionManager()
+    available = ["unit-a"]
+
+    async def probe() -> list[str]:
+        return available
+
+    monkeypatch.setattr(connection, "_probe_quelware_connection", probe)
+    calls: list[object] = []
+    controller = Quel3BackendController(
+        connection_manager=connection,
+        hardware_state_reader=cast(Any, _Reader(calls, (_info("unit-a:old"),))),
+    )
+    if already_connected:
+        controller.connect("unit-a")
+    calls.clear()
+
+    with pytest.raises(ValueError, match="unit-missing"):
+        controller.connect(["unit-a", "unit-missing"])
+
+    assert not controller.is_connected
+    assert controller.get_instrument_configuration().instruments == ()
+    assert calls == []
+
+
+@pytest.mark.parametrize("selection", [None, [], "unit-a", ["unit-a", "unit-a"]])
+def test_connection_manager_validates_selected_units(
+    monkeypatch: pytest.MonkeyPatch,
+    selection: str | list[str] | None,
+) -> None:
+    """Valid or unspecified selections should connect after discovering units."""
+    from qubex.backend.quel3.managers.connection_manager import Quel3ConnectionManager
+
+    connection = Quel3ConnectionManager()
+    probes: list[bool] = []
+
+    async def probe() -> list[str]:
+        probes.append(True)
+        return ["unit-a", "unit-b"]
+
+    monkeypatch.setattr(connection, "_probe_quelware_connection", probe)
+    connection.connect(selection)
+
+    assert connection.is_connected
+    assert probes == [True]
