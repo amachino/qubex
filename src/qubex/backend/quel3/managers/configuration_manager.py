@@ -112,6 +112,92 @@ class Quel3ConfigurationManager:
         """Return configured quelware personal access token path."""
         return self._runtime_config.pat_path
 
+    def clear_instruments(
+        self,
+        *,
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        parallel: bool = True,
+    ) -> None:
+        """
+        Delete all instruments on one unit and invalidate that unit's cache.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact label of a discovered unit. Required; no all-unit default.
+        instrument_cache : InstrumentCache
+            Controller-owned cache whose selected unit should be invalidated.
+        parallel : bool, default=True
+            Whether to discard instruments on different ports concurrently.
+
+        Raises
+        ------
+        ValueError
+            The unit label is empty or was not discovered.
+
+        Notes
+        -----
+        Discover ports independently of the cache. Invalidate only the selected
+        unit before writing, even if it has no ports. Other units are retained.
+        Session acquisition and deletion requests are not retried by this
+        manager. Errors propagate unchanged and partial deletions are not
+        rolled back. A failed write leaves the selected unit uncached.
+        """
+        if not unit_label.strip():
+            raise ValueError("Unit label must not be empty.")
+        _run_async(
+            lambda: self._clear_instruments(
+                unit_label=unit_label,
+                instrument_cache=instrument_cache,
+                parallel=parallel,
+            )
+        )
+
+    async def _clear_instruments(
+        self,
+        *,
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        parallel: bool,
+    ) -> None:
+        """Discover one unit's ports and discard their instruments in one session."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if unit_label not in client.list_unit_labels():
+                raise ValueError(f"QuEL-3 unit was not discovered: {unit_label!r}.")
+            resources = await client.list_resource_infos()
+            port_ids = tuple(
+                dict.fromkeys(
+                    resource.id
+                    for resource in resources
+                    if str(
+                        getattr(resource.category, "name", resource.category)
+                    ).rsplit(".", maxsplit=1)[-1]
+                    == "PORT"
+                    and resource.id.startswith(f"{unit_label}:")
+                )
+            )
+            instrument_cache.replace_units(
+                unit_labels=(unit_label,), instrument_infos=()
+            )
+            if not port_ids:
+                return
+            async with client.create_session(port_ids) as session:
+                if parallel:
+                    results = await asyncio.gather(
+                        *(session.discard_instruments(port_id) for port_id in port_ids),
+                        return_exceptions=True,
+                    )
+                    for result in results:
+                        if isinstance(result, BaseException):
+                            raise result
+                else:
+                    for port_id in port_ids:
+                        await session.discard_instruments(port_id)
+
     def deploy_instruments(
         self,
         *,

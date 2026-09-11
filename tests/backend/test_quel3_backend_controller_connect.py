@@ -131,7 +131,7 @@ def test_failed_connect_discards_stale_cache_and_connection_status(
     connection.fail = failure == "connection"
     reader.fail = failure == "read"
     if failure == "validation":
-        reader.infos = (_info("unit-a:new-1"), _info("unit-a:new-2"))
+        reader.infos = (_info(""),)
 
     with pytest.raises((RuntimeError, ValueError)):
         controller.connect()
@@ -216,3 +216,72 @@ def test_connection_manager_validates_selected_units(
 
     assert connection.is_connected
     assert probes == [True]
+
+
+@pytest.mark.parametrize("port_id", ["unit-a:tx_p01", "unit-b:tx_p01"])
+@pytest.mark.parametrize("parallel", [False, True])
+def test_connect_warns_and_executes_last_duplicate_alias(
+    port_id: str, parallel: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Connecting should warn on duplicate aliases and execute the last observed instrument."""
+    first = _info("unit-a:first")
+    last = cast(
+        InstrumentInfoProtocol,
+        SimpleNamespace(
+            id=f"{port_id.partition(':')[0]}:last",
+            port_id=port_id,
+            definition=SimpleNamespace(alias=f"{port_id.partition(':')[0]}: Q00 "),
+            config=SimpleNamespace(sampling_period_fs=400_000, samples_per_tick=4),
+        ),
+    )
+    calls: list[object] = []
+    observed: list[InstrumentInfoProtocol] = []
+
+    def execute_sync(
+        *, request: object, instrument_cache: InstrumentCache, parallel: bool
+    ) -> str:
+        observed.append(instrument_cache.get("Q00"))
+        return "executed"
+
+    controller = Quel3BackendController(
+        connection_manager=cast(Any, _ConnectionManager(calls)),
+        hardware_state_reader=cast(Any, _Reader(calls, (first, last))),
+        execution_manager=cast(
+            Any, SimpleNamespace(sampling_period_ns=0.4, execute_sync=execute_sync)
+        ),
+    )
+
+    controller.connect(parallel=parallel)
+    assert (
+        controller.execute_sync(request=BackendExecutionRequest(payload=object()))
+        == "executed"
+    )
+
+    assert controller.is_connected
+    assert observed == [last]
+    assert observed[0] is last
+    assert "Q00" in caplog.text
+    assert first.id in caplog.text
+    assert last.id in caplog.text
+    assert first.port_id in caplog.text
+    assert last.port_id in caplog.text
+    assert any(record.levelname == "WARNING" for record in caplog.records)
+    with pytest.raises(ValueError, match="Duplicate instrument alias"):
+        controller.refresh_instrument_cache()
+
+
+def test_connect_with_empty_selection_clears_cache_without_reading() -> None:
+    """An empty unit selection should connect without reading any instruments."""
+    calls: list[object] = []
+    controller = Quel3BackendController(
+        connection_manager=cast(Any, _ConnectionManager(calls)),
+        hardware_state_reader=cast(Any, _Reader(calls, (_info("unit-a:old"),))),
+    )
+    controller.refresh_instrument_cache()
+    calls.clear()
+
+    controller.connect([])
+
+    assert controller.is_connected
+    assert calls == [("connect", [], None)]
+    assert controller.get_instrument_configuration().instruments == ()
