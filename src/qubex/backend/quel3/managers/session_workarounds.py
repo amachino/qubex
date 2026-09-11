@@ -4,15 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Collection
+import re
+from collections.abc import Awaitable, Callable, Collection
 from contextlib import AbstractAsyncContextManager, suppress
+from typing import TYPE_CHECKING, TypeVar
 
 from qubex.backend.quel3.interfaces.client import (
+    QuelwareClientFactory,
     QuelwareClientProtocol,
     ResourceIdProtocol,
     SessionProtocol,
 )
 
+if TYPE_CHECKING:
+    from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
+
+T = TypeVar("T")
+
+QUEL3_SESSION_REQUEST_MAX_ATTEMPTS = 4
 QUELWARE_SESSION_CREATE_TTL_MS = 30_000
 QUELWARE_SESSION_EXTEND_TTL_MS = 30_000
 QUELWARE_SESSION_CREATE_TENTATIVE_TTL_MS = 5_000
@@ -24,6 +33,27 @@ QUELWARE_SESSION_CREATE_RETRY_DELAY_SECONDS = (
     QUELWARE_SESSION_CREATE_INITIAL_RETRY_DELAY_SECONDS
 )
 QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS = 4
+
+# Add diagnoses here using module-qualified exception class names.
+# String keys keep quelware-client optional and avoid importing it for logging.
+QUELWARE_EXCEPTION_HINTS: dict[str, str] = {
+    "quelware_client.core.exceptions.LockConflictError": (
+        "Another user may be using these resources, or one of your own sessions "
+        "may still hold their locks. Check for sessions that have not been released."
+    ),
+}
+
+# Exact HTTP status codes take precedence over status families such as "5xx".
+QUELWARE_HTTP_STATUS_HINTS: dict[str, str] = {
+    "413": (
+        "The payload may be too large. Check whether an IQ array contains "
+        "more than 65536 samples."
+    ),
+    "5xx": (
+        "The QuEL server may have failed internally, possibly due to a server bug. "
+        "Check server and proxy logs for this session."
+    ),
+}
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +75,82 @@ class QuelwareSessionError(RuntimeError):
         )
 
 
+async def run_with_session_request_retry(
+    *,
+    manager: Quel3SessionManager,
+    client_factory: QuelwareClientFactory,
+    resource_ids: tuple[ResourceIdProtocol, ...],
+    operation: Callable[[SessionProtocol], Awaitable[T]],
+) -> T:
+    """
+    Run one operation, recreating the client and session after request failures.
+
+    Session creation retains its own retry budget. Successful sessions remain
+    open until the next operation or the caller's batch cleanup.
+    """
+    max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
+    for attempt in range(max_attempts):
+        attempt_number = attempt + 1
+        try:
+            if not manager.is_open:
+                await manager.open(client_factory=client_factory)
+            session_token = manager.session_token or "<unavailable>"
+            try:
+                session = await manager.reopen_session(resource_ids)
+            except QuelwareSessionError:
+                raise
+            except Exception as exc:
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session reopen failed",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+            if session is None:
+                raise RuntimeError(  # noqa: TRY301
+                    "QuEL-3 session reopen did not return an execution session."
+                )
+            logger.debug(
+                "QuEL-3 quelware session opened; session_token=%s; attempt=%d/%d",
+                manager.session_token or "<unavailable>",
+                attempt_number,
+                max_attempts,
+            )
+            return await operation(session)
+        except Exception as exc:
+            session_token = (
+                exc.session_token
+                if isinstance(exc, QuelwareSessionError)
+                else manager.session_token or "<unavailable>"
+            )
+            await manager.close_safely()
+            if attempt_number >= max_attempts:
+                hint = _exception_hint(exc)
+                logger.exception(
+                    "QuEL-3 quelware session request failed after retries; "
+                    "session_token=%s; attempt=%d/%d%s",
+                    session_token,
+                    attempt_number,
+                    max_attempts,
+                    f"; possible cause: {hint}" if hint else "",
+                )
+                if isinstance(exc, QuelwareSessionError):
+                    raise
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session request failed after retries",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+            logger.warning(
+                "QuEL-3 quelware session request failed; session_token=%s; "
+                "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                session_token,
+                attempt_number,
+                max_attempts,
+                quelware_exception_summary(exc),
+            )
+    raise RuntimeError("unreachable QuEL-3 session request retry state")
+
+
 def quelware_session_token(session: object | None) -> str:
     """Return a printable quelware session token for diagnostics."""
     if session is None:
@@ -62,8 +168,47 @@ def quelware_session_token(session: object | None) -> str:
 
 
 def quelware_exception_summary(exc: BaseException) -> str:
-    """Return one-line exception context for retry logs."""
-    return f"{type(exc).__name__}: {exc}"
+    """Return exception context with a user-defined possible cause when registered."""
+    summary = f"{type(exc).__name__}: {exc}"
+    hint = _exception_hint(exc)
+    return f"{summary}; possible cause: {hint}" if hint else summary
+
+
+def _exception_hint(exc: BaseException) -> str | None:
+    """Find the first registered class hint along the explicit exception cause chain."""
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        for cls in type(current).__mro__:
+            class_name = f"{cls.__module__}.{cls.__qualname__}"
+            hint = QUELWARE_EXCEPTION_HINTS.get(class_name)
+            if hint:
+                return hint
+            if class_name in {"urllib.error.HTTPError", "grpclib.exceptions.GRPCError"}:
+                hint = _http_status_hint(current)
+                if hint:
+                    return hint
+        current = current.__cause__
+    return None
+
+
+def _http_status_hint(exc: BaseException) -> str | None:
+    """Look up an HTTP status from an HTTPError or a gRPC transport error message."""
+    code = getattr(exc, "code", None)
+    if isinstance(code, int):
+        status = str(code)
+    else:
+        message = getattr(exc, "message", None)
+        if not isinstance(message, str):
+            return None
+        match = re.search(r"(?:\bHTTP\s+|:status\s*=\s*['\"]?)([1-5]\d{2})\b", message)
+        if match is None:
+            return None
+        status = match[1]
+    return QUELWARE_HTTP_STATUS_HINTS.get(status) or QUELWARE_HTTP_STATUS_HINTS.get(
+        f"{status[0]}xx"
+    )
 
 
 def is_resource_allocation_error(exc: BaseException) -> bool:

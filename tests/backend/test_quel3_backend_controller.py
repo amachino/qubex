@@ -36,7 +36,10 @@ from qubex.backend.quel3 import (
     Quel3WaveformEvent,
 )
 from qubex.backend.quel3.instrument_cache import InstrumentCache
-from qubex.backend.quel3.managers import execution_manager as execution_manager_module
+from qubex.backend.quel3.managers import (
+    execution_manager as execution_manager_module,
+    session_workarounds as session_workarounds_module,
+)
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
 
@@ -688,7 +691,7 @@ def test_constructor_accepts_injected_managers() -> None:
         quelware_port=61000,
         client_mode="server",
         quelware_pat_path="/run/secrets/quelware-pat",
-        connect=lambda box_names=None, parallel=None: None,
+        connect=lambda unit_labels=None, parallel=None: None,
         disconnect=lambda: None,
     )
     session_manager = SimpleNamespace(
@@ -760,7 +763,7 @@ def test_connect_clears_existing_instrument_cache(
     """Connecting to hardware without instruments should discard previous cached IDs."""
     calls: list[str] = []
     connection_manager = SimpleNamespace(
-        connect=lambda box_names=None, parallel=None: calls.append("connect"),
+        connect=lambda unit_labels=None, parallel=None: calls.append("connect"),
         disconnect=lambda: None,
     )
     controller = Quel3BackendController(
@@ -853,7 +856,7 @@ def test_constructor_does_not_infer_runtime_config_from_injected_managers() -> N
         quelware_port=50051,
         client_mode="server",
         quelware_pat_path=None,
-        connect=lambda box_names=None, parallel=None: None,
+        connect=lambda unit_labels=None, parallel=None: None,
         disconnect=lambda: None,
     )
     configuration_manager = SimpleNamespace(
@@ -1378,14 +1381,16 @@ class _CloseFailingSession(_FakeSession):
         return trigger_id
 
 
+@pytest.mark.parametrize("log_level", [logging.DEBUG, logging.INFO, logging.WARNING])
 def test_execute_recreates_session_after_transient_request_failure(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
+    log_level: int,
 ) -> None:
     """Given transient quelware request failure, execute should retry with a new session."""
     caplog.set_level(
-        logging.WARNING,
-        logger="qubex.backend.quel3.managers.execution_manager",
+        log_level,
+        logger="qubex.backend.quel3.managers.session_workarounds",
     )
     payload = _make_payload()
     manager = Quel3ExecutionManager(
@@ -1450,7 +1455,17 @@ def test_execute_recreates_session_after_transient_request_failure(
     assert "QuEL-3 quelware session request failed" in caplog.text
     assert "failed-trigger-session" in caplog.text
     assert "mutated-trigger-session" not in caplog.text
-    assert "retry-trigger-session" not in caplog.text
+    if log_level == logging.DEBUG:
+        opened = [
+            record.message
+            for record in caplog.records
+            if record.levelno == logging.DEBUG
+        ]
+        assert len(opened) == 2
+        assert "session_token=failed-trigger-session; attempt=1/4" in opened[0]
+        assert "session_token=retry-trigger-session; attempt=2/4" in opened[1]
+    else:
+        assert "retry-trigger-session" not in caplog.text
     assert "attempt=1/4" in caplog.text
     assert all(record.exc_info is None for record in caplog.records)
     assert len(drivers) == 2
@@ -1467,7 +1482,7 @@ def test_execute_ignores_session_close_failure_after_success(
     """Given request succeeds but close fails, execute should preserve the result."""
     caplog.set_level(
         logging.WARNING,
-        logger="qubex.backend.quel3.managers.execution_manager",
+        logger="qubex.backend.quel3.managers.session_manager",
     )
     payload = _make_payload()
     manager = Quel3ExecutionManager(
@@ -1542,7 +1557,7 @@ def test_execute_preserves_request_failure_when_session_close_also_fails(
     client = _FakeClient(session)
 
     monkeypatch.setattr(
-        execution_manager_module,
+        session_workarounds_module,
         "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS",
         1,
     )
@@ -1577,6 +1592,7 @@ def test_execute_preserves_request_failure_when_session_close_also_fails(
 
 
 def test_execute_uses_configured_session_request_retry_limit(
+    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given configured retry limit, execute should stop after that many attempts."""
@@ -1608,7 +1624,7 @@ def test_execute_uses_configured_session_request_retry_limit(
         return client
 
     monkeypatch.setattr(
-        execution_manager_module,
+        session_workarounds_module,
         "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS",
         2,
     )
@@ -1637,6 +1653,11 @@ def test_execute_uses_configured_session_request_retry_limit(
     assert exc_info.value.session_token == failed_session_ids[1]
     assert isinstance(exc_info.value.__cause__, RuntimeError)
     assert str(exc_info.value.__cause__) == "quelware request failed"
+    failures = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert len(failures) == 1
+    assert f"session_token={failed_session_ids[1]}; attempt=2/2" in failures[0].message
+    assert failures[0].exc_info is not None
+    assert failures[0].exc_info[1] is exc_info.value.__cause__
     assert len(clients) == 2
     assert [client.exit_calls for client in clients] == [1, 1]
     assert [session.exit_calls for session in sessions] == [1, 1]

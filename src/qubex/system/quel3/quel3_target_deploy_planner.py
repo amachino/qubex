@@ -88,10 +88,7 @@ class Quel3TargetDeployPlanner:
     ) -> str:
         """Resolve quelware port ID from one logical generator target."""
         port = target.channel.port
-        unit_label = self._resolve_unit_label(
-            experiment_system=experiment_system,
-            box_id=port.box_id,
-        )
+        unit_label = port.box_id
         port_number = self._resolve_port_number(port=port)
 
         if target.type == TargetType.READ:
@@ -102,15 +99,6 @@ class Quel3TargetDeployPlanner:
             )
             return f"{unit_label}:trx_p{read_in_port_number:02d}p{read_out_port_number:02d}"
         return f"{unit_label}:tx_p{port_number:02d}"
-
-    @staticmethod
-    def _resolve_unit_label(
-        *,
-        experiment_system: ExperimentSystem,
-        box_id: str,
-    ) -> str:
-        """Resolve quelware unit label from one control box."""
-        return experiment_system.get_box(box_id).name
 
     @staticmethod
     def _resolve_port_number(*, port: GenPort) -> int:

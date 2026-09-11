@@ -27,6 +27,17 @@ Define the configuration split for QuEL-3 so that:
 - Do not introduce a dedicated labels YAML for v1.5.0; derive labels from
   chip/graph or registry metadata at runtime.
 
+### QuEL-3 unit identity
+
+Use the quelware unit label as the `box.yaml` key and `name`, and use the same
+label in `wiring.yaml` box references. No box-to-unit translation is performed.
+
+```yaml
+quel3-02-a01:
+  name: quel3-02-a01
+  type: quel3
+```
+
 ### Target-to-instrument mapping policy
 
 - A dedicated target-binding configuration file is not required for v1.5.0.
@@ -72,8 +83,8 @@ readout:
 ## Deployment and execution policy
 
 1. Resolve target metadata from `TargetRegistry`.
-2. During planning, derive the unit-qualified port from `port.box_id`, integer
-   `port.number`, and `experiment_system.get_box(box_id).name`. Pair readout
+2. During planning, use `port.box_id` directly as the quelware unit label and
+   derive the unit-qualified port from it and integer `port.number`. Pair readout
    output/input wiring into the transceiver port.
 3. Build an `InstrumentConfiguration` containing one five-field `InstrumentSpec`
    per target, using the target name as alias. Deploy the configuration through

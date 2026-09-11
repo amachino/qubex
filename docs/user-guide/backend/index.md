@@ -28,6 +28,34 @@ Most hardware-backed workflows should start from `Experiment` or
 [`measurement`](../measurement/index.md). Use `backend` directly only when
 controller-level behavior itself is the subject.
 
+## QuEL-3 execution sessions
+
+Execution logs record the session ID captured on opening and the request attempt
+number at `INFO`. Retries and cleanup failures are logged at `WARNING`; a final
+request failure is logged at `ERROR` with its traceback and session ID.
+
+Add your own possible causes to `QUELWARE_EXCEPTION_HINTS` in
+`qubex.backend.quel3.managers.session_workarounds`. Keys are module-qualified
+exception class names (for example, `quelware_client.core.exceptions.LockConflictError`);
+values are the messages to display. The default lock-conflict hint suggests another
+user or an unreleased session. Registered hints appear as `possible cause` in
+failure logs, including for subclasses and
+explicitly chained causes. They do not change retry decisions or exceptions.
+
+Edit `QUELWARE_HTTP_STATUS_HINTS` in the same module for HTTP status hints, including
+HTTP errors reported through gRPC. The default `"413"` hint suggests checking payload
+size and whether an IQ array exceeds 65536 samples. The `"5xx"` hint suggests a
+possible QuEL server bug and checking server/proxy logs. Exact status entries such
+as `"503"` override the family hint. These are diagnostic suggestions, not array-size
+validation or a determination of the server failure's cause.
+
+Session creation retries known resource or unit availability failures up to four
+times with backoff. A separate loop retries each payload up to four times after
+an `Exception`, recreating the client and session. Each outer attempt retains its
+own session creation budget; cancellation is not retried. A failure after trigger
+can therefore execute the same payload again. Healthy clients are reused within
+a batch. Final cleanup failures are logged without replacing the result or error.
+
 ## Recommended path
 
 1. Read the section overview: [Low-level APIs](../low-level-apis/index.md)

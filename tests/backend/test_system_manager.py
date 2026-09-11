@@ -437,22 +437,24 @@ def test_quel3_is_synced_preserves_live_instrument_cache(
     monkeypatch.setattr(
         manager,
         "_experiment_system",
-        SimpleNamespace(hash=0, get_box=lambda box_id: SimpleNamespace(name="unit-a")),
+        SimpleNamespace(
+            hash=0, get_box=lambda box_id: SimpleNamespace(id=box_id, name=box_id)
+        ),
     )
     settings = BackendSettings(
-        {"A": {"instruments": {"Q00": {"resource_id": "unit-a:live"}}}}
+        {"unit-a": {"instruments": {"Q00": {"resource_id": "unit-a:live"}}}}
     )
     monkeypatch.setattr(manager, "_backend_settings", settings)
     previous_state = manager.current_state
     monkeypatch.setattr(manager, "_cached_state", previous_state)
-    fetch_calls: list[dict[str, str]] = []
+    fetch_calls: list[tuple[str, ...]] = []
 
     def fetch_settings(
-        *, unit_labels_by_box_id: dict[str, str], parallel: bool | None
+        *, unit_labels: tuple[str, ...], parallel: bool | None
     ) -> dict[str, dict]:
         del parallel
-        fetch_calls.append(unit_labels_by_box_id)
-        return {"A": {"instruments": {"Q00": {"resource_id": "unit-a:new"}}}}
+        fetch_calls.append(unit_labels)
+        return {"unit-a": {"instruments": {"Q00": {"resource_id": "unit-a:new"}}}}
 
     monkeypatch.setattr(
         controller.hardware_state_reader,
@@ -461,9 +463,9 @@ def test_quel3_is_synced_preserves_live_instrument_cache(
     )
 
     with pytest.warns(UserWarning, match="backend settings are different"):
-        assert manager.is_synced(box_ids=["A"]) is False
+        assert manager.is_synced(box_ids=["unit-a"]) is False
 
-    assert fetch_calls == [{"A": "unit-a"}]
+    assert fetch_calls == [("unit-a",)]
     assert controller.get_instrument_configuration() == previous_configuration
     assert controller.hash == previous_hash
     assert manager.backend_settings is settings
@@ -505,22 +507,24 @@ def test_quel3_pull_updates_only_backend_settings_snapshot(
         manager,
         "_experiment_system",
         SimpleNamespace(
-            hash=0, get_box=lambda box_id: SimpleNamespace(id=box_id, name="unit-a")
+            hash=0, get_box=lambda box_id: SimpleNamespace(id=box_id, name=box_id)
         ),
     )
     monkeypatch.setattr(
         manager,
         "_backend_settings",
-        BackendSettings({"B": {"instruments": {"Q01": {"resource_id": "unit-b:old"}}}}),
+        BackendSettings(
+            {"unit-b": {"instruments": {"Q01": {"resource_id": "unit-b:old"}}}}
+        ),
     )
-    snapshot = {"A": {"instruments": {"Q00": {"resource_id": "unit-a:snapshot"}}}}
-    fetch_calls: list[dict[str, str]] = []
+    snapshot = {"unit-a": {"instruments": {"Q00": {"resource_id": "unit-a:snapshot"}}}}
+    fetch_calls: list[tuple[str, ...]] = []
 
     def fetch_settings(
-        *, unit_labels_by_box_id: dict[str, str], parallel: bool | None
+        *, unit_labels: tuple[str, ...], parallel: bool | None
     ) -> dict[str, dict]:
         assert parallel is False
-        fetch_calls.append(unit_labels_by_box_id)
+        fetch_calls.append(unit_labels)
         return snapshot
 
     def reject_runtime_read(**_: object) -> None:
@@ -535,11 +539,11 @@ def test_quel3_pull_updates_only_backend_settings_snapshot(
         controller.hardware_state_reader, "read_instrument_infos", reject_runtime_read
     )
 
-    manager.pull(["A"], parallel=False)
+    manager.pull(["unit-a"], parallel=False)
 
-    assert fetch_calls == [{"A": "unit-a"}]
-    assert manager.backend_settings["A"] == snapshot["A"]
-    assert manager.backend_settings["B"] == {
+    assert fetch_calls == [("unit-a",)]
+    assert manager.backend_settings["unit-a"] == snapshot["unit-a"]
+    assert manager.backend_settings["unit-b"] == {
         "instruments": {"Q01": {"resource_id": "unit-b:old"}}
     }
     assert controller.get_instrument_configuration() == previous_configuration
@@ -971,12 +975,12 @@ def test_quel3_canceled_push_does_not_restore_instruments_from_saved_settings(
         manager,
         "_experiment_system",
         SimpleNamespace(
-            hash=0, get_box=lambda box_id: SimpleNamespace(id="A", name="unit-a")
+            hash=0, get_box=lambda box_id: SimpleNamespace(id=box_id, name=box_id)
         ),
     )
     settings = BackendSettings(
         {
-            "A": {
+            "unit-a": {
                 "instruments": {
                     "Q00": {
                         "resource_id": "unit-a:saved",
@@ -1003,7 +1007,7 @@ def test_quel3_canceled_push_does_not_restore_instruments_from_saved_settings(
         reject_hardware_call,
     )
 
-    manager.push(["A"], confirm=True)
+    manager.push(["unit-a"], confirm=True)
 
     assert controller.get_instrument_configuration() == previous_configuration
     assert controller.hash == previous_hash
@@ -1192,7 +1196,7 @@ def test_pull_applies_snapshot_sync_without_mutable_box_cache(
                     "instruments": {
                         "Q00": {
                             "resource_id": "inst-q00",
-                            "port_id": "quel3-02-a01:tx_p04",
+                            "port_id": "A:tx_p04",
                             "role": "TRANSMITTER",
                         }
                     }
@@ -1223,7 +1227,7 @@ def test_pull_applies_snapshot_sync_without_mutable_box_cache(
             "instruments": {
                 "Q00": {
                     "resource_id": "inst-q00",
-                    "port_id": "quel3-02-a01:tx_p04",
+                    "port_id": "A:tx_p04",
                     "role": "TRANSMITTER",
                 }
             }

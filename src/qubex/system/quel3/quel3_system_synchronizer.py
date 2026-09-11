@@ -87,11 +87,9 @@ class Quel3SystemSynchronizer:
         parallel: bool | None = None,
     ) -> dict[str, dict]:
         """Fetch normalized instrument snapshots from hardware for selected boxes."""
-        unit_labels_by_box_id = {
-            box_id: experiment_system.get_box(box_id).name for box_id in box_ids
-        }
+        del experiment_system
         return self._backend_controller.hardware_state_reader.fetch_backend_settings_from_hardware(
-            unit_labels_by_box_id=unit_labels_by_box_id,
+            unit_labels=tuple(box_ids),
             parallel=parallel,
         )
 

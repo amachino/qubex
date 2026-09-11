@@ -66,10 +66,6 @@ def test_build_configuration_creates_one_instrument_per_target() -> None:
         control_params=SimpleNamespace(
             get_frequency_margin=lambda _target_type: 0.1,
         ),
-        get_box=lambda box_id: SimpleNamespace(
-            id=box_id,
-            name="quel3-02-a01" if box_id == "BOX1" else "quel3-02-a02",
-        ),
         get_mux_by_readout_port=lambda port: mux0 if port is read_out_port else None,
     )
 
@@ -88,35 +84,35 @@ def test_build_configuration_creates_one_instrument_per_target() -> None:
     }
 
     read_spec = spec_by_target["RQ00"]
-    assert read_spec.port_id == "quel3-02-a01:trx_p00p01"
+    assert read_spec.port_id == "BOX1:trx_p00p01"
     assert read_spec.role == "TRANSCEIVER"
     assert read_spec.alias == "RQ00"
     assert read_spec.frequency_range_min_hz == pytest.approx(5.9e9)
     assert read_spec.frequency_range_max_hz == pytest.approx(6.1e9)
 
     ctrl_spec = spec_by_target["Q00"]
-    assert ctrl_spec.port_id == "quel3-02-a01:tx_p02"
+    assert ctrl_spec.port_id == "BOX1:tx_p02"
     assert ctrl_spec.role == "TRANSMITTER"
     assert ctrl_spec.alias == "Q00"
     assert ctrl_spec.frequency_range_min_hz == pytest.approx(4.10e9)
     assert ctrl_spec.frequency_range_max_hz == pytest.approx(4.30e9)
 
     cr_spec = spec_by_target["Q00-CR"]
-    assert cr_spec.port_id == "quel3-02-a01:tx_p02"
+    assert cr_spec.port_id == "BOX1:tx_p02"
     assert cr_spec.role == "TRANSMITTER"
     assert cr_spec.alias == "Q00-CR"
     assert cr_spec.frequency_range_min_hz == pytest.approx(4.25e9)
     assert cr_spec.frequency_range_max_hz == pytest.approx(4.45e9)
 
     custom_2q_spec = spec_by_target["Q00-Q01-CUSTOM"]
-    assert custom_2q_spec.port_id == "quel3-02-a01:tx_p02"
+    assert custom_2q_spec.port_id == "BOX1:tx_p02"
     assert custom_2q_spec.role == "TRANSMITTER"
     assert custom_2q_spec.alias == "Q00-Q01-CUSTOM"
     assert custom_2q_spec.frequency_range_min_hz == pytest.approx(4.27e9)
     assert custom_2q_spec.frequency_range_max_hz == pytest.approx(4.47e9)
 
     bswap_spec = spec_by_target["Q00-Q01-bSWAP"]
-    assert bswap_spec.port_id == "quel3-02-a01:tx_p02"
+    assert bswap_spec.port_id == "BOX1:tx_p02"
     assert bswap_spec.role == "TRANSMITTER"
     assert bswap_spec.alias == "Q00-Q01-bSWAP"
     assert bswap_spec.frequency_range_min_hz == pytest.approx(4.30e9)
@@ -146,7 +142,6 @@ def test_build_configuration_filters_by_target_labels() -> None:
         control_params=SimpleNamespace(
             get_frequency_margin=lambda _target_type: 0.1,
         ),
-        get_box=lambda _box_id: SimpleNamespace(id="BOX1", name="quel3-02-a01"),
         get_mux_by_readout_port=lambda _port: None,
     )
 
@@ -186,7 +181,6 @@ def test_build_configuration_skips_targets_with_non_finite_frequency() -> None:
         control_params=SimpleNamespace(
             get_frequency_margin=lambda _target_type: 0.1,
         ),
-        get_box=lambda _box_id: SimpleNamespace(id="BOX1", name="quel3-02-a01"),
         get_mux_by_readout_port=lambda _port: None,
     )
 
@@ -219,7 +213,6 @@ def test_build_configuration_raises_when_frequency_margin_reaches_nyquist() -> N
         control_params=SimpleNamespace(
             get_frequency_margin=lambda _target_type: 1.25,
         ),
-        get_box=lambda _box_id: SimpleNamespace(id="BOX1", name="quel3-02-a01"),
         get_mux_by_readout_port=lambda _port: None,
     )
 
@@ -239,7 +232,7 @@ def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> Non
     expected_configuration = InstrumentConfiguration(
         instruments=(
             InstrumentSpec(
-                port_id="quel3-02-a01:tx_p02",
+                port_id="BOX1:tx_p02",
                 alias="Q00",
                 role="TRANSMITTER",
                 frequency_range_min_hz=4.1e9,
@@ -374,12 +367,12 @@ def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> Non
         def fetch_backend_settings_from_hardware(
             self,
             *,
-            unit_labels_by_box_id: dict[str, str],
+            unit_labels: tuple[str, ...],
             parallel: bool | None = None,
         ) -> dict[str, dict]:
             calls.append(
                 {
-                    "unit_labels_by_box_id": unit_labels_by_box_id,
+                    "unit_labels": unit_labels,
                     "parallel": parallel,
                 }
             )
@@ -387,8 +380,8 @@ def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> Non
                 "BOX1": {
                     "instruments": {
                         "Q00": {
-                            "resource_id": "unit-a:inst-q00",
-                            "port_id": "unit-a:tx_p01",
+                            "resource_id": "BOX1:inst-q00",
+                            "port_id": "BOX1:tx_p01",
                             "role": "TRANSMITTER",
                         }
                     }
@@ -398,9 +391,7 @@ def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> Non
     class _FakeBackendController:
         hardware_state_reader = _FakeHardwareStateReader()
 
-    experiment_system = SimpleNamespace(
-        get_box=lambda box_id: SimpleNamespace(id=box_id, name="unit-a"),
-    )
+    experiment_system = SimpleNamespace()
     synchronizer = Quel3SystemSynchronizer(
         backend_controller=cast(Any, _FakeBackendController()),
     )
@@ -415,8 +406,8 @@ def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> Non
         "BOX1": {
             "instruments": {
                 "Q00": {
-                    "resource_id": "unit-a:inst-q00",
-                    "port_id": "unit-a:tx_p01",
+                    "resource_id": "BOX1:inst-q00",
+                    "port_id": "BOX1:tx_p01",
                     "role": "TRANSMITTER",
                 }
             }
@@ -424,7 +415,7 @@ def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> Non
     }
     assert calls == [
         {
-            "unit_labels_by_box_id": {"BOX1": "unit-a"},
+            "unit_labels": ("BOX1",),
             "parallel": False,
         }
     ]
