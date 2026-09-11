@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections import Counter
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, TypeVar, cast
@@ -179,21 +179,21 @@ class Quel3HardwareStateReader:
     def fetch_backend_settings_from_hardware(
         self,
         *,
-        unit_labels_by_box_id: Mapping[str, str],
+        unit_labels: Sequence[str],
         parallel: bool | None = None,
     ) -> dict[str, dict]:
-        """Fetch QuEL-3 backend settings by projecting hardware state."""
-        if len(unit_labels_by_box_id) == 0:
+        """Fetch QuEL-3 backend settings keyed by selected unit labels."""
+        if len(unit_labels) == 0:
             return {}
         state = self.collect_state(
-            unit_labels=tuple(unit_labels_by_box_id.values()),
+            unit_labels=tuple(unit_labels),
             include_diagnostics=False,
             parallel=True if parallel is None else parallel,
             view="instruments",
         )
         return self.project_backend_settings(
             state=state,
-            unit_labels_by_box_id=unit_labels_by_box_id,
+            unit_labels=unit_labels,
         )
 
     def read_instrument_infos(
@@ -862,22 +862,19 @@ class Quel3HardwareStateReader:
         cls,
         *,
         state: Quel3HardwareState,
-        unit_labels_by_box_id: Mapping[str, str],
+        unit_labels: Sequence[str],
     ) -> dict[str, dict]:
-        """Project hardware state into QuEL-3 backend-settings cache data."""
+        """Project hardware state into backend settings keyed by selected unit labels."""
         settings: dict[str, dict] = {
-            box_id: {"instruments": {}} for box_id in unit_labels_by_box_id
+            unit_label: {"instruments": {}} for unit_label in unit_labels
         }
-        box_ids_by_unit_label: dict[str, list[str]] = defaultdict(list)
-        for box_id, unit_label in unit_labels_by_box_id.items():
-            box_ids_by_unit_label[unit_label].append(box_id)
 
         for instrument in state.instruments:
             alias = instrument.normalized_alias or instrument.alias
             if alias is None:
                 continue
-            for box_id in box_ids_by_unit_label.get(instrument.unit_label, ()):
-                settings[box_id]["instruments"][alias] = (
+            if instrument.unit_label in settings:
+                settings[instrument.unit_label]["instruments"][alias] = (
                     cls._backend_settings_instrument(instrument)
                 )
         return settings

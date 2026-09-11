@@ -71,7 +71,6 @@ class _FakeExperimentSystem:
     capture_port_ids: dict[str, str] = field(default_factory=dict)
     target_port_bindings: dict[str, tuple[str, int]] = field(default_factory=dict)
     capture_port_bindings: dict[str, tuple[str, int]] = field(default_factory=dict)
-    box_names: dict[str, str] = field(default_factory=dict)
     mux_by_qubit: dict[str, int] = field(default_factory=dict)
     control_params: Any = field(
         default_factory=lambda: SimpleNamespace(
@@ -129,9 +128,6 @@ class _FakeExperimentSystem:
                 )
             )
         )
-
-    def get_box(self, box_id: str) -> Any:
-        return SimpleNamespace(name=self.box_names.get(box_id, box_id.lower()))
 
     def get_mux_by_qubit(self, label: str) -> Any:
         return SimpleNamespace(index=self.mux_by_qubit[label])
@@ -226,8 +222,7 @@ def test_quel3_adapter_allows_capture_beyond_pulse_duration() -> None:
         experiment_system=cast(
             Any,
             _FakeExperimentSystem(
-                target_port_bindings={target: ("BOX1", 4)},
-                box_names={"BOX1": "quel3-02-a01"},
+                target_port_bindings={target: ("quel3-02-a01", 4)},
             ),
         ),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
@@ -268,8 +263,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
         experiment_system=cast(
             Any,
             _FakeExperimentSystem(
-                target_port_bindings={target: ("BOX1", 4)},
-                box_names={"BOX1": "quel3-02-a01"},
+                target_port_bindings={target: ("quel3-02-a01", 4)},
             ),
         ),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
