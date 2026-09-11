@@ -332,6 +332,55 @@ def _make_reader(client: _FakeClient) -> Quel3HardwareStateReader:
     return _FakeHardwareStateReader(client)
 
 
+@pytest.mark.parametrize("parallel", [False, True])
+def test_read_instrument_infos_preserves_raw_objects_and_scopes_ports(
+    parallel: bool,
+) -> None:
+    """Cache acquisition should return original hardware objects for selected ports."""
+
+    class Client(_FakeClient):
+        def __init__(self) -> None:
+            self.fetched: list[_InstrumentInfo] = []
+            self.requested_ids: list[str] = []
+
+        async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+            self.requested_ids.append(resource_id)
+            info = await super().get_instrument_info(resource_id)
+            self.fetched.append(info)
+            return info
+
+    client = Client()
+    reader = _make_reader(client)
+    infos = reader.read_instrument_infos(port_ids=("unit-a:tx_p01",), parallel=parallel)
+
+    assert len(infos) == 1
+    assert infos[0] is client.fetched[0]
+    assert infos[0].id == "unit-a:inst-q00"
+    assert client.requested_ids == ["unit-a:inst-q00"]
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_read_instrument_infos_does_not_hide_partial_read_failures(
+    parallel: bool,
+) -> None:
+    """Cache acquisition should fail instead of publishing a partial instrument list."""
+
+    class Client(_FakeClient):
+        async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+            if resource_id == "unit-b:inst-q01":
+                raise RuntimeError("instrument unavailable")
+            return await super().get_instrument_info(resource_id)
+
+    with pytest.raises(RuntimeError, match="instrument unavailable"):
+        _make_reader(Client()).read_instrument_infos(parallel=parallel)
+
+
+def test_read_instrument_infos_filters_unqualified_ids_by_actual_port() -> None:
+    """An unqualified resource ID should be scoped using its returned port ID."""
+    reader = _make_reader(_UnqualifiedOtherUnitResourceClient())
+    assert reader.read_instrument_infos(unit_labels=("unit-a",)) == ()
+
+
 def test_collect_state_normalizes_units_ports_and_instruments() -> None:
     """Given quelware resources, hardware state should expose normalized Qubex data."""
     client = _FakeClient()

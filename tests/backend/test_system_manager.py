@@ -408,6 +408,144 @@ def test_is_synced_has_no_side_effect_on_backend_settings(
     assert manager._backend_settings == {"stale": {"ports": {}}}  # noqa: SLF001
 
 
+def test_quel3_is_synced_preserves_live_instrument_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A QuEL-3 synchronization check should preserve cached configuration and identities."""
+    manager = SystemManager.shared()
+    controller = Quel3BackendController()
+    _set_backend_controller(manager, monkeypatch, controller)
+    info = SimpleNamespace(
+        id="unit-a:live",
+        port_id="unit-a:tx_p01",
+        definition=SimpleNamespace(
+            alias="Q00",
+            role="TRANSMITTER",
+            mode="FIXED_TIMELINE",
+            profile=SimpleNamespace(
+                frequency_range_min=4.0e9, frequency_range_max=4.2e9
+            ),
+        ),
+        config=SimpleNamespace(sampling_period_fs=400_000),
+    )
+    monkeypatch.setattr(
+        controller.hardware_state_reader, "read_instrument_infos", lambda **_: (info,)
+    )
+    controller.refresh_instrument_cache()
+    previous_configuration = controller.get_instrument_configuration()
+    previous_hash = controller.hash
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(hash=0, get_box=lambda box_id: SimpleNamespace(name="unit-a")),
+    )
+    settings = BackendSettings(
+        {"A": {"instruments": {"Q00": {"resource_id": "unit-a:live"}}}}
+    )
+    monkeypatch.setattr(manager, "_backend_settings", settings)
+    previous_state = manager.current_state
+    monkeypatch.setattr(manager, "_cached_state", previous_state)
+    fetch_calls: list[dict[str, str]] = []
+
+    def fetch_settings(
+        *, unit_labels_by_box_id: dict[str, str], parallel: bool | None
+    ) -> dict[str, dict]:
+        del parallel
+        fetch_calls.append(unit_labels_by_box_id)
+        return {"A": {"instruments": {"Q00": {"resource_id": "unit-a:new"}}}}
+
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "fetch_backend_settings_from_hardware",
+        fetch_settings,
+    )
+
+    with pytest.warns(UserWarning, match="backend settings are different"):
+        assert manager.is_synced(box_ids=["A"]) is False
+
+    assert fetch_calls == [{"A": "unit-a"}]
+    assert controller.get_instrument_configuration() == previous_configuration
+    assert controller.hash == previous_hash
+    assert manager.backend_settings is settings
+    assert manager.cached_state is previous_state
+
+
+@pytest.mark.parametrize("populate_cache", [False, True])
+def test_quel3_pull_updates_only_backend_settings_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    populate_cache: bool,
+) -> None:
+    """QuEL-3 pull should update snapshot settings without acquiring runtime instruments."""
+    manager = SystemManager.shared()
+    controller = Quel3BackendController()
+    _set_backend_controller(manager, monkeypatch, controller)
+    info = SimpleNamespace(
+        id="unit-a:live",
+        port_id="unit-a:tx_p01",
+        definition=SimpleNamespace(
+            alias="Q00",
+            role="TRANSMITTER",
+            mode="FIXED_TIMELINE",
+            profile=SimpleNamespace(
+                frequency_range_min=4.0e9, frequency_range_max=4.2e9
+            ),
+        ),
+        config=SimpleNamespace(sampling_period_fs=400_000),
+    )
+    if populate_cache:
+        monkeypatch.setattr(
+            controller.hardware_state_reader,
+            "read_instrument_infos",
+            lambda **_: (info,),
+        )
+        controller.refresh_instrument_cache()
+    previous_configuration = controller.get_instrument_configuration()
+    previous_hash = controller.hash
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            hash=0, get_box=lambda box_id: SimpleNamespace(id=box_id, name="unit-a")
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_backend_settings",
+        BackendSettings({"B": {"instruments": {"Q01": {"resource_id": "unit-b:old"}}}}),
+    )
+    snapshot = {"A": {"instruments": {"Q00": {"resource_id": "unit-a:snapshot"}}}}
+    fetch_calls: list[dict[str, str]] = []
+
+    def fetch_settings(
+        *, unit_labels_by_box_id: dict[str, str], parallel: bool | None
+    ) -> dict[str, dict]:
+        assert parallel is False
+        fetch_calls.append(unit_labels_by_box_id)
+        return snapshot
+
+    def reject_runtime_read(**_: object) -> None:
+        pytest.fail("Snapshot pull must not acquire executable instrument information.")
+
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "fetch_backend_settings_from_hardware",
+        fetch_settings,
+    )
+    monkeypatch.setattr(
+        controller.hardware_state_reader, "read_instrument_infos", reject_runtime_read
+    )
+
+    manager.pull(["A"], parallel=False)
+
+    assert fetch_calls == [{"A": "unit-a"}]
+    assert manager.backend_settings["A"] == snapshot["A"]
+    assert manager.backend_settings["B"] == {
+        "instruments": {"Q01": {"resource_id": "unit-b:old"}}
+    }
+    assert controller.get_instrument_configuration() == previous_configuration
+    assert controller.hash == previous_hash
+
+
 def test_pull_merges_partial_backend_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -796,6 +934,80 @@ def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
 
     assert called_sync_hardware is False
     assert backend_controller.get_box_config_cache() == backend_settings
+
+
+@pytest.mark.parametrize("populate_cache", [False, True])
+def test_quel3_canceled_push_does_not_restore_instruments_from_saved_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    populate_cache: bool,
+) -> None:
+    """A canceled QuEL-3 push should preserve live configuration without restoring JSON."""
+    manager = SystemManager.shared()
+    controller = Quel3BackendController()
+    _set_backend_controller(manager, monkeypatch, controller)
+    info = SimpleNamespace(
+        id="unit-a:live",
+        port_id="unit-a:tx_p01",
+        definition=SimpleNamespace(
+            alias="Q00",
+            role="TRANSMITTER",
+            mode="FIXED_TIMELINE",
+            profile=SimpleNamespace(
+                frequency_range_min=4.0e9, frequency_range_max=4.2e9
+            ),
+        ),
+        config=SimpleNamespace(sampling_period_fs=400_000),
+    )
+    if populate_cache:
+        monkeypatch.setattr(
+            controller.hardware_state_reader,
+            "read_instrument_infos",
+            lambda **_: (info,),
+        )
+        controller.refresh_instrument_cache()
+    previous_configuration = controller.get_instrument_configuration()
+    previous_hash = controller.hash
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            hash=0, get_box=lambda box_id: SimpleNamespace(id="A", name="unit-a")
+        ),
+    )
+    settings = BackendSettings(
+        {
+            "A": {
+                "instruments": {
+                    "Q00": {
+                        "resource_id": "unit-a:saved",
+                        "port_id": "unit-a:tx_p01",
+                        "role": "TRANSMITTER",
+                    }
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(manager, "_backend_settings", settings)
+    monkeypatch.setattr("qubex.system.system_manager.Confirm.ask", lambda _: False)
+
+    def reject_hardware_call(**_: object) -> None:
+        pytest.fail("Canceled push should not access hardware.")
+
+    monkeypatch.setattr(controller, "deploy_instruments", reject_hardware_call)
+    monkeypatch.setattr(
+        controller.hardware_state_reader, "read_instrument_infos", reject_hardware_call
+    )
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "fetch_backend_settings_from_hardware",
+        reject_hardware_call,
+    )
+
+    manager.push(["A"], confirm=True)
+
+    assert controller.get_instrument_configuration() == previous_configuration
+    assert controller.hash == previous_hash
+    assert manager.backend_settings is settings
 
 
 def test_push_does_not_reconfigure_ports(

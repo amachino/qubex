@@ -8,6 +8,7 @@ built on quelware-client managers.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from qubex.backend.backend_controller import (
     BackendController,
@@ -15,6 +16,7 @@ from qubex.backend.backend_controller import (
     BackendExecutionResult,
 )
 from qubex.backend.quel3.infra import Quel3ClientMode
+from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
 from .managers import (
@@ -25,7 +27,12 @@ from .managers import (
     Quel3RuntimeConfig,
     Quel3SessionManager,
 )
-from .models import InstrumentDeployRequest, Quel3HardwareState, Quel3HardwareStateView
+from .models import (
+    InstrumentConfiguration,
+    InstrumentSpec,
+    Quel3HardwareState,
+    Quel3HardwareStateView,
+)
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
 
 
@@ -114,6 +121,7 @@ class Quel3BackendController(BackendController):
             else self.SAMPLING_PERIOD_NS
         )
         self._runtime_config = resolved_runtime_config
+        self._instrument_cache = InstrumentCache()
 
         self._connection_manager = (
             connection_manager
@@ -160,12 +168,7 @@ class Quel3BackendController(BackendController):
         return hash(
             (
                 self._connection_manager.hash,
-                tuple(sorted(self._configuration_manager.target_alias_map.items())),
-                tuple(
-                    sorted(
-                        self._configuration_manager.last_deployed_instrument_infos.keys()
-                    )
-                ),
+                self._instrument_cache.hash,
             )
         )
 
@@ -224,50 +227,152 @@ class Quel3BackendController(BackendController):
         """Return backend-side QuEL-3 hardware-state reader."""
         return self._hardware_state_reader
 
-    @property
-    def target_alias_map(self) -> dict[tuple[str, str], str]:
-        """Return deployed box-and-target to runtime-alias mapping."""
-        return self._configuration_manager.target_alias_map
-
-    @property
-    def last_deployed_instrument_infos(
-        self,
-    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
-        """Return deployed instrument infos from backend runtime state."""
-        return self._configuration_manager.last_deployed_instrument_infos
-
     def connect(
         self,
         box_names: str | list[str] | None = None,
         *,
         parallel: bool | None = None,
     ) -> None:
-        """Connect backend resources for selected boxes."""
-        self._connection_manager.connect(
-            box_names=box_names,
-            parallel=parallel,
-        )
-        self._configuration_manager.clear_instrument_cache()
-        self._execution_manager.invalidate_instrument_resolver()
+        """
+        Connect to quelware and load existing instruments into the execution cache.
+
+        Notes
+        -----
+        Each call discards the previous cache and reads all instruments exposed
+        by the endpoint. Connection or readback failure leaves the controller
+        disconnected with an empty cache and propagates the error.
+        """
+        self._instrument_cache.clear()
+        try:
+            self._connection_manager.connect(
+                box_names=box_names,
+                parallel=parallel,
+            )
+            self.refresh_instrument_cache(
+                parallel=True if parallel is None else parallel
+            )
+        except Exception:
+            self.disconnect()
+            raise
 
     def disconnect(self) -> None:
         """Disconnect backend resources."""
         self._connection_manager.disconnect()
+        self._instrument_cache.clear()
+
+    def deploy_instrument(
+        self,
+        *,
+        instrument: InstrumentSpec,
+        append: bool = True,
+        parallel: bool = True,
+    ) -> InstrumentInfoProtocol:
+        """
+        Deploy one instrument and return its complete hardware information.
+
+        Parameters
+        ----------
+        instrument : InstrumentSpec
+            Instrument definition with a unit-qualified port ID.
+        append : bool, default=True
+            Add or replace this alias while preserving the port's other
+            instruments. If false, replace every instrument on the specified
+            port with this one.
+        parallel : bool, default=True
+            Whether hardware reads may run concurrently.
+
+        Raises
+        ------
+        ValueError
+            Hardware readback is invalid.
+
+        Notes
+        -----
+        Alias replacement is handled by quelware without a pre-deployment read.
+        Append does not retry the deployment request. Both modes refresh the
+        entire touched port. Write or readback failure leaves that port absent
+        from the execution cache.
+        """
+        return self._configuration_manager.deploy_instrument(
+            instrument=instrument,
+            instrument_cache=self._instrument_cache,
+            hardware_state_reader=self._hardware_state_reader,
+            append=append,
+            parallel=parallel,
+        )
 
     def deploy_instruments(
         self,
         *,
-        requests: Sequence[InstrumentDeployRequest],
+        configuration: InstrumentConfiguration,
         parallel: bool = True,
-    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
-        """Deploy QuEL-3 instruments for the provided requests."""
-        try:
-            return self._configuration_manager.deploy_instruments(
-                requests=requests,
-                parallel=parallel,
-            )
-        finally:
-            self._execution_manager.invalidate_instrument_resolver()
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """
+        Deploy instruments and read their complete information back from hardware.
+
+        Only the requested ports are replaced. Their old cached identities are
+        discarded before writing and remain absent if deployment or readback fails.
+        An empty configuration leaves hardware and cache unchanged.
+        """
+        return self._configuration_manager.deploy_instruments(
+            configuration=configuration,
+            instrument_cache=self._instrument_cache,
+            hardware_state_reader=self._hardware_state_reader,
+            parallel=parallel,
+        )
+
+    def get_instrument_configuration(self) -> InstrumentConfiguration:
+        """
+        Return deployable settings from the last successful connect, deploy, or refresh.
+
+        This method reads the instrument cache without contacting hardware.
+        """
+        return self._configuration_manager.get_instrument_configuration(
+            instrument_cache=self._instrument_cache,
+        )
+
+    def save_instrument_configuration(self, path: str | Path) -> Path:
+        """
+        Save the last confirmed instrument configuration as YAML.
+
+        The output file is overwritten. Call `refresh_instrument_cache()` first
+        to save the current hardware configuration.
+        """
+        return self._configuration_manager.save_instrument_configuration(
+            path,
+            instrument_cache=self._instrument_cache,
+        )
+
+    def load_instrument_configuration(
+        self, path: str | Path
+    ) -> InstrumentConfiguration:
+        """
+        Load and validate an instrument configuration from YAML.
+
+        Loading does not deploy instruments or change the execution cache.
+        Pass the returned configuration to `deploy_instruments()` to apply it.
+        """
+        return self._configuration_manager.load_instrument_configuration(path)
+
+    def refresh_instrument_cache(
+        self,
+        *,
+        unit_labels: Sequence[str] | None = None,
+        parallel: bool = True,
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """
+        Refresh instrument information from hardware for all or selected units.
+
+        `None` selects all units; an empty sequence performs no reads or updates.
+        The selected scope is replaced only after successful acquisition and
+        validation. Return only the instruments fetched by this call.
+        """
+        return self._configuration_manager.refresh_instrument_cache(
+            instrument_cache=self._instrument_cache,
+            hardware_state_reader=self._hardware_state_reader,
+            unit_labels=unit_labels,
+            parallel=parallel,
+        )
 
     def get_hardware_state(
         self,
@@ -281,6 +386,11 @@ class Quel3BackendController(BackendController):
     ) -> Quel3HardwareState:
         """
         Collect one structured QuEL-3 hardware-state snapshot.
+
+        Read the current hardware without changing the execution cache. The
+        snapshot can contain partial results and acquisition issues. Instrument
+        configuration is obtained separately from the last confirmed cache with
+        `get_instrument_configuration()`.
 
         Parameters
         ----------
@@ -372,6 +482,7 @@ class Quel3BackendController(BackendController):
         del execution_mode, clock_health_checks
         return self._execution_manager.execute_sync(
             request=request,
+            instrument_cache=self._instrument_cache,
             parallel=parallel,
         )
 
@@ -387,6 +498,7 @@ class Quel3BackendController(BackendController):
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_async(
             request=request,
+            instrument_cache=self._instrument_cache,
             parallel=parallel,
         )
 
@@ -402,5 +514,6 @@ class Quel3BackendController(BackendController):
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_batch_async(
             requests=tuple(requests),
+            instrument_cache=self._instrument_cache,
             parallel=parallel,
         )

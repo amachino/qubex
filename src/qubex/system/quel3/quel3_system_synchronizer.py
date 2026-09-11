@@ -66,7 +66,7 @@ class Quel3SystemSynchronizer:
         box_ids = [box.id for box in boxes]
         if len(box_ids) == 0:
             return
-        requests = self._deploy_planner.build_deploy_requests(
+        configuration = self._deploy_planner.build_configuration(
             experiment_system=experiment_system,
             box_ids=box_ids,
             target_labels=target_labels,
@@ -75,7 +75,7 @@ class Quel3SystemSynchronizer:
         # equivalent of QuEL-1 CNCO/FNCO updates. Execution paths should only
         # resolve and use the instruments that push configured.
         self._backend_controller.deploy_instruments(
-            requests=requests,
+            configuration=configuration,
             parallel=True if parallel is None else parallel,
         )
 
@@ -100,13 +100,8 @@ class Quel3SystemSynchronizer:
         *,
         backend_settings: dict[str, dict],
     ) -> None:
-        """Apply hardware snapshot data to QuEL-3 alias caches."""
-        try:
-            self._backend_controller.configuration_manager.sync_backend_settings_to_cache(
-                backend_settings=backend_settings,
-            )
-        finally:
-            self._backend_controller.execution_manager.invalidate_instrument_resolver()
+        """Leave live instrument state unchanged when applying saved settings."""
+        del backend_settings
 
     def sync_backend_settings_to_experiment_system(
         self,
