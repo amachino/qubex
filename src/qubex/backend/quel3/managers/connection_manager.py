@@ -7,6 +7,7 @@ from typing import TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
+from qubex.backend.quel3.interfaces.client import UnitLabelProtocol
 from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
@@ -71,22 +72,41 @@ class Quel3ConnectionManager:
 
     def connect(
         self,
-        box_names: str | list[str] | None = None,
+        unit_labels: str | list[str] | None = None,
         *,
         parallel: bool | None = None,
     ) -> None:
-        """Connect backend resources for selected boxes."""
-        del box_names, parallel
-        if self.is_connected:
-            return
-        _run_async(self._probe_quelware_connection)
+        """
+        Connect after verifying that all selected unit labels exist.
+
+        `None` or an empty list only probes endpoint availability. Each call
+        rechecks discovery, including when already connected. Failure leaves
+        the manager disconnected.
+
+        Raises
+        ------
+        ValueError
+            A selected unit label is absent from the endpoint.
+        """
+        del parallel
+        self._is_connected = False
+        selected_unit_labels = (
+            [unit_labels] if isinstance(unit_labels, str) else unit_labels or []
+        )
+        found_unit_labels = _run_async(self._probe_quelware_connection)
+        missing_unit_labels = set(selected_unit_labels) - set(found_unit_labels)
+        if missing_unit_labels:
+            raise ValueError(
+                f"QuEL-3 units were not discovered: {sorted(missing_unit_labels)}. "
+                f"Available unit labels: {sorted(found_unit_labels)}."
+            )
         self._is_connected = True
 
     def disconnect(self) -> None:
         """Disconnect backend resources."""
         self._is_connected = False
 
-    async def _probe_quelware_connection(self) -> None:
+    async def _probe_quelware_connection(self) -> list[UnitLabelProtocol]:
         """Probe quelware endpoint by listing units once."""
         try:
             client_factory = self.load_quelware_client_factory()
@@ -99,7 +119,7 @@ class Quel3ConnectionManager:
             self._runtime_config.endpoint,
             self._runtime_config.port,
         ) as client:
-            client.list_unit_labels()
+            return client.list_unit_labels()
 
     def load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""

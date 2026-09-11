@@ -691,7 +691,7 @@ def test_constructor_accepts_injected_managers() -> None:
         quelware_port=61000,
         client_mode="server",
         quelware_pat_path="/run/secrets/quelware-pat",
-        connect=lambda box_names=None, parallel=None: None,
+        connect=lambda unit_labels=None, parallel=None: None,
         disconnect=lambda: None,
     )
     session_manager = SimpleNamespace(
@@ -763,7 +763,7 @@ def test_connect_clears_existing_instrument_cache(
     """Connecting to hardware without instruments should discard previous cached IDs."""
     calls: list[str] = []
     connection_manager = SimpleNamespace(
-        connect=lambda box_names=None, parallel=None: calls.append("connect"),
+        connect=lambda unit_labels=None, parallel=None: calls.append("connect"),
         disconnect=lambda: None,
     )
     controller = Quel3BackendController(
@@ -856,7 +856,7 @@ def test_constructor_does_not_infer_runtime_config_from_injected_managers() -> N
         quelware_port=50051,
         client_mode="server",
         quelware_pat_path=None,
-        connect=lambda box_names=None, parallel=None: None,
+        connect=lambda unit_labels=None, parallel=None: None,
         disconnect=lambda: None,
     )
     configuration_manager = SimpleNamespace(
