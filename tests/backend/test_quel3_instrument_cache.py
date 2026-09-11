@@ -78,6 +78,26 @@ def test_duplicate_alias_rejects_replacement_atomically() -> None:
     assert cache.snapshot() == {"Q00": first}
 
 
+@pytest.mark.parametrize("allow_duplicate_aliases", [False, True])
+def test_alias_overwrite_does_not_hide_invalid_resource_ids(
+    allow_duplicate_aliases: bool,
+) -> None:
+    """Alias overwrite should still reject repeated resource IDs atomically."""
+    old = _info("old", "unit-a:old", "unit-a:p0")
+    first = _info("Q00", "unit-a:1", "unit-a:p0")
+    second = _info("Q01", "unit-a:1", "unit-a:p1")
+    cache = InstrumentCache()
+    cache.replace_all(instrument_infos=(old,))
+
+    with pytest.raises(ValueError, match="Duplicate instrument resource ID"):
+        cache.replace_all(
+            instrument_infos=(first, second),
+            allow_duplicate_aliases=allow_duplicate_aliases,
+        )
+
+    assert cache.snapshot() == {"old": old}
+
+
 @pytest.mark.parametrize(
     ("alias", "resource_id", "port_id"),
     [

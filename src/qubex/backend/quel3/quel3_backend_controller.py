@@ -241,7 +241,9 @@ class Quel3BackendController(BackendController):
         Each call validates the selected unit labels and replaces the cache with
         instruments from those units. `box_names` contains QuEL-3 unit labels;
         a string selects one unit, `None` selects all units, and an empty list
-        probes the endpoint without loading instruments. Connection, unit-label
+        probes the endpoint without loading instruments. Duplicate normalized
+        aliases emit a warning and keep the last instrument in readback order,
+        without changing hardware. Connection, unit-label
         validation, or readback failure leaves the controller disconnected with
         an empty cache and propagates the error.
         """
@@ -252,8 +254,15 @@ class Quel3BackendController(BackendController):
                 unit_labels=unit_labels,
                 parallel=parallel,
             )
-            self.refresh_instrument_cache(
-                unit_labels=unit_labels, parallel=True if parallel is None else parallel
+            if unit_labels is not None and not unit_labels:
+                return
+            instrument_infos = self._hardware_state_reader.read_instrument_infos(
+                unit_labels=() if unit_labels is None else unit_labels,
+                parallel=True if parallel is None else parallel,
+            )
+            self._instrument_cache.replace_all(
+                instrument_infos=instrument_infos,
+                allow_duplicate_aliases=True,
             )
         except Exception:
             self.disconnect()
@@ -263,6 +272,34 @@ class Quel3BackendController(BackendController):
         """Disconnect backend resources."""
         self._connection_manager.disconnect()
         self._instrument_cache.clear()
+
+    def clear_instruments(self, *, unit_label: str, parallel: bool = True) -> None:
+        """
+        Delete every instrument on the specified unit and invalidate its cache.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact label of the unit whose instruments should be deleted.
+        parallel : bool, default=True
+            Whether to delete instruments on different ports concurrently.
+
+        Raises
+        ------
+        ValueError
+            The unit label is empty or was not discovered.
+
+        Notes
+        -----
+        Other units and their cached instruments are retained. The selected
+        unit is uncached before writing and stays uncached on failure. Partial
+        deletions are not rolled back. This operation is independent of connect.
+        """
+        self._configuration_manager.clear_instruments(
+            unit_label=unit_label,
+            instrument_cache=self._instrument_cache,
+            parallel=parallel,
+        )
 
     def deploy_instrument(
         self,

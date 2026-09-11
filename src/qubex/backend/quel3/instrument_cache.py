@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable, Sequence
 
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.models import InstrumentConfiguration, InstrumentSpec
+
+logger = logging.getLogger(__name__)
 
 
 class InstrumentCache:
@@ -92,10 +95,21 @@ class InstrumentCache:
         self._instruments = {}
 
     def replace_all(
-        self, *, instrument_infos: Iterable[InstrumentInfoProtocol]
+        self,
+        *,
+        instrument_infos: Iterable[InstrumentInfoProtocol],
+        allow_duplicate_aliases: bool = False,
     ) -> None:
-        """Replace all instruments after validating the complete candidate state."""
-        self._instruments = self._index(instrument_infos)
+        """
+        Replace all instruments after validating the complete candidate state.
+
+        With `allow_duplicate_aliases=True`, warn and retain the last input for
+        each normalized alias. Other identity checks remain strict. Failed
+        validation leaves the previous cache unchanged.
+        """
+        self._instruments = self._index(
+            instrument_infos, allow_duplicate_aliases=allow_duplicate_aliases
+        )
 
     def replace_ports(
         self,
@@ -140,7 +154,10 @@ class InstrumentCache:
 
     @classmethod
     def _index(
-        cls, instrument_infos: Iterable[InstrumentInfoProtocol]
+        cls,
+        instrument_infos: Iterable[InstrumentInfoProtocol],
+        *,
+        allow_duplicate_aliases: bool = False,
     ) -> dict[str, InstrumentInfoProtocol]:
         """Build a validated alias index without copying hardware information."""
         instruments: dict[str, InstrumentInfoProtocol] = {}
@@ -152,7 +169,18 @@ class InstrumentCache:
                 )
             alias = cls.alias_for(info)
             if alias in instruments:
-                raise ValueError(f"Duplicate instrument alias `{alias}`.")
+                if not allow_duplicate_aliases:
+                    raise ValueError(f"Duplicate instrument alias `{alias}`.")
+                previous = instruments[alias]
+                logger.warning(
+                    "Duplicate instrument alias `%s`; replacing resource `%s` "
+                    "on port `%s` with resource `%s` on port `%s` in the cache.",
+                    alias,
+                    previous.id,
+                    previous.port_id,
+                    info.id,
+                    info.port_id,
+                )
             if info.id in resource_ids:
                 raise ValueError(f"Duplicate instrument resource ID `{info.id}`.")
             instruments[alias] = info
