@@ -52,9 +52,22 @@ parameter settings to the instruments.
 exp.configure()
 ```
 
+Preview the planned QuEL-1 changes before pushing when you need to check what
+would change. The preview fetches current hardware settings for comparison, but
+it does not push updates. Configure previews are not implemented for QuEL-3.
+
+```python
+preview = exp.preview_configure()
+preview.print_summary()
+preview.print_full()
+
+exp.configure(dry_run=True)
+```
+
 > [!CAUTION]
-> This operation changes the state of the instruments. On shared systems, it
-> can affect other users who are using the same instruments.
+> Calling `configure()` without `dry_run=True` changes the state of the
+> instruments. On shared systems, it can affect other users who are using the
+> same instruments.
 
 ## 4. Run a basic measurement with `measure`
 
