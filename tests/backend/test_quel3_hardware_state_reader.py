@@ -654,15 +654,12 @@ def test_backend_settings_projection_uses_hardware_state_instruments() -> None:
     reader = _make_reader(client)
 
     settings = reader.fetch_backend_settings_from_hardware(
-        unit_labels_by_box_id={
-            "BOX1": "unit-a",
-            "BOX2": "unit-c",
-        },
+        unit_labels=("unit-a", "unit-c"),
         parallel=False,
     )
 
     assert settings == {
-        "BOX1": {
+        "unit-a": {
             "instruments": {
                 "Q00": {
                     "resource_id": "unit-a:inst-q00",
@@ -680,7 +677,7 @@ def test_backend_settings_projection_uses_hardware_state_instruments() -> None:
                 }
             }
         },
-        "BOX2": {"instruments": {}},
+        "unit-c": {"instruments": {}},
     }
     assert configuration_calls == []
 
@@ -691,12 +688,12 @@ def test_backend_settings_fetch_keeps_unqualified_instrument_resources() -> None
     reader = _make_reader(client)
 
     settings = reader.fetch_backend_settings_from_hardware(
-        unit_labels_by_box_id={"BOX1": "unit-a"},
+        unit_labels=("unit-a",),
         parallel=False,
     )
 
-    assert settings["BOX1"]["instruments"]["Q00"]["resource_id"] == "inst-q00"
-    assert settings["BOX1"]["instruments"]["Q00"]["port_id"] == "unit-a:tx_p01"
+    assert settings["unit-a"]["instruments"]["Q00"]["resource_id"] == "inst-q00"
+    assert settings["unit-a"]["instruments"]["Q00"]["port_id"] == "unit-a:tx_p01"
 
 
 def test_collect_state_filters_unqualified_resources_by_resolved_unit() -> None:
@@ -722,3 +719,15 @@ def test_collect_state_scopes_duplicate_aliases_by_unit() -> None:
         "Q00",
     ]
     assert not any(issue.code == "DUPLICATE_INSTRUMENT_ALIAS" for issue in state.issues)
+
+
+def test_backend_settings_fetch_empty_selection_skips_hardware() -> None:
+    """An empty unit selection should return no settings without contacting hardware."""
+    reader = _make_reader(_FakeClient())
+
+    def reject_collect_state(**_: object) -> None:
+        pytest.fail("Empty selection must not collect hardware state.")
+
+    reader.collect_state = reject_collect_state  # type: ignore[method-assign]
+
+    assert reader.fetch_backend_settings_from_hardware(unit_labels=()) == {}
