@@ -1381,7 +1381,7 @@ class _CloseFailingSession(_FakeSession):
         return trigger_id
 
 
-@pytest.mark.parametrize("log_level", [logging.INFO, logging.WARNING])
+@pytest.mark.parametrize("log_level", [logging.DEBUG, logging.INFO, logging.WARNING])
 def test_execute_recreates_session_after_transient_request_failure(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
@@ -1455,11 +1455,11 @@ def test_execute_recreates_session_after_transient_request_failure(
     assert "QuEL-3 quelware session request failed" in caplog.text
     assert "failed-trigger-session" in caplog.text
     assert "mutated-trigger-session" not in caplog.text
-    if log_level == logging.INFO:
+    if log_level == logging.DEBUG:
         opened = [
             record.message
             for record in caplog.records
-            if record.levelno == logging.INFO
+            if record.levelno == logging.DEBUG
         ]
         assert len(opened) == 2
         assert "session_token=failed-trigger-session; attempt=1/4" in opened[0]

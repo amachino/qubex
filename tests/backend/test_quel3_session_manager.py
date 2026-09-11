@@ -327,6 +327,49 @@ def test_request_retry_preserves_separate_session_creation_budget(
     assert delays == pytest.approx([0.5, 0.75, 1.125] * len(clients))
 
 
+@pytest.mark.parametrize("fail_first_request", [False, True])
+def test_request_logs_only_retry_warnings_at_info_level(caplog, fail_first_request):
+    """Successful requests should be quiet at INFO while retries warn before execution."""
+    caplog.set_level(logging.INFO, logger=session_workarounds_module.__name__)
+    session = _SuccessfulSession()
+    client = _FakeClient(successful_session=session, failures_before_success=0)
+    context = _FakeClientContext(client)
+    manager = Quel3SessionManager()
+    result = object()
+    calls = 0
+
+    async def operation(opened_session):
+        nonlocal calls
+        calls += 1
+        assert opened_session is session
+        if fail_first_request and calls == 1:
+            raise RuntimeError("temporary request failure")
+        if fail_first_request:
+            assert len(caplog.records) == 1
+            assert caplog.records[0].levelno == logging.WARNING
+            assert "temporary request failure" in caplog.text
+            assert "retrying with a fresh session" in caplog.text
+            assert "session_token=successful-session" in caplog.text
+        else:
+            assert not caplog.records
+        return result
+
+    async def run():
+        try:
+            return await session_workarounds_module.run_with_session_request_retry(
+                manager=manager,
+                client_factory=cast(Any, lambda endpoint, port: context),
+                resource_ids=("inst-a",),
+                operation=operation,
+            )
+        finally:
+            await manager.close_safely()
+
+    assert asyncio.run(run()) is result
+    assert calls == (2 if fail_first_request else 1)
+    assert len(caplog.records) == int(fail_first_request)
+
+
 def test_request_retry_preserves_previous_session_token_on_reopen_failure(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
