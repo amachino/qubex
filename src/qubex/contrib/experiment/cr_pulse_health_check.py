@@ -4,15 +4,15 @@ Fast health check of decoherence and leakage during cross-resonance pulses.
 The workflow is intentionally diagnostic rather than a strict parameter-
 identification pipeline.  It measures four physically named protocols:
 
-``control_ground`` / ``control_excited``
-    Repeated un-echoed ZX90 with the control prepared in ``|0>`` or ``|1>``.
+`control_ground` / `control_excited`
+    Repeated un-echoed ZX90 with the control prepared in `|0>` or `|1>`.
     GEF readout provides control populations, target X polarization, and target
     F-state population.
 
-``control_t2_echo``
+`control_t2_echo`
     Echoed ZX90 sequence whose primary observable is control X.
 
-``target_t2rho_echo``
+`target_t2rho_echo`
     Echoed ZX90 sequence whose primary observable is target Z.  The target
     virtual-Z frame update is applied to both the target and CR channels.
 
@@ -21,14 +21,15 @@ never used by the health fits.  Stable observables are assigned nominal zero
 rates; changing observables are fit with small robust models.  Uncertainties are
 local analytic approximations and no raw-shot bootstrap is run.
 
-The primary public entry points are ``characterize_cr_pulse_health``,
-``analyze_cr_pulse_health``, and ``plot_cr_pulse_health``.
+The primary public entry points are `characterize_cr_pulse_health`,
+`analyze_cr_pulse_health`, and `plot_cr_pulse_health`.
 """
 
 from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from itertools import pairwise
 from numbers import Integral, Real
@@ -66,8 +67,16 @@ _BASIS = Literal["X", "Y", "Z"]
 _CONTROL_STATE_PROTOCOL = Literal["control_ground", "control_excited"]
 _ECHO_PROTOCOL = Literal["control_t2_echo", "target_t2rho_echo"]
 _EXCHANGE_MODEL = Literal["stable", "outward_only", "inward_only", "two_way"]
-_CHANGE_STATUS = Literal["stable", "changing"]
+_CHANGE_STATUS = Literal["stable", "changing", "invalid"]
 _FIT_QUALITY = Literal["stable", "good", "fair", "poor", "failed"]
+_POPULATION_WEIGHTING = Literal[
+    "full_covariance",
+    "component_se_diagonal",
+    "mixed_component_se_empirical",
+    "empirical_scale",
+    "not_used_stable",
+    "not_used_invalid_initial",
+]
 _ROBUST_LOSSES = {"linear", "soft_l1", "huber", "cauchy", "arctan"}
 
 _CONTROL_GROUND = "control_ground"
@@ -86,7 +95,13 @@ _STATE_NAMES = ("g", "e", "f")
 
 _MIN_LEAKAGE_AXIS_UPPER = 0.01
 _LEAKAGE_AXIS_HEADROOM = 1.15
-_EPS = np.finfo(float).eps
+_EPS = float(np.finfo(float).eps)
+_PROBABILITY_TOLERANCE = 1e-6
+_NAN_BLOCH_FACTORS: tuple[float, float, float] = (
+    float("nan"),
+    float("nan"),
+    float("nan"),
+)
 
 
 @dataclass(frozen=True)
@@ -132,6 +147,7 @@ class IdleHealthNoise:
                 raise TypeError(f"{name} must be a real number.")
             if np.isnan(value) or value <= 0:
                 raise ValueError(f"{name} must be positive; +inf is permitted.")
+            object.__setattr__(self, name, float(value))
         if not np.isinf(self.t1) and (
             np.isinf(self.t2_echo) or self.t2_echo > 2.0 * self.t1
         ):
@@ -150,7 +166,7 @@ class IdleHealthNoise:
 
 @dataclass(frozen=True)
 class ChangeAssessment:
-    """Lightweight decision on whether one measured curve visibly changes."""
+    """Lightweight decision on whether one measured curve changes or is unusable."""
 
     status: _CHANGE_STATUS
     constant_value: float
@@ -164,7 +180,7 @@ class ChangeAssessment:
 
 @dataclass(frozen=True)
 class DecayHealthFit:
-    """Offset-exponential health fit ``offset + amplitude * exp(-rate*t)``."""
+    """Offset-exponential health fit `offset + amplitude * exp(-rate*t)`."""
 
     assessment: ChangeAssessment
     success: bool
@@ -188,9 +204,9 @@ class ExchangeHealthFit:
     """
     Store a minimal effective model for an F-state population trajectory.
 
-    Stable traces use zero rates.  Monotonic growth uses an outward-only model,
-    monotonic decay uses an inward-only model, and only direction-ambiguous
-    changing traces use the two-way exchange model.
+    Stable traces use zero rates. Changing traces compare the appropriate
+    directional one-way model with a two-way exchange model and retain the
+    smallest model supported by a BIC-like robust-cost score.
     """
 
     assessment: ChangeAssessment
@@ -230,6 +246,7 @@ class ControlRateHealthFit:
     curve_populations: Mapping[str, NDArray[np.float64]]
     r_squared: float
     reduced_chi_squared: float
+    population_weighting: _POPULATION_WEIGHTING
 
 
 @dataclass(frozen=True)
@@ -255,9 +272,11 @@ class CrPulseHealthMeasurements:
     """
     Store processed measurements sufficient for offline health-check analysis.
 
-    ``total_times`` and ``cr_active_times`` are in ns.  Populations and Pauli
+    `total_times` and `cr_active_times` are in ns. Populations and Pauli
     expectations are dimensionless.  Analysis therefore reports rates in
-    ``1/ns`` and time constants in ns.
+    `1/ns` and time constants in ns. Each population row must lie on the G/E/F
+    probability simplex. `population_covariances` optionally stores the full
+    analytic 3x3 covariance for each population row.
     """
 
     control_qubit: str
@@ -283,6 +302,13 @@ class CrPulseHealthMeasurements:
         Mapping[str, Mapping[str, NDArray[np.float64]]],
     ]
     diagnostic_components_measured: bool
+    population_covariances: (
+        Mapping[
+            str,
+            Mapping[str, Mapping[str, NDArray[np.float64]]],
+        ]
+        | None
+    ) = None
 
     @property
     def target_x(self) -> dict[str, dict[str, NDArray[np.float64]]]:
@@ -306,7 +332,7 @@ class CrPulseHealthMeasurements:
 
     @property
     def cr_pulse_counts(self) -> tuple[int, ...]:
-        """Return the common number of ZX90 schedule calls, ``4*n``."""
+        """Return the common number of ZX90 schedule calls, `4*n`."""
         return tuple(4 * n for n in self.n_values)
 
 
@@ -315,8 +341,8 @@ class CrPulseHealthAnalysis:
     """
     Store lightweight health-check fits, summaries, and the fidelity estimate.
 
-    ``rate_differences_from_reference`` stores signed reference differences.
-    For the control-state protocols these are direct ``actual-reference``
+    `rate_differences_from_reference` stores signed reference differences.
+    For the control-state protocols these are direct `actual-reference`
     differences.  For the two echo protocols they are duty-cycle-corrected
     CR-active-equivalent-minus-reference differences.  They are reported for
     interpretation and are not substituted for the nominal health rates.
@@ -359,7 +385,9 @@ def _validate_n_values(n_values: Sequence[int] | None) -> tuple[int, ...]:
     values = DEFAULT_N_VALUES if n_values is None else tuple(n_values)
     if len(values) < 3:
         raise ValueError("n_values must contain at least three values.")
-    if any(isinstance(value, bool) or not isinstance(value, Integral) for value in values):
+    if any(
+        isinstance(value, bool) or not isinstance(value, Integral) for value in values
+    ):
         raise TypeError("n_values must contain only integers.")
     normalized = tuple(int(value) for value in values)
     if normalized[0] != 0:
@@ -422,23 +450,27 @@ def _validate_robust_loss(value: str) -> str:
 
 def _extract_zx90_timing(gate: PulseSchedule) -> ZX90Timing:
     try:
-        cr_duration = float(vars(gate)["cr_duration"])
-        echo = vars(gate)["echo"]
-    except (KeyError, TypeError, ValueError) as exc:
+        raw_cr_duration = gate.cr_duration  # type: ignore[attr-defined]
+        echo = gate.echo  # type: ignore[attr-defined]
+    except AttributeError as exc:
         raise ValueError(
             "ZX90 schedule must expose Qubex `cr_duration` and `echo` metadata."
         ) from exc
+    if isinstance(raw_cr_duration, bool) or not isinstance(raw_cr_duration, Real):
+        raise TypeError("ZX90 `cr_duration` metadata must be a real number.")
+    cr_duration = float(raw_cr_duration)
     if not isinstance(echo, bool):
         raise TypeError("ZX90 `echo` metadata must be boolean.")
     if not np.isfinite(cr_duration) or cr_duration <= 0:
         raise ValueError("ZX90 `cr_duration` must be positive and finite.")
-    total_duration = float(gate.duration)
+    raw_total_duration = gate.duration
+    if isinstance(raw_total_duration, bool) or not isinstance(raw_total_duration, Real):
+        raise TypeError("ZX90 schedule duration must be a real number.")
+    total_duration = float(raw_total_duration)
     if not np.isfinite(total_duration) or total_duration <= 0:
         raise ValueError("ZX90 schedule duration must be positive and finite.")
     active_duration = (2.0 if echo else 1.0) * cr_duration
-    if not echo and not np.isclose(
-        total_duration, cr_duration, rtol=0.0, atol=1e-9
-    ):
+    if not echo and not np.isclose(total_duration, cr_duration, rtol=0.0, atol=1e-9):
         raise ValueError(
             "The un-echoed ZX90 must be fully CR-active: its schedule duration "
             "must equal `cr_duration`."
@@ -729,7 +761,71 @@ def _finite_errors(
     return np.where(valid, np.maximum(array, floor), replacement)
 
 
-def _weighted_constant(values: NDArray[np.float64], errors: NDArray[np.float64] | None) -> float:
+def _validated_population_covariance(
+    covariance: ArrayLike,
+    *,
+    rcond: float = 1e-12,
+) -> NDArray[np.float64]:
+    """
+    Return a finite, nearly symmetric, positive-semidefinite 3x3 covariance.
+
+    Tiny antisymmetric components can arise from floating-point roundoff and are
+    symmetrized here. Tiny negative eigenvalues within tolerance are accepted and
+    clipped to zero later when constructing the whitener. Resolved asymmetry or a
+    resolved negative eigenvalue is treated as malformed covariance data so callers
+    can fall back to component-wise standard errors instead of silently
+    manufacturing an overconfident uncertainty.
+    """
+    cov = np.asarray(covariance, dtype=np.float64)
+    if cov.shape != (3, 3) or not np.all(np.isfinite(cov)):
+        raise ValueError("population covariance must be a finite 3x3 matrix.")
+
+    entry_scale = max(float(np.max(np.abs(cov))), _EPS)
+    symmetry_atol = max(1e-15, 1e-10 * entry_scale)
+    if not np.allclose(cov, cov.T, rtol=1e-7, atol=symmetry_atol):
+        raise ValueError(
+            "population covariance must be symmetric within numerical tolerance."
+        )
+
+    cov = 0.5 * (cov + cov.T)
+    eigenvalues = np.linalg.eigvalsh(cov)
+    scale = max(float(np.max(np.abs(eigenvalues))), _EPS)
+    cutoff = max(float(rcond), 0.0) * scale
+    negative_tolerance = max(cutoff, 1e-15 * scale, _EPS)
+    if float(np.min(eigenvalues)) < -negative_tolerance:
+        raise ValueError("population covariance must be positive semidefinite.")
+    return np.asarray(cov, dtype=np.float64)
+
+
+def _population_covariance_whitener(
+    covariance: ArrayLike,
+    *,
+    rcond: float = 1e-12,
+) -> tuple[NDArray[np.float64], int]:
+    """
+    Return a pseudo-inverse square-root whitener and its effective rank.
+
+    G/E/F population estimates obey Pg + Pe + Pf = 1, so their covariance is
+    generally singular.  Whitening therefore uses only resolved covariance
+    eigenmodes instead of treating the three population components as
+    independent measurements.
+    """
+    cov = _validated_population_covariance(covariance, rcond=rcond)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    scale = max(float(np.max(np.abs(eigenvalues))), _EPS)
+    cutoff = max(float(rcond), 0.0) * scale
+
+    eigenvalues = np.maximum(eigenvalues, 0.0)
+    keep = eigenvalues > cutoff
+    if not np.any(keep):
+        raise ValueError("population covariance has no resolved positive mode.")
+    whitener = (eigenvectors[:, keep] / np.sqrt(eigenvalues[keep])).T
+    return np.asarray(whitener, dtype=np.float64), int(np.count_nonzero(keep))
+
+
+def _weighted_constant(
+    values: NDArray[np.float64], errors: NDArray[np.float64] | None
+) -> float:
     if errors is None:
         return float(np.mean(values))
     weights = 1.0 / np.square(errors)
@@ -743,11 +839,15 @@ def _reduced_chi_squared(
     parameter_count: int,
 ) -> float:
     residual = np.asarray(observed - fitted, dtype=np.float64)
-    dof = max(residual.size - parameter_count, 1)
     if errors is None:
         # Without externally estimated point uncertainties this is not a true
         # chi-squared statistic.  Leave it undefined and let R^2 drive the
         # lightweight fit-quality label.
+        return float("nan")
+    dof = residual.size - parameter_count
+    if dof <= 0:
+        # A saturated/over-parameterized fit has no residual degrees of freedom,
+        # so a reduced chi-squared statistic is not defined.
         return float("nan")
     return float(np.sum(np.square(residual / errors)) / dof)
 
@@ -771,7 +871,9 @@ def _assess_change(
     t = np.asarray(times, dtype=np.float64)
     y = np.asarray(values, dtype=np.float64)
     if t.ndim != 1 or y.shape != t.shape or t.size < 3:
-        raise ValueError("change assessment requires matching 1D arrays with >=3 points.")
+        raise ValueError(
+            "change assessment requires matching 1D arrays with >=3 points."
+        )
     if not np.all(np.isfinite(t)) or not np.all(np.isfinite(y)):
         raise ValueError("change assessment inputs must be finite.")
     if np.any(np.diff(t) <= 0):
@@ -788,7 +890,9 @@ def _assess_change(
     if errors is None:
         if y.size >= 3:
             step_noise = np.diff(y)
-            noise_scale = float(np.median(np.abs(step_noise - np.median(step_noise))) / 0.6745)
+            noise_scale = float(
+                np.median(np.abs(step_noise - np.median(step_noise))) / 0.6745
+            )
         else:  # pragma: no cover
             noise_scale = 0.0
         noise_scale = max(noise_scale, 1e-6)
@@ -807,7 +911,6 @@ def _assess_change(
         minimum_change=minimum_change,
         change_sigma_threshold=change_sigma_threshold,
     )
-
 
 
 def _rate_upper_bound(times: NDArray[np.float64]) -> float:
@@ -847,21 +950,63 @@ def _approximate_covariance(
     optimization: OptimizeResult,
     residual_count: int,
     parameter_count: int,
+    *,
+    absolute_errors: bool,
 ) -> NDArray[np.float64]:
+    """
+    Estimate covariance when fitted parameters are locally identifiable.
+
+    A pseudo-inverse by itself can return finite diagonal entries even when the
+    Jacobian is rank-deficient.  That would misleadingly attach finite standard
+    errors to parameters that are not independently resolved.  Treat such local
+    uncertainty as unresolved instead, while leaving the point estimate intact.
+    """
     if parameter_count == 0:
         return np.empty((0, 0), dtype=np.float64)
     jac = np.asarray(optimization.jac, dtype=np.float64)
     if jac.ndim != 2 or jac.shape[1] != parameter_count or not np.all(np.isfinite(jac)):
         return np.full((parameter_count, parameter_count), np.nan)
     try:
-        information = jac.T @ jac
-        inverse = np.linalg.pinv(information, rcond=1e-12)
+        _, singular_values, vt = np.linalg.svd(jac, full_matrices=False)
     except np.linalg.LinAlgError:
         return np.full((parameter_count, parameter_count), np.nan)
-    dof = max(residual_count - parameter_count, 1)
-    # scipy least_squares cost is 1/2 sum(rho(residual**2)); this scale is only
-    # a local diagnostic approximation for the robust fit.
-    scale = max(2.0 * float(optimization.cost) / dof, 1e-18)
+    if singular_values.size == 0 or not np.all(np.isfinite(singular_values)):
+        return np.full((parameter_count, parameter_count), np.nan)
+    largest = float(np.max(singular_values))
+    if largest <= _EPS:
+        return np.full((parameter_count, parameter_count), np.nan)
+    rank_tolerance = max(
+        1e-12 * largest,
+        np.finfo(np.float64).eps * max(jac.shape) * largest,
+    )
+    effective_rank = int(np.count_nonzero(singular_values > rank_tolerance))
+    if effective_rank < parameter_count:
+        return np.full((parameter_count, parameter_count), np.nan)
+
+    # Build (J^T J)^-1 from the *same* singular values used for the rank test.
+    # Forming J^T J first squares the condition number; applying another rcond
+    # cutoff there can therefore discard a direction that the rank test above
+    # deliberately retained (for example s_min / s_max = 1e-8).  Direct SVD
+    # construction keeps the identifiability criterion and covariance estimate
+    # numerically consistent.
+    try:
+        with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+            inverse = (vt.T / np.square(singular_values)) @ vt
+    except (FloatingPointError, ValueError):
+        return np.full((parameter_count, parameter_count), np.nan)
+    if inverse.shape != (parameter_count, parameter_count) or not np.all(
+        np.isfinite(inverse)
+    ):
+        return np.full((parameter_count, parameter_count), np.nan)
+    inverse = 0.5 * (inverse + inverse.T)
+    if absolute_errors:
+        return np.asarray(inverse, dtype=np.float64)
+    dof = residual_count - parameter_count
+    if dof <= 0:
+        return np.full((parameter_count, parameter_count), np.nan)
+    # Scipy least_squares cost is 1/2 sum(rho(residual**2)); this remains a
+    # local diagnostic approximation when a robust loss modifies the residuals.
+    scale = 2.0 * float(optimization.cost) / dof
     return np.asarray(inverse * scale, dtype=np.float64)
 
 
@@ -870,12 +1015,16 @@ def _fit_quality(success: bool, r_squared: float, reduced_chi2: float) -> _FIT_Q
         return "failed"
     if np.isfinite(reduced_chi2) and reduced_chi2 > 20.0:
         return "poor"
-    if np.isfinite(r_squared) and r_squared >= 0.95 and (
-        np.isnan(reduced_chi2) or reduced_chi2 <= 5.0
+    if (
+        np.isfinite(r_squared)
+        and r_squared >= 0.95
+        and (np.isnan(reduced_chi2) or reduced_chi2 <= 5.0)
     ):
         return "good"
-    if np.isfinite(r_squared) and r_squared >= 0.75 and (
-        np.isnan(reduced_chi2) or reduced_chi2 <= 20.0
+    if (
+        np.isfinite(r_squared)
+        and r_squared >= 0.75
+        and (np.isnan(reduced_chi2) or reduced_chi2 <= 20.0)
     ):
         return "fair"
     return "poor"
@@ -907,6 +1056,70 @@ def _fit_decay_health(
     t = np.asarray(times, dtype=np.float64)
     y = np.asarray(values, dtype=np.float64)
     errors = _finite_errors(standard_errors, y.shape)
+
+    # A derived observable can legitimately become undefined even when the raw
+    # measurements are finite.  The main example is target X = (Pe-Pg)/(Pg+Pe)
+    # when essentially all target population has leaked to |f>, so Pg+Pe -> 0.
+    # Treat that particular fit as unresolved instead of aborting the entire
+    # health analysis and losing otherwise useful relaxation/leakage diagnostics.
+    if not np.all(np.isfinite(y)):
+        if t.ndim != 1 or y.shape != t.shape or t.size < 3:
+            raise ValueError(
+                "decay fit requires matching 1D time/value arrays with >=3 points."
+            )
+        if not np.all(np.isfinite(t)) or np.any(np.diff(t) <= 0):
+            raise ValueError("decay-fit times must be finite and strictly increasing.")
+        finite = np.isfinite(y)
+        finite_errors = None if errors is None else errors[finite]
+        if np.count_nonzero(finite) >= 3:
+            finite_assessment = _assess_change(
+                t[finite],
+                y[finite],
+                finite_errors,
+                minimum_change=minimum_change,
+                change_sigma_threshold=change_sigma_threshold,
+            )
+            assessment_values = (
+                finite_assessment.constant_value,
+                finite_assessment.robust_range,
+                finite_assessment.noise_scale,
+                finite_assessment.range_signal_to_noise,
+                finite_assessment.reduced_chi_squared,
+            )
+        else:
+            assessment_values = (float("nan"),) * 5
+        assessment = ChangeAssessment(
+            status="invalid",
+            constant_value=assessment_values[0],
+            robust_range=assessment_values[1],
+            noise_scale=assessment_values[2],
+            range_signal_to_noise=assessment_values[3],
+            reduced_chi_squared=assessment_values[4],
+            minimum_change=minimum_change,
+            change_sigma_threshold=change_sigma_threshold,
+        )
+        dense_t = np.linspace(float(t[0]), float(t[-1]), 400)
+        return DecayHealthFit(
+            assessment=assessment,
+            success=False,
+            quality="failed",
+            message=(
+                "Decay observable contains non-finite values; this fit is left "
+                "unresolved so the remaining health analysis can continue."
+            ),
+            rate=float("nan"),
+            rate_standard_error=float("nan"),
+            time_constant=float("nan"),
+            time_constant_standard_error=float("nan"),
+            amplitude=float("nan"),
+            offset=float("nan"),
+            fitted_values=np.full_like(y, np.nan),
+            curve_times=dense_t,
+            curve_values=np.full_like(dense_t, np.nan),
+            r_squared=float("nan"),
+            reduced_chi_squared=float("nan"),
+        )
+
     assessment = _assess_change(
         t,
         y,
@@ -1003,7 +1216,12 @@ def _fit_decay_health(
     offset, amplitude, rate = map(float, params)
     fitted = offset + amplitude * np.exp(-rate * elapsed)
     curve = offset + amplitude * np.exp(-rate * dense_elapsed)
-    covariance = _approximate_covariance(optimization, y.size, 3)
+    covariance = _approximate_covariance(
+        optimization,
+        y.size,
+        3,
+        absolute_errors=errors is not None,
+    )
     rate_error = (
         float(np.sqrt(max(covariance[2, 2], 0.0)))
         if covariance.shape == (3, 3) and np.isfinite(covariance[2, 2])
@@ -1014,6 +1232,12 @@ def _fit_decay_health(
     chi2 = _reduced_chi_squared(y, fitted, errors, 3)
     quality = _fit_quality(True, r2, chi2)
     message = str(optimization.message)
+    if y.size - 3 <= 0:
+        quality = "poor"
+        message = (
+            "Fit has no residual degrees of freedom; fit quality cannot be "
+            "assessed. " + message
+        )
     if not optimization.success:
         message = "Finite diagnostic fit returned despite optimizer warning: " + message
         quality = "poor"
@@ -1048,9 +1272,9 @@ def _fit_exchange_health(
     """
     Fit a minimal effective F-population exchange model.
 
-    A stable trace fixes both rates to zero.  A clearly increasing trace uses
-    only an outward leakage rate, a decreasing trace uses only an inward
-    seepage rate, and a direction-ambiguous changing trace uses a two-way model.
+    A stable trace fixes both rates to zero. For a changing trace, the fit
+    compares the direction-compatible one-way model with a two-way model and
+    uses a BIC-like robust-cost score to prefer the smallest adequate model.
     The goal is a robust health metric rather than unique microscopic rates.
     """
     t = np.asarray(times, dtype=np.float64)
@@ -1092,70 +1316,106 @@ def _fit_exchange_health(
     net_change = float(np.mean(y[-edge_count:]) - np.mean(y[:edge_count]))
     direction_threshold = 0.5 * minimum_change
     if net_change > direction_threshold:
-        model: _EXCHANGE_MODEL = "outward_only"
+        preferred_model: _EXCHANGE_MODEL = "outward_only"
     elif net_change < -direction_threshold:
-        model = "inward_only"
+        preferred_model = "inward_only"
     else:
-        model = "two_way"
+        preferred_model = "two_way"
 
-    scale = errors if errors is not None else np.full_like(y, max(float(np.std(y)), 1e-3))
+    scale = (
+        errors if errors is not None else np.full_like(y, max(float(np.std(y)), 1e-3))
+    )
     p0_guess = float(np.clip(y[0], 0.0, 1.0))
+    p_inf_guess = float(np.clip(np.mean(y[-edge_count:]), 0.0, 1.0))
     gamma_guess = 1.0 / max(0.4 * float(elapsed[-1]), 1.0)
     rate_upper = _rate_upper_bound(t)
 
-    if model == "outward_only":
-        def evaluate(
-            parameters: NDArray[np.float64],
-            x: NDArray[np.float64],
-        ) -> NDArray[np.float64]:
-            p0, gamma = parameters
-            return 1.0 - (1.0 - p0) * np.exp(-gamma * x)
+    def fit_candidate(
+        model: _EXCHANGE_MODEL,
+    ) -> (
+        tuple[
+            float,
+            _EXCHANGE_MODEL,
+            OptimizeResult,
+            Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.float64]],
+        ]
+        | None
+    ):
+        if model == "outward_only":
 
-        x0 = np.array([p0_guess, gamma_guess], dtype=np.float64)
-        lower = np.array([0.0, 0.0], dtype=np.float64)
-        upper = np.array([1.0, rate_upper], dtype=np.float64)
-    elif model == "inward_only":
-        def evaluate(
-            parameters: NDArray[np.float64],
-            x: NDArray[np.float64],
-        ) -> NDArray[np.float64]:
-            p0, gamma = parameters
-            return p0 * np.exp(-gamma * x)
+            def evaluate(
+                parameters: NDArray[np.float64],
+                x: NDArray[np.float64],
+            ) -> NDArray[np.float64]:
+                p0, gamma = parameters
+                return 1.0 - (1.0 - p0) * np.exp(-gamma * x)
 
-        x0 = np.array([p0_guess, gamma_guess], dtype=np.float64)
-        lower = np.array([0.0, 0.0], dtype=np.float64)
-        upper = np.array([1.0, rate_upper], dtype=np.float64)
-    else:
-        p_inf_guess = float(np.clip(np.mean(y[-edge_count:]), 0.0, 1.0))
+            x0 = np.array([p0_guess, gamma_guess], dtype=np.float64)
+            lower = np.array([0.0, 0.0], dtype=np.float64)
+            upper = np.array([1.0, rate_upper], dtype=np.float64)
+        elif model == "inward_only":
 
-        def evaluate(
-            parameters: NDArray[np.float64],
-            x: NDArray[np.float64],
-        ) -> NDArray[np.float64]:
-            p0, p_inf, gamma = parameters
-            return p_inf + (p0 - p_inf) * np.exp(-gamma * x)
+            def evaluate(
+                parameters: NDArray[np.float64],
+                x: NDArray[np.float64],
+            ) -> NDArray[np.float64]:
+                p0, gamma = parameters
+                return p0 * np.exp(-gamma * x)
 
-        x0 = np.array([p0_guess, p_inf_guess, gamma_guess], dtype=np.float64)
-        lower = np.array([0.0, 0.0, 0.0], dtype=np.float64)
-        upper = np.array([1.0, 1.0, rate_upper], dtype=np.float64)
+            x0 = np.array([p0_guess, gamma_guess], dtype=np.float64)
+            lower = np.array([0.0, 0.0], dtype=np.float64)
+            upper = np.array([1.0, rate_upper], dtype=np.float64)
+        else:
 
-    def residual(parameters: NDArray[np.float64]) -> NDArray[np.float64]:
-        return (evaluate(parameters, elapsed) - y) / scale
+            def evaluate(
+                parameters: NDArray[np.float64],
+                x: NDArray[np.float64],
+            ) -> NDArray[np.float64]:
+                p0, p_inf, gamma = parameters
+                return p_inf + (p0 - p_inf) * np.exp(-gamma * x)
 
-    optimization, numerical_error = _run_robust_least_squares(
-        residual,
-        x0=x0,
-        bounds=(lower, upper),
-        robust_loss=robust_loss,
-        max_nfev=1500,
+            x0 = np.array([p0_guess, p_inf_guess, gamma_guess], dtype=np.float64)
+            lower = np.array([0.0, 0.0, 0.0], dtype=np.float64)
+            upper = np.array([1.0, 1.0, rate_upper], dtype=np.float64)
+
+        def residual(parameters: NDArray[np.float64]) -> NDArray[np.float64]:
+            return (evaluate(parameters, elapsed) - y) / scale
+
+        optimization, _ = _run_robust_least_squares(
+            residual,
+            x0=x0,
+            bounds=(lower, upper),
+            robust_loss=robust_loss,
+            max_nfev=1500,
+        )
+        if optimization is None:
+            return None
+        parameters = np.asarray(optimization.x, dtype=np.float64)
+        if parameters.shape != x0.shape or not np.all(np.isfinite(parameters)):
+            return None
+        # One-way exchange is nested at p_inf=1 or p_inf=0 in the two-way
+        # model. A BIC-like robust-cost score keeps the reduced model unless a
+        # resolved finite asymptote materially improves the fit.
+        score = 2.0 * float(optimization.cost) + parameters.size * np.log(y.size)
+        return score, model, optimization, evaluate
+
+    candidate_models = (
+        (preferred_model,)
+        if preferred_model == "two_way"
+        else (preferred_model, "two_way")
     )
-    if optimization is None:
+    candidates = [
+        candidate
+        for model_name in candidate_models
+        if (candidate := fit_candidate(model_name)) is not None
+    ]
+    if not candidates:
         return ExchangeHealthFit(
             assessment=assessment,
-            model=model,
+            model=preferred_model,
             success=False,
             quality="failed",
-            message=cast(str, numerical_error),
+            message="All numerical exchange-model fits failed.",
             outward_rate=float("nan"),
             inward_rate=float("nan"),
             outward_rate_standard_error=float("nan"),
@@ -1169,31 +1429,23 @@ def _fit_exchange_health(
             r_squared=float("nan"),
             reduced_chi_squared=float("nan"),
         )
+    successful_candidates = [
+        candidate for candidate in candidates if candidate[2].success
+    ]
+    _, model, optimization, evaluate = min(
+        successful_candidates or candidates,
+        key=lambda item: item[0],
+    )
     params = np.asarray(optimization.x, dtype=np.float64)
-    if params.shape != x0.shape or not np.all(np.isfinite(params)):
-        return ExchangeHealthFit(
-            assessment=assessment,
-            model=model,
-            success=False,
-            quality="failed",
-            message="Numerical exchange fit did not return finite parameters.",
-            outward_rate=float("nan"),
-            inward_rate=float("nan"),
-            outward_rate_standard_error=float("nan"),
-            inward_rate_standard_error=float("nan"),
-            exchange_time_constant=float("nan"),
-            p0=float("nan"),
-            p_inf=float("nan"),
-            fitted_values=np.full_like(y, np.nan),
-            curve_times=dense_t,
-            curve_values=np.full_like(dense_t, np.nan),
-            r_squared=float("nan"),
-            reduced_chi_squared=float("nan"),
-        )
 
     fitted = evaluate(params, elapsed)
     curve = evaluate(params, dense_elapsed)
-    covariance = _approximate_covariance(optimization, y.size, params.size)
+    covariance = _approximate_covariance(
+        optimization,
+        y.size,
+        params.size,
+        absolute_errors=errors is not None,
+    )
     if model == "outward_only":
         p0, gamma = map(float, params)
         p_inf = 1.0
@@ -1223,15 +1475,25 @@ def _fit_exchange_health(
         if covariance.shape == (3, 3) and np.all(np.isfinite(covariance)):
             grad_out = np.array([0.0, gamma, p_inf], dtype=np.float64)
             grad_in = np.array([0.0, -gamma, 1.0 - p_inf], dtype=np.float64)
-            outward_error = float(np.sqrt(max(float(grad_out @ covariance @ grad_out), 0.0)))
-            inward_error = float(np.sqrt(max(float(grad_in @ covariance @ grad_in), 0.0)))
+            outward_error = float(
+                np.sqrt(max(float(grad_out @ covariance @ grad_out), 0.0))
+            )
+            inward_error = float(
+                np.sqrt(max(float(grad_in @ covariance @ grad_in), 0.0))
+            )
         else:
             outward_error = inward_error = float("nan")
 
     r2 = _r_squared(y, fitted)
     chi2 = _reduced_chi_squared(y, fitted, errors, params.size)
     quality = _fit_quality(True, r2, chi2)
-    message = str(optimization.message)
+    message = f"Selected {model} exchange model. {optimization.message}"
+    if y.size - params.size <= 0:
+        quality = "poor"
+        message = (
+            "Fit has no residual degrees of freedom; fit quality cannot be "
+            "assessed. " + message
+        )
     if not optimization.success:
         quality = "poor"
         message = "Finite diagnostic fit returned despite optimizer warning: " + message
@@ -1293,6 +1555,8 @@ def _fit_control_rates_health(
     populations_excited: ArrayLike,
     errors_ground: ArrayLike | None,
     errors_excited: ArrayLike | None,
+    covariances_ground: ArrayLike | None = None,
+    covariances_excited: ArrayLike | None = None,
     *,
     population_minimum_change: float,
     leakage_minimum_change: float,
@@ -1305,8 +1569,28 @@ def _fit_control_rates_health(
     p_excited = np.asarray(populations_excited, dtype=np.float64)
     if p_ground.shape != (t_ground.size, 3) or p_excited.shape != (t_excited.size, 3):
         raise ValueError("Control-state populations must have shape (n_points, 3).")
-    e_ground = None if errors_ground is None else np.asarray(errors_ground, dtype=np.float64)
-    e_excited = None if errors_excited is None else np.asarray(errors_excited, dtype=np.float64)
+    e_ground = (
+        None if errors_ground is None else np.asarray(errors_ground, dtype=np.float64)
+    )
+    e_excited = (
+        None if errors_excited is None else np.asarray(errors_excited, dtype=np.float64)
+    )
+    c_ground = (
+        None
+        if covariances_ground is None
+        else np.asarray(covariances_ground, dtype=np.float64)
+    )
+    c_excited = (
+        None
+        if covariances_excited is None
+        else np.asarray(covariances_excited, dtype=np.float64)
+    )
+    for name, covariance, n_points in (
+        ("covariances_ground", c_ground, t_ground.size),
+        ("covariances_excited", c_excited, t_excited.size),
+    ):
+        if covariance is not None and covariance.shape != (n_points, 3, 3):
+            raise ValueError(f"{name} must have shape ({n_points}, 3, 3).")
 
     assessments: dict[str, ChangeAssessment] = {}
     for protocol, times, populations, errors in (
@@ -1314,7 +1598,9 @@ def _fit_control_rates_health(
         (_CONTROL_EXCITED, t_excited, p_excited, e_excited),
     ):
         for index, state in enumerate(_STATE_NAMES):
-            threshold = leakage_minimum_change if state == "f" else population_minimum_change
+            threshold = (
+                leakage_minimum_change if state == "f" else population_minimum_change
+            )
             state_errors = None if errors is None else errors[:, index]
             assessments[f"{protocol}_P{state}"] = _assess_change(
                 times,
@@ -1338,8 +1624,7 @@ def _fit_control_rates_health(
     # mainly sensitive to e->g.  Direction checks reduce false activation when
     # Pe changes only because population is leaking to F.
     ground_ge_changed = any(
-        assessments[f"{_CONTROL_GROUND}_P{s}"].status == "changing"
-        for s in ("g", "e")
+        assessments[f"{_CONTROL_GROUND}_P{s}"].status == "changing" for s in ("g", "e")
     )
     if ground_ge_changed and (
         ground_pg_delta < -half_population_threshold
@@ -1348,8 +1633,7 @@ def _fit_control_rates_health(
         active.append("gamma_g_to_e")
 
     excited_ge_changed = any(
-        assessments[f"{_CONTROL_EXCITED}_P{s}"].status == "changing"
-        for s in ("g", "e")
+        assessments[f"{_CONTROL_EXCITED}_P{s}"].status == "changing" for s in ("g", "e")
     )
     if excited_ge_changed and excited_pg_delta > half_population_threshold:
         active.append("gamma_e_to_g")
@@ -1383,7 +1667,7 @@ def _fit_control_rates_health(
         if excited_ge_changed:
             active.append("gamma_e_to_g")
 
-    rate_names = (
+    rate_names: tuple[str, ...] = (
         "gamma_e_to_g",
         "gamma_g_to_e",
         "gamma_f_to_e",
@@ -1392,11 +1676,41 @@ def _fit_control_rates_health(
     active = [name for name in rate_names if name in active]
     initial_ground = np.clip(p_ground[0], 0.0, 1.0)
     initial_excited = np.clip(p_excited[0], 0.0, 1.0)
-    initial_ground = initial_ground / max(float(np.sum(initial_ground)), _EPS)
-    initial_excited = initial_excited / max(float(np.sum(initial_excited)), _EPS)
+    initial_ground_sum = float(np.sum(initial_ground))
+    initial_excited_sum = float(np.sum(initial_excited))
+    if initial_ground_sum <= _EPS or initial_excited_sum <= _EPS:
+        dense = np.linspace(0.0, max(float(t_ground[-1]), float(t_excited[-1])), 400)
+        return ControlRateHealthFit(
+            success=False,
+            quality="failed",
+            message=(
+                "Control-rate fit unavailable because the clipped n=0 G/E/F "
+                "population vector has zero total weight."
+            ),
+            active_rates=(),
+            rates={name: float("nan") for name in rate_names},
+            rate_standard_errors={name: float("nan") for name in rate_names},
+            time_constants={name: float("nan") for name in rate_names},
+            covariance=np.full((4, 4), np.nan, dtype=np.float64),
+            assessments=assessments,
+            fitted_populations={
+                _CONTROL_GROUND: np.full_like(p_ground, np.nan),
+                _CONTROL_EXCITED: np.full_like(p_excited, np.nan),
+            },
+            curve_times=dense,
+            curve_populations={
+                _CONTROL_GROUND: np.full((dense.size, 3), np.nan),
+                _CONTROL_EXCITED: np.full((dense.size, 3), np.nan),
+            },
+            r_squared=float("nan"),
+            reduced_chi_squared=float("nan"),
+            population_weighting="not_used_invalid_initial",
+        )
+    initial_ground = initial_ground / initial_ground_sum
+    initial_excited = initial_excited / initial_excited_sum
 
     if not active:
-        rates = dict.fromkeys(rate_names, 0.0)
+        rates: dict[str, float] = dict.fromkeys(rate_names, 0.0)
         fitted = {
             _CONTROL_GROUND: np.tile(initial_ground, (t_ground.size, 1)),
             _CONTROL_EXCITED: np.tile(initial_excited, (t_excited.size, 1)),
@@ -1406,11 +1720,13 @@ def _fit_control_rates_health(
             _CONTROL_GROUND: np.tile(initial_ground, (dense.size, 1)),
             _CONTROL_EXCITED: np.tile(initial_excited, (dense.size, 1)),
         }
-        observed = np.concatenate([p_ground.ravel(), p_excited.ravel()])
+        # n=0 defines the fixed initial population and is not reused as a
+        # goodness-of-fit data point.
+        observed = np.concatenate([p_ground[1:].ravel(), p_excited[1:].ravel()])
         predicted = np.concatenate(
             [
-                fitted[_CONTROL_GROUND].ravel(),
-                fitted[_CONTROL_EXCITED].ravel(),
+                fitted[_CONTROL_GROUND][1:].ravel(),
+                fitted[_CONTROL_EXCITED][1:].ravel(),
             ]
         )
         return ControlRateHealthFit(
@@ -1421,32 +1737,60 @@ def _fit_control_rates_health(
             rates=rates,
             rate_standard_errors={name: float("nan") for name in rate_names},
             time_constants={name: float("inf") for name in rate_names},
-            covariance=np.zeros((4, 4), dtype=np.float64),
+            covariance=np.full((4, 4), np.nan, dtype=np.float64),
             assessments=assessments,
             fitted_populations=fitted,
             curve_times=dense,
             curve_populations=curves,
             r_squared=_r_squared(observed, predicted),
             reduced_chi_squared=float("nan"),
+            population_weighting="not_used_stable",
         )
 
-    positive_times = np.concatenate(
-        [t_ground[t_ground > 0], t_excited[t_excited > 0]]
-    )
+    positive_times = np.concatenate([t_ground[t_ground > 0], t_excited[t_excited > 0]])
     time_scale = float(np.max(positive_times)) if positive_times.size else 1.0
     rate0 = 1.0 / max(0.5 * time_scale, 1.0)
-    x0 = np.full(len(active), rate0, dtype=np.float64)
     positive_steps = np.concatenate([np.diff(t_ground), np.diff(t_excited)])
     positive_steps = positive_steps[positive_steps > 0]
     min_step = float(np.min(positive_steps)) if positive_steps.size else time_scale
     upper = max(20.0 / max(min_step, 1e-12), rate0 * 100.0)
 
-    weighted_errors_ground = None if e_ground is None else _finite_errors(e_ground, p_ground.shape)
-    weighted_errors_excited = (
-        None
-        if e_excited is None
-        else _finite_errors(e_excited, p_excited.shape)
+    weighted_errors_ground = (
+        None if e_ground is None else _finite_errors(e_ground, p_ground.shape)
     )
+    weighted_errors_excited = (
+        None if e_excited is None else _finite_errors(e_excited, p_excited.shape)
+    )
+
+    # n=0 is used only to define the initial population vector.  Fits and fit
+    # quality start at n=1 so that the same measurement is not counted twice.
+    fit_ground = slice(1, None)
+    fit_excited = slice(1, None)
+
+    ground_whiteners: list[NDArray[np.float64]] | None = None
+    excited_whiteners: list[NDArray[np.float64]] | None = None
+    ground_effective_count = 3 * max(t_ground.size - 1, 0)
+    excited_effective_count = 3 * max(t_excited.size - 1, 0)
+    if c_ground is not None and c_excited is not None:
+        ground_whiteners = []
+        excited_whiteners = []
+        ground_effective_count = 0
+        excited_effective_count = 0
+        try:
+            for covariance in c_ground[fit_ground]:
+                whitener, rank = _population_covariance_whitener(covariance)
+                ground_whiteners.append(whitener)
+                ground_effective_count += rank
+            for covariance in c_excited[fit_excited]:
+                whitener, rank = _population_covariance_whitener(covariance)
+                excited_whiteners.append(whitener)
+                excited_effective_count += rank
+        except ValueError:
+            # Keep offline analysis usable when optional covariance data are
+            # incomplete or malformed.
+            ground_whiteners = None
+            excited_whiteners = None
+
     scale_ground = (
         weighted_errors_ground
         if weighted_errors_ground is not None
@@ -1457,39 +1801,117 @@ def _fit_control_rates_health(
         if weighted_errors_excited is not None
         else np.full_like(p_excited, max(float(np.std(p_excited)), 1e-3))
     )
+    use_full_covariance = ground_whiteners is not None and excited_whiteners is not None
+    if use_full_covariance:
+        population_weighting: _POPULATION_WEIGHTING = "full_covariance"
+    elif weighted_errors_ground is not None and weighted_errors_excited is not None:
+        population_weighting = "component_se_diagonal"
+    elif weighted_errors_ground is None and weighted_errors_excited is None:
+        population_weighting = "empirical_scale"
+    else:
+        population_weighting = "mixed_component_se_empirical"
+    if not use_full_covariance:
+        ground_effective_count = 3 * max(t_ground.size - 1, 0)
+        excited_effective_count = 3 * max(t_excited.size - 1, 0)
 
-    def unpack(parameters: NDArray[np.float64]) -> dict[str, float]:
-        rates = dict.fromkeys(rate_names, 0.0)
-        for name, value in zip(active, parameters, strict=True):
+    def unpack(
+        parameters: NDArray[np.float64], active_rates: Sequence[str]
+    ) -> dict[str, float]:
+        rates: dict[str, float] = dict.fromkeys(rate_names, 0.0)
+        for name, value in zip(active_rates, parameters, strict=True):
             rates[name] = float(value)
         return rates
 
-    def residual(parameters: NDArray[np.float64]) -> NDArray[np.float64]:
-        rates = unpack(parameters)
+    def residual(
+        parameters: NDArray[np.float64], active_rates: Sequence[str]
+    ) -> NDArray[np.float64]:
+        rates = unpack(parameters, active_rates)
         model_ground = _population_trajectory(t_ground, initial_ground, rates)
         model_excited = _population_trajectory(t_excited, initial_excited, rates)
+        delta_ground = model_ground[fit_ground] - p_ground[fit_ground]
+        delta_excited = model_excited[fit_excited] - p_excited[fit_excited]
+        if use_full_covariance:
+            if (
+                ground_whiteners is None or excited_whiteners is None
+            ):  # pragma: no cover
+                raise RuntimeError(
+                    "Full-covariance weighting was selected without whiteners."
+                )
+            return np.concatenate(
+                [
+                    *(
+                        whitener @ delta
+                        for whitener, delta in zip(
+                            ground_whiteners, delta_ground, strict=True
+                        )
+                    ),
+                    *(
+                        whitener @ delta
+                        for whitener, delta in zip(
+                            excited_whiteners, delta_excited, strict=True
+                        )
+                    ),
+                ]
+            )
         return np.concatenate(
             [
-                ((model_ground - p_ground) / scale_ground).ravel(),
-                ((model_excited - p_excited) / scale_excited).ravel(),
+                (delta_ground / scale_ground[fit_ground]).ravel(),
+                (delta_excited / scale_excited[fit_excited]).ravel(),
             ]
         )
 
-    optimization, numerical_error = _run_robust_least_squares(
-        residual,
-        x0=x0,
-        bounds=(np.zeros_like(x0), np.full_like(x0, upper)),
-        robust_loss=robust_loss,
-        max_nfev=2000,
-    )
-    if optimization is None:
+    def fit_candidate(
+        active_rates: tuple[str, ...],
+    ) -> tuple[float, tuple[str, ...], OptimizeResult] | None:
+        x0 = np.full(len(active_rates), rate0, dtype=np.float64)
+
+        def candidate_residual(
+            parameters: NDArray[np.float64],
+        ) -> NDArray[np.float64]:
+            return residual(parameters, active_rates)
+
+        optimization, _ = _run_robust_least_squares(
+            candidate_residual,
+            x0=x0,
+            bounds=(np.zeros_like(x0), np.full_like(x0, upper)),
+            robust_loss=robust_loss,
+            max_nfev=2000,
+        )
+        if optimization is None:
+            return None
+        parameters = np.asarray(optimization.x, dtype=np.float64)
+        if parameters.shape != x0.shape or not np.all(np.isfinite(parameters)):
+            return None
+        residual_count = ground_effective_count + excited_effective_count
+        score = 2.0 * float(optimization.cost) + len(active_rates) * np.log(
+            max(residual_count, 1)
+        )
+        return score, active_rates, optimization
+
+    reduced_active = tuple(active)
+    candidate_rate_sets = [reduced_active]
+    ef_rates = {"gamma_e_to_f", "gamma_f_to_e"}
+    if any(f_changes) and len(ef_rates.intersection(reduced_active)) == 1:
+        candidate_rate_sets.append(
+            tuple(
+                name
+                for name in rate_names
+                if name in reduced_active or name in ef_rates
+            )
+        )
+    candidates = [
+        candidate
+        for active_rates in candidate_rate_sets
+        if (candidate := fit_candidate(active_rates)) is not None
+    ]
+    if not candidates:
         nan_rates = {
             name: float("nan") if name in active else 0.0 for name in rate_names
         }
         return ControlRateHealthFit(
             success=False,
             quality="failed",
-            message=cast(str, numerical_error),
+            message="All numerical control-rate model fits failed.",
             active_rates=tuple(active),
             rates=nan_rates,
             rate_standard_errors={name: float("nan") for name in rate_names},
@@ -1512,38 +1934,19 @@ def _fit_control_rates_health(
             },
             r_squared=float("nan"),
             reduced_chi_squared=float("nan"),
+            population_weighting=population_weighting,
         )
+    successful_candidates = [
+        candidate for candidate in candidates if candidate[2].success
+    ]
+    _, selected_active, optimization = min(
+        successful_candidates or candidates,
+        key=lambda item: item[0],
+    )
+    active = list(selected_active)
     params = np.asarray(optimization.x, dtype=np.float64)
-    finite = params.shape == (len(active),) and np.all(np.isfinite(params))
-    if not finite:
-        nan_rates = {name: float("nan") if name in active else 0.0 for name in rate_names}
-        return ControlRateHealthFit(
-            success=False,
-            quality="failed",
-            message="Control rate fit did not return finite parameters.",
-            active_rates=tuple(active),
-            rates=nan_rates,
-            rate_standard_errors={name: float("nan") for name in rate_names},
-            time_constants={
-                name: float("nan") if name in active else float("inf")
-                for name in rate_names
-            },
-            covariance=np.full((4, 4), np.nan),
-            assessments=assessments,
-            fitted_populations={
-                _CONTROL_GROUND: np.full_like(p_ground, np.nan),
-                _CONTROL_EXCITED: np.full_like(p_excited, np.nan),
-            },
-            curve_times=np.linspace(0.0, max(float(t_ground[-1]), float(t_excited[-1])), 400),
-            curve_populations={
-                _CONTROL_GROUND: np.full((400, 3), np.nan),
-                _CONTROL_EXCITED: np.full((400, 3), np.nan),
-            },
-            r_squared=float("nan"),
-            reduced_chi_squared=float("nan"),
-        )
 
-    rates = unpack(params)
+    rates = unpack(params, active)
     fitted = {
         _CONTROL_GROUND: _population_trajectory(t_ground, initial_ground, rates),
         _CONTROL_EXCITED: _population_trajectory(t_excited, initial_excited, rates),
@@ -1555,39 +1958,64 @@ def _fit_control_rates_health(
     }
     covariance_active = _approximate_covariance(
         optimization,
-        residual_count=p_ground.size + p_excited.size,
+        residual_count=ground_effective_count + excited_effective_count,
         parameter_count=len(active),
+        absolute_errors=(
+            use_full_covariance
+            or (
+                weighted_errors_ground is not None
+                and weighted_errors_excited is not None
+            )
+        ),
     )
-    covariance = np.zeros((4, 4), dtype=np.float64)
-    covariance[:] = 0.0
+    # Inactive rates are nominal zero because they were not resolved, not
+    # parameters known with zero variance. Keep their covariance entries NaN.
+    covariance = np.full((4, 4), np.nan, dtype=np.float64)
     errors = {name: float("nan") for name in rate_names}
     index_map = {name: i for i, name in enumerate(rate_names)}
     if covariance_active.shape == (len(active), len(active)):
         for i, name_i in enumerate(active):
             for j, name_j in enumerate(active):
-                covariance[index_map[name_i], index_map[name_j]] = covariance_active[i, j]
+                covariance[index_map[name_i], index_map[name_j]] = covariance_active[
+                    i, j
+                ]
             variance = covariance_active[i, i]
             if np.isfinite(variance):
                 errors[name_i] = float(np.sqrt(max(float(variance), 0.0)))
     time_constants = {
         name: _rate_to_lifetime(rates[name], errors[name])[0] for name in rate_names
     }
-    observed = np.concatenate([p_ground.ravel(), p_excited.ravel()])
-    predicted = np.concatenate([fitted[_CONTROL_GROUND].ravel(), fitted[_CONTROL_EXCITED].ravel()])
-    r2 = _r_squared(observed, predicted)
-    combined_errors = None
-    if weighted_errors_ground is not None and weighted_errors_excited is not None:
-        combined_errors = np.concatenate(
-            [weighted_errors_ground.ravel(), weighted_errors_excited.ravel()]
-        )
-    chi2 = _reduced_chi_squared(
-        observed,
-        predicted,
-        combined_errors,
-        len(active),
+    observed = np.concatenate(
+        [p_ground[fit_ground].ravel(), p_excited[fit_excited].ravel()]
     )
+    predicted = np.concatenate(
+        [
+            fitted[_CONTROL_GROUND][fit_ground].ravel(),
+            fitted[_CONTROL_EXCITED][fit_excited].ravel(),
+        ]
+    )
+    r2 = _r_squared(observed, predicted)
+    if use_full_covariance:
+        whitened = residual(params, active)
+        dof = whitened.size - len(active)
+        chi2 = float(np.sum(np.square(whitened)) / dof) if dof > 0 else float("nan")
+    else:
+        combined_errors = None
+        if weighted_errors_ground is not None and weighted_errors_excited is not None:
+            combined_errors = np.concatenate(
+                [
+                    weighted_errors_ground[fit_ground].ravel(),
+                    weighted_errors_excited[fit_excited].ravel(),
+                ]
+            )
+        chi2 = _reduced_chi_squared(
+            observed,
+            predicted,
+            combined_errors,
+            len(active),
+        )
     quality = _fit_quality(True, r2, chi2)
-    message = str(optimization.message)
+    message = f"Selected rates: {', '.join(active)}. {optimization.message}"
     if not optimization.success:
         quality = "poor"
         message = "Finite diagnostic fit returned despite optimizer warning: " + message
@@ -1606,6 +2034,7 @@ def _fit_control_rates_health(
         curve_populations=curves,
         r_squared=r2,
         reduced_chi_squared=chi2,
+        population_weighting=population_weighting,
     )
 
 
@@ -1632,10 +2061,12 @@ def _load_idle_noise(
         else idle_t2_echo
     )
     try:
-        control_noise = IdleHealthNoise(float(t1[control]), float(t2[control]))
-        target_noise = IdleHealthNoise(float(t1[target]), float(t2[target]))
+        control_noise = IdleHealthNoise(t1[control], t2[control])
+        target_noise = IdleHealthNoise(t1[target], t2[target])
     except KeyError as exc:
-        raise ValueError(f"Idle coherence data missing for qubit {exc.args[0]}.") from exc
+        raise ValueError(
+            f"Idle coherence data missing for qubit {exc.args[0]}."
+        ) from exc
     else:
         return control_noise, target_noise
 
@@ -1669,16 +2100,14 @@ def _rough_fidelity_from_parameters(
         if control_xy_rate <= 0.0
         else control_xy_rate
     )
-    control_z_active = 1.0 / control_idle.t1 if control_z_rate <= 0.0 else control_z_rate
+    control_z_active = (
+        1.0 / control_idle.t1 if control_z_rate <= 0.0 else control_z_rate
+    )
     target_x_active = (
-        1.0 / target_idle.effective_t2_echo
-        if target_x_rate <= 0.0
-        else target_x_rate
+        1.0 / target_idle.effective_t2_echo if target_x_rate <= 0.0 else target_x_rate
     )
     target_y_active = (
-        1.0 / target_idle.effective_t2_echo
-        if target_z_rate <= 0.0
-        else target_z_rate
+        1.0 / target_idle.effective_t2_echo if target_z_rate <= 0.0 else target_z_rate
     )
     target_z_active = 1.0 / target_idle.t1 if target_z_rate <= 0.0 else target_z_rate
 
@@ -1688,12 +2117,8 @@ def _rough_fidelity_from_parameters(
     control_ly = control_lx
     control_lz = np.exp(-control_z_active * t_cr - t_off / control_idle.t1)
 
-    target_lx = np.exp(
-        -target_x_active * t_cr - t_off / target_idle.effective_t2_echo
-    )
-    target_ly = np.exp(
-        -target_y_active * t_cr - t_off / target_idle.effective_t2_echo
-    )
+    target_lx = np.exp(-target_x_active * t_cr - t_off / target_idle.effective_t2_echo)
+    target_ly = np.exp(-target_y_active * t_cr - t_off / target_idle.effective_t2_echo)
     target_lz = np.exp(-target_z_active * t_cr - t_off / target_idle.t1)
 
     fe_control = _single_qubit_entanglement_fidelity(control_lx, control_ly, control_lz)
@@ -1704,7 +2129,10 @@ def _rough_fidelity_from_parameters(
     # occupation.  Target outward leakage is an effective rate from the full
     # computational manifold.  Seepage is ignored over one short gate.
     survival = float(
-        np.exp(-t_cr * (0.5 * max(control_leakage_rate, 0.0) + max(target_leakage_rate, 0.0)))
+        np.exp(
+            -t_cr
+            * (0.5 * max(control_leakage_rate, 0.0) + max(target_leakage_rate, 0.0))
+        )
     )
     fidelity = survival * (4.0 * fe_pair + 1.0) / 5.0
     return (
@@ -1741,12 +2169,10 @@ def _fidelity_standard_error(
     for name, value in parameter_values.items():
         sigma = float(parameter_errors.get(name, float("nan")))
         if not np.isfinite(sigma) or sigma < 0:
-            # A positive fitted rate with no local error estimate makes the
-            # aggregate fidelity uncertainty unresolved.  Nominal stable-zero
-            # rates are allowed to have no uncertainty estimate.
-            if value > 0:
-                return float("nan")
-            continue
+            # A nominal stable-zero rate is unresolved below the health-check
+            # threshold, not known exactly. Its missing uncertainty therefore
+            # leaves the aggregate fidelity uncertainty unresolved as well.
+            return float("nan")
         if sigma == 0:
             continue
         propagated = True
@@ -1756,6 +2182,40 @@ def _fidelity_standard_error(
         derivative = (float(evaluator(shifted)) - baseline) / step
         variance += derivative**2 * sigma**2
     return float(np.sqrt(max(variance, 0.0))) if propagated else float("nan")
+
+
+def _optional_population_covariance(
+    population_covariances: Mapping[
+        str, Mapping[str, Mapping[str, NDArray[np.float64]]]
+    ]
+    | None,
+    protocol: str,
+    kind: str,
+    qubit: str,
+    *,
+    n_points: int,
+) -> NDArray[np.float64] | None:
+    """
+    Return one optional covariance stack, or `None` when unusable or missing.
+
+    Full population covariance is a best-effort refinement for offline analysis.
+    Partially populated measurement objects are therefore allowed to
+    omit any protocol/kind/qubit entry.  Malformed entries likewise fall back to
+    component-wise standard errors rather than aborting the entire health check.
+    """
+    if population_covariances is None:
+        return None
+    try:
+        value = population_covariances[protocol][kind][qubit]
+    except (KeyError, TypeError):
+        return None
+    try:
+        covariance = np.asarray(value, dtype=np.float64)
+    except (TypeError, ValueError):
+        return None
+    if covariance.shape != (n_points, 3, 3):
+        return None
+    return covariance
 
 
 def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> None:
@@ -1782,12 +2242,16 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
         else:
             valid = np.isfinite(result)
         if not np.all(valid):
-            requirement = "nonnegative finite values or NaN" if errors else "finite values"
+            requirement = (
+                "nonnegative finite values or NaN" if errors else "finite values"
+            )
             raise ValueError(f"{name} must contain {requirement}.")
         return result
 
     for protocol in (*_CONTROL_STATE_PROTOCOLS, *_ECHO_PROTOCOLS):
-        total = array(f"total_times[{protocol}]", measurements.total_times[protocol], (n_points,))
+        total = array(
+            f"total_times[{protocol}]", measurements.total_times[protocol], (n_points,)
+        )
         active = array(
             f"cr_active_times[{protocol}]",
             measurements.cr_active_times[protocol],
@@ -1804,15 +2268,42 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
             )
         if np.any(active < 0) or np.any(active > total + 1e-9):
             raise ValueError(f"{protocol} CR-active times must lie within total times.")
+        if protocol in _CONTROL_STATE_PROTOCOLS and not np.allclose(
+            active, total, rtol=0.0, atol=1e-9
+        ):
+            raise ValueError(
+                f"{protocol} must be fully CR-active: CR-active and total "
+                "times must match."
+            )
+        if protocol in _ECHO_PROTOCOLS:
+            duty_cycle = active[1:] / total[1:]
+            if not np.allclose(duty_cycle, duty_cycle[0], rtol=1e-9, atol=1e-12):
+                raise ValueError(
+                    f"{protocol} must have a constant CR-active duty cycle."
+                )
 
     for protocol in _CONTROL_STATE_PROTOCOLS:
         for kind in ("actual", "reference"):
             for qubit in (measurements.control_qubit, measurements.target_qubit):
-                array(
+                population = array(
                     f"populations[{protocol}][{kind}][{qubit}]",
                     measurements.populations[protocol][kind][qubit],
                     (n_points, 3),
                 )
+                if (
+                    np.any(population < -_PROBABILITY_TOLERANCE)
+                    or np.any(population > 1.0 + _PROBABILITY_TOLERANCE)
+                    or not np.allclose(
+                        np.sum(population, axis=1),
+                        1.0,
+                        rtol=0.0,
+                        atol=_PROBABILITY_TOLERANCE,
+                    )
+                ):
+                    raise ValueError(
+                        f"populations[{protocol}][{kind}][{qubit}] must contain "
+                        "vectors on the G/E/F probability simplex."
+                    )
                 array(
                     f"population_standard_errors[{protocol}][{kind}][{qubit}]",
                     measurements.population_standard_errors[protocol][kind][qubit],
@@ -1825,6 +2316,10 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
                 (n_points,),
                 errors=True,
             )
+            # Full population covariance is optional and best-effort.  Missing
+            # target covariance, partial legacy mappings, malformed shapes, and
+            # unusable matrices must not abort offline analysis; the control-rate
+            # fit falls back to component-wise SE weighting as needed.
 
     for protocol, primary in ((_CONTROL_T2_ECHO, "X"), (_TARGET_T2RHO_ECHO, "Z")):
         for kind in ("actual", "reference"):
@@ -1874,17 +2369,15 @@ def _mean_rate_and_error(fits: Sequence[DecayHealthFit]) -> tuple[float, float]:
     """
     Average control-ground/control-excited rates only when both fits are resolved.
 
-    Stable fits contribute their nominal zero rate and zero local uncertainty.
-    A numerical fit failure is not silently replaced by the other preparation,
-    because doing so would make the aggregate rate and rough fidelity optimistic.
+    Stable fits contribute their nominal zero rate, but their local uncertainty
+    remains unresolved (`NaN`).  A numerical fit failure is not silently replaced
+    by the other preparation, because doing so would make the aggregate rate and
+    rough fidelity optimistic.
     """
     if not fits or any(not fit.success or not np.isfinite(fit.rate) for fit in fits):
         return float("nan"), float("nan")
     rate = float(np.mean([fit.rate for fit in fits]))
-    local_errors = [
-        0.0 if fit.quality == "stable" else fit.rate_standard_error
-        for fit in fits
-    ]
+    local_errors = [fit.rate_standard_error for fit in fits]
     error = (
         float(np.sqrt(np.sum(np.square(local_errors))) / len(fits))
         if all(np.isfinite(value) and value >= 0 for value in local_errors)
@@ -1900,9 +2393,9 @@ def _mean_exchange_rate_and_error(
     """
     Average control-ground/control-excited exchange rates when both fits are resolved.
 
-    Stable fits are fixed to nominal zero with zero local uncertainty.  A failed
-    fit keeps the aggregate quantity unresolved rather than silently discarding
-    one control preparation.
+    Stable fits are fixed to nominal zero while their local uncertainty remains
+    unresolved (`NaN`).  A failed fit keeps the aggregate quantity unresolved
+    rather than silently discarding one control preparation.
     """
     if not fits or any(not fit.success for fit in fits):
         return float("nan"), float("nan")
@@ -1914,18 +2407,7 @@ def _mean_exchange_rate_and_error(
         raw_errors = [fit.inward_rate_standard_error for fit in fits]
     if not all(np.isfinite(value) for value in values):
         return float("nan"), float("nan")
-    local_errors = [
-        (
-            0.0
-            if (
-                fit.quality == "stable"
-                or (direction == "outward" and fit.model == "inward_only")
-                or (direction == "inward" and fit.model == "outward_only")
-            )
-            else error
-        )
-        for fit, error in zip(fits, raw_errors, strict=True)
-    ]
+    local_errors = list(raw_errors)
     value = float(np.mean(values))
     error = (
         float(np.sqrt(np.sum(np.square(local_errors))) / len(fits))
@@ -1974,8 +2456,6 @@ def _cr_active_rate_from_echo_fits(
     cr_rate = max(0.0, float(raw))
 
     def local_error(fit: DecayHealthFit) -> float:
-        if fit.quality == "stable" and fit.rate == 0.0:
-            return 0.0
         return (
             float(fit.rate_standard_error)
             if np.isfinite(fit.rate_standard_error) and fit.rate_standard_error >= 0
@@ -2019,7 +2499,7 @@ def analyze_cr_pulse_health(
     Parameters
     ----------
     measurements
-        Processed measurements returned by :func:`characterize_cr_pulse_health`
+        Processed measurements returned by `characterize_cr_pulse_health`
         or an equivalent offline data set.
     population_minimum_change
         Minimum resolvable absolute control G/E population change before a
@@ -2035,7 +2515,7 @@ def analyze_cr_pulse_health(
         changing.  A curve must pass both this threshold and its absolute
         minimum-change threshold.
     robust_loss
-        Loss passed to ``scipy.optimize.least_squares`` for changing curves.
+        Loss passed to `scipy.optimize.least_squares` for changing curves.
     zx90_echo_timing, control_idle_noise, target_idle_noise
         Optional inputs for the rough fidelity estimate.  They are not needed
         for the health-rate analysis itself.
@@ -2044,7 +2524,8 @@ def analyze_cr_pulse_health(
         and all required health rates are available.
     estimate_fidelity_uncertainty
         Whether to propagate local fit standard errors to the diagnostic
-        fidelity with a fast diagonal finite-difference approximation.
+        fidelity with a fast diagonal finite-difference approximation. The
+        result remains unresolved if any required rate error is unavailable.
 
     Returns
     -------
@@ -2056,12 +2537,17 @@ def analyze_cr_pulse_health(
     Notes
     -----
     Stable curves are assigned a nominal zero rate and are not nonlinearly fit.
+    A derived decay observable containing non-finite values is marked invalid and
+    that fit alone is left unresolved so independent health metrics remain usable.
     Changing curves use small robust models.  A finite fit is retained even
     when its residual quality is poor; the quality flag communicates that fact.
     Optional orthogonal diagnostic components are deliberately excluded from
     every fit.  Echo-protocol rates are CR-active-equivalent health metrics:
     their duration-matched references do not reproduce the internal echo-pi
-    pulses of the calibrated echoed ZX90 schedule.
+    pulses of the calibrated echoed ZX90 schedule. The control-population fit
+    fixes each initial population vector to the clipped, normalized `n=0`
+    measurement and does not propagate its uncertainty separately.
+    Population rows outside the G/E/F probability simplex are rejected.
     """
     _validate_health_measurements(measurements)
     for name, value in (
@@ -2070,6 +2556,17 @@ def analyze_cr_pulse_health(
     ):
         if not isinstance(value, bool):
             raise TypeError(f"{name} must be boolean.")
+    if zx90_echo_timing is not None:
+        if not isinstance(zx90_echo_timing, ZX90Timing):
+            raise TypeError("zx90_echo_timing must be ZX90Timing or None.")
+        if not zx90_echo_timing.echo:
+            raise ValueError("zx90_echo_timing must describe an echoed ZX90.")
+    for name, value in (
+        ("control_idle_noise", control_idle_noise),
+        ("target_idle_noise", target_idle_noise),
+    ):
+        if value is not None and not isinstance(value, IdleHealthNoise):
+            raise TypeError(f"{name} must be IdleHealthNoise or None.")
     robust_loss = _validate_robust_loss(robust_loss)
 
     population_minimum_change = _nonnegative_real(
@@ -2101,13 +2598,29 @@ def analyze_cr_pulse_health(
             measurements.total_times[_CONTROL_GROUND],
             measurements.total_times[_CONTROL_EXCITED],
             measurements.populations[_CONTROL_GROUND][kind][measurements.control_qubit],
-            measurements.populations[_CONTROL_EXCITED][kind][measurements.control_qubit],
+            measurements.populations[_CONTROL_EXCITED][kind][
+                measurements.control_qubit
+            ],
             measurements.population_standard_errors[_CONTROL_GROUND][kind][
                 measurements.control_qubit
             ],
             measurements.population_standard_errors[_CONTROL_EXCITED][kind][
                 measurements.control_qubit
             ],
+            _optional_population_covariance(
+                measurements.population_covariances,
+                _CONTROL_GROUND,
+                kind,
+                measurements.control_qubit,
+                n_points=len(measurements.n_values),
+            ),
+            _optional_population_covariance(
+                measurements.population_covariances,
+                _CONTROL_EXCITED,
+                kind,
+                measurements.control_qubit,
+                n_points=len(measurements.n_values),
+            ),
             population_minimum_change=population_minimum_change,
             leakage_minimum_change=leakage_minimum_change,
             change_sigma_threshold=change_sigma_threshold,
@@ -2137,7 +2650,10 @@ def analyze_cr_pulse_health(
                 robust_loss=robust_loss,
             )
 
-    echo_fits: dict[str, dict[str, DecayHealthFit]] = {_CONTROL_T2_ECHO: {}, _TARGET_T2RHO_ECHO: {}}
+    echo_fits: dict[str, dict[str, DecayHealthFit]] = {
+        _CONTROL_T2_ECHO: {},
+        _TARGET_T2RHO_ECHO: {},
+    }
     for protocol, component in ((_CONTROL_T2_ECHO, "X"), (_TARGET_T2RHO_ECHO, "Z")):
         for kind in ("actual", "reference"):
             echo_fits[protocol][kind] = _fit_decay_health(
@@ -2152,22 +2668,33 @@ def analyze_cr_pulse_health(
     actual_control = control_fits["actual"]
     reference_control = control_fits["reference"]
     target_x_rate, target_x_error = _mean_rate_and_error(
-        [target_x_fits[_CONTROL_GROUND]["actual"], target_x_fits[_CONTROL_EXCITED]["actual"]]
+        [
+            target_x_fits[_CONTROL_GROUND]["actual"],
+            target_x_fits[_CONTROL_EXCITED]["actual"],
+        ]
     )
     target_leak, target_leak_error = _mean_exchange_rate_and_error(
-        [target_f_fits[_CONTROL_GROUND]["actual"], target_f_fits[_CONTROL_EXCITED]["actual"]],
+        [
+            target_f_fits[_CONTROL_GROUND]["actual"],
+            target_f_fits[_CONTROL_EXCITED]["actual"],
+        ],
         "outward",
     )
     target_seep, target_seep_error = _mean_exchange_rate_and_error(
-        [target_f_fits[_CONTROL_GROUND]["actual"], target_f_fits[_CONTROL_EXCITED]["actual"]],
+        [
+            target_f_fits[_CONTROL_GROUND]["actual"],
+            target_f_fits[_CONTROL_EXCITED]["actual"],
+        ],
         "inward",
     )
 
-    control_xy, control_xy_error, control_xy_difference = _cr_active_rate_from_echo_fits(
-        measurements,
-        _CONTROL_T2_ECHO,
-        echo_fits[_CONTROL_T2_ECHO]["actual"],
-        echo_fits[_CONTROL_T2_ECHO]["reference"],
+    control_xy, control_xy_error, control_xy_difference = (
+        _cr_active_rate_from_echo_fits(
+            measurements,
+            _CONTROL_T2_ECHO,
+            echo_fits[_CONTROL_T2_ECHO]["actual"],
+            echo_fits[_CONTROL_T2_ECHO]["reference"],
+        )
     )
     target_z, target_z_error, target_z_difference = _cr_active_rate_from_echo_fits(
         measurements,
@@ -2254,20 +2781,14 @@ def analyze_cr_pulse_health(
         "gamma_target_x_decay": _rate_difference(
             target_x_rate, reference_target_x_rate
         ),
-        "gamma_target_leakage": _rate_difference(
-            target_leak, reference_target_leak
-        ),
-        "gamma_target_seepage": _rate_difference(
-            target_seep, reference_target_seep
-        ),
+        "gamma_target_leakage": _rate_difference(target_leak, reference_target_leak),
+        "gamma_target_seepage": _rate_difference(target_seep, reference_target_seep),
         "gamma_control_xy_decay": control_xy_difference,
         "gamma_target_z_decay": target_z_difference,
     }
 
     if estimate_fidelity:
-        initial_fidelity_message = (
-            "Rough fidelity requested but ZX90 timing and idle T1/T2 inputs are incomplete."
-        )
+        initial_fidelity_message = "Rough fidelity requested but ZX90 timing and idle T1/T2 inputs are incomplete."
     else:
         initial_fidelity_message = "Rough fidelity estimate disabled."
     fidelity = CrPulseHealthFidelityEstimate(
@@ -2277,8 +2798,8 @@ def analyze_cr_pulse_health(
         estimated_fidelity_standard_error=float("nan"),
         idle_coherence_limit=float("nan"),
         average_leakage=float("nan"),
-        control_lambdas=(float("nan"),) * 3,
-        target_lambdas=(float("nan"),) * 3,
+        control_lambdas=_NAN_BLOCH_FACTORS,
+        target_lambdas=_NAN_BLOCH_FACTORS,
         computational_survival=float("nan"),
         parameter_values={},
         parameter_standard_errors={},
@@ -2320,8 +2841,8 @@ def analyze_cr_pulse_health(
                     timing.total_duration, control_idle, target_idle
                 ),
                 average_leakage=float("nan"),
-                control_lambdas=(float("nan"),) * 3,
-                target_lambdas=(float("nan"),) * 3,
+                control_lambdas=_NAN_BLOCH_FACTORS,
+                target_lambdas=_NAN_BLOCH_FACTORS,
                 computational_survival=float("nan"),
                 parameter_values=raw_parameter_values,
                 parameter_standard_errors={},
@@ -2338,9 +2859,10 @@ def analyze_cr_pulse_health(
                 control_z_var = float(grad @ cov[np.ix_([0, 1], [0, 1])] @ grad)
                 control_z_error = float(np.sqrt(max(control_z_var, 0.0)))
             else:
+
                 def local_control_rate_error(rate_name: str) -> float:
                     if rate_name not in actual_control.active_rates:
-                        return 0.0
+                        return float("nan")
                     error = actual_control.rate_standard_errors[rate_name]
                     return (
                         float(error)
@@ -2362,7 +2884,9 @@ def analyze_cr_pulse_health(
                 "control_z_rate": control_z_error,
                 "target_x_rate": target_x_error,
                 "target_z_rate": target_z_error,
-                "control_leakage_rate": actual_control.rate_standard_errors["gamma_e_to_f"],
+                "control_leakage_rate": actual_control.rate_standard_errors[
+                    "gamma_e_to_f"
+                ],
                 "target_leakage_rate": target_leak_error,
             }
 
@@ -2413,7 +2937,7 @@ def analyze_cr_pulse_health(
                     "control_z_from": "control_ground/control_excited control g<->e rates",
                     "stable_curves_are_nominal_zero": True,
                     "idle_decoherence_used_for_nonpositive_health_rates": True,
-                    "subthreshold_rate_uncertainty_not_propagated": True,
+                    "subthreshold_rate_uncertainty_unresolved": True,
                     "positive_measured_rates_are_not_floored_by_idle_rates": True,
                     "idle_t2_capped_at_2t1_for_fidelity": True,
                     "idle_noise_uncertainty_not_propagated": True,
@@ -2436,12 +2960,12 @@ def analyze_cr_pulse_health(
     }
     for protocol in _CONTROL_STATE_PROTOCOLS:
         for kind in ("actual", "reference"):
-            quality_flags[f"target_x_{protocol}_{kind}"] = (
-                target_x_fits[protocol][kind].quality
-            )
-            quality_flags[f"target_f_{protocol}_{kind}"] = (
-                target_f_fits[protocol][kind].quality
-            )
+            quality_flags[f"target_x_{protocol}_{kind}"] = target_x_fits[protocol][
+                kind
+            ].quality
+            quality_flags[f"target_f_{protocol}_{kind}"] = target_f_fits[protocol][
+                kind
+            ].quality
     for protocol in _ECHO_PROTOCOLS:
         for kind in ("actual", "reference"):
             quality_flags[f"{protocol}_{kind}"] = echo_fits[protocol][kind].quality
@@ -2465,6 +2989,15 @@ def analyze_cr_pulse_health(
             "leakage_minimum_change": leakage_minimum_change,
             "pauli_minimum_change": pauli_minimum_change,
             "change_sigma_threshold": change_sigma_threshold,
+            "exchange_model_selection": "2*robust_cost+k*log(n_points)",
+            "fit_covariance_scale": (
+                "absolute_point_errors_when_available_else_residual_variance"
+            ),
+            "control_initial_populations_fixed_to_n0": True,
+            "control_population_weighting": {
+                "actual": actual_control.population_weighting,
+                "reference": reference_control.population_weighting,
+            },
             "diagnostic_components_used_in_fit": False,
             "echo_rate_interpretation": (
                 "CR-active-equivalent; duration-matched references do not "
@@ -2482,8 +3015,8 @@ def analyze_cr_pulse_health(
 def _error_bar(errors: NDArray[np.float64]) -> dict[str, object]:
     return {
         "type": "data",
-        "array": np.where(np.isfinite(errors), errors, 0.0),
-        "visible": True,
+        "array": errors,
+        "visible": bool(np.any(np.isfinite(errors))),
     }
 
 
@@ -2517,9 +3050,9 @@ def _plot_control_population(
             fig.add_trace(
                 go.Scatter(
                     x=times_us,
-                    y=measurements.populations[protocol][kind][measurements.control_qubit][
-                        :, index
-                    ],
+                    y=measurements.populations[protocol][kind][
+                        measurements.control_qubit
+                    ][:, index],
                     mode="markers",
                     marker={
                         "color": COLORS[index],
@@ -2580,7 +3113,9 @@ def _plot_target_health(
                 mode="markers",
                 marker={"symbol": symbol, "color": color},
                 opacity=opacity,
-                error_y=_error_bar(measurements.target_x_standard_errors[protocol][kind]),
+                error_y=_error_bar(
+                    measurements.target_x_standard_errors[protocol][kind]
+                ),
                 name=f"{kind} target X",
             ),
             row=1,
@@ -2675,7 +3210,9 @@ def _plot_echo_health(
                     "color": color,
                 },
                 opacity=opacity,
-                error_y=_error_bar(measurements.pauli_standard_errors[protocol][primary][kind]),
+                error_y=_error_bar(
+                    measurements.pauli_standard_errors[protocol][primary][kind]
+                ),
                 name=f"{kind} {primary}",
             )
         )
@@ -2695,7 +3232,10 @@ def _plot_echo_health(
 
     if measurements.diagnostic_components_measured:
         for component in ("X", "Y", "Z"):
-            if component == primary or component not in measurements.pauli_expectations[protocol]:
+            if (
+                component == primary
+                or component not in measurements.pauli_expectations[protocol]
+            ):
                 continue
             for kind in ("reference", "actual"):
                 fig.add_trace(
@@ -2706,7 +3246,9 @@ def _plot_echo_health(
                         marker={"symbol": "x" if kind == "actual" else "cross-open"},
                         opacity=0.55 if kind == "reference" else 0.75,
                         error_y=_error_bar(
-                            measurements.pauli_standard_errors[protocol][component][kind]
+                            measurements.pauli_standard_errors[protocol][component][
+                                kind
+                            ]
                         ),
                         name=f"{kind} {component} diagnostic",
                     )
@@ -2738,7 +3280,9 @@ def _plot_control_state_diagnostics(
                         y=measurements.pauli_expectations[key][component][kind],
                         mode="markers",
                         marker={
-                            "symbol": "diamond-open" if kind == "reference" else "circle",
+                            "symbol": "diamond-open"
+                            if kind == "reference"
+                            else "circle",
                             "color": component_color,
                         },
                         opacity=0.4 if kind == "reference" else 0.85,
@@ -2767,6 +3311,18 @@ def plot_cr_pulse_health(
 
     Primary observables include fitted curves.  Optional orthogonal Pauli
     components are shown only as diagnostic points and never receive fit lines.
+
+    Parameters
+    ----------
+    measurements
+        Processed measurements used by `analyze_cr_pulse_health`.
+    analysis
+        Analysis result corresponding to `measurements`.
+
+    Returns
+    -------
+    dict[str, plotly.graph_objects.Figure]
+        Named standard figures for the measured protocols.
     """
     figures: dict[str, go.Figure] = {
         f"{_CONTROL_GROUND}_control": _plot_control_population(
@@ -2782,7 +3338,9 @@ def plot_cr_pulse_health(
             measurements, analysis, _CONTROL_EXCITED
         ),
         _CONTROL_T2_ECHO: _plot_echo_health(measurements, analysis, _CONTROL_T2_ECHO),
-        _TARGET_T2RHO_ECHO: _plot_echo_health(measurements, analysis, _TARGET_T2RHO_ECHO),
+        _TARGET_T2RHO_ECHO: _plot_echo_health(
+            measurements, analysis, _TARGET_T2RHO_ECHO
+        ),
     }
     if measurements.diagnostic_components_measured:
         figures[f"{_CONTROL_GROUND}_diagnostic"] = _plot_control_state_diagnostics(
@@ -2808,17 +3366,46 @@ def _analytic_population_error(fit: GefPopulationFit) -> NDArray[np.float64]:
     return np.where(valid, error, np.nan).astype(np.float64)
 
 
+def _analytic_population_covariance(fit: GefPopulationFit) -> NDArray[np.float64]:
+    """
+    Return the validated full analytic G/E/F population covariance.
+
+    Invalid or unavailable full covariance is represented by an all-NaN sentinel
+    rather than silently replacing it by a diagonal covariance.  This preserves
+    provenance through acquisition so the control-rate fitter can accurately
+    report whether it used full covariance whitening or a fallback weighting.
+    Component-wise standard errors remain stored separately.
+    """
+    covariance = np.asarray(
+        getattr(fit, "population_covariance", np.empty((0, 0))),
+        dtype=np.float64,
+    )
+    if covariance.shape == (3, 3) and np.all(np.isfinite(covariance)):
+        with suppress(ValueError, np.linalg.LinAlgError):
+            return _validated_population_covariance(covariance)
+    return np.full((3, 3), np.nan, dtype=np.float64)
+
+
 def _analytic_target_x_error(fit: GefPopulationFit) -> float:
-    """Propagate the G/E covariance to target X; F covariance is not required."""
+    """Propagate full G/E covariance to target X, with component-SE fallback."""
     population = np.asarray(fit.population, dtype=np.float64)
-    covariance = np.asarray(fit.population_covariance, dtype=np.float64)
-    if population.shape != (3,) or covariance.shape != (3, 3):
+    if population.shape != (3,) or not np.all(np.isfinite(population[:2])):
         return float("nan")
-    if not np.all(np.isfinite(population[:2])):
+
+    covariance = _analytic_population_covariance(fit)
+    if not np.all(np.isfinite(covariance)):
+        errors = _analytic_population_error(fit)
+        covariance = np.diag(np.square(errors))
+    covariance_ge = np.asarray(covariance[:2, :2], dtype=np.float64)
+    if covariance_ge.shape != (2, 2) or not np.all(np.isfinite(covariance_ge)):
         return float("nan")
-    covariance_ge = covariance[:2, :2]
-    if not np.all(np.isfinite(covariance_ge)):
+    covariance_ge = 0.5 * (covariance_ge + covariance_ge.T)
+    eigenvalues = np.linalg.eigvalsh(covariance_ge)
+    scale = max(float(np.max(np.abs(eigenvalues))), _EPS)
+    negative_tolerance = max(1e-12 * scale, 1e-15 * scale, _EPS)
+    if float(np.min(eigenvalues)) < -negative_tolerance:
         return float("nan")
+
     denominator = population[0] + population[1]
     if denominator <= _EPS:
         return float("nan")
@@ -2831,6 +3418,8 @@ def _analytic_target_x_error(fit: GefPopulationFit) -> float:
     )
     variance = float(gradient @ covariance_ge @ gradient)
     if not np.isfinite(variance):
+        return float("nan")
+    if variance < -negative_tolerance:
         return float("nan")
     return float(np.sqrt(max(variance, 0.0)))
 
@@ -2871,9 +3460,7 @@ def _print_health_summary(analysis: CrPulseHealthAnalysis) -> None:
         error_us = error * 1e3 if np.isfinite(error) else float("nan")
         lifetime_us = lifetime * 1e-3
         difference_text = (
-            f", Δref ≈ {difference * 1e3:+.3g} /µs"
-            if np.isfinite(difference)
-            else ""
+            f", Δref ≈ {difference * 1e3:+.3g} /µs" if np.isfinite(difference) else ""
         )
         if np.isfinite(error_us):
             print(
@@ -2948,21 +3535,21 @@ def characterize_cr_pulse_health(
         Control and target qubit labels.
     n_values
         Strictly increasing nonnegative repetition indices beginning at zero.
-        The default is ``(0, 1, 2, 3, 5, 8, 13, 21, 34, 55)``.
+        The default is `(0, 1, 2, 3, 5, 8, 13, 21, 34, 55)`.
     measure_diagnostic_components
-        If ``True``, additionally acquire control X/Y and target Y/Z for the
+        If `True`, additionally acquire control X/Y and target Y/Z for the
         two control-state protocols, plus the two orthogonal Pauli components
         of each echo protocol.  These points are plotted but never fitted.
     zx90_no_echo, zx90_echo
-        Optional pulse-schedule overrides.  ``zx90_no_echo`` must be a *full*
+        Optional pulse-schedule overrides. `zx90_no_echo` must be a *full*
         un-echoed ZX90-equivalent schedule (not the single ZX45-like primitive
-        returned by ``exp.pulse.zx90(..., echo=False)``) and must be fully
-        CR-active.  The echoed override must expose Qubex ``cr_duration`` and
-        ``echo`` metadata.
+        returned by `exp.pulse.zx90(..., echo=False)`) and must be fully
+        CR-active. The echoed override must expose Qubex `cr_duration` and
+        `echo` metadata.
     n_shots, calibration_n_shots
         Shots per health measurement and per GEF calibration configuration.
     shot_interval
-        Interval between shots in ns.  ``None`` uses ``DEFAULT_INTERVAL``.
+        Interval between shots in ns. `None` uses `DEFAULT_INTERVAL`.
     covariance_rcond
         Relative cutoff used by the analytic GEF covariance pseudo-inverse.
     population_minimum_change, leakage_minimum_change, pauli_minimum_change
@@ -2974,7 +3561,7 @@ def characterize_cr_pulse_health(
         Robust least-squares loss used by changing-curve fits.
     target_leakage_warning_threshold
         Warn when the measured actual target F population exceeds this value.
-        ``None`` disables the warning.
+        `None` disables the warning.
     estimate_fidelity
         Whether to calculate the rough diagnostic fidelity estimate.
     estimate_fidelity_uncertainty
@@ -2982,40 +3569,43 @@ def characterize_cr_pulse_health(
     idle_t1, idle_t2_echo
         Optional qubit-to-lifetime mappings in ns for the rough fidelity
         estimate.  Stored Qubex values are used when omitted.
-    enable_tqdm, plot
-        Control progress display and immediate Plotly rendering.
+    enable_tqdm
+        Whether to display measurement progress.
+    plot
+        Whether to construct and show Plotly figures and print the human-readable
+        summary. If `False`, `Result.figure` is `None` and `Result.figures` is empty.
 
     Returns
     -------
     Result
-        ``data["measurements"]`` contains reusable processed measurements,
-        ``data["analysis"]`` contains lightweight health fits, and
-        ``data["raw_data"]`` retains calibration and IQ information.
-
-    Measurement protocols
-    ---------------------
-    ``control_ground``
-        Prepare ``|0,+>`` and apply the full un-echoed ZX90 ``4n`` times.
-        Target +Y90 followed by GEF readout gives control G/E/F populations,
-        target X polarization, and target F population.  The duration-matched
-        reference uses target +X90.
-    ``control_excited``
-        Same measurement with control prepared in ``|1>``.  The reference uses
-        target -X90.
-    ``control_t2_echo``
-        Four-ZX90 echoed control sequence.  Control X is the primary observable.
-    ``target_t2rho_echo``
-        Two-ZX90 target rotating-frame echo repeated ``2n`` times.  Target Z is
-        the primary observable.  The target virtual-Z frame update is applied
-        to both the target and CR channels.
+        `data["measurements"]` contains reusable processed measurements,
+        `data["analysis"]` contains lightweight health fits, and
+        `data["raw_data"]` retains calibration and IQ information.
 
     Notes
     -----
-    GEF uncertainties use the existing analytic GLS covariance and condition on
-    the measured GEF calibration; calibration finite-shot uncertainty is not
-    propagated.  No raw-shot bootstrap is run.  Stable observables are assigned
-    nominal zero rates.  The optional fidelity is intentionally a rough local-
-    noise diagnostic, not a calibrated gate fidelity or rigorous lower bound.
+    `control_ground`
+        Prepare `|0,+>` and apply the full un-echoed ZX90 `4n` times.
+        Target +Y90 followed by GEF readout gives control G/E/F populations,
+        target X polarization, and target F population.  The duration-matched
+        reference uses target +X90.
+    `control_excited`
+        Same measurement with control prepared in `|1>`. The reference uses
+        target -X90.
+    `control_t2_echo`
+        Four-ZX90 echoed control sequence.  Control X is the primary observable.
+    `target_t2rho_echo`
+        Two-ZX90 target rotating-frame echo repeated `2n` times. Target Z is
+        the primary observable.  The target virtual-Z frame update is applied
+        to both the target and CR channels.
+
+    GEF uncertainties use the analytic GLS full covariance when available.
+    Component-wise analytic standard errors, and where necessary an empirical
+    scale, provide fallback weighting.  All of these condition on the measured
+    GEF calibration; calibration finite-shot uncertainty is not propagated.  No
+    raw-shot bootstrap is run.  Stable observables are assigned nominal zero
+    rates.  The optional fidelity is intentionally a rough local-noise
+    diagnostic, not a calibrated gate fidelity or rigorous lower bound.
     """
     for name, value in (
         ("measure_diagnostic_components", measure_diagnostic_components),
@@ -3043,6 +3633,20 @@ def characterize_cr_pulse_health(
     covariance_rcond = _nonnegative_real(covariance_rcond, name="covariance_rcond")
     if covariance_rcond >= 1:
         raise ValueError("covariance_rcond must be in [0, 1).")
+    population_minimum_change = _nonnegative_real(
+        population_minimum_change, name="population_minimum_change"
+    )
+    leakage_minimum_change = _nonnegative_real(
+        leakage_minimum_change, name="leakage_minimum_change"
+    )
+    pauli_minimum_change = _nonnegative_real(
+        pauli_minimum_change, name="pauli_minimum_change"
+    )
+    change_sigma_threshold = _positive_real(
+        change_sigma_threshold,
+        default=3.0,
+        name="change_sigma_threshold",
+    )
     leakage_warning = _optional_probability(
         target_leakage_warning_threshold,
         name="target_leakage_warning_threshold",
@@ -3074,17 +3678,19 @@ def characterize_cr_pulse_health(
     )
 
     populations_buffer: dict[str, dict[str, dict[str, list[NDArray[np.float64]]]]] = {
-        protocol: {
-            kind: {control: [], target: []} for kind in ("actual", "reference")
-        }
+        protocol: {kind: {control: [], target: []} for kind in ("actual", "reference")}
         for protocol in _CONTROL_STATE_PROTOCOLS
     }
     population_error_buffer: dict[
         str, dict[str, dict[str, list[NDArray[np.float64]]]]
     ] = {
-        protocol: {
-            kind: {control: [], target: []} for kind in ("actual", "reference")
-        }
+        protocol: {kind: {control: [], target: []} for kind in ("actual", "reference")}
+        for protocol in _CONTROL_STATE_PROTOCOLS
+    }
+    population_covariance_buffer: dict[
+        str, dict[str, dict[str, list[NDArray[np.float64]]]]
+    ] = {
+        protocol: {kind: {control: [], target: []} for kind in ("actual", "reference")}
         for protocol in _CONTROL_STATE_PROTOCOLS
     }
     target_x_error_buffer: dict[str, dict[str, list[float]]] = {
@@ -3097,7 +3703,9 @@ def characterize_cr_pulse_health(
 
     pauli_components: dict[str, tuple[str, ...]] = {
         _CONTROL_T2_ECHO: ("X", "Y", "Z") if measure_diagnostic_components else ("X",),
-        _TARGET_T2RHO_ECHO: ("Z", "X", "Y") if measure_diagnostic_components else ("Z",),
+        _TARGET_T2RHO_ECHO: ("Z", "X", "Y")
+        if measure_diagnostic_components
+        else ("Z",),
     }
     if measure_diagnostic_components:
         pauli_components.update(
@@ -3143,9 +3751,7 @@ def characterize_cr_pulse_health(
         pulse=exp.pulse.x90m(target),
         frequencies=zx90_no_echo.get_frequencies(),
     )
-    _require_matched_duration(
-        zx90_no_echo, ground_reference_unit, name=_CONTROL_GROUND
-    )
+    _require_matched_duration(zx90_no_echo, ground_reference_unit, name=_CONTROL_GROUND)
     _require_matched_duration(
         zx90_no_echo, excited_reference_unit, name=_CONTROL_EXCITED
     )
@@ -3162,15 +3768,11 @@ def characterize_cr_pulse_health(
         pulse=exp.pulse.x90(target),
         frequencies=zx90_echo.get_frequencies(),
     )
-    control_echo_actual_block = _control_t2_echo_block(
-        exp, control, target, zx90_echo
-    )
+    control_echo_actual_block = _control_t2_echo_block(exp, control, target, zx90_echo)
     control_echo_reference_block = _control_t2_echo_block(
         exp, control, target, blank_echo_reference_unit
     )
-    target_echo_actual_block = _target_t2rho_echo_block(
-        exp, control, target, zx90_echo
-    )
+    target_echo_actual_block = _target_t2rho_echo_block(exp, control, target, zx90_echo)
     target_echo_reference_block = _target_t2rho_echo_block(
         exp, control, target, target_echo_reference_unit
     )
@@ -3236,7 +3838,9 @@ def characterize_cr_pulse_health(
             for kind in ("actual", "reference"):
                 condition = f"{protocol}_{kind}"
                 gef_raw_iq[f"n={n}/{condition}"] = gef_result.data["raw_iq"][condition]
-                gef_population_fits[f"n={n}/{condition}"] = gef_result.data["fits"][condition]
+                gef_population_fits[f"n={n}/{condition}"] = gef_result.data["fits"][
+                    condition
+                ]
                 gef_moment_summaries[f"n={n}/{condition}"] = gef_result.data[
                     "moment_summaries"
                 ][condition]
@@ -3250,6 +3854,9 @@ def characterize_cr_pulse_health(
                     population_error_buffer[protocol][kind][qubit].append(
                         _analytic_population_error(fit)
                     )
+                    population_covariance_buffer[protocol][kind][qubit].append(
+                        _analytic_population_covariance(fit)
+                    )
                     if qubit == target:
                         target_x_error_buffer[protocol][kind].append(
                             _analytic_target_x_error(fit)
@@ -3258,9 +3865,7 @@ def characterize_cr_pulse_health(
         for protocol in _CONTROL_STATE_PROTOCOLS:
             evolution = control_state_evolutions[(protocol, "actual")]
             total_times_buffer[protocol].append(float(evolution.duration))
-            cr_times_buffer[protocol].append(
-                4.0 * n * noecho_timing.cr_active_duration
-            )
+            cr_times_buffer[protocol].append(4.0 * n * noecho_timing.cr_active_duration)
 
         # Echo-protocol actual and reference evolutions.
         control_echo_evolutions = {
@@ -3362,10 +3967,12 @@ def characterize_cr_pulse_health(
 
     populations: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
     population_errors: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
+    population_covariances: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
     target_x_errors: dict[str, dict[str, NDArray[np.float64]]] = {}
     for protocol in _CONTROL_STATE_PROTOCOLS:
         populations[protocol] = {}
         population_errors[protocol] = {}
+        population_covariances[protocol] = {}
         target_x_errors[protocol] = {}
         for kind in ("actual", "reference"):
             populations[protocol][kind] = {
@@ -3374,6 +3981,10 @@ def characterize_cr_pulse_health(
             }
             population_errors[protocol][kind] = {
                 qubit: np.stack(population_error_buffer[protocol][kind][qubit])
+                for qubit in (control, target)
+            }
+            population_covariances[protocol][kind] = {
+                qubit: np.stack(population_covariance_buffer[protocol][kind][qubit])
                 for qubit in (control, target)
             }
             target_x_errors[protocol][kind] = np.asarray(
@@ -3415,6 +4026,7 @@ def characterize_cr_pulse_health(
         pauli_expectations=pauli_expectations,
         pauli_standard_errors=pauli_errors,
         diagnostic_components_measured=measure_diagnostic_components,
+        population_covariances=population_covariances,
     )
 
     maximum_target_f = max(
@@ -3460,9 +4072,10 @@ def characterize_cr_pulse_health(
             stacklevel=2,
         )
 
-    figures = plot_cr_pulse_health(measurements, analysis)
-    _print_health_summary(analysis)
+    figures: dict[str, go.Figure] = {}
     if plot:
+        figures = plot_cr_pulse_health(measurements, analysis)
+        _print_health_summary(analysis)
         for figure in figures.values():
             figure.show()
 
@@ -3483,7 +4096,7 @@ def characterize_cr_pulse_health(
                 "shot_interval": interval,
                 "covariance_rcond": covariance_rcond,
                 "measure_diagnostic_components": measure_diagnostic_components,
-                "population_uncertainty_method": "analytic_GLS_no_bootstrap",
+                "population_uncertainty_method": "analytic_GLS_full_covariance_and_component_SE_no_bootstrap",
             },
             "analysis_options": {
                 "population_minimum_change": population_minimum_change,
@@ -3502,7 +4115,7 @@ def characterize_cr_pulse_health(
                 "zx90_echo": echo_timing,
             },
         },
-        figure=next(iter(figures.values())),
+        figure=next(iter(figures.values()), None),
         figures=figures,
     )
 
