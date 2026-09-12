@@ -5309,8 +5309,9 @@ class Experiment:
 
         Notes
         -----
-        Two-qubit randomized benchmarking requires state classifiers for both
-        the control and target qubits.
+        Calibrate the gate pulses and readout before running this experiment.
+        Two-qubit RB estimates the joint ground-state probability using state
+        classifiers registered for both the control and target qubits.
         """
         return self.benchmarking_service.randomized_benchmarking(
             targets=targets,

@@ -9,6 +9,7 @@ import signal
 import threading
 import time
 from collections.abc import Generator
+from functools import partial
 from types import FrameType
 
 import pytest
@@ -77,13 +78,39 @@ def test_run_inside_running_loop_cancels_on_timeout(bridge: AsyncBridge) -> None
     assert cancelled.wait(timeout=1.0)
 
 
+def test_run_without_timeout_ignores_default_deadline() -> None:
+    """Given an active loop, unbounded bridge execution should ignore its default timeout."""
+    release = threading.Event()
+    timer = threading.Timer(0.05, release.set)
+    bridge = AsyncBridge(default_timeout=0.01, startup_timeout=1.0)
+
+    async def _complete_after_default_timeout() -> int:
+        assert await asyncio.to_thread(release.wait, 1.0)
+        return 7
+
+    async def _invoke() -> int:
+        return bridge.run_without_timeout(_complete_after_default_timeout)
+
+    timer.start()
+    try:
+        result = asyncio.run(_invoke())
+    finally:
+        timer.cancel()
+        timer.join(timeout=1.0)
+        bridge.close()
+
+    assert result == 7
+
+
 @pytest.mark.skipif(
     not hasattr(signal, "pthread_kill") or not hasattr(signal, "SIGUSR1"),
     reason="requires thread-directed signal support",
 )
+@pytest.mark.parametrize("without_timeout", [False, True])
 def test_run_inside_running_loop_cancels_on_keyboard_interrupt(
     bridge: AsyncBridge,
     monkeypatch: pytest.MonkeyPatch,
+    without_timeout: bool,
 ) -> None:
     """Given an interrupted wait, bridge should cancel its background task."""
     started = threading.Event()
@@ -95,7 +122,7 @@ def test_run_inside_running_loop_cancels_on_keyboard_interrupt(
         future: concurrent.futures.Future[None],
         timeout: float | None = None,
     ) -> None:
-        # Signal only once run() has entered its protected result wait.
+        # Signal only once the bridge has entered its protected result wait.
         waiting.set()
         return original_result(future, timeout=timeout)
 
@@ -124,8 +151,13 @@ def test_run_inside_running_loop_cancels_on_keyboard_interrupt(
         signal.pthread_kill(main_thread_id, signal.SIGUSR1)
 
     async def _invoke() -> None:
+        run = (
+            bridge.run_without_timeout
+            if without_timeout
+            else partial(bridge.run, timeout=10.0)
+        )
         with pytest.raises(KeyboardInterrupt):
-            bridge.run(lambda: _hang_forever(), timeout=10.0)
+            run(_hang_forever)
 
     previous_handler = signal.signal(signal.SIGUSR1, _raise_keyboard_interrupt)
     try:
