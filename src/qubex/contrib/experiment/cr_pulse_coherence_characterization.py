@@ -220,16 +220,24 @@ def _control_t2_echo_block(
 
 def _target_t2rho_echo_block(
     exp: Experiment,
+    control_qubit: str,
     target_qubit: str,
     zx90: PulseSchedule,
 ) -> PulseSchedule:
     """Build one two-ZX90 block for target T2rho echo."""
+    cr_label = f"{control_qubit}-{target_qubit}"
+    z180 = exp.pulse.z180()
+
     with PulseSchedule() as block:
         block.call(zx90, copy=True)
         block.barrier()
-        block.add(target_qubit, exp.pulse.z180())
+
+        block.add(target_qubit, z180)
+        block.add(cr_label, z180)
+
         block.barrier()
         block.call(zx90, copy=True)
+
     block.set_frequencies(zx90.get_frequencies())
     return block
 
@@ -372,10 +380,10 @@ def _build_protocol_sequences(
             pulse=exp.pulse.x90(target_qubit),
         )
         evolutions[_TARGET_T2RHO_ECHO] = _target_t2rho_echo_block(
-            exp, target_qubit, echo_schedule
+            exp, control_qubit, target_qubit, echo_schedule
         ).repeated(2 * n)
         evolutions[f"{_TARGET_T2RHO_ECHO}_reference"] = _target_t2rho_echo_block(
-            exp, target_qubit, reference_unit
+            exp, control_qubit, target_qubit, reference_unit
         ).repeated(2 * n)
         sequences[_TARGET_T2RHO_ECHO] = _pauli_sequence(
             exp,
