@@ -98,7 +98,7 @@ def _make_sweep_result(
     shot_averaging: bool,
     time_integration: bool = True,
 ) -> SweepMeasurementResult:
-    """Build a canonical sweep result with one final capture per target."""
+    """Build a canonical sweep with an earlier capture before each final readout."""
     config = MeasurementConfig(
         n_shots=n_shots,
         shot_interval=1024.0,
@@ -112,9 +112,13 @@ def _make_sweep_result(
                 target: [
                     CaptureData.from_primary_data(
                         target=target,
-                        data=captures[point_index],
+                        data=data,
                         config=config,
                         sampling_period=0.8,
+                    )
+                    for data in (
+                        np.zeros_like(captures[point_index]),
+                        captures[point_index],
                     )
                 ]
                 for target, captures in captures_by_target.items()
@@ -130,7 +134,10 @@ def _make_sweep_result(
     )
 
 
-def test_rb_1q_awaits_canonical_trial_sweeps(monkeypatch: Any) -> None:
+@pytest.mark.parametrize("time_integration", [True, False])
+def test_rb_1q_awaits_canonical_trial_sweeps(
+    monkeypatch: Any, time_integration: bool
+) -> None:
     """1Q RB should await one canonical sweep per Clifford length."""
     _patch_fit(monkeypatch)
     seeds = np.array([11, 22], dtype=int)
@@ -166,7 +173,9 @@ def test_rb_1q_awaits_canonical_trial_sweeps(monkeypatch: Any) -> None:
             captures_by_target={
                 "Q00": [
                     np.asarray(
-                        [normalized_signal[value] / 2] * 2,
+                        normalized_signal[value]
+                        if time_integration
+                        else [normalized_signal[value] / 2] * 2,
                         dtype=np.complex128,
                     )
                     for value in values
@@ -174,7 +183,7 @@ def test_rb_1q_awaits_canonical_trial_sweeps(monkeypatch: Any) -> None:
             },
             n_shots=128,
             shot_averaging=True,
-            time_integration=False,
+            time_integration=time_integration,
         )
 
     def _legacy_measure(**_kwargs: object) -> None:
@@ -206,7 +215,7 @@ def test_rb_1q_awaits_canonical_trial_sweeps(monkeypatch: Any) -> None:
         seeds=seeds,
         shots=128,
         interval=2048.0,
-        time_integration=False,
+        time_integration=time_integration,
         plot=False,
         save_image=False,
         reset_awg_and_capunits=True,
@@ -222,7 +231,7 @@ def test_rb_1q_awaits_canonical_trial_sweeps(monkeypatch: Any) -> None:
     assert all(call["n_shots"] == 128 for call in sweep_calls)
     assert all(call["shot_interval"] == 2048.0 for call in sweep_calls)
     assert all(call["shot_averaging"] is True for call in sweep_calls)
-    assert all(call["time_integration"] is False for call in sweep_calls)
+    assert all(call["time_integration"] is time_integration for call in sweep_calls)
     assert all(call["state_classification"] is False for call in sweep_calls)
     assert all(call["final_measurement"] is True for call in sweep_calls)
     assert all(call["readout_amplification"] is False for call in sweep_calls)
@@ -239,9 +248,13 @@ def test_rb_1q_awaits_canonical_trial_sweeps(monkeypatch: Any) -> None:
 
 
 @pytest.mark.parametrize("time_integration", [True, False])
+@pytest.mark.parametrize("mitigate_readout", [True, False])
+@pytest.mark.parametrize("ground_state_observed", [True, False])
 def test_rb_2q_interprets_canonical_capture_data(
     monkeypatch: Any,
     time_integration: bool,
+    mitigate_readout: bool,
+    ground_state_observed: bool,
 ) -> None:
     """2Q RB should classify canonical captures and mitigate joint probabilities."""
     _patch_fit(monkeypatch)
@@ -249,24 +262,22 @@ def test_rb_2q_interprets_canonical_capture_data(
     sequence_calls: list[tuple[int, int]] = []
     sweep_calls: list[dict[str, object]] = []
     reset_calls: list[set[str]] = []
-    inverse_confusion_calls: list[tuple[str, ...]] = []
 
     class _BinaryClassifier:
         n_states = 2
 
+        def __init__(self, matrix: np.ndarray) -> None:
+            self.confusion_matrix = matrix
+
         def predict(self, data: np.ndarray) -> np.ndarray:
             return np.asarray(np.real(data), dtype=int)
 
-    def _get_inverse_confusion_matrix(targets: list[str]) -> np.ndarray:
-        inverse_confusion_calls.append(tuple(targets))
-        return np.eye(4, dtype=float)
-
     service = cast(Any, object.__new__(BenchmarkingService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
-        classifiers={"Q00": _BinaryClassifier(), "Q01": _BinaryClassifier()},
-        measurement=SimpleNamespace(
-            get_inverse_confusion_matrix=_get_inverse_confusion_matrix
-        ),
+        classifiers={
+            "Q00": _BinaryClassifier(np.array([[9, 1], [1, 4]], dtype=float)),
+            "Q01": _BinaryClassifier(np.eye(2)),
+        },
         state_centers=object(),
         calib_note=SimpleNamespace(cr_params={"CR00-01": object()}),
         experiment_system=SimpleNamespace(
@@ -297,8 +308,8 @@ def test_rb_2q_interprets_canonical_capture_data(
             sweep_values=values,
             captures_by_target={
                 "Q00": [
-                    capture([0, 0, 1, 1]),
-                    capture([0, 0, 0, 1]),
+                    capture([0, 0, 1, 1] if ground_state_observed else [1, 1, 1, 1]),
+                    capture([0, 0, 0, 1] if ground_state_observed else [1, 1, 1, 1]),
                 ],
                 "Q01": [
                     capture([0, 1, 0, 1]),
@@ -344,6 +355,7 @@ def test_rb_2q_interprets_canonical_capture_data(
         shots=4,
         interval=4096.0,
         time_integration=time_integration,
+        mitigate_readout=mitigate_readout,
         plot=False,
         save_image=False,
         reset_awg_and_capunits=True,
@@ -359,12 +371,21 @@ def test_rb_2q_interprets_canonical_capture_data(
     assert sweep_calls[0]["state_classification"] is False
     assert sequence_calls == [(3, 31), (3, 32)]
     assert reset_calls == [{"Q00", "Q01"}]
-    assert inverse_confusion_calls == [("Q00", "Q01")]
+    if mitigate_readout:
+        expected = [3 / 14, 4 / 7] if ground_state_observed else [-1 / 7, -1 / 7]
+    else:
+        expected = [0.25, 0.5] if ground_state_observed else [0.0, 0.0]
     np.testing.assert_allclose(
         result["CR00-01"]["trials"],
-        np.array([[0.25, 0.5]]),
+        np.array([expected]),
         rtol=0.0,
         atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        result["CR00-01"]["mean"], [np.mean(expected)], rtol=0.0, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        result["CR00-01"]["std"], [np.std(expected)], rtol=0.0, atol=1e-12
     )
 
 

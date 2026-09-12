@@ -26,6 +26,10 @@ from qubex.experiment.experiment_constants import (
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.result import Result
 from qubex.measurement import SweepMeasurementResult
+from qubex.measurement._analysis import (
+    get_mitigated_probabilities,
+    get_probabilities,
+)
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService
@@ -147,80 +151,6 @@ class BenchmarkingService:
             plot=False,
             enable_tqdm=False,
         )
-
-    @staticmethod
-    def _get_final_kerneled_capture(
-        sweep_data: Mapping[str, list[np.ndarray]],
-        *,
-        target: str,
-        time_integration: bool,
-    ) -> np.ndarray:
-        """Return final-capture IQ data, integrating waveform payloads if needed."""
-        captures = sweep_data.get(target)
-        if not captures:
-            raise ValueError(f"No measurement capture found for target {target}.")
-
-        capture = np.asarray(captures[-1])
-        if not time_integration:
-            capture = np.sum(capture, axis=-1)
-        return capture
-
-    def _joint_ground_state_probabilities(
-        self,
-        result: SweepMeasurementResult,
-        *,
-        targets: Collection[str],
-        mitigate_readout: bool,
-    ) -> np.ndarray:
-        """Return the joint ground-state probability for every sweep point."""
-        ordered_targets = list(targets)
-        sweep_data = result.data
-        classified_data: list[np.ndarray] = []
-        dimensions: list[int] = []
-        expected_shape: tuple[int, ...] | None = None
-
-        for target in ordered_targets:
-            iq_series = self._get_final_kerneled_capture(
-                sweep_data,
-                target=target,
-                time_integration=result.config.time_integration,
-            )
-            if iq_series.ndim != 2:
-                raise ValueError(
-                    "Two-qubit randomized benchmarking requires IQ data with "
-                    f"shape (n_trials, n_shots); got {iq_series.shape} for {target}."
-                )
-            if expected_shape is None:
-                expected_shape = iq_series.shape
-            elif iq_series.shape != expected_shape:
-                raise ValueError(
-                    "Measurement data shapes do not match across randomized "
-                    f"benchmarking targets: {expected_shape} and {iq_series.shape}."
-                )
-
-            classifier = self.ctx.classifiers[target]
-            classified = np.asarray(
-                classifier.predict(iq_series.reshape(-1)),
-                dtype=int,
-            ).reshape(iq_series.shape)
-            classified_data.append(classified)
-            dimensions.append(classifier.n_states)
-
-        joint_states = np.ravel_multi_index(
-            tuple(classified_data),
-            dims=tuple(dimensions),
-        )
-        n_basis_states = int(np.prod(dimensions, dtype=int))
-        probabilities = np.stack(
-            [np.mean(joint_states == state, axis=1) for state in range(n_basis_states)],
-            axis=1,
-        )
-        if mitigate_readout:
-            inverse_confusion = self.ctx.measurement.get_inverse_confusion_matrix(
-                ordered_targets
-            )
-            probabilities = probabilities @ np.asarray(inverse_confusion)
-        return np.asarray(probabilities[:, 0], dtype=float)
 
     def rb_sequence(
         self,
@@ -577,15 +507,11 @@ class BenchmarkingService:
                     time_integration=time_integration,
                     reset_awg_and_capunits=reset_awg_and_capunits,
                 )
-                sweep_data = result.data
-
                 check_vals = {}
 
                 for target in target_group:
-                    iq = self._get_final_kerneled_capture(
-                        sweep_data,
-                        target=target,
-                        time_integration=result.config.time_integration,
+                    iq = np.asarray(
+                        [point.data[target][-1].kerneled for point in result.results]
                     ).reshape(-1)
                     z = self.pulse.rabi_params[target].normalize(iq)
                     trial_values = np.asarray((z + 1) / 2, dtype=float)
@@ -885,12 +811,23 @@ class BenchmarkingService:
                 )
 
                 trial_data = {}
+                analyze = (
+                    get_mitigated_probabilities
+                    if mitigate_readout
+                    else get_probabilities
+                )
                 for target in target_group:
                     control_qubit, target_qubit = self.ctx.cr_pair(target)
-                    trial_data[target] = self._joint_ground_state_probabilities(
-                        result,
-                        targets=[control_qubit, target_qubit],
-                        mitigate_readout=mitigate_readout,
+                    trial_data[target] = np.asarray(
+                        [
+                            analyze(
+                                point,
+                                targets=[control_qubit, target_qubit],
+                                classifiers=self.ctx.classifiers,
+                            ).get("00", 0.0)
+                            for point in result.results
+                        ],
+                        dtype=float,
                     )
 
                 check_vals = {}
