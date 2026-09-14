@@ -8,6 +8,7 @@ from collections.abc import Callable, Collection
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 import numpy as np
@@ -4195,9 +4196,18 @@ class CharacterizationService:
         states: tuple[str, ...] = ("0", "1"),
         readout_amplitude: float | None = None,
     ) -> list[list[NDArray]]:
-        """Collect state-resolved IQ through the backend-independent sweep API."""
+        """
+        Collect state-resolved IQ through the backend-independent sweep API.
+
+        Notes
+        -----
+        When raw-data saving is enabled, save each unpacked point result as
+        NetCDF after the sweep completes, before converting it to IQ data
+        for analysis.
+        """
         qubit_label = self.ctx.resolve_qubit_label(target)
         read_label = self.ctx.resolve_read_label(target)
+        rawdata_dir = self.ctx.system_manager.rawdata_dir
         preparation_pulses = [
             self.pulse.get_pulse_for_state(qubit_label, state) for state in states
         ]
@@ -4233,6 +4243,9 @@ class CharacterizationService:
         )
         buffers: list[list[NDArray]] = [[] for _ in states]
         for index, point_result in enumerate(sweep_result.results):
+            if rawdata_dir is not None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                point_result.save(rawdata_dir / f"{timestamp}.nc")
             result = MeasurementResultConverter.to_measure_result(point_result)
             buffers[index % len(states)].append(result.data[qubit_label].kerneled)
         return buffers

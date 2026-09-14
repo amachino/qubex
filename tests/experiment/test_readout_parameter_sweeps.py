@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -20,6 +21,7 @@ from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.services.measurement_execution_service import (
     MeasurementExecutionService,
 )
+from qubex.system import SystemManager
 
 
 class _Runner:
@@ -57,7 +59,11 @@ class _Runner:
                     sampling_period=get_sampling_period(),
                 )
             )
-        return MeasurementResult(data={"Q00": captures}, measurement_config=config)
+        return MeasurementResult(
+            data={"Q00": captures},
+            measurement_config=config,
+            device_config={"backend": "stub"},
+        )
 
     async def execute_async(
         self, *, schedule: MeasurementSchedule, config: MeasurementConfig, **_: Any
@@ -82,7 +88,10 @@ def readout(monkeypatch: pytest.MonkeyPatch) -> Any:
     sweeps: list[list[int]] = []
     classifier_calls: list[dict[str, Any]] = []
     reset_calls: list[list[str]] = []
+    manager = SystemManager.shared()
+    monkeypatch.setattr(manager, "_rawdata_dir", None)
     ctx = SimpleNamespace(
+        system_manager=manager,
         targets={"RQ00": SimpleNamespace(frequency=5.105)},
         params=SimpleNamespace(readout_amplitude={"Q00": 0.25}),
         reference_phases={"Q00": 0.3},
@@ -205,10 +214,50 @@ def readout(monkeypatch: pytest.MonkeyPatch) -> Any:
     )
 
 
+@pytest.fixture(params=["disabled", "directory", "context"])
+def rawdata(
+    readout: Any, request: pytest.FixtureRequest, tmp_path: Path
+) -> Iterator[Path]:
+    """Exercise disabled, persistent, and scoped raw-data saving."""
+    manager = readout.ctx.system_manager
+    directory = tmp_path / "rawdata"
+    if request.param == "directory":
+        manager.set_rawdata_dir(directory)
+    save_context = (
+        manager.save_rawdata(rawdata_dir=tmp_path, tag="rawdata")
+        if request.param == "context"
+        else nullcontext()
+    )
+    with save_context:
+        yield directory
+
+
+def _assert_saved_rawdata(readout: Any, directory: Path) -> None:
+    """Verify each saved logical point retains its IQ and measurement metadata."""
+    files = sorted(directory.glob("*.nc"))
+    signals = readout.runner.signals if readout.ctx.system_manager.rawdata_dir else []
+    assert len(files) == len(signals)
+    config = readout.runner.configs[0]
+    for path, signal in zip(files, signals, strict=True):
+        restored = MeasurementResult.load(path)
+        assert list(restored.data) == ["Q00"]
+        assert len(restored.data["Q00"]) == 1
+        capture = restored.data["Q00"][0]
+        expected = (
+            np.asarray(signal)
+            if config.shot_averaging
+            else np.full(config.n_shots, signal, dtype=np.complex128)
+        )
+        np.testing.assert_array_equal(capture.data, expected)
+        assert capture.config == config
+        assert restored.measurement_config == config
+        assert restored.device_config == {"backend": "stub"}
+
+
 @pytest.mark.parametrize("execution_mode", ["packed", "chunked", "batch", "sequential"])
 @pytest.mark.parametrize("shots", [1, 4])
 def test_amplitude_distance_preserves_signals_across_execution_modes(
-    readout: Any, execution_mode: str, shots: int
+    readout: Any, rawdata: Path, execution_mode: str, shots: int
 ) -> None:
     """Amplitude distance should preserve IQ order while using available batch and packing capabilities."""
     readout.runner.signals = [1, 2, 1, 4, 1, 3]
@@ -257,11 +306,12 @@ def test_amplitude_distance_preserves_signals_across_execution_modes(
         len(readout.runner.single_calls)
         == {"packed": 1, "chunked": 3, "batch": 0, "sequential": 6}[execution_mode]
     )
+    _assert_saved_rawdata(readout, rawdata)
 
 
 @pytest.mark.parametrize("parameter", ["frequency", "amplitude"])
 def test_fidelity_sweep_preserves_plateau_and_classifier_update(
-    readout: Any, monkeypatch: pytest.MonkeyPatch, parameter: str
+    readout: Any, rawdata: Path, monkeypatch: pytest.MonkeyPatch, parameter: str
 ) -> None:
     """Fidelity sweeps should preserve single-shot IQ and select the first point within the peak ratio."""
     readout.runner.signals = [1, 2, 3, 4, 5, 6]
@@ -330,11 +380,15 @@ def test_fidelity_sweep_preserves_plateau_and_classifier_update(
         assert len(readout.runner.batch_calls) == 1
         assert not readout.runner.single_calls
         assert result["signals_0"].shape == result["signals_1"].shape == (3, 4)
+    _assert_saved_rawdata(readout, rawdata)
 
 
 @pytest.mark.parametrize("electrical_delay", [None, 0.3])
 def test_frequency_distance_preserves_reflection_processing(
-    readout: Any, monkeypatch: pytest.MonkeyPatch, electrical_delay: float | None
+    readout: Any,
+    rawdata: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    electrical_delay: float | None,
 ) -> None:
     """Frequency distance should batch reflection data while retaining delay estimation and phase normalization."""
     signals_0 = np.array([1j, 2j, 3j])
@@ -389,6 +443,7 @@ def test_frequency_distance_preserves_reflection_processing(
         call["shots"] == 128 and call["interval"] == 1024 and call["confirm"] is False
         for call in delays
     )
+    _assert_saved_rawdata(readout, rawdata)
 
 
 def test_sync_optimization_runs_inside_an_event_loop(readout: Any) -> None:
