@@ -8,6 +8,7 @@ from collections.abc import Callable, Collection
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 import numpy as np
@@ -30,6 +31,7 @@ from typing_extensions import deprecated
 import qubex.visualization as viz
 from qubex.analysis import FitResult, FitStatus, fitting
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL3
+from qubex.core.async_bridge import get_shared_async_bridge
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_INTERVAL,
@@ -50,6 +52,7 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
+from qubex.measurement import MeasurementResultConverter, MeasurementSchedule
 from qubex.system import MixingUtil
 from qubex.system.quel1.quel1_system_constants import CNCO_CENTER_CTRL_HZ
 from qubex.typing import TargetMap
@@ -3102,30 +3105,20 @@ class CharacterizationService:
             df,
         )
 
-        signals = []
-
-        initialize_pulse = self.pulse.get_pulse_for_state(
-            target=qubit_label,
-            state=qubit_state,
-        )
-
         self.ctx.reset_awg_and_capunits(qubits=[qubit_label])
-
-        for freq in tqdm(freq_range, desc=f"reflection coefficient for {target}"):
-            with self.ctx.modified_frequencies({read_label: freq}):
-                result = self._measurement_service.measure(
-                    {qubit_label: initialize_pulse},
-                    mode="avg",
-                    readout_amplitudes={qubit_label: readout_amplitude},
-                    shots=shots,
-                    interval=interval,
-                    reset_awg_and_capunits=False,
-                )
-                signal = result.data[target].kerneled
-                signal = signal * np.exp(1j * 2 * np.pi * freq * electrical_delay)
-                signals.append(signal)
-
-        signals = np.array(signals)
+        (buffer,) = self._run_readout_sweep(
+            target,
+            freq_range,
+            parameter="frequency",
+            states=(qubit_state,),
+            mode="avg",
+            readout_amplitude=readout_amplitude,
+            shots=shots,
+            interval=interval,
+        )
+        signals = np.array(buffer) * np.exp(
+            1j * 2 * np.pi * freq_range * electrical_delay
+        )
         amplitudes = np.abs(signals)
         # amplitudes -= (
         #     (amplitudes[-1] - amplitudes[0])
@@ -4191,6 +4184,72 @@ class CharacterizationService:
             figure=fig,
         )
 
+    def _run_readout_sweep(
+        self,
+        target: str,
+        values: NDArray,
+        *,
+        parameter: Literal["frequency", "amplitude"],
+        mode: Literal["avg", "single"],
+        shots: int,
+        interval: float,
+        states: tuple[str, ...] = ("0", "1"),
+        readout_amplitude: float | None = None,
+    ) -> list[list[NDArray]]:
+        """
+        Collect state-resolved IQ through the backend-independent sweep API.
+
+        Notes
+        -----
+        When raw-data saving is enabled, save each unpacked point result as
+        NetCDF after the sweep completes, before converting it to IQ data
+        for analysis.
+        """
+        qubit_label = self.ctx.resolve_qubit_label(target)
+        read_label = self.ctx.resolve_read_label(target)
+        rawdata_dir = self.ctx.system_manager.rawdata_dir
+        preparation_pulses = [
+            self.pulse.get_pulse_for_state(qubit_label, state) for state in states
+        ]
+
+        def schedule(index: int) -> MeasurementSchedule:
+            value_index, state_index = divmod(index, len(states))
+            value = float(values[value_index])
+            amplitude = value if parameter == "amplitude" else readout_amplitude
+            pulse_schedule = PulseSchedule.from_waveforms(
+                {qubit_label: preparation_pulses[state_index]}
+            )
+            return self._measurement_service.build_measurement_schedule(
+                pulse_schedule,
+                frequencies={read_label: value} if parameter == "frequency" else None,
+                readout_amplitudes=(
+                    None if amplitude is None else {qubit_label: amplitude}
+                ),
+                final_measurement=True,
+            )
+
+        sweep_result = get_shared_async_bridge(key="experiment").run_without_timeout(
+            lambda: self._measurement_service.run_sweep_measurement(
+                schedule,
+                sweep_values=list(range(len(values) * len(states))),
+                n_shots=shots,
+                shot_interval=interval,
+                shot_averaging=mode == "avg",
+                time_integration=True,
+                state_classification=False,
+                plot=False,
+                enable_tqdm=True,
+            )
+        )
+        buffers: list[list[NDArray]] = [[] for _ in states]
+        for index, point_result in enumerate(sweep_result.results):
+            if rawdata_dir is not None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                point_result.save(rawdata_dir / f"{timestamp}.nc")
+            result = MeasurementResultConverter.to_measure_result(point_result)
+            buffers[index % len(states)].append(result.data[qubit_label].kerneled)
+        return buffers
+
     def _sweep_readout_frequency(
         self,
         target: str,
@@ -4201,30 +4260,15 @@ class CharacterizationService:
         interval: float,
     ) -> tuple[list[NDArray], list[NDArray]]:
         """Sweep readout frequency and collect IQ data for states 0 and 1."""
-        read_label = self.ctx.resolve_read_label(target)
-        readout_amplitudes = (
-            None if readout_amplitude is None else {target: readout_amplitude}
+        buffer_0, buffer_1 = self._run_readout_sweep(
+            target,
+            frequency_range,
+            parameter="frequency",
+            mode=mode,
+            readout_amplitude=readout_amplitude,
+            shots=shots,
+            interval=interval,
         )
-        buffer_0: list[NDArray] = []
-        buffer_1: list[NDArray] = []
-        for frequency in tqdm(frequency_range):
-            with self.ctx.modified_frequencies({read_label: float(frequency)}):
-                result_0 = self._measurement_service.measure_state(
-                    {target: "0"},
-                    mode=mode,
-                    readout_amplitudes=readout_amplitudes,
-                    shots=shots,
-                    interval=interval,
-                )
-                result_1 = self._measurement_service.measure_state(
-                    {target: "1"},
-                    mode=mode,
-                    readout_amplitudes=readout_amplitudes,
-                    shots=shots,
-                    interval=interval,
-                )
-            buffer_0.append(result_0.data[target].kerneled)
-            buffer_1.append(result_1.data[target].kerneled)
         return buffer_0, buffer_1
 
     def _find_optimal_readout_frequency_by_fidelity(
@@ -4430,26 +4474,14 @@ class CharacterizationService:
         interval: float,
     ) -> tuple[list[NDArray], list[NDArray]]:
         """Sweep readout amplitude and collect IQ data for states 0 and 1."""
-        buffer_0: list[NDArray] = []
-        buffer_1: list[NDArray] = []
-        for amplitude in tqdm(amplitude_range):
-            readout_amp = {target: float(amplitude)}
-            result_0 = self._measurement_service.measure_state(
-                {target: "0"},
-                mode=mode,
-                readout_amplitudes=readout_amp,
-                shots=shots,
-                interval=interval,
-            )
-            result_1 = self._measurement_service.measure_state(
-                {target: "1"},
-                mode=mode,
-                readout_amplitudes=readout_amp,
-                shots=shots,
-                interval=interval,
-            )
-            buffer_0.append(result_0.data[target].kerneled)
-            buffer_1.append(result_1.data[target].kerneled)
+        buffer_0, buffer_1 = self._run_readout_sweep(
+            target,
+            amplitude_range,
+            parameter="amplitude",
+            mode=mode,
+            shots=shots,
+            interval=interval,
+        )
         return buffer_0, buffer_1
 
     def _find_optimal_readout_amplitude_by_distance(

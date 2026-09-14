@@ -996,10 +996,10 @@ class MeasurementExecutionService:
         left: float | None,
         right: float | None,
     ) -> bool:
-        """Return whether two optional schedule frequencies are equivalent."""
+        """Compare optional GHz frequencies with an absolute tolerance of 1 kHz."""
         if left is None or right is None:
             return left is right
-        return bool(np.isclose(left, right))
+        return bool(np.isclose(left, right, rtol=0.0, atol=1e-6))
 
     def _build_measurement_result_split_plan(
         self,
