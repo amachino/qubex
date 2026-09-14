@@ -1,4 +1,10 @@
-# qxfitting
+# qubex-fitting
+
+PyPI distribution: `qubex-fitting`. Python import: `qxfitting` (unchanged).
+
+```bash
+pip install "qubex-fitting==1.5.0rc4"
+```
 
 `qxfitting` is currently a placeholder package reserved for future fitting and curve-analysis APIs.
 
@@ -13,7 +19,7 @@
 
 - `qxfitting` is a standalone package with no dependency on `qubex`.
 - `qubex` depends on `qxfitting` and provides the full experiment framework (backend, measurement, etc.).
-- If you only need fitting and curve-analysis utilities, install `qxfitting` directly.
+- If you only need fitting and curve-analysis utilities, install `qubex-fitting` directly.
 
 ## Requirements
 
@@ -23,10 +29,10 @@
 
 ```bash
 # pip
-pip install "qxfitting @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxfitting"
+pip install "qubex-fitting @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxfitting"
 
 # uv
-uv pip install "qxfitting @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxfitting"
+uv pip install "qubex-fitting @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxfitting"
 ```
 
 ## pyproject.toml
@@ -34,7 +40,7 @@ uv pip install "qxfitting @ git+https://github.com/amachino/qubex.git@develop#su
 ```toml
 [project]
 dependencies = [
-  "qxfitting @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxfitting",
+  "qubex-fitting @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxfitting",
 ]
 ```
 

@@ -16,39 +16,43 @@ CITATION_FILE = ROOT / "CITATION.cff"
 UV_EXECUTABLE = shutil.which("uv")
 
 WORKSPACE_PACKAGES: tuple[str, ...] = (
-    "qxcore",
-    "qxfitting",
-    "qxpulse",
-    "qxschema",
-    "qxsimulator",
-    "qxvisualizer",
-    "qxdriver-quel1",
+    "qubex-core",
+    "qubex-fitting",
+    "qubex-pulse",
+    "qubex-schema",
+    "qubex-simulator",
+    "qubex-visualizer",
+    "qubex-driver-quel1",
 )
 
 PACKAGE_PYPROJECTS: dict[str, Path] = {
     "qubex": ROOT_PYPROJECT,
-    "qxcore": ROOT / "packages/qxcore/pyproject.toml",
-    "qxfitting": ROOT / "packages/qxfitting/pyproject.toml",
-    "qxpulse": ROOT / "packages/qxpulse/pyproject.toml",
-    "qxschema": ROOT / "packages/qxschema/pyproject.toml",
-    "qxsimulator": ROOT / "packages/qxsimulator/pyproject.toml",
-    "qxvisualizer": ROOT / "packages/qxvisualizer/pyproject.toml",
-    "qxdriver-quel1": ROOT / "packages/qxdriver-quel1/pyproject.toml",
+    "qubex-core": ROOT / "packages/qxcore/pyproject.toml",
+    "qubex-fitting": ROOT / "packages/qxfitting/pyproject.toml",
+    "qubex-pulse": ROOT / "packages/qxpulse/pyproject.toml",
+    "qubex-schema": ROOT / "packages/qxschema/pyproject.toml",
+    "qubex-simulator": ROOT / "packages/qxsimulator/pyproject.toml",
+    "qubex-visualizer": ROOT / "packages/qxvisualizer/pyproject.toml",
+    "qubex-driver-quel1": ROOT / "packages/qxdriver-quel1/pyproject.toml",
 }
 
 PINNED_DEPENDENCIES: dict[Path, tuple[str, ...]] = {
     ROOT_PYPROJECT: (
-        "qxcore",
-        "qxfitting",
-        "qxpulse",
-        "qxschema",
-        "qxsimulator",
-        "qxvisualizer",
-        "qxdriver-quel1",
+        "qubex-core",
+        "qubex-fitting",
+        "qubex-pulse",
+        "qubex-schema",
+        "qubex-simulator",
+        "qubex-visualizer",
+        "qubex-driver-quel1",
     ),
-    ROOT / "packages/qxpulse/pyproject.toml": ("qxvisualizer",),
-    ROOT / "packages/qxschema/pyproject.toml": ("qxcore",),
-    ROOT / "packages/qxsimulator/pyproject.toml": ("qxcore", "qxpulse", "qxvisualizer"),
+    ROOT / "packages/qxpulse/pyproject.toml": ("qubex-visualizer",),
+    ROOT / "packages/qxschema/pyproject.toml": ("qubex-core",),
+    ROOT / "packages/qxsimulator/pyproject.toml": (
+        "qubex-core",
+        "qubex-pulse",
+        "qubex-visualizer",
+    ),
 }
 
 

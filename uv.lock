@@ -14,13 +14,13 @@ resolution-markers = [
 [manifest]
 members = [
     "qubex",
-    "qxcore",
-    "qxdriver-quel1",
-    "qxfitting",
-    "qxpulse",
-    "qxschema",
-    "qxsimulator",
-    "qxvisualizer",
+    "qubex-core",
+    "qubex-driver-quel1",
+    "qubex-fitting",
+    "qubex-pulse",
+    "qubex-schema",
+    "qubex-simulator",
+    "qubex-visualizer",
 ]
 
 [[package]]
@@ -3160,7 +3160,7 @@ wheels = [
 
 [[package]]
 name = "qubex"
-version = "1.5.0rc3"
+version = "1.5.0rc4"
 source = { editable = "." }
 dependencies = [
     { name = "anywidget" },
@@ -3179,12 +3179,12 @@ dependencies = [
     { name = "pyserial" },
     { name = "pyyaml" },
     { name = "qctrl-visualizer" },
-    { name = "qxcore" },
-    { name = "qxfitting" },
-    { name = "qxpulse" },
-    { name = "qxschema" },
-    { name = "qxsimulator" },
-    { name = "qxvisualizer" },
+    { name = "qubex-core" },
+    { name = "qubex-fitting" },
+    { name = "qubex-pulse" },
+    { name = "qubex-schema" },
+    { name = "qubex-simulator" },
+    { name = "qubex-visualizer" },
     { name = "rich" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -3197,10 +3197,10 @@ dependencies = [
 
 [package.optional-dependencies]
 backend = [
-    { name = "qxdriver-quel1" },
+    { name = "qubex-driver-quel1" },
 ]
 quel1 = [
-    { name = "qxdriver-quel1" },
+    { name = "qubex-driver-quel1" },
 ]
 quel3 = [
     { name = "quelware-client" },
@@ -3245,16 +3245,16 @@ requires-dist = [
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
+    { name = "qubex-core", editable = "packages/qxcore" },
+    { name = "qubex-driver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
+    { name = "qubex-driver-quel1", marker = "extra == 'quel1'", editable = "packages/qxdriver-quel1" },
+    { name = "qubex-fitting", editable = "packages/qxfitting" },
+    { name = "qubex-pulse", editable = "packages/qxpulse" },
+    { name = "qubex-schema", editable = "packages/qxschema" },
+    { name = "qubex-simulator", editable = "packages/qxsimulator" },
+    { name = "qubex-visualizer", editable = "packages/qxvisualizer" },
     { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.6.1" },
     { name = "quelware-core", marker = "extra == 'quel3'", specifier = ">=0.7.0" },
-    { name = "qxcore", editable = "packages/qxcore" },
-    { name = "qxdriver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
-    { name = "qxdriver-quel1", marker = "extra == 'quel1'", editable = "packages/qxdriver-quel1" },
-    { name = "qxfitting", editable = "packages/qxfitting" },
-    { name = "qxpulse", editable = "packages/qxpulse" },
-    { name = "qxschema", editable = "packages/qxschema" },
-    { name = "qxsimulator", editable = "packages/qxsimulator" },
-    { name = "qxvisualizer", editable = "packages/qxvisualizer" },
     { name = "rich", specifier = ">=13.0" },
     { name = "scikit-learn", specifier = ">=1.0" },
     { name = "scipy", specifier = ">=1.0" },
@@ -3283,6 +3283,156 @@ docs = [
     { name = "mkdocs-static-i18n" },
     { name = "mkdocstrings", extras = ["python"] },
     { name = "pymdown-extensions" },
+]
+
+[[package]]
+name = "qubex-core"
+version = "1.5.0rc4"
+source = { editable = "packages/qxcore" }
+dependencies = [
+    { name = "netcdf4" },
+    { name = "numpy" },
+    { name = "protobuf" },
+    { name = "pydantic" },
+    { name = "sympy" },
+    { name = "typedunits" },
+    { name = "typing-extensions" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "netcdf4", specifier = ">=1.0" },
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "protobuf", specifier = ">=6.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "sympy", specifier = ">=1.0" },
+    { name = "typedunits", specifier = ">=0.0" },
+    { name = "typing-extensions", specifier = ">=4.5" },
+]
+
+[[package]]
+name = "qubex-driver-quel1"
+version = "1.5.0rc4"
+source = { editable = "packages/qxdriver-quel1" }
+dependencies = [
+    { name = "numpy" },
+    { name = "plotly" },
+    { name = "pyyaml" },
+    { name = "quel-ic-config" },
+    { name = "tqdm" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.0" },
+    { name = "plotly", specifier = ">=5.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "quel-ic-config", specifier = ">=0.10,<0.11" },
+    { name = "tqdm", specifier = ">=4.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[[package]]
+name = "qubex-fitting"
+version = "1.5.0rc4"
+source = { editable = "packages/qxfitting" }
+
+[[package]]
+name = "qubex-pulse"
+version = "1.5.0rc4"
+source = { editable = "packages/qxpulse" }
+dependencies = [
+    { name = "numpy" },
+    { name = "plotly" },
+    { name = "qubex-visualizer" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "typing-extensions" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "plotly", specifier = ">=5.23" },
+    { name = "qubex-visualizer", editable = "packages/qxvisualizer" },
+    { name = "scipy", specifier = ">=1.0" },
+    { name = "typing-extensions", specifier = ">=4.5" },
+]
+
+[[package]]
+name = "qubex-schema"
+version = "1.5.0rc4"
+source = { editable = "packages/qxschema" }
+dependencies = [
+    { name = "numpy" },
+    { name = "qubex-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "qubex-core", editable = "packages/qxcore" },
+]
+
+[[package]]
+name = "qubex-simulator"
+version = "1.5.0rc4"
+source = { editable = "packages/qxsimulator" }
+dependencies = [
+    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "numpy" },
+    { name = "plotly" },
+    { name = "qctrl-visualizer" },
+    { name = "qubex-core" },
+    { name = "qubex-pulse" },
+    { name = "qubex-visualizer" },
+    { name = "qutip", extra = ["runtime-compilation"] },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "typing-extensions" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "networkx", specifier = ">=2.7" },
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "plotly", specifier = ">=5.23" },
+    { name = "qctrl-visualizer", specifier = ">=8.0" },
+    { name = "qubex-core", editable = "packages/qxcore" },
+    { name = "qubex-pulse", editable = "packages/qxpulse" },
+    { name = "qubex-visualizer", editable = "packages/qxvisualizer" },
+    { name = "qutip", extras = ["runtime-compilation"], specifier = ">=5.0.1" },
+    { name = "scipy", specifier = ">=1.0" },
+    { name = "typing-extensions", specifier = ">=4.5" },
+]
+
+[[package]]
+name = "qubex-visualizer"
+version = "1.5.0rc4"
+source = { editable = "packages/qxvisualizer" }
+dependencies = [
+    { name = "numpy" },
+    { name = "plotly" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "plotly", specifier = ">=5.23" },
 ]
 
 [[package]]
@@ -3382,156 +3532,6 @@ runtime-compilation = [
     { name = "cython" },
     { name = "filelock" },
     { name = "setuptools" },
-]
-
-[[package]]
-name = "qxcore"
-version = "1.5.0rc3"
-source = { editable = "packages/qxcore" }
-dependencies = [
-    { name = "netcdf4" },
-    { name = "numpy" },
-    { name = "protobuf" },
-    { name = "pydantic" },
-    { name = "sympy" },
-    { name = "typedunits" },
-    { name = "typing-extensions" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "netcdf4", specifier = ">=1.0" },
-    { name = "numpy", specifier = ">=1.22" },
-    { name = "protobuf", specifier = ">=6.0" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "sympy", specifier = ">=1.0" },
-    { name = "typedunits", specifier = ">=0.0" },
-    { name = "typing-extensions", specifier = ">=4.5" },
-]
-
-[[package]]
-name = "qxdriver-quel1"
-version = "1.5.0rc3"
-source = { editable = "packages/qxdriver-quel1" }
-dependencies = [
-    { name = "numpy" },
-    { name = "plotly" },
-    { name = "pyyaml" },
-    { name = "quel-ic-config" },
-    { name = "tqdm" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.0" },
-    { name = "plotly", specifier = ">=5.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "quel-ic-config", specifier = ">=0.10,<0.11" },
-    { name = "tqdm", specifier = ">=4.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[[package]]
-name = "qxfitting"
-version = "1.5.0rc3"
-source = { editable = "packages/qxfitting" }
-
-[[package]]
-name = "qxpulse"
-version = "1.5.0rc3"
-source = { editable = "packages/qxpulse" }
-dependencies = [
-    { name = "numpy" },
-    { name = "plotly" },
-    { name = "qxvisualizer" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "typing-extensions" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.22" },
-    { name = "plotly", specifier = ">=5.23" },
-    { name = "qxvisualizer", editable = "packages/qxvisualizer" },
-    { name = "scipy", specifier = ">=1.0" },
-    { name = "typing-extensions", specifier = ">=4.5" },
-]
-
-[[package]]
-name = "qxschema"
-version = "1.5.0rc3"
-source = { editable = "packages/qxschema" }
-dependencies = [
-    { name = "numpy" },
-    { name = "qxcore" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.22" },
-    { name = "qxcore", editable = "packages/qxcore" },
-]
-
-[[package]]
-name = "qxsimulator"
-version = "1.5.0rc3"
-source = { editable = "packages/qxsimulator" }
-dependencies = [
-    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "numpy" },
-    { name = "plotly" },
-    { name = "qctrl-visualizer" },
-    { name = "qutip", extra = ["runtime-compilation"] },
-    { name = "qxcore" },
-    { name = "qxpulse" },
-    { name = "qxvisualizer" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "typing-extensions" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "networkx", specifier = ">=2.7" },
-    { name = "numpy", specifier = ">=1.22" },
-    { name = "plotly", specifier = ">=5.23" },
-    { name = "qctrl-visualizer", specifier = ">=8.0" },
-    { name = "qutip", extras = ["runtime-compilation"], specifier = ">=5.0.1" },
-    { name = "qxcore", editable = "packages/qxcore" },
-    { name = "qxpulse", editable = "packages/qxpulse" },
-    { name = "qxvisualizer", editable = "packages/qxvisualizer" },
-    { name = "scipy", specifier = ">=1.0" },
-    { name = "typing-extensions", specifier = ">=4.5" },
-]
-
-[[package]]
-name = "qxvisualizer"
-version = "1.5.0rc3"
-source = { editable = "packages/qxvisualizer" }
-dependencies = [
-    { name = "numpy" },
-    { name = "plotly" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.22" },
-    { name = "plotly", specifier = ">=5.23" },
 ]
 
 [[package]]

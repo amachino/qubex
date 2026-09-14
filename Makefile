@@ -4,13 +4,13 @@ BUILD_CMD := uv run --with build python -m build
 TWINE_CMD := uv run --with twine twine
 REPOSITORY ?= testpypi
 PUBLISH_TARGETS := \
-	qxcore:packages/qxcore \
-	qxvisualizer:packages/qxvisualizer \
-	qxfitting:packages/qxfitting \
-	qxpulse:packages/qxpulse \
-	qxschema:packages/qxschema \
-	qxsimulator:packages/qxsimulator \
-	qxdriver-quel1:packages/qxdriver-quel1 \
+	qubex-core:packages/qxcore \
+	qubex-visualizer:packages/qxvisualizer \
+	qubex-fitting:packages/qxfitting \
+	qubex-pulse:packages/qxpulse \
+	qubex-schema:packages/qxschema \
+	qubex-simulator:packages/qxsimulator \
+	qubex-driver-quel1:packages/qxdriver-quel1 \
 	qubex:.
 
 # Upgrade locked dependencies and sync the backend development environment

@@ -41,9 +41,9 @@ Examples:
 
 ## Workspace companion package versioning
 
-This repository contains companion packages such as `qxcore`, `qxpulse`,
-`qxschema`, `qxsimulator`, `qxvisualizer`, `qxfitting`, and
-`qxdriver-quel1`. Treat them as one tested bundle with `qubex`, not as
+This repository contains companion packages such as `qubex-core`, `qubex-pulse`,
+`qubex-schema`, `qubex-simulator`, `qubex-visualizer`, `qubex-fitting`, and
+`qubex-driver-quel1`. Treat them as one tested bundle with `qubex`, not as
 independently supported products by default.
 
 Rules:

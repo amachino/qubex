@@ -3,8 +3,8 @@ requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "qxfitting"
-version = "1.5.0rc3"
+name = "qubex-fitting"
+version = "1.5.0rc4"
 requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex fitting and curve-analysis utilities"

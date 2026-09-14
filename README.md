@@ -25,14 +25,14 @@
 
 ## Installation
 
-The `1.5.0rc3` release candidate can be installed from PyPI:
+The `1.5.0rc4` release candidate can be installed from PyPI:
 
 ```bash
-pip install "qubex==1.5.0rc3"
+pip install "qubex==1.5.0rc4"
 ```
 
-For hardware support, install `qubex[backend]==1.5.0rc3` (QuEL-1, Linux)
-or `qubex[quel3]==1.5.0rc3`. This is a prerelease for validation before v1.5.0.
+For hardware support, install `qubex[backend]==1.5.0rc4` (QuEL-1, Linux)
+or `qubex[quel3]==1.5.0rc4`. This is a prerelease for validation before v1.5.0.
 The Git-based commands below install the repository version.
 To install `uv`, see the official guide:
 [https://docs.astral.sh/uv/getting-started/installation/](https://docs.astral.sh/uv/getting-started/installation/)
