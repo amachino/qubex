@@ -48,7 +48,7 @@ PINNED_DEPENDENCIES: dict[Path, tuple[str, ...]] = {
     ),
     ROOT / "packages/qxpulse/pyproject.toml": ("qxvisualizer",),
     ROOT / "packages/qxschema/pyproject.toml": ("qxcore",),
-    ROOT / "packages/qxsimulator/pyproject.toml": ("qxpulse", "qxvisualizer"),
+    ROOT / "packages/qxsimulator/pyproject.toml": ("qxcore", "qxpulse", "qxvisualizer"),
 }
 
 

@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
+
+
+def test_all_workspace_dependency_pins_are_synchronized() -> None:
+    """Every exact workspace dependency is covered by release synchronization."""
+    module = _load_sync_release_version_module()
+    for path in module.PACKAGE_PYPROJECTS.values():
+        dependencies = set(re.findall(r'"([\w-]+)\s*==\s*[^\"]+"', path.read_text()))
+        workspace_dependencies = dependencies & set(module.WORKSPACE_PACKAGES)
+        assert workspace_dependencies == set(module.PINNED_DEPENDENCIES.get(path, ()))
 
 
 def _load_sync_release_version_module():

@@ -1,8 +1,11 @@
 # Installation
 
 Qubex runs on Python 3.10+. When you are not using hardware backends, it is not tied to a specific operating system. Hardware backends require additional dependencies and typically assume a Linux host.
-During the `v1.5.0 beta` period and until the official release, installing Qubex requires `uv`.
-We plan to publish Qubex to PyPI for the official release, which will make `pip install` available.
+Install the `1.5.0rc3` release candidate from PyPI with
+`pip install "qubex==1.5.0rc3"`. For hardware support, use
+`qubex[backend]==1.5.0rc3` (QuEL-1, Linux) or `qubex[quel3]==1.5.0rc3`.
+This is a prerelease for validation before v1.5.0. The Git-based commands below
+install the repository version.
 
 ## Prepare Python environment
 
