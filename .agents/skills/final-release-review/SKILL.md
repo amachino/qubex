@@ -31,6 +31,9 @@ letting the script resolve the comparison range and diff summary.
      `git diff --stat` summary.
    - Note doc, test, and packaging deltas separately.
 4. Check release gates.
+   - `uv run pytest tests/test_release_version_scripts.py`: independently
+     compare manifest dependency pins with the synchronization inventory;
+     synchronization and drift checks alone share the same inventory.
    - `make check-release-version`
    - `make check`
    - `make test`
