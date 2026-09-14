@@ -66,19 +66,7 @@ class _FakeMeasurementService:
 
     def __init__(self, ctx: _FakeContext) -> None:
         self.ctx = ctx
-        self.measure_state_calls: list[dict[str, Any]] = []
         self.build_classifier_calls: list[dict[str, Any]] = []
-
-    def measure_state(self, states: dict[str, str], **kwargs: Any) -> Any:
-        """Return IQ data tagged by the active frequency and state."""
-        state = next(iter(states.values()))
-        frequency = cast(float, self.ctx.current_frequency)
-        self.measure_state_calls.append(
-            {"states": states, "frequency": frequency, **kwargs}
-        )
-        value = frequency + (0.0 if state == "0" else 0.001)
-        iq = np.full(4, value + 0j, dtype=np.complex128)
-        return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=iq)})
 
     def build_classifier(self, **kwargs: Any) -> Any:
         """Record classifier build calls."""
@@ -98,12 +86,13 @@ def test_find_optimal_readout_frequency_uses_fidelity_plateau_threshold(
     service.__dict__["_experiment_context"] = ctx
     service.__dict__["_measurement_service"] = measurement_service
 
-    frequency_range = np.array([5.0, 5.1, 5.2])
-
-    def fake_measure_reflection_coefficient(
-        *_args: Any, **_kwargs: Any
-    ) -> dict[str, Any]:
-        return {"frequency_range": frequency_range}
+    def fake_sweep(
+        _target: str, frequency_range: np.ndarray, **_kwargs: Any
+    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        return (
+            [np.full(4, frequency + 0j) for frequency in frequency_range],
+            [np.full(4, frequency + 0.001 + 0j) for frequency in frequency_range],
+        )
 
     class _Classifier:
         def __init__(self, predictions: dict[int, np.ndarray]) -> None:
@@ -128,8 +117,8 @@ def test_find_optimal_readout_frequency_uses_fidelity_plateau_threshold(
 
     monkeypatch.setattr(
         service,
-        "measure_reflection_coefficient",
-        fake_measure_reflection_coefficient,
+        "_sweep_readout_frequency",
+        fake_sweep,
     )
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.viz.make_figure",
@@ -160,12 +149,6 @@ def test_find_optimal_readout_frequency_uses_fidelity_plateau_threshold(
     assert result.data["signals_1"].shape == (3, 4)
     with pytest.warns(DeprecationWarning, match="legacy figure payload key"):
         assert result.data["fig"] is result.figure
-    np.testing.assert_allclose(
-        [call["frequency"] for call in measurement_service.measure_state_calls],
-        [5.0, 5.0, 5.1, 5.1, 5.2, 5.2],
-        rtol=0,
-        atol=1e-12,
-    )
     assert measurement_service.build_classifier_calls == [
         {
             "frequency": 5.1,
