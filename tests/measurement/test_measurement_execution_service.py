@@ -131,6 +131,17 @@ class _FakeRunner:
         backend_result = await self._execute_request(request=request)
         return self._build_result(backend_result=backend_result, config=config)
 
+    async def execute_batch_async(
+        self,
+        *,
+        schedules: list[MeasurementSchedule],
+        config: MeasurementConfig,
+    ) -> list[MeasurementResult]:
+        return [
+            await self.execute_async(schedule=schedule, config=config)
+            for schedule in schedules
+        ]
+
     def _prepare_execution(
         self,
         *,
@@ -585,26 +596,60 @@ def test_build_measurement_result_split_plan_uses_registry_output_labels() -> No
     assert split_plan == [{"Q17": 1}]
 
 
-def test_should_pack_measurement_schedules_rejects_conflicting_frequencies() -> None:
-    """Given per-point frequency changes, packing should fall back to batch execution."""
+@pytest.mark.parametrize(
+    ("frequencies", "should_pack"),
+    [
+        ((None, None), True),
+        ((None, 5.0), False),
+        ((0.0, 1e-6), True),
+        ((0.0, 1.001e-6), False),
+        ((5.0, 5.0), True),
+        ((5.0, 5.000000999), True),
+        ((5.0, 5.000001001), False),
+        ((5.0, 5.00001), False),
+        ((5.0, 5.1), False),
+        ((10.0, 10.000000999), True),
+        ((10.0, 10.000001001), False),
+    ],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_run_sweep_measurement_respects_absolute_frequency_tolerance(
+    monkeypatch: pytest.MonkeyPatch,
+    frequencies: tuple[float | None, float | None],
+    should_pack: bool,
+    reverse: bool,
+) -> None:
+    """Sweep points should pack only when optional frequencies agree within an absolute 1 kHz."""
     backend = _FakeBackend()
-    runner = _FakeRunner(_backend_controller=backend)
-    service = MeasurementExecutionService.__new__(MeasurementExecutionService)
+    service, runners = _make_service(monkeypatch=monkeypatch, backend=backend)
     first_schedule = _make_schedule(
         label="Q00", capture_start=1.0, capture_target="Q00"
     )
     second_schedule = _make_schedule(
         label="Q00", capture_start=2.0, capture_target="Q00"
     )
-    first_schedule.pulse_schedule.set_frequency("Q00", 5.0)
-    second_schedule.pulse_schedule.set_frequency("Q00", 5.1)
+    schedules = [first_schedule, second_schedule]
+    if reverse:
+        frequencies = (frequencies[1], frequencies[0])
+    for schedule, frequency in zip(schedules, frequencies, strict=True):
+        if frequency is not None:
+            schedule.pulse_schedule.set_frequency("Q00", frequency)
     config = _make_config().model_copy(update={"schedule_packing_enabled": True})
 
-    assert (
-        service._should_pack_measurement_schedules(  # noqa: SLF001
-            runner=cast(Any, runner),
-            schedules=[first_schedule, second_schedule],
+    result = asyncio.run(
+        service.run_sweep_measurement(
+            schedule=lambda value: schedules[int(cast(float, value))],
+            sweep_values=[0, 1],
             config=config,
         )
-        is False
     )
+
+    runner = runners[0]
+    expected_frequencies = list(frequencies[:1] if should_pack else frequencies)
+    assert len(runner.executed_requests) == len(expected_frequencies)
+    assert [
+        schedule.pulse_schedule.get_frequency("Q00")
+        for schedule in runner.prepare_calls
+    ] == expected_frequencies
+    assert len(result.results) == 2
+    assert all(len(point.data["Q00"]) == 1 for point in result.results)
