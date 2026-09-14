@@ -17,7 +17,6 @@ UV_EXECUTABLE = shutil.which("uv")
 
 WORKSPACE_PACKAGES: tuple[str, ...] = (
     "qubex-core",
-    "qubex-fitting",
     "qubex-pulse",
     "qubex-schema",
     "qubex-simulator",
@@ -28,7 +27,6 @@ WORKSPACE_PACKAGES: tuple[str, ...] = (
 PACKAGE_PYPROJECTS: dict[str, Path] = {
     "qubex": ROOT_PYPROJECT,
     "qubex-core": ROOT / "packages/qxcore/pyproject.toml",
-    "qubex-fitting": ROOT / "packages/qxfitting/pyproject.toml",
     "qubex-pulse": ROOT / "packages/qxpulse/pyproject.toml",
     "qubex-schema": ROOT / "packages/qxschema/pyproject.toml",
     "qubex-simulator": ROOT / "packages/qxsimulator/pyproject.toml",
@@ -39,7 +37,6 @@ PACKAGE_PYPROJECTS: dict[str, Path] = {
 PINNED_DEPENDENCIES: dict[Path, tuple[str, ...]] = {
     ROOT_PYPROJECT: (
         "qubex-core",
-        "qubex-fitting",
         "qubex-pulse",
         "qubex-schema",
         "qubex-simulator",

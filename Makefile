@@ -6,7 +6,6 @@ REPOSITORY ?= testpypi
 PUBLISH_TARGETS := \
 	qubex-core:packages/qxcore \
 	qubex-visualizer:packages/qxvisualizer \
-	qubex-fitting:packages/qxfitting \
 	qubex-pulse:packages/qxpulse \
 	qubex-schema:packages/qxschema \
 	qubex-simulator:packages/qxsimulator \

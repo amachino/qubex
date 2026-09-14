@@ -42,7 +42,7 @@ Examples:
 ## Workspace companion package versioning
 
 This repository contains companion packages such as `qubex-core`, `qubex-pulse`,
-`qubex-schema`, `qubex-simulator`, `qubex-visualizer`, `qubex-fitting`, and
+`qubex-schema`, `qubex-simulator`, `qubex-visualizer`, and
 `qubex-driver-quel1`. Treat them as one tested bundle with `qubex`, not as
 independently supported products by default.
 

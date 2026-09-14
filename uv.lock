@@ -16,7 +16,6 @@ members = [
     "qubex",
     "qubex-core",
     "qubex-driver-quel1",
-    "qubex-fitting",
     "qubex-pulse",
     "qubex-schema",
     "qubex-simulator",
@@ -3180,7 +3179,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "qctrl-visualizer" },
     { name = "qubex-core" },
-    { name = "qubex-fitting" },
     { name = "qubex-pulse" },
     { name = "qubex-schema" },
     { name = "qubex-simulator" },
@@ -3248,7 +3246,6 @@ requires-dist = [
     { name = "qubex-core", editable = "packages/qxcore" },
     { name = "qubex-driver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
     { name = "qubex-driver-quel1", marker = "extra == 'quel1'", editable = "packages/qxdriver-quel1" },
-    { name = "qubex-fitting", editable = "packages/qxfitting" },
     { name = "qubex-pulse", editable = "packages/qxpulse" },
     { name = "qubex-schema", editable = "packages/qxschema" },
     { name = "qubex-simulator", editable = "packages/qxsimulator" },
@@ -3344,11 +3341,6 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
-
-[[package]]
-name = "qubex-fitting"
-version = "1.5.0rc4"
-source = { editable = "packages/qxfitting" }
 
 [[package]]
 name = "qubex-pulse"

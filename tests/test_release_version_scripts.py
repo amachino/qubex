@@ -15,7 +15,6 @@ import pytest
     ("directory", "distribution"),
     [
         ("qxcore", "qubex-core"),
-        ("qxfitting", "qubex-fitting"),
         ("qxpulse", "qubex-pulse"),
         ("qxschema", "qubex-schema"),
         ("qxsimulator", "qubex-simulator"),
@@ -43,6 +42,15 @@ def test_driver_version_uses_published_distribution_name(monkeypatch) -> None:
         str(root / "packages/qxdriver-quel1/src/qxdriver_quel1/__init__.py")
     )
     assert module["__version__"] == "1.5.0rc4"
+
+
+def test_placeholder_fitting_is_not_a_release_dependency() -> None:
+    """The unimplemented fitting distribution is neither required nor published."""
+    module = _load_sync_release_version_module()
+    root = Path(__file__).resolve().parent.parent
+    assert '"qubex-fitting ==' not in (root / "pyproject.toml").read_text()
+    assert "qubex-fitting:" not in (root / "Makefile").read_text()
+    assert "qubex-fitting" not in module.PACKAGE_PYPROJECTS
 
 
 def test_all_workspace_dependency_pins_are_synchronized() -> None:
