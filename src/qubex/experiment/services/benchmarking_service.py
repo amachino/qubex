@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from typing import Literal
 
 import numpy as np
@@ -15,6 +15,7 @@ import qubex.visualization as viz
 from qubex.analysis import fitting
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
+from qubex.core.async_bridge import get_shared_async_bridge
 from qubex.experiment.experiment_constants import (
     DEFAULT_INTERVAL,
     DEFAULT_MAX_N_CLIFFORDS_1Q,
@@ -24,6 +25,11 @@ from qubex.experiment.experiment_constants import (
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.result import Result
+from qubex.measurement import SweepMeasurementResult
+from qubex.measurement._analysis import (
+    get_mitigated_probabilities,
+    get_probabilities,
+)
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService
@@ -105,6 +111,46 @@ class BenchmarkingService:
     def clifford(self) -> dict[str, Clifford]:
         """Return the Clifford dictionary."""
         return self.clifford_generator.cliffords
+
+    def _reset_rb_target_group(self, targets: Collection[str]) -> None:
+        """Reset the qubits used by one randomized benchmarking target group."""
+        qubits: set[str] = set()
+        for target in targets:
+            if self.ctx.experiment_system.get_target(target).is_cr:
+                qubits.update(self.ctx.cr_pair(target))
+            else:
+                qubits.add(self.ctx.resolve_qubit_label(target))
+        self.ctx.reset_awg_and_capunits(qubits=qubits)
+
+    async def _run_rb_trial_sweep(
+        self,
+        schedule: Callable[[int], PulseSchedule],
+        *,
+        seeds: np.ndarray,
+        targets: Collection[str],
+        shots: int,
+        interval: float,
+        shot_averaging: bool,
+        time_integration: bool,
+        reset_awg_and_capunits: bool,
+    ) -> SweepMeasurementResult:
+        """Measure every randomized trial in one async sweep."""
+        if reset_awg_and_capunits:
+            self._reset_rb_target_group(targets)
+
+        return await self.measurement_service.run_sweep_measurement(
+            lambda seed: schedule(int(seed)),
+            sweep_values=seeds,
+            n_shots=shots,
+            shot_interval=interval,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=False,
+            readout_amplification=False,
+            final_measurement=True,
+            plot=False,
+            enable_tqdm=False,
+        )
 
     def rb_sequence(
         self,
@@ -308,6 +354,48 @@ class BenchmarkingService:
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
         """Run single-qubit randomized benchmarking."""
+        return get_shared_async_bridge(key="experiment").run_without_timeout(
+            lambda: self._run_rb_experiment_1q(
+                targets=targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                interleaved_clifford=interleaved_clifford,
+                interleaved_waveform=interleaved_waveform,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                time_integration=time_integration,
+                xaxis_type=xaxis_type,
+                plot=plot,
+                save_image=save_image,
+                reset_awg_and_capunits=reset_awg_and_capunits,
+            )
+        )
+
+    async def _run_rb_experiment_1q(
+        self,
+        targets: Collection[str] | str,
+        *,
+        n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        interleaved_clifford: Clifford | None = None,
+        interleaved_waveform: TargetMap[Waveform] | None = None,
+        in_parallel: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        time_integration: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        reset_awg_and_capunits: bool | None = None,
+    ) -> Result:
+        """Run single-qubit randomized benchmarking."""
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -403,31 +491,30 @@ class BenchmarkingService:
                 idx += 1
                 sweep_range.append(n_clifford)
 
-                trial_data = defaultdict(list)
-                for seed in np.asarray(seeds):
-                    seed = int(seed)  # Ensure seed is an integer
-                    result = self.measurement_service.measure(
-                        sequence=rb_sequence(
+                result = await self._run_rb_trial_sweep(
+                    lambda seed, n_clifford=n_clifford, target_group=target_group: (
+                        rb_sequence(
                             n_clifford=n_clifford,
                             targets=target_group,
                             seed=seed,
-                        ),
-                        mode="avg",
-                        shots=shots,
-                        interval=interval,
-                        time_integration=time_integration,
-                        reset_awg_and_capunits=reset_awg_and_capunits,
-                        plot=False,
-                    )
-                    for target, data in result.data.items():
-                        iq = data.kerneled
-                        z = self.pulse.rabi_params[target].normalize(iq)
-                        trial_data[target].append((z + 1) / 2)
-
+                        )
+                    ),
+                    seeds=np.asarray(seeds, dtype=int),
+                    targets=target_group,
+                    shots=shots,
+                    interval=interval,
+                    shot_averaging=True,
+                    time_integration=time_integration,
+                    reset_awg_and_capunits=reset_awg_and_capunits,
+                )
                 check_vals = {}
 
                 for target in target_group:
-                    trial_values = np.asarray(trial_data[target], dtype=float)
+                    iq = np.asarray(
+                        [point.data[target][-1].kerneled for point in result.results]
+                    ).reshape(-1)
+                    z = self.pulse.rabi_params[target].normalize(iq)
+                    trial_values = np.asarray((z + 1) / 2, dtype=float)
                     mean = np.mean(trial_values)
                     std = np.std(trial_values)
                     trial_matrix_data[target].append(trial_values)
@@ -511,11 +598,64 @@ class BenchmarkingService:
         """
         Run two-qubit randomized benchmarking.
 
+        Raises
+        ------
+        ValueError
+            If no targets are given, a target is not a CR target, or required
+            CR calibration parameters or state classifiers are missing.
+
         Notes
         -----
-        Two-qubit randomized benchmarking requires state classifiers for both
-        the control and target qubits.
+        Calibrate the gate pulses and readout before running this experiment.
+        Two-qubit RB estimates the joint ground-state probability using state
+        classifiers registered for both the control and target qubits.
         """
+        return get_shared_async_bridge(key="experiment").run_without_timeout(
+            lambda: self._run_rb_experiment_2q(
+                targets=targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                zx90=zx90,
+                interleaved_clifford=interleaved_clifford,
+                interleaved_waveform=interleaved_waveform,
+                in_parallel=in_parallel,
+                mitigate_readout=mitigate_readout,
+                shots=shots,
+                interval=interval,
+                time_integration=time_integration,
+                xaxis_type=xaxis_type,
+                plot=plot,
+                save_image=save_image,
+                reset_awg_and_capunits=reset_awg_and_capunits,
+            )
+        )
+
+    async def _run_rb_experiment_2q(
+        self,
+        targets: Collection[str] | str,
+        *,
+        n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
+        interleaved_clifford: Clifford | None = None,
+        interleaved_waveform: TargetMap[PulseSchedule] | None = None,
+        in_parallel: bool | None = None,
+        mitigate_readout: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        time_integration: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        reset_awg_and_capunits: bool | None = None,
+    ) -> Result:
+        """Run two-qubit randomized benchmarking."""
         if in_parallel is None:
             in_parallel = False
         if mitigate_readout is None:
@@ -535,12 +675,19 @@ class BenchmarkingService:
         else:
             targets = list(targets)
 
-        targets = [
-            target
-            for target in targets
-            if self.ctx.experiment_system.get_target(target).is_cr
-            and target in self.ctx.calib_note.cr_params
+        if not targets:
+            raise ValueError("At least one 2Q target is required.")
+
+        for target in targets:
+            if not self.ctx.experiment_system.get_target(target).is_cr:
+                raise ValueError(f"`{target}` is not a 2Q target.")
+
+        missing_cr_params = [
+            target for target in targets if target not in self.ctx.calib_note.cr_params
         ]
+        if missing_cr_params:
+            missing = ", ".join(missing_cr_params)
+            raise ValueError(f"CR parameters not found for {missing}.")
 
         missing_classifiers = list(
             dict.fromkeys(
@@ -595,11 +742,6 @@ class BenchmarkingService:
         else:
             target_groups = [[target] for target in targets]
 
-        for target in targets:
-            target_object = self.ctx.experiment_system.get_target(target)
-            if not target_object.is_cr:
-                raise ValueError(f"`{target}` is not a 2Q target.")
-
         def rb_sequence(
             targets: list[str],
             n_clifford: int,
@@ -651,34 +793,42 @@ class BenchmarkingService:
                 idx += 1
                 sweep_range.append(n_clifford)
 
-                trial_data = defaultdict(list)
-                for seed in np.asarray(seeds):
-                    seed = int(seed)  # Ensure seed is an integer
-                    result = self.measurement_service.measure(
-                        sequence=rb_sequence(
+                result = await self._run_rb_trial_sweep(
+                    lambda seed, n_clifford=n_clifford, target_group=target_group: (
+                        rb_sequence(
                             n_clifford=n_clifford,
                             targets=target_group,
                             seed=seed,
-                        ),
-                        mode="single",
-                        shots=shots,
-                        interval=interval,
-                        time_integration=time_integration,
-                        reset_awg_and_capunits=reset_awg_and_capunits,
-                        plot=False,
-                    )
+                        )
+                    ),
+                    seeds=np.asarray(seeds, dtype=int),
+                    targets=target_group,
+                    shots=shots,
+                    interval=interval,
+                    shot_averaging=False,
+                    time_integration=time_integration,
+                    reset_awg_and_capunits=reset_awg_and_capunits,
+                )
 
-                    for target in target_group:
-                        control_qubit, target_qubit = self.ctx.cr_pair(target)
-                        if mitigate_readout:
-                            prob = result.get_mitigated_probabilities(
-                                [control_qubit, target_qubit]
-                            )
-                        else:
-                            prob = result.get_probabilities(
-                                [control_qubit, target_qubit]
-                            )
-                        trial_data[target].append(prob["00"])
+                trial_data = {}
+                analyze = (
+                    get_mitigated_probabilities
+                    if mitigate_readout
+                    else get_probabilities
+                )
+                for target in target_group:
+                    control_qubit, target_qubit = self.ctx.cr_pair(target)
+                    trial_data[target] = np.asarray(
+                        [
+                            analyze(
+                                point,
+                                targets=[control_qubit, target_qubit],
+                                classifiers=self.ctx.classifiers,
+                            ).get("00", 0.0)
+                            for point in result.results
+                        ],
+                        dtype=float,
+                    )
 
                 check_vals = {}
 
@@ -1065,6 +1215,9 @@ class BenchmarkingService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if not targets:
+            raise ValueError("At least one target is required.")
 
         target_object = self.ctx.experiment_system.get_target(targets[0])
         is_2q = target_object.is_cr
