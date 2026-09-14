@@ -7,6 +7,7 @@ from types import MethodType, SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 from qxpulse import Blank, Gaussian, PulseSchedule
 
@@ -290,14 +291,24 @@ def test_create_sampled_sequences_accepts_monitor_capture_targets() -> None:
     assert set(cap_sequences.keys()) == {"Q00", "B0.MNTR0.IN"}
 
 
-def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_phase() -> (
-    None
-):
+@pytest.mark.parametrize("words", [0, 3])
+def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_phase(
+    monkeypatch, words
+) -> None:
     """Given schedule frequency metadata, when building sampled sequences, then modulation and phase use that frequency."""
+    from unittest.mock import Mock
+
+    from qubex.backend.quel1 import Quel1BackendController
+    from qubex.system.quel1 import Quel1SystemSynchronizer
+    from qubex.system.system_manager import SystemManager
+
     profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD_NS)
 
     class _ExperimentSystemStub:
-        control_params = SimpleNamespace(capture_delay_word={0: 0})
+        control_params = SimpleNamespace(
+            capture_delay={0: 8}, capture_delay_word={0: 0}
+        )
+        wiring_info = SimpleNamespace(read_in=[])
 
         @staticmethod
         def resolve_qubit_label(label: str) -> str:
@@ -339,11 +350,21 @@ def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_pha
             )
         )
 
+    system = _ExperimentSystemStub()
+    controller = Mock(spec=Quel1BackendController)
+    manager = SystemManager.shared()
+    monkeypatch.setattr(manager, "_backend_controller", controller)
+    monkeypatch.setattr(manager, "_experiment_system", system)
+    monkeypatch.setattr(
+        manager,
+        "_system_synchronizer",
+        Quel1SystemSynchronizer(backend_controller=controller),
+    )
     adapter = cast(
         Any,
         Quel1MeasurementBackendAdapter(
             backend_controller=cast(Any, object()),
-            experiment_system=cast(Any, _ExperimentSystemStub()),
+            experiment_system=cast(Any, system),
             constraint_profile=profile,
         ),
     )
@@ -374,6 +395,7 @@ def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_pha
         capture_slots: list[tuple[int, int]],
     ) -> dict[str, object]:
         _ = (self, target_name, modulation_frequency, capture_delay, capture_slots)
+        recorded["capture_delay"] = capture_delay
         return {}
 
     adapter._create_gen_sampled_sequence = MethodType(_gen, adapter)  # noqa: SLF001
@@ -391,12 +413,17 @@ def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_pha
         ),
     )
 
-    _ = adapter._create_sampled_sequences(schedule=measurement_schedule)  # noqa: SLF001
+    with manager.modified_capture_delay({0: 10 * 128 + words * 8}):
+        _ = adapter._create_sampled_sequences(schedule=measurement_schedule)  # noqa: SLF001
+        assert system.control_params.capture_delay == {0: 10}
+    assert system.control_params.capture_delay == {0: 8}
+    assert system.control_params.capture_delay_word == {0: 0}
+    assert recorded["capture_delay"] == words * 4
 
     expected_modulation_frequency = 120e6
     expected = pulse_schedule.get_sampled_sequences()["Q00"].copy()
     for rng in pulse_schedule.get_pulse_ranges(["Q00"])["Q00"]:
-        offset = rng.start * SAMPLING_PERIOD_NS
+        offset = (rng.start + words * 4) * SAMPLING_PERIOD_NS
         expected[rng] *= np.exp(1j * 2 * np.pi * expected_modulation_frequency * offset)
     expected = np.conj(expected)
 

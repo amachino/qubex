@@ -472,3 +472,36 @@ def test_measure_state_preserves_legacy_time_integration_opt_out() -> None:
     measure_calls = cast(list[dict[str, object]], captured["measure_calls"])
     assert measure_calls[0]["time_integration"] is None
     assert measure_calls[0]["enable_dsp_sum"] is False
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_check_waveform_applies_capture_delay_during_measurement(fail: bool) -> None:
+    """Waveform checks run inside the temporary delay context and exit even on failure."""
+    service, _ = _make_service()
+    events: list[object] = []
+
+    @contextmanager
+    def modified_capture_delay(delay: object):
+        events.append(delay)
+        try:
+            yield
+        finally:
+            events.append("restored")
+
+    cast(Any, service.ctx).system_manager = SimpleNamespace(
+        modified_capture_delay=modified_capture_delay
+    )
+
+    async def run_measurement(**kwargs: object) -> MeasurementResult:
+        assert events == [{0: 24}]
+        if fail:
+            raise RuntimeError("measurement failed")
+        return _make_measurement_result()
+
+    service.__dict__["run_measurement"] = run_measurement
+    if fail:
+        with pytest.raises(RuntimeError, match="measurement failed"):
+            service.check_waveform("custom-target", capture_delay={0: 24}, plot=False)
+    else:
+        service.check_waveform("custom-target", capture_delay={0: 24}, plot=False)
+    assert events == [{0: 24}, "restored"]

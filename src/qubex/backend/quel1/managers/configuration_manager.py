@@ -188,6 +188,43 @@ class Quel1ConfigurationManager:
             ndelay_or_nwait=ndelay_or_nwait,
         )
 
+    def set_capture_ndelay(
+        self, *, port_name: str, channel_number: int, ndelay: int
+    ) -> int:
+        """
+        Update a capture channel's coarse delay and return its previous value.
+
+        Parameters
+        ----------
+        port_name : str
+            Registered capture port name.
+        channel_number : int
+            Registered capture channel number.
+        ndelay : int
+            Non-negative coarse capture delay in 128 ns steps.
+            This method does not update the separate capture word offset.
+
+        Returns
+        -------
+        int
+            Previous delay in `ndelay` units, suitable for restoration.
+        """
+        if isinstance(ndelay, bool) or not isinstance(ndelay, int):
+            raise TypeError("QuEL-1 capture delay must be integer `ndelay`.")
+        if ndelay < 0:
+            raise ValueError("Capture delay must be non-negative.")
+        db = self._runtime_context.qubecalib.system_config_database
+        port = db._port_settings[port_name]
+        delays = list(port.ndelay_or_nwait)
+        if channel_number < 0 or channel_number >= len(delays):
+            raise ValueError(
+                f"Capture channel {channel_number} is not configured on {port_name}."
+            )
+        previous = delays[channel_number]
+        delays[channel_number] = ndelay
+        port.ndelay_or_nwait = tuple(delays)
+        return previous
+
     def add_channel_target_relation(
         self,
         *,
