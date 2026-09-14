@@ -223,7 +223,7 @@ def test_decay_adapted_grid_improves_high_fidelity_precision_at_equal_budget() -
 
 
 def test_parallel_shared_grid_preserves_noisy_multi_scale_precision() -> None:
-    """Shared-grid retention should not degrade noisy fits across decay scales."""
+    """An unthinned shared union should preserve fits across decay scales."""
     module = importlib.import_module(
         "qubex.contrib.experiment.paired_interleaved_randomized_benchmarking"
     )
@@ -245,10 +245,7 @@ def test_parallel_shared_grid_preserves_noisy_multi_scale_precision() -> None:
         )
         for target, (p_reference, p_interleaved) in decay_pairs.items()
     }
-    shared_grid, retained, _, _ = module._parallel_shared_main_grid(  # noqa: SLF001
-        selections,
-        maximum=2_048,
-    )
+    shared_grid = module._parallel_shared_main_grid(selections)  # noqa: SLF001
 
     for index, (target, (p_reference, p_interleaved)) in enumerate(decay_pairs.items()):
         common = {
@@ -265,7 +262,7 @@ def test_parallel_shared_grid_preserves_noisy_multi_scale_precision() -> None:
         )
         shared = _evaluate_noisy_grid_design(shared_grid, **common)
 
-        assert len(retained[target]) == 6
+        assert set(selections[target].selected_grid).issubset(shared_grid)
         assert abs(shared["p_reference_bias"]) < 2e-4
         assert abs(shared["p_interleaved_bias"]) < 2e-4
         assert abs(shared["fidelity_bias"]) < 2e-4
@@ -273,23 +270,37 @@ def test_parallel_shared_grid_preserves_noisy_multi_scale_precision() -> None:
         assert shared["bootstrap_sigma"] <= 1.5 * independent["bootstrap_sigma"]
 
 
-def test_default_contrast_set_balances_precision_coverage_and_sequence_cost() -> None:
-    """Default set A should be a balanced choice among the requested designs."""
-    grids = {
-        "A": np.asarray(
-            [0, 1, 10, 21, 35, 70, 120, 138, 189, 240, 378],
-            dtype=np.int64,
-        ),
-        "B": np.asarray(
-            [0, 1, 10, 21, 29, 51, 57, 79, 102, 120, 160, 240, 321],
-            dtype=np.int64,
-        ),
-        "C": np.asarray(
-            [0, 1, 22, 45, 51, 91, 102, 160, 183, 229, 321, 459],
-            dtype=np.int64,
-        ),
+def test_extended_default_contrast_set_improves_tail_precision() -> None:
+    """The 2% default tail should trade sequence depth for fit precision."""
+    module = importlib.import_module(
+        "qubex.contrib.experiment.paired_interleaved_randomized_benchmarking"
+    )
+    fraction_designs = {
+        "A": (0.90, 0.70, 0.50, 0.30, 0.15, 0.05, 0.02),
+        "B": (0.90, 0.75, 0.60, 0.45, 0.30, 0.20),
+        "C": (0.80, 0.60, 0.40, 0.20, 0.10),
     }
-    trials = {"A": 28, "B": 24, "C": 26}
+    fits = (
+        SimpleNamespace(decay_parameter=0.995),
+        SimpleNamespace(decay_parameter=0.990),
+    )
+    fallback = module._default_n_cliffords(2_048)  # noqa: SLF001
+    selections = {
+        name: module._select_decay_adapted_main_grid(  # noqa: SLF001
+            fits,
+            remaining_fractions=fractions,
+            maximum=2_048,
+            fallback_grid=fallback,
+        )
+        for name, fractions in fraction_designs.items()
+    }
+    grids = {name: selection.selected_grid for name, selection in selections.items()}
+    trials = {"A": 28, "B": 31, "C": 34}
+    np.testing.assert_array_equal(
+        grids["A"],
+        [0, 1, 10, 35, 69, 120, 189, 298, 389, 598, 780],
+    )
+    np.testing.assert_array_equal(selections["A"].reference_tail_grid, [598, 780])
     metrics = {
         name: _evaluate_noisy_grid_design(
             grid,
@@ -307,9 +318,9 @@ def test_default_contrast_set_balances_precision_coverage_and_sequence_cost() ->
     assert min(item["ci95_coverage"] for item in metrics.values()) >= 0.9
     assert metrics["A"]["fidelity_sd"] < metrics["B"]["fidelity_sd"]
     assert metrics["A"]["bootstrap_sigma"] < metrics["B"]["bootstrap_sigma"]
-    assert metrics["C"]["fidelity_sd"] < metrics["A"]["fidelity_sd"]
-    assert metrics["B"]["sequence_cost"] < metrics["A"]["sequence_cost"]
-    assert metrics["A"]["sequence_cost"] < metrics["C"]["sequence_cost"]
+    assert metrics["A"]["fidelity_sd"] < metrics["C"]["fidelity_sd"]
+    assert metrics["B"]["sequence_cost"] < metrics["C"]["sequence_cost"]
+    assert metrics["C"]["sequence_cost"] < metrics["A"]["sequence_cost"]
     assert (
         max(item["measurement_pairs"] for item in metrics.values())
         - min(item["measurement_pairs"] for item in metrics.values())

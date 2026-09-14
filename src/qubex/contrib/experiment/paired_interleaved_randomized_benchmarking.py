@@ -55,20 +55,15 @@ _DEFAULT_ACQUISITION_SEED: int | None = None
 _DEFAULT_PAIRS_PER_SWEEP = 1
 _DEFAULT_SWEEP_TIMEOUT_SECONDS = 300.0
 _DEFAULT_AUTO_RANGE_REMAINING_FRACTION = 0.10
-_DEFAULT_MAIN_REMAINING_FRACTIONS = (0.90, 0.70, 0.50, 0.30, 0.15, 0.05)
-_ADDITIONAL_MAIN_REMAINING_FRACTIONS = (0.80, 0.60, 0.40, 0.20, 0.10, 0.02)
+_DEFAULT_MAIN_REMAINING_FRACTIONS = (0.90, 0.70, 0.50, 0.30, 0.15, 0.05, 0.02)
 _MIN_RECOMMENDED_TRIALS = 20
 _MIN_RECOMMENDED_CLIFFORD_POINTS = 6
 _MIN_AUTO_RANGE_FIT_POINTS = 6
 _MIN_MAIN_GRID_POINTS = 6
-_MAX_MAIN_GRID_POINTS = 14
-_MIN_PARALLEL_RETAINED_POINTS_PER_TARGET = 6
 _MIN_PILOT_DECAY_SIGNIFICANCE = 3.0
 _MIN_PILOT_AMPLITUDE = 0.05
 _MIN_PILOT_R_SQUARED = 0.5
 _PILOT_BOUND_ATOL = 2e-4
-_NEAR_DUPLICATE_RELATIVE_SEPARATION = 0.05
-_MIN_RELATIVE_MERGE_LENGTH = 10
 _MIN_ABSOLUTE_LOG_DECAY = 1e-12
 _MIN_BOOTSTRAP_SUCCESS_RATE = 0.8
 _MIN_BOOTSTRAP_SAMPLES_PER_STRATUM = 2
@@ -501,15 +496,13 @@ class _ParallelAutoRangeOutcome:
 
 @dataclass(frozen=True)
 class _MainGridSelection:
-    """Store one decay-adapted main-grid decision."""
+    """Store one unthinned, interleaved-first main-grid decision."""
 
     reference_grid: NDArray[np.int64]
+    reference_tail_grid: NDArray[np.int64]
     interleaved_grid: NDArray[np.int64]
     selected_grid: NDArray[np.int64]
-    additional_fractions_used: tuple[float, ...]
     supplemental_integer_grid: NDArray[np.int64]
-    near_duplicate_merging_applied: bool
-    thinning_applied: bool
     maximum_anchor_added: bool
     fallback_used: bool
     fallback_reason: str | None
@@ -3393,146 +3386,20 @@ def _contrast_target_grid(
     return np.asarray(sorted(candidates), dtype=np.int64), maximum_anchor_added
 
 
-def _merge_near_duplicate_grid(
-    grid: NDArray[np.int64],
-) -> tuple[NDArray[np.int64], bool]:
-    """Merge only closely spaced points outside the sensitive early region."""
-    merged: list[int] = []
-    merging_applied = False
-    maximum = int(grid[-1])
-    preserved = {0, 1, maximum}
-    for raw_value in grid:
-        value = int(raw_value)
-        if not merged:
-            merged.append(value)
-            continue
-        previous = merged[-1]
-        relative_separation = (value - previous) / max(previous, 1)
-        can_merge = (
-            previous >= _MIN_RELATIVE_MERGE_LENGTH
-            and previous not in preserved
-            and value not in preserved
-            and relative_separation <= _NEAR_DUPLICATE_RELATIVE_SEPARATION
-        )
-        if can_merge:
-            merged[-1] = round((previous + value) / 2.0)
-            merging_applied = True
-        else:
-            merged.append(value)
-    return np.asarray(sorted(set(merged)), dtype=np.int64), merging_applied
-
-
-def _thin_grid_in_log_space(
-    grid: NDArray[np.int64],
-    *,
-    maximum_points: int,
-) -> tuple[NDArray[np.int64], bool]:
-    """Thin a large union while preserving broad `log(1 + m)` coverage."""
-    if len(grid) <= maximum_points:
-        return grid, False
-    values = tuple(int(value) for value in grid)
-    coordinates = {value: math.log1p(value) for value in values}
-    selected = {values[0], values[-1]}
-    if 1 in coordinates:
-        selected.add(1)
-    while len(selected) < maximum_points:
-        remaining = [value for value in values if value not in selected]
-        next_value = max(
-            remaining,
-            key=lambda value: (
-                min(
-                    abs(coordinates[value] - coordinates[current])
-                    for current in selected
-                ),
-                -value,
-            ),
-        )
-        selected.add(next_value)
-    return np.asarray(sorted(selected), dtype=np.int64), True
-
-
-def _thin_grid_preserving_points(
-    grid: NDArray[np.int64],
-    *,
-    mandatory_points: Collection[int],
-    maximum_points: int,
-) -> tuple[NDArray[np.int64], bool]:
-    """Thin a grid in log space without removing required target coverage."""
-    if len(grid) <= maximum_points:
-        return grid, False
-    values = tuple(int(value) for value in grid)
-    coordinates = {value: math.log1p(value) for value in values}
-    selected = {int(value) for value in mandatory_points}
-    if not selected.issubset(coordinates):
-        raise ValueError("Mandatory parallel-grid points must belong to the union.")
-    if len(selected) > maximum_points:
-        raise ValueError("The parallel-grid cap cannot hold all mandatory points.")
-    while len(selected) < maximum_points:
-        remaining = [value for value in values if value not in selected]
-        next_value = max(
-            remaining,
-            key=lambda value: (
-                min(
-                    abs(coordinates[value] - coordinates[current])
-                    for current in selected
-                ),
-                -value,
-            ),
-        )
-        selected.add(next_value)
-    return np.asarray(sorted(selected), dtype=np.int64), True
-
-
 def _parallel_shared_main_grid(
     selections: Mapping[str, _MainGridSelection],
-    *,
-    maximum: int,
-) -> tuple[
-    NDArray[np.int64],
-    dict[str, NDArray[np.int64]],
-    int,
-    bool,
-]:
-    """Build a shared grid while retaining broad coverage for every target."""
-    retained_by_target: dict[str, NDArray[np.int64]] = {}
-    for target, selection in selections.items():
-        target_grid = selection.selected_grid
-        retained_count = min(
-            _MIN_PARALLEL_RETAINED_POINTS_PER_TARGET,
-            len(target_grid),
-        )
-        retained_by_target[target] = _thin_grid_in_log_space(
-            target_grid,
-            maximum_points=retained_count,
-        )[0]
-
-    candidates = np.asarray(
+) -> NDArray[np.int64]:
+    """Build the unthinned union needed by every parallel target."""
+    return np.asarray(
         sorted(
             {
                 int(length)
                 for selection in selections.values()
                 for length in selection.selected_grid
-                if 0 <= int(length) <= maximum
             }
         ),
         dtype=np.int64,
     )
-    mandatory = {
-        int(length)
-        for retained_grid in retained_by_target.values()
-        for length in retained_grid
-    }
-    maximum_points = max(
-        _MAX_MAIN_GRID_POINTS,
-        4 + 4 * len(selections),
-        len(mandatory),
-    )
-    shared_grid, thinning_applied = _thin_grid_preserving_points(
-        candidates,
-        mandatory_points=mandatory,
-        maximum_points=maximum_points,
-    )
-    return shared_grid, retained_by_target, maximum_points, thinning_applied
 
 
 def _fill_short_main_grid(
@@ -3587,28 +3454,28 @@ def _fill_short_main_grid(
     )
 
 
-def _postprocess_main_grid(
-    candidates: Collection[int],
+def _combine_main_grid_candidates(
+    interleaved_grid: NDArray[np.int64],
+    reference_grid: NDArray[np.int64],
     *,
     maximum: int,
-) -> tuple[NDArray[np.int64], bool, bool]:
-    """Anchor, bound, merge, sort, and thin one main-grid candidate union."""
-    bounded = {
-        int(value)
-        for value in candidates
-        if isinstance(value, (int, np.integer)) and 0 <= int(value) <= maximum
-    }
-    bounded.add(0)
-    if maximum >= 1:
-        bounded.add(1)
-    merged, merging_applied = _merge_near_duplicate_grid(
-        np.asarray(sorted(bounded), dtype=np.int64)
+) -> tuple[NDArray[np.int64], NDArray[np.int64]]:
+    """Add only reference candidates beyond the interleaved grid's range."""
+    covered_maximum = max(
+        1,
+        int(interleaved_grid[-1]) if interleaved_grid.size else 1,
     )
-    thinned, thinning_applied = _thin_grid_in_log_space(
-        merged,
-        maximum_points=_MAX_MAIN_GRID_POINTS,
+    reference_tail = reference_grid[reference_grid > covered_maximum].copy()
+    selected = np.unique(
+        np.concatenate(
+            (
+                np.asarray([0, 1], dtype=np.int64),
+                interleaved_grid,
+                reference_tail,
+            )
+        )
     )
-    return thinned, merging_applied, thinning_applied
+    return selected[(selected >= 0) & (selected <= maximum)], reference_tail
 
 
 def _fallback_main_grid(
@@ -3619,12 +3486,10 @@ def _fallback_main_grid(
     """Return an exploration-grid fallback with an auditable reason."""
     return _MainGridSelection(
         reference_grid=np.asarray([], dtype=np.int64),
+        reference_tail_grid=np.asarray([], dtype=np.int64),
         interleaved_grid=np.asarray([], dtype=np.int64),
         selected_grid=fallback_grid.copy(),
-        additional_fractions_used=(),
         supplemental_integer_grid=np.asarray([], dtype=np.int64),
-        near_duplicate_merging_applied=False,
-        thinning_applied=False,
         maximum_anchor_added=False,
         fallback_used=True,
         fallback_reason=reason,
@@ -3638,7 +3503,7 @@ def _select_decay_adapted_main_grid(
     maximum: int,
     fallback_grid: NDArray[np.int64],
 ) -> _MainGridSelection:
-    """Select a bounded main grid from both fitted decay scales."""
+    """Select an interleaved-first grid extended only by the reference tail."""
     if fits is None:
         return _fallback_main_grid(fallback_grid, reason="pilot_fit_unusable")
     try:
@@ -3658,63 +3523,22 @@ def _select_decay_adapted_main_grid(
             reason=f"invalid_pilot_decay: {error}",
         )
 
-    reference_candidates = {int(value) for value in reference_grid}
-    interleaved_candidates = {int(value) for value in interleaved_grid}
-    selected_grid, merging_applied, thinning_applied = _postprocess_main_grid(
-        reference_candidates | interleaved_candidates,
+    selected_grid, reference_tail_grid = _combine_main_grid_candidates(
+        interleaved_grid,
+        reference_grid,
         maximum=maximum,
     )
-    additional_fractions_used: list[float] = []
-    for fraction in _ADDITIONAL_MAIN_REMAINING_FRACTIONS:
-        if len(selected_grid) >= _MIN_MAIN_GRID_POINTS:
-            break
-        if fraction in remaining_fractions:
-            continue
-        additional_fractions_used.append(fraction)
-        try:
-            extra_reference, extra_reference_capped = _contrast_target_grid(
-                fits[0].decay_parameter,
-                (fraction,),
-                maximum=maximum,
-            )
-            extra_interleaved, extra_interleaved_capped = _contrast_target_grid(
-                fits[1].decay_parameter,
-                (fraction,),
-                maximum=maximum,
-            )
-        except ValueError as error:
-            return _fallback_main_grid(
-                fallback_grid,
-                reason=f"invalid_pilot_decay: {error}",
-            )
-        reference_candidates.update(int(value) for value in extra_reference)
-        interleaved_candidates.update(int(value) for value in extra_interleaved)
-        reference_capped = reference_capped or extra_reference_capped
-        interleaved_capped = interleaved_capped or extra_interleaved_capped
-        selected_grid, merged_now, thinned_now = _postprocess_main_grid(
-            reference_candidates | interleaved_candidates,
-            maximum=maximum,
-        )
-        merging_applied = merging_applied or merged_now
-        thinning_applied = thinning_applied or thinned_now
 
     selected_grid, supplemental_integer_grid = _fill_short_main_grid(
         selected_grid,
         maximum=maximum,
     )
-    if len(selected_grid) < _MIN_MAIN_GRID_POINTS:
-        return _fallback_main_grid(
-            fallback_grid,
-            reason="insufficient_unique_adaptive_points",
-        )
     return _MainGridSelection(
-        reference_grid=np.asarray(sorted(reference_candidates), dtype=np.int64),
-        interleaved_grid=np.asarray(sorted(interleaved_candidates), dtype=np.int64),
+        reference_grid=reference_grid,
+        reference_tail_grid=reference_tail_grid,
+        interleaved_grid=interleaved_grid,
         selected_grid=selected_grid,
-        additional_fractions_used=tuple(additional_fractions_used),
         supplemental_integer_grid=supplemental_integer_grid,
-        near_duplicate_merging_applied=merging_applied,
-        thinning_applied=thinning_applied,
         maximum_anchor_added=reference_capped or interleaved_capped,
         fallback_used=False,
         fallback_reason=None,
@@ -3877,23 +3701,17 @@ def _run_single_target_auto_range(
                 interleaved_fit.decay_parameter if interleaved_fit is not None else None
             ),
             "main_remaining_fractions": main_remaining_fractions,
-            "additional_remaining_fractions_used": (
-                main_grid_selection.additional_fractions_used
-            ),
             "supplemental_integer_grid": (
                 main_grid_selection.supplemental_integer_grid
             ),
             "candidate_reference_grid": main_grid_selection.reference_grid,
+            "reference_tail_grid": main_grid_selection.reference_tail_grid,
             "candidate_interleaved_grid": main_grid_selection.interleaved_grid,
             "selected_main_grid": main_grid_selection.selected_grid,
             "max_n_cliffords": maximum,
             "fallback_used": main_grid_selection.fallback_used,
             "fallback_reason": main_grid_selection.fallback_reason,
             "maximum_anchor_added": main_grid_selection.maximum_anchor_added,
-            "near_duplicate_merging_applied": (
-                main_grid_selection.near_duplicate_merging_applied
-            ),
-            "thinning_applied": main_grid_selection.thinning_applied,
             "pilot_stop_reason": stop_reason,
             "pilot_stop_detail": stop_detail,
             "pilot_fit_quality": (
@@ -3917,6 +3735,31 @@ def _run_single_target_auto_range(
             "pilot_raw_result": pilot_payload,
         },
     )
+
+
+def _warn_parallel_main_grid_selection(
+    target: str,
+    selection: _MainGridSelection,
+    *,
+    maximum: int,
+) -> None:
+    """Warn about fallback or clipped tail selection for one parallel target."""
+    if selection.fallback_used:
+        warnings.warn(
+            "Parallel paired-IRB main-grid selection is falling back to the "
+            f"pilot candidate grid for `{target}`: {selection.fallback_reason}.",
+            RuntimeWarning,
+            stacklevel=4,
+        )
+    if selection.maximum_anchor_added:
+        warnings.warn(
+            "Parallel paired-IRB main-grid tail target for "
+            f"`{target}` extends beyond `max_n_cliffords`; using the maximum "
+            f"Clifford length {maximum} as the tail anchor. Increase "
+            "`max_n_cliffords` if a deeper decay tail is required.",
+            RuntimeWarning,
+            stacklevel=4,
+        )
 
 
 def _run_parallel_auto_range(
@@ -4061,32 +3904,12 @@ def _run_parallel_auto_range(
         for target in targets
     }
     for target, selection in selections.items():
-        if selection.fallback_used:
-            warnings.warn(
-                "Parallel paired-IRB main-grid selection is falling back to the "
-                f"pilot candidate grid for `{target}`: "
-                f"{selection.fallback_reason}.",
-                RuntimeWarning,
-                stacklevel=3,
-            )
-        if selection.maximum_anchor_added:
-            warnings.warn(
-                "Parallel paired-IRB main-grid tail target for "
-                f"`{target}` extends beyond `max_n_cliffords`; using the maximum "
-                f"Clifford length {maximum} as the tail anchor. Increase "
-                "`max_n_cliffords` if a deeper decay tail is required.",
-                RuntimeWarning,
-                stacklevel=3,
-            )
-    (
-        shared_main_grid,
-        retained_by_target,
-        parallel_max_points,
-        group_thinning_applied,
-    ) = _parallel_shared_main_grid(
-        selections,
-        maximum=maximum,
-    )
+        _warn_parallel_main_grid_selection(
+            target,
+            selection,
+            maximum=maximum,
+        )
+    shared_main_grid = _parallel_shared_main_grid(selections)
     metadata_by_target: dict[str, dict[str, object]] = {}
     for target in targets:
         assessment = pilot_assessments.get(target)
@@ -4117,26 +3940,16 @@ def _run_parallel_auto_range(
                 interleaved_fit.decay_parameter if interleaved_fit is not None else None
             ),
             "main_remaining_fractions": main_remaining_fractions,
-            "additional_remaining_fractions_used": (
-                selection.additional_fractions_used
-            ),
             "supplemental_integer_grid": selection.supplemental_integer_grid.copy(),
             "candidate_reference_grid": selection.reference_grid.copy(),
+            "reference_tail_grid": selection.reference_tail_grid.copy(),
             "candidate_interleaved_grid": selection.interleaved_grid.copy(),
             "target_candidate_main_grid": selection.selected_grid.copy(),
-            "target_retained_main_grid": retained_by_target[target].copy(),
-            "target_retained_point_count": len(retained_by_target[target]),
             "selected_main_grid": shared_main_grid.copy(),
-            "parallel_max_points": parallel_max_points,
-            "parallel_retained_point_goal": (_MIN_PARALLEL_RETAINED_POINTS_PER_TARGET),
             "max_n_cliffords": maximum,
             "fallback_used": selection.fallback_used,
             "fallback_reason": selection.fallback_reason,
             "maximum_anchor_added": selection.maximum_anchor_added,
-            "near_duplicate_merging_applied": (
-                selection.near_duplicate_merging_applied
-            ),
-            "thinning_applied": (selection.thinning_applied or group_thinning_applied),
             "pilot_stop_reason": stop_reason,
             "pilot_stop_detail": stop_details[target],
             "pilot_fit_quality": (
@@ -4188,17 +4001,15 @@ def _fixed_range_metadata(
         "pilot_p_reference": None,
         "pilot_p_interleaved": None,
         "main_remaining_fractions": None,
-        "additional_remaining_fractions_used": (),
         "supplemental_integer_grid": np.asarray([], dtype=np.int64),
         "candidate_reference_grid": np.asarray([], dtype=np.int64),
+        "reference_tail_grid": np.asarray([], dtype=np.int64),
         "candidate_interleaved_grid": np.asarray([], dtype=np.int64),
         "selected_main_grid": n_cliffords.copy(),
         "max_n_cliffords": int(n_cliffords[-1]),
         "fallback_used": False,
         "fallback_reason": None,
         "maximum_anchor_added": False,
-        "near_duplicate_merging_applied": False,
-        "thinning_applied": False,
         "pilot_stop_reason": stop_reason,
         "pilot_stop_detail": None,
         "pilot_fit_quality": None,
@@ -4742,12 +4553,14 @@ def paired_interleaved_randomized_benchmarking(
         to 0.10 so the pilot observes the decay well into its tail before main-grid
         selection.
     main_remaining_fractions : Collection[float], optional
-        Ordered, strictly decreasing contrast fractions used to place the main
-        Clifford lengths for both fitted decay parameters while auto-range is
-        active. Sets and frozensets are rejected. Ignored when no pilot is run.
-        Defaults to `(0.90, 0.70, 0.50, 0.30, 0.15, 0.05)` so the main fit
-        includes a point with only about 5% fitted contrast remaining, which
-        better constrains the free asymptote `C`.
+        Ordered, strictly decreasing contrast fractions used to place the
+        interleaved main-grid lengths while auto-range is active. Reference
+        candidates are added only beyond the interleaved grid's maximum; all
+        selected lengths measure both arms. Sets and frozensets are rejected.
+        Ignored when no pilot is run. Defaults to
+        `(0.90, 0.70, 0.50, 0.30, 0.15, 0.05, 0.02)` so the main fit reaches
+        about 2% fitted interleaved contrast without subsequently thinning the
+        candidate union.
     n_trials : int | None, optional
         Paired trials per main-measurement length. Must be at least 2 and
         defaults to 30. Two or three trials permit the point estimate but not
@@ -4796,9 +4609,9 @@ def paired_interleaved_randomized_benchmarking(
     in_parallel : bool, optional
         Execute every target in each shared measurement point. Parallel groups
         must contain only 1Q targets or only disjoint 2Q targets. Their AB/BA
-        order is shared and shorter schedules are left-padded. Shared-grid
-        thinning retains up to six representative points from every target's
-        proposed grid. Defaults to `False` for serial target execution.
+        order is shared and shorter schedules are left-padded. The shared grid
+        is the unthinned union of every target's proposed grid. Defaults to
+        `False` for serial target execution.
     n_shots : int | None, optional
         Shots per sweep point. Defaults to the experiment constant.
     shot_interval : float | None, optional
@@ -4845,12 +4658,13 @@ def paired_interleaved_randomized_benchmarking(
     -----
     Auto-range measures an incremental paired pilot at zero, powers of two, and
     the exact non-power-of-two exploration ceiling when needed. It maps the
-    requested remaining-contrast fractions through both fitted decay parameters,
-    then performs a fresh main acquisition on the resulting grid.
+    requested remaining-contrast fractions through the interleaved decay first,
+    then adds only reference candidates beyond that grid's maximum. Zero and one
+    are included, and the resulting union is not merged or thinned before the
+    fresh main acquisition.
     Pilot trials are retained under `grid_selection["pilot_raw_result"]` but
     never enter the main fit or bootstrap. Serial targets choose grids
-    independently; parallel targets use the processed union of all target
-    grids.
+    independently; parallel targets use the unthinned union of all target grids.
 
     The pilot-only fixed-offset model assumes asymptotic survival `1/d`. For
     unmitigated 2Q readout, asymmetric assignment errors can make the observed

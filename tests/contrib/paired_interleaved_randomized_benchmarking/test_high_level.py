@@ -274,9 +274,9 @@ def test_serial_multi_target_auto_range_selects_each_target_independently() -> N
             save_image=False,
         )
 
-    assert result["Q0"]["grid_selection"]["selected_main_grid"][-1] == 28
+    assert result["Q0"]["grid_selection"]["selected_main_grid"][-1] == 37
     assert result["Q1"]["grid_selection"]["selected_main_grid"][-1] == 128
-    assert result["Q0"]["acquisition"]["n_cliffords"][-1] == 28
+    assert result["Q0"]["acquisition"]["n_cliffords"][-1] == 37
     assert result["Q1"]["acquisition"]["n_cliffords"][-1] == 128
 
 
@@ -443,7 +443,7 @@ def test_multi_target_schedule_reuse_is_rejected_before_measurement() -> None:
 
 @pytest.mark.parametrize(
     ("decays", "expected_maximum"),
-    [((0.90, 0.85), 28), ((0.98, 0.97), 128)],
+    [((0.90, 0.85), 37), ((0.98, 0.97), 128)],
 )
 def test_auto_range_selects_from_paired_pilot_decay(
     decays: tuple[float, float],
@@ -871,7 +871,7 @@ def test_moderate_fidelity_auto_range_uses_a_shorter_adaptive_grid() -> None:
         )
 
     main_grid = result["Q0"]["grid_selection"]["selected_main_grid"]
-    assert 550 <= main_grid[-1] <= 650
+    assert 750 <= main_grid[-1] <= 850
     assert not {2, 4, 8, 16}.intersection(main_grid)
     assert result["Q0"]["grid_selection"]["pilot_remaining_fraction"] == 0.10
     assert result["Q0"]["grid_selection"]["main_remaining_fractions"] == (
@@ -881,6 +881,7 @@ def test_moderate_fidelity_auto_range_uses_a_shorter_adaptive_grid() -> None:
         0.30,
         0.15,
         0.05,
+        0.02,
     )
 
 
@@ -927,8 +928,8 @@ def test_two_qubit_auto_range_samples_the_short_decay_region(
         )
 
     main_grid = result["CR0"]["grid_selection"]["selected_main_grid"]
-    assert main_grid[-1] == 148
-    assert sum(length <= 16 for length in main_grid) >= 6
+    assert main_grid[-1] == 194
+    assert sum(length <= 16 for length in main_grid) >= 5
     assert result["CR0"]["metadata"]["dimension"] == 4
     selection = result["CR0"]["grid_selection"]
     assert selection["pilot_reference_fit"]["C"] == pytest.approx(0.25)
@@ -939,8 +940,8 @@ def test_two_qubit_auto_range_samples_the_short_decay_region(
     assert selection["pilot_grid"][-1] < 256
 
 
-def test_very_fast_decay_uses_the_supplemental_two_percent_target() -> None:
-    """The 2% fallback target should separate a collapsed short-length grid."""
+def test_very_fast_decay_adds_only_the_reference_tail() -> None:
+    """The 2% reference point should extend the interleaved-first grid."""
     exp: Any = _Experiment(
         targets=("Q0",),
         decays={"Q0": (0.50, 0.40)},
@@ -963,14 +964,8 @@ def test_very_fast_decay_uses_the_supplemental_two_percent_target() -> None:
     selection = result["Q0"]["grid_selection"]
     np.testing.assert_array_equal(selection["selected_main_grid"], [0, 1, 2, 3, 4, 6])
     np.testing.assert_array_equal(selection["supplemental_integer_grid"], [])
-    assert selection["additional_remaining_fractions_used"] == (
-        0.80,
-        0.60,
-        0.40,
-        0.20,
-        0.10,
-        0.02,
-    )
+    np.testing.assert_array_equal(selection["candidate_interleaved_grid"], [1, 2, 3, 4])
+    np.testing.assert_array_equal(selection["reference_tail_grid"], [6])
     assert selection["fallback_used"] is False
 
 
@@ -1055,11 +1050,11 @@ def test_fixed_power_of_two_grid_does_not_add_a_non_power_of_two_maximum() -> No
     )
 
 
-def test_similar_decay_parameters_do_not_create_an_excessive_union() -> None:
-    """Similar fitted decays should deduplicate most arm-specific grid points."""
+def test_faster_reference_adds_no_tail_to_the_interleaved_grid() -> None:
+    """A covered reference range should not add internal reference candidates."""
     exp: Any = _Experiment(
         targets=("Q0",),
-        decays={"Q0": (0.980, 0.979)},
+        decays={"Q0": (0.979, 0.980)},
     )
 
     with pytest.warns(RuntimeWarning):
@@ -1067,7 +1062,7 @@ def test_similar_decay_parameters_do_not_create_an_excessive_union() -> None:
             exp,
             "Q0",
             interleaved_clifford="X90",
-            max_n_cliffords=128,
+            max_n_cliffords=512,
             n_trials=4,
             sequence_seed=83,
             n_bootstrap=0,
@@ -1077,9 +1072,12 @@ def test_similar_decay_parameters_do_not_create_an_excessive_union() -> None:
         )
 
     selection = result["Q0"]["grid_selection"]
-    assert len(selection["selected_main_grid"]) <= 11
-    assert selection["near_duplicate_merging_applied"] is True
-    assert selection["thinning_applied"] is False
+    np.testing.assert_array_equal(selection["reference_tail_grid"], [])
+    np.testing.assert_array_equal(
+        selection["selected_main_grid"],
+        [0, 1, *selection["candidate_interleaved_grid"]],
+    )
+    assert selection["maximum_anchor_added"] is False
 
 
 def test_different_decay_parameters_contribute_both_candidate_regions() -> None:
@@ -1105,17 +1103,30 @@ def test_different_decay_parameters_contribute_both_candidate_regions() -> None:
 
     selection = result["Q0"]["grid_selection"]
     assert selection["candidate_reference_grid"][-1] == 512
-    assert selection["candidate_interleaved_grid"][-1] == 58
-    assert 58 in selection["selected_main_grid"]
-    assert 378 in selection["selected_main_grid"]
+    assert selection["candidate_interleaved_grid"][-1] == 76
+    np.testing.assert_array_equal(
+        selection["reference_tail_grid"], [138, 240, 378, 512]
+    )
+    np.testing.assert_array_equal(
+        selection["selected_main_grid"],
+        sorted(
+            {
+                0,
+                1,
+                *selection["candidate_interleaved_grid"],
+                *selection["reference_tail_grid"],
+            }
+        ),
+    )
+    assert {21, 71}.isdisjoint(selection["selected_main_grid"])
 
 
 @pytest.mark.parametrize(
     ("fractions", "expected_maximum", "expected_points", "expected_sequence_cost"),
     [
-        ((0.9, 0.7, 0.5, 0.3, 0.15), 378, 11, 9_616),
-        ((0.9, 0.75, 0.6, 0.45, 0.3, 0.2), 321, 13, 9_528),
-        ((0.8, 0.6, 0.4, 0.2, 0.1), 459, 12, 13_312),
+        ((0.9, 0.7, 0.5, 0.3, 0.15), 378, 9, 8_336),
+        ((0.9, 0.75, 0.6, 0.45, 0.3, 0.2), 321, 10, 8_088),
+        ((0.8, 0.6, 0.4, 0.2, 0.1), 459, 9, 10_672),
     ],
 )
 def test_main_contrast_fraction_designs_produce_stable_bounded_grids(
@@ -1480,8 +1491,8 @@ def test_pilot_threshold_controls_pilot_cost_but_not_the_adaptive_main_grid() ->
         fidelities.append(result["Q0"]["gate_fidelity"])
         bootstrap_sigmas.append(result["Q0"]["gate_fidelity_err"])
 
-    assert selected_maxima == [36, 36, 36]
-    assert main_measurement_points == [96, 96, 96]
+    assert selected_maxima == [47, 47, 47]
+    assert main_measurement_points == [72, 72, 72]
     assert pilot_measurement_points == [84, 84, 72]
     assert p_reference == pytest.approx([0.92, 0.92, 0.92], abs=1e-8)
     assert p_interleaved == pytest.approx([0.90, 0.90, 0.90], abs=1e-8)
@@ -1540,7 +1551,7 @@ def test_auto_range_extends_when_the_first_pilot_shape_is_poor(
     grid_selection = result["Q0"]["grid_selection"]
     assert grid_selection["pilot_stop_reason"] == "decay_threshold_reached"
     assert grid_selection["pilot_grid"][-1] == 32
-    assert grid_selection["selected_main_grid"][-1] == 28
+    assert grid_selection["selected_main_grid"][-1] == 37
     assert (
         "poor_decay_shape"
         in (
@@ -1716,7 +1727,7 @@ def test_parallel_auto_range_uses_the_slowest_targets_shared_grid() -> None:
             save_image=False,
         )
 
-    assert result["Q0"]["grid_selection"]["target_candidate_main_grid"][-1] == 28
+    assert result["Q0"]["grid_selection"]["target_candidate_main_grid"][-1] == 37
     assert result["Q1"]["grid_selection"]["target_candidate_main_grid"][-1] == 128
     np.testing.assert_array_equal(
         result["Q0"]["grid_selection"]["selected_main_grid"],
@@ -1727,14 +1738,13 @@ def test_parallel_auto_range_uses_the_slowest_targets_shared_grid() -> None:
         is not result["Q1"]["grid_selection"]["selected_main_grid"]
     )
     shared_grid = result["Q0"]["grid_selection"]["selected_main_grid"]
-    assert len(shared_grid) == 14
+    assert len(shared_grid) == 16
     assert 2 in shared_grid
     assert shared_grid[-1] == 128
-    assert result["Q0"]["grid_selection"]["thinning_applied"] is True
 
 
-def test_parallel_shared_grid_retains_each_targets_informative_region() -> None:
-    """Parallel thinning should preserve six points from every target design."""
+def test_parallel_shared_grid_retains_each_targets_complete_grid() -> None:
+    """The parallel union should preserve every target's selected grid."""
     decays = {
         "Q0": (0.9995, 0.9990),
         "Q1": (0.9950, 0.9900),
@@ -1770,11 +1780,13 @@ def test_parallel_shared_grid_retains_each_targets_informative_region() -> None:
 
     shared_grid = parallel["Q0"]["grid_selection"]["selected_main_grid"]
     assert len(shared_grid) > 14
+    target_grids = []
     for target, (p_reference, p_interleaved) in decays.items():
         selection = parallel[target]["grid_selection"]
-        retained = selection["target_retained_main_grid"]
-        assert selection["target_retained_point_count"] >= 6
-        assert set(retained).issubset(shared_grid)
+        target_grid = selection["target_candidate_main_grid"]
+        target_grids.append(target_grid)
+        assert len(target_grid) >= 6
+        assert set(target_grid).issubset(shared_grid)
         assert parallel[target]["reference"]["fit"]["p"] == pytest.approx(
             p_reference,
             abs=1e-8,
@@ -1791,10 +1803,14 @@ def test_parallel_shared_grid_retains_each_targets_informative_region() -> None:
             serial[target]["gate_fidelity_err"],
             abs=1e-12,
         )
+    np.testing.assert_array_equal(
+        shared_grid,
+        sorted({int(length) for grid in target_grids for length in grid}),
+    )
 
 
 def test_parallel_shared_grid_preserves_fallback_target_anchors() -> None:
-    """Fallback targets should retain endpoints and representative midpoints."""
+    """The shared union should retain every fallback-grid point."""
     exp: Any = _Experiment(
         decays={"Q0": (1.0, 1.0), "Q1": (0.98, 0.95)},
     )
@@ -1815,11 +1831,11 @@ def test_parallel_shared_grid_preserves_fallback_target_anchors() -> None:
         )
 
     selection = result["Q0"]["grid_selection"]
-    retained = selection["target_retained_main_grid"]
     assert selection["fallback_used"] is True
-    assert selection["target_retained_point_count"] == 6
-    assert {0, 1, 128}.issubset(retained)
-    assert set(retained).issubset(selection["selected_main_grid"])
+    target_grid = selection["target_candidate_main_grid"]
+    assert len(target_grid) == 9
+    assert {0, 1, 128}.issubset(target_grid)
+    assert set(target_grid).issubset(selection["selected_main_grid"])
 
 
 def test_target_maps_resolve_waveforms_and_ignore_zx90_for_one_qubit_targets() -> None:
