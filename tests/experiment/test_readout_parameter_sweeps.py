@@ -332,6 +332,65 @@ def test_fidelity_sweep_preserves_plateau_and_classifier_update(
         assert result["signals_0"].shape == result["signals_1"].shape == (3, 4)
 
 
+@pytest.mark.parametrize("electrical_delay", [None, 0.3])
+def test_frequency_distance_preserves_reflection_processing(
+    readout: Any, monkeypatch: pytest.MonkeyPatch, electrical_delay: float | None
+) -> None:
+    """Frequency distance should batch reflection data while retaining delay estimation and phase normalization."""
+    signals_0 = np.array([1j, 2j, 3j])
+    signals_1 = np.array([1, -2, 3])
+    readout.runner.signals = list(np.concatenate([signals_0, signals_1]))
+    fits: list[dict[str, Any]] = []
+    delays: list[dict[str, Any]] = []
+
+    class FitResult(dict):
+        def get_figure(self) -> None:
+            return None
+
+    def fit(**kwargs: Any) -> FitResult:
+        fits.append(kwargs)
+        return FitResult(f_r=5.1)
+
+    def measure_delay(_target: str, **kwargs: Any) -> float:
+        delays.append(kwargs)
+        return 0.3
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.fitting.fit_reflection_coefficient",
+        fit,
+    )
+    monkeypatch.setattr(readout.service, "measure_electrical_delay", measure_delay)
+    result = readout.service.find_optimal_readout_frequency(
+        "Q00",
+        df=0.1,
+        frequency_width=0.21,
+        electrical_delay=electrical_delay,
+        shots=4,
+        interval=10,
+        plot=False,
+        save_image=False,
+    )
+
+    assert result["optimal_frequency"] == pytest.approx(5.1)
+    for state, signals in enumerate([signals_0, signals_1]):
+        corrected = signals * np.exp(1j * 2 * np.pi * result["frequency_range"] * 0.3)
+        expected = np.abs(corrected) * np.exp(
+            1j * (np.angle(corrected) - np.angle(corrected[0]))
+        )
+        np.testing.assert_allclose(
+            result[f"signals_{state}"], expected, rtol=0, atol=1e-12
+        )
+        np.testing.assert_allclose(fits[state]["data"], expected, rtol=0, atol=1e-12)
+    assert readout.sweeps == [list(range(3)), list(range(3))]
+    assert len(readout.runner.batch_calls) == 2
+    assert readout.reset_calls == [["Q00"], ["Q00"]]
+    assert len(delays) == (2 if electrical_delay is None else 0)
+    assert all(
+        call["shots"] == 128 and call["interval"] == 1024 and call["confirm"] is False
+        for call in delays
+    )
+
+
 def test_sync_optimization_runs_inside_an_event_loop(readout: Any) -> None:
     """Synchronous optimization should return its result when an event loop is already running."""
     readout.runner.signals = [1, 2, 1, 4]

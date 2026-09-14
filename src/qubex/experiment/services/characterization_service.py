@@ -3104,30 +3104,20 @@ class CharacterizationService:
             df,
         )
 
-        signals = []
-
-        initialize_pulse = self.pulse.get_pulse_for_state(
-            target=qubit_label,
-            state=qubit_state,
-        )
-
         self.ctx.reset_awg_and_capunits(qubits=[qubit_label])
-
-        for freq in tqdm(freq_range, desc=f"reflection coefficient for {target}"):
-            with self.ctx.modified_frequencies({read_label: freq}):
-                result = self._measurement_service.measure(
-                    {qubit_label: initialize_pulse},
-                    mode="avg",
-                    readout_amplitudes={qubit_label: readout_amplitude},
-                    shots=shots,
-                    interval=interval,
-                    reset_awg_and_capunits=False,
-                )
-                signal = result.data[target].kerneled
-                signal = signal * np.exp(1j * 2 * np.pi * freq * electrical_delay)
-                signals.append(signal)
-
-        signals = np.array(signals)
+        (buffer,) = self._run_readout_sweep(
+            target,
+            freq_range,
+            parameter="frequency",
+            states=(qubit_state,),
+            mode="avg",
+            readout_amplitude=readout_amplitude,
+            shots=shots,
+            interval=interval,
+        )
+        signals = np.array(buffer) * np.exp(
+            1j * 2 * np.pi * freq_range * electrical_delay
+        )
         amplitudes = np.abs(signals)
         # amplitudes -= (
         #     (amplitudes[-1] - amplitudes[0])
