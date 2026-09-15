@@ -3,8 +3,8 @@ requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "qxsimulator"
-version = "1.5.0rc2"
+name = "qubex-simulator"
+version = "1.5.0rc4"
 requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex quantum system simulation utilities"
@@ -17,9 +17,9 @@ dependencies = [
     "plotly >= 5.23",
     "qctrl-visualizer >= 8.0",
     "qutip[runtime-compilation] >= 5.0.1",
-    "qxcore == 1.5.0rc2",
-    "qxpulse == 1.5.0rc2",
-    "qxvisualizer == 1.5.0rc2",
+    "qubex-core == 1.5.0rc4",
+    "qubex-pulse == 1.5.0rc4",
+    "qubex-visualizer == 1.5.0rc4",
     "scipy >= 1.0",
     "typing_extensions >= 4.5",
 ]

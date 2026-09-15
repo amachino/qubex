@@ -3,8 +3,8 @@ requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "qxschema"
-version = "1.5.0rc2"
+name = "qubex-schema"
+version = "1.5.0rc4"
 requires-python = ">=3.10"
 authors = [{ name = "Yasunari Suzuki" }, { name = "Akinori Machino" }]
 description = "A common schema definitions for quantum experiments"
@@ -13,7 +13,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
     "numpy >= 1.22",
-    "qxcore == 1.5.0rc2",
+    "qubex-core == 1.5.0rc4",
 ]
 
 [tool.setuptools.package-data]

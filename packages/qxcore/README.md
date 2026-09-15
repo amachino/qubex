@@ -1,4 +1,10 @@
-# qxcore
+# qubex-core
+
+PyPI distribution: `qubex-core`. Python import: `qxcore` (unchanged).
+
+```bash
+pip install "qubex-core==1.5.0rc4"
+```
 
 `qxcore` is the core data-model and utility layer extracted from the Qubex project. It contains shared primitives (models, units, quantities, expressions, serialization) that higher-level packages like `qubex` build on.
 
@@ -6,7 +12,7 @@
 
 - `qxcore` is a standalone package with no dependency on `qubex`.
 - `qubex` depends on `qxcore` and provides the full experiment framework (pulse, simulator, backend, etc.).
-- If you only need the core models and utilities, install `qxcore` directly.
+- If you only need the core models and utilities, install `qubex-core` directly.
 
 ## Requirements
 
@@ -16,10 +22,10 @@
 
 ```bash
 # pip
-pip install "qxcore @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxcore"
+pip install "qubex-core @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxcore"
 
 # uv
-uv pip install "qxcore @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxcore"
+uv pip install "qubex-core @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxcore"
 ```
 
 ## pyproject.toml
@@ -27,7 +33,7 @@ uv pip install "qxcore @ git+https://github.com/amachino/qubex.git@develop#subdi
 ```toml
 [project]
 dependencies = [
-  "qxcore @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxcore",
+  "qubex-core @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxcore",
 ]
 ```
 
