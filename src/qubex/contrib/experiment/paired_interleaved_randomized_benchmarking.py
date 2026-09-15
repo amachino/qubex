@@ -1963,12 +1963,17 @@ def _paired_trial_statistics(
     )
 
 
-def _initial_fit_parameters(mean: NDArray[np.float64]) -> tuple[float, float, float]:
+def _initial_fit_parameters(
+    n_cliffords: NDArray[np.int64],
+    mean: NDArray[np.float64],
+) -> tuple[float, float, float]:
     """Return an interior starting point for bounded RB fitting."""
     epsilon = 1e-6
     offset = float(np.clip(np.min(mean), epsilon, 1.0 - epsilon))
     amplitude = float(np.clip(mean[0] - offset, epsilon, 1.0 - epsilon))
-    return amplitude, 0.98, offset
+    length_scale = max(float(n_cliffords[-1]), 1.0)
+    initial_p = float(np.exp(-1.0 / length_scale))
+    return amplitude, initial_p, offset
 
 
 def _fit_rb_decay(
@@ -1991,7 +1996,7 @@ def _fit_rb_decay(
             _rb_decay,
             n_cliffords.astype(np.float64),
             mean,
-            p0=_initial_fit_parameters(mean),
+            p0=_initial_fit_parameters(n_cliffords, mean),
             sigma=sem_used,
             absolute_sigma=True,
             bounds=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),

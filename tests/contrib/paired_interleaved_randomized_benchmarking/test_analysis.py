@@ -123,6 +123,39 @@ def test_weighted_fit_recovers_known_synthetic_gate_fidelity() -> None:
     assert target["reference"]["fit"]["absolute_sigma"] is True
 
 
+def test_rb_fit_initializes_decay_from_the_largest_clifford_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RB fitting should scale its initial decay estimate to the measured range."""
+    module = importlib.import_module(
+        "qubex.contrib.experiment.paired_interleaved_randomized_benchmarking"
+    )
+    n_cliffords = np.asarray([0, 10, 100], dtype=np.int64)
+    mean = 0.4 * np.exp(-n_cliffords / 100.0) + 0.5
+    sem_used = np.full_like(mean, 0.01)
+    captured: dict[str, tuple[float, float, float]] = {}
+
+    def fake_curve_fit(*args: Any, **kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
+        """Capture fit initialization while returning a valid optimizer result."""
+        captured["p0"] = kwargs["p0"]
+        return np.asarray([0.4, np.exp(-0.01), 0.5]), np.eye(3)
+
+    monkeypatch.setattr(module, "curve_fit", fake_curve_fit)
+
+    module._fit_rb_decay(n_cliffords, mean, sem_used)  # noqa: SLF001
+
+    np.testing.assert_allclose(
+        captured["p0"],
+        (
+            float(mean[0] - np.min(mean)),
+            np.exp(-1.0 / 100.0),
+            float(np.min(mean)),
+        ),
+        rtol=1e-7,
+        atol=1e-9,
+    )
+
+
 def _evaluate_noisy_grid_design(
     grid: np.ndarray,
     *,
