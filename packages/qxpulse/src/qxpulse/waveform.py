@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Default sampling period in ns
 DEFAULT_SAMPLING_PERIOD = 2.0
-SAMPLING_PERIOD_TOLERANCE = 1e-8
+SAMPLING_PERIOD_TOLERANCE = 1e-7
 
 
 def _nearest_sampling_period_sample_count(
