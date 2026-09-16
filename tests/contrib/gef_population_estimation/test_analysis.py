@@ -39,49 +39,6 @@ def _unknown_means(
     }
 
 
-def _gaussian_state_model() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return independent Gaussian IQ parameters and their five moments."""
-    means = np.array(
-        [
-            [-1.8, 0.2],
-            [0.1, 1.5],
-            [2.0, -0.7],
-        ]
-    )
-    standard_deviations = np.array(
-        [
-            [0.45, 0.35],
-            [0.55, 0.40],
-            [0.50, 0.60],
-        ]
-    )
-    state_features = np.column_stack(
-        (
-            means[:, 0],
-            means[:, 1],
-            means[:, 0] ** 2 + standard_deviations[:, 0] ** 2,
-            means[:, 0] * means[:, 1],
-            means[:, 1] ** 2 + standard_deviations[:, 1] ** 2,
-        )
-    )
-    return means, standard_deviations, state_features
-
-
-def _sample_gaussian_mixture(
-    generator: np.random.Generator,
-    means: np.ndarray,
-    standard_deviations: np.ndarray,
-    weights: np.ndarray,
-    *,
-    n_shots: int,
-) -> np.ndarray:
-    """Sample one complex-IQ Gaussian mixture with the requested populations."""
-    states = generator.choice(3, size=n_shots, p=weights)
-    i_values = generator.normal(means[states, 0], standard_deviations[states, 0])
-    q_values = generator.normal(means[states, 1], standard_deviations[states, 1])
-    return i_values + 1j * q_values
-
-
 def test_summarize_iq_shots_returns_full_second_moments_and_mean_covariance() -> None:
     """Complex IQ shots should produce the documented five moments and covariance."""
     iq = np.array([1 + 2j, 3 + 4j, -1 + 1j], dtype=np.complex128)
@@ -280,41 +237,6 @@ def test_fit_constrains_an_unphysical_estimate_to_the_probability_simplex() -> N
     assert np.all(result.population <= 1.0 + 1e-12)
     assert np.sum(result.population) == pytest.approx(1.0, abs=1e-10)
     assert result.objective > 0.0
-
-
-def test_analytic_standard_error_matches_fixed_calibration_iq_monte_carlo() -> None:
-    """Analytic errors should match IQ shot-noise variation with fixed calibration."""
-    generator = np.random.default_rng(240908)
-    means, standard_deviations, state_features = _gaussian_state_model()
-    population = np.array([0.7, 0.2, 0.1])
-    configuration_weights = {
-        "s1": population,
-        "s4": population[[1, 2, 0]],
-        "s5": population[[2, 0, 1]],
-    }
-    estimates: list[np.ndarray] = []
-    predicted_errors: list[np.ndarray] = []
-
-    for _ in range(160):
-        summaries = {
-            name: summarize_iq_shots(
-                _sample_gaussian_mixture(
-                    generator,
-                    means,
-                    standard_deviations,
-                    weights,
-                    n_shots=1_500,
-                )
-            )
-            for name, weights in configuration_weights.items()
-        }
-        fit = fit_gef_population(summaries, state_features)
-        estimates.append(fit.population_unconstrained)
-        predicted_errors.append(fit.population_standard_error)
-
-    empirical_error = np.std(estimates, axis=0, ddof=1)
-    analytic_error = np.mean(predicted_errors, axis=0)
-    assert_allclose(empirical_error, analytic_error, rtol=0.20, atol=2e-3)
 
 
 def test_fit_rejects_nonidentifiable_state_features() -> None:

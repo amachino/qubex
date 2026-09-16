@@ -176,6 +176,7 @@ def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
         n_bootstrap=20,
         bootstrap_seed=11,
         bootstrap_confidence_level=0.90,
+        enable_tqdm=True,
     )
 
     assert exp.measurement_service.batch_calls == [6, 3]
@@ -216,6 +217,7 @@ def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
         assert call["time_integration"] is True
         assert call["state_classification"] is False
         assert call["shot_interval"] == 1234.0
+        assert call["enable_tqdm"] is True
 
     population = result.data["populations"]["prepared"]["Q0"]
     assert_allclose(population, [0.2, 0.3, 0.5], rtol=1e-6, atol=1e-7)
@@ -255,6 +257,7 @@ def test_measure_gef_populations_uses_gef_specific_shot_defaults() -> None:
     assert all(
         call["shot_interval"] == 2468.0 for call in exp.measurement_service.calls
     )
+    assert all(call["enable_tqdm"] is False for call in exp.measurement_service.calls)
     assert result.data["measurement_options"]["shot_interval"] == 2468.0
     assert result.data["measurement_options"]["calibration_n_shots"] == 8192
     fit = result.data["fits"]["sequence_0"]["Q0"]
@@ -458,6 +461,24 @@ def test_measure_gef_populations_rejects_invalid_acquisition_options_first(
             targets="Q0",
             sequences=[preparation],
             **kwargs,  # type: ignore[arg-type]
+        )
+
+    assert not exp.measurement_service.calls
+
+
+@pytest.mark.parametrize("name", ["n_shots", "calibration_n_shots"])
+def test_measure_gef_populations_requires_two_shots_for_covariance(name: str) -> None:
+    """Both measurement and calibration moment covariance require two shots."""
+    exp = _DummyExperiment([])
+    with PulseSchedule(["Q0"]) as preparation:
+        preparation.add("Q0", Blank(duration=2.0))
+
+    with pytest.raises(ValueError, match=rf"{name} must be at least two"):
+        measure_gef_populations(
+            exp,  # type: ignore[arg-type]
+            targets="Q0",
+            sequences=[preparation],
+            **{name: 1},  # type: ignore[arg-type]
         )
 
     assert not exp.measurement_service.calls

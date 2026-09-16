@@ -5,9 +5,7 @@ from qubex import contrib
 from qubex.contrib import experiment as experiment_contrib
 
 _CR_PUBLIC_API = {
-    "analyze_cr_dissipation",
     "characterize_cr_dissipation",
-    "plot_cr_dissipation",
 }
 _CR_MODULE_ONLY_API = {
     "DEFAULT_N_VALUES",
@@ -37,9 +35,7 @@ def test_contrib_module_is_exported_from_qubex() -> None:
     assert callable(contrib.purity_benchmarking)
     assert callable(contrib.get_superconducting_gap)
     assert callable(contrib.get_resistance_charge)
-    assert callable(contrib.analyze_cr_dissipation)
     assert callable(contrib.characterize_cr_dissipation)
-    assert callable(contrib.plot_cr_dissipation)
 
 
 def test_cr_exports_are_limited_to_workflow_functions() -> None:

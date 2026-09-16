@@ -16,6 +16,7 @@ def measure_single_shot_batch(
     *,
     n_shots: int,
     shot_interval: float,
+    enable_tqdm: bool = False,
 ) -> list[dict[str, NDArray[np.complex128]]]:
     """
     Acquire a single-shot sweep and validate its ordered IQ payloads.
@@ -32,6 +33,8 @@ def measure_single_shot_batch(
         Validated shot count, at least two for the contrib estimators.
     shot_interval
         Validated positive interval in ns.
+    enable_tqdm
+        Whether the underlying sweep displays its progress bar.
 
     Returns
     -------
@@ -81,7 +84,7 @@ def measure_single_shot_batch(
             state_classification=False,
             final_measurement=True,
             plot=False,
-            enable_tqdm=False,
+            enable_tqdm=enable_tqdm,
         ),
         timeout=timeout,
     )

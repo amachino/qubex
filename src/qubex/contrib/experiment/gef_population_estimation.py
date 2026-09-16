@@ -623,6 +623,7 @@ def calibrate_gef_population(
     *,
     n_shots: int | None = None,
     shot_interval: float | None = None,
+    enable_tqdm: bool = False,
 ) -> dict[str, GefPopulationCalibration]:
     """
     Measure six thermal-state permutations and calibrate GEF IQ features.
@@ -634,10 +635,13 @@ def calibrate_gef_population(
     targets
         Qubit label or labels to calibrate simultaneously.
     n_shots
-        Number of shots per calibration configuration. Defaults to 8192.
+        Number of shots per calibration configuration. Defaults to 8192 and
+        must be at least two to estimate the IQ moment covariance.
     shot_interval
         Interval between shots in ns. When omitted, use the resolved
         `measurement_defaults.yaml` value.
+    enable_tqdm
+        Whether to show acquisition progress.
 
     Returns
     -------
@@ -667,6 +671,7 @@ def calibrate_gef_population(
         analyzers,
         n_shots=resolved_n_shots,
         shot_interval=resolved_shot_interval,
+        enable_tqdm=enable_tqdm,
     )
     analyzer_duration = next(iter(analyzers.values())).duration
     return {
@@ -696,6 +701,7 @@ def measure_gef_populations(
     n_bootstrap: int = _DEFAULT_N_BOOTSTRAP,
     bootstrap_seed: int | None = 0,
     bootstrap_confidence_level: float = _DEFAULT_BOOTSTRAP_CONFIDENCE_LEVEL,
+    enable_tqdm: bool = False,
 ) -> Result:
     """
     Calibrate and estimate GEF populations after arbitrary pulse schedules.
@@ -713,10 +719,12 @@ def measure_gef_populations(
         Optional prior calibration keyed by canonical qubit label. When omitted,
         six calibration configurations are measured before the input sequences.
     n_shots
-        Number of shots per S1/S4/S5 configuration. Defaults to 4096.
+        Number of shots per S1/S4/S5 configuration. Defaults to 4096 and must
+        be at least two to estimate the IQ moment covariance.
     calibration_n_shots
         Number of shots per calibration configuration. Defaults to 8192 and is
-        ignored when `calibration` is provided.
+        ignored when `calibration` is provided. When used, it must be at least
+        two for the same covariance requirement.
     shot_interval
         Interval between shots in ns. When omitted, use the resolved
         `measurement_defaults.yaml` value.
@@ -731,6 +739,8 @@ def measure_gef_populations(
     bootstrap_confidence_level
         Marginal percentile confidence level strictly between zero and one.
         Defaults to 0.95.
+    enable_tqdm
+        Whether to show acquisition progress.
 
     Returns
     -------
@@ -784,6 +794,7 @@ def measure_gef_populations(
             target_list,
             n_shots=resolved_calibration_n_shots,
             shot_interval=resolved_shot_interval,
+            enable_tqdm=enable_tqdm,
         )
     else:
         calibration_by_target = _validate_calibration(
@@ -810,6 +821,7 @@ def measure_gef_populations(
         schedules,
         n_shots=resolved_n_shots,
         shot_interval=resolved_shot_interval,
+        enable_tqdm=enable_tqdm,
     )
     raw_iq = {
         sequence_name: {
@@ -871,6 +883,7 @@ def measure_gef_populations(
                 "n_bootstrap": resolved_n_bootstrap,
                 "bootstrap_seed": resolved_bootstrap_seed,
                 "bootstrap_confidence_level": resolved_bootstrap_confidence_level,
+                "enable_tqdm": enable_tqdm,
             },
         }
     )
@@ -986,9 +999,9 @@ def _resolve_shot_count(value: int | None, *, name: str, default: int) -> int:
     """Resolve and validate a shot-count option."""
     resolved = default if value is None else value
     if isinstance(resolved, bool) or not isinstance(resolved, Integral):
-        raise TypeError(f"{name} must be an integer of at least two.")
+        raise TypeError(f"{name} must be an integer.")
     if resolved < 2:
-        raise ValueError(f"{name} must be an integer of at least two.")
+        raise ValueError(f"{name} must be at least two.")
     return int(resolved)
 
 
@@ -1316,6 +1329,7 @@ def _measure_configurations(
     *,
     n_shots: int,
     shot_interval: float,
+    enable_tqdm: bool,
 ) -> tuple[
     dict[_ConfigurationKey, dict[str, NDArray[np.complex128]]],
     dict[_ConfigurationKey, dict[str, IQMomentSummary]],
@@ -1328,6 +1342,7 @@ def _measure_configurations(
         list(schedules.values()),
         n_shots=n_shots,
         shot_interval=shot_interval,
+        enable_tqdm=enable_tqdm,
     )
     for key, result in zip(schedules, results, strict=True):
         raw_iq[key] = {}
