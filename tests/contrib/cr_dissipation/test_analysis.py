@@ -1,4 +1,4 @@
-"""Tests for offline CR-pulse health analysis."""
+"""Tests for offline CR dissipation analysis."""
 
 # ruff: noqa: SLF001
 
@@ -11,7 +11,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-import qubex.contrib.experiment.cr_pulse_health_check as health
+import qubex.contrib.experiment.cr_dissipation as health
 
 
 def test_target_x_is_normalized_within_computational_subspace() -> None:
@@ -26,26 +26,26 @@ def test_target_x_is_normalized_within_computational_subspace() -> None:
     zeros = np.zeros_like(populations)
     times = np.array([0.0, 1.0, 2.0])
 
-    measurements = health.CrPulseHealthMeasurements(
+    measurements = health.CrDissipationMeasurements(
         control_qubit="Q0",
         target_qubit="Q1",
         n_values=(0, 1, 2),
         total_times={
             protocol: times.copy()
             for protocol in (
-                "control_ground",
-                "control_excited",
-                "control_t2_echo",
-                "target_t2rho_echo",
+                "control_ground_cr_population",
+                "control_excited_cr_population",
+                "control_cr_transverse_echo",
+                "target_cr_rotating_frame_echo",
             )
         },
         cr_active_times={
             protocol: times.copy()
             for protocol in (
-                "control_ground",
-                "control_excited",
-                "control_t2_echo",
-                "target_t2rho_echo",
+                "control_ground_cr_population",
+                "control_excited_cr_population",
+                "control_cr_transverse_echo",
+                "target_cr_rotating_frame_echo",
             )
         },
         populations={
@@ -53,39 +53,48 @@ def test_target_x_is_normalized_within_computational_subspace() -> None:
                 kind: {"Q0": populations.copy(), "Q1": populations.copy()}
                 for kind in ("actual", "reference")
             }
-            for protocol in ("control_ground", "control_excited")
+            for protocol in (
+                "control_ground_cr_population",
+                "control_excited_cr_population",
+            )
         },
         population_standard_errors={
             protocol: {
                 kind: {"Q0": zeros.copy(), "Q1": zeros.copy()}
                 for kind in ("actual", "reference")
             }
-            for protocol in ("control_ground", "control_excited")
+            for protocol in (
+                "control_ground_cr_population",
+                "control_excited_cr_population",
+            )
         },
         target_x_standard_errors={
             protocol: {kind: np.zeros(3) for kind in ("actual", "reference")}
-            for protocol in ("control_ground", "control_excited")
+            for protocol in (
+                "control_ground_cr_population",
+                "control_excited_cr_population",
+            )
         },
         pauli_expectations={},
         pauli_standard_errors={},
         diagnostic_components_measured=False,
     )
 
-    expected = (populations[:, 1] - populations[:, 0]) / (
+    expected = (populations[:, 0] - populations[:, 1]) / (
         populations[:, 0] + populations[:, 1]
     )
     np.testing.assert_allclose(
-        measurements.target_x["control_ground"]["actual"], expected
+        measurements.target_x["control_ground_cr_population"]["actual"], expected
     )
 
 
-def test_decay_health_keeps_flat_trace_at_nominal_zero_rate() -> None:
+def test_exponential_decay_keeps_flat_trace_at_nominal_zero_rate() -> None:
     """A flat decay trace should remain a stable nominal-zero-rate result."""
     times = np.linspace(0.0, 1000.0, 6)
     values = np.full(times.size, 0.83)
     errors = np.full(times.size, 1.0e-3)
 
-    fit = health._fit_decay_health(
+    fit = health._fit_exponential_decay(
         times,
         values,
         errors,
@@ -101,14 +110,14 @@ def test_decay_health_keeps_flat_trace_at_nominal_zero_rate() -> None:
     assert np.isinf(fit.time_constant)
 
 
-def test_decay_health_recovers_exponential_rate() -> None:
+def test_exponential_decay_recovers_rate() -> None:
     """A resolved exponential trace should recover its decay rate."""
     times = np.linspace(0.0, 6000.0, 10)
     expected_rate = 8.0e-5
     values = 0.15 + 0.8 * np.exp(-expected_rate * times)
     errors = np.full(times.size, 2.0e-4)
 
-    fit = health._fit_decay_health(
+    fit = health._fit_exponential_decay(
         times,
         values,
         errors,
@@ -140,7 +149,7 @@ def test_decay_health_recovers_exponential_rate() -> None:
         ),
     ],
 )
-def test_exchange_health_selects_directional_model(
+def test_population_exchange_selects_directional_model(
     mode: str,
     values,
     expected_outward: float,
@@ -151,7 +160,7 @@ def test_exchange_health_selects_directional_model(
     gamma = 6.0e-5
     errors = np.full(times.size, 2.0e-4)
 
-    fit = health._fit_exchange_health(
+    fit = health._fit_population_exchange(
         times,
         values(times, gamma),
         errors,
@@ -166,7 +175,7 @@ def test_exchange_health_selects_directional_model(
     assert fit.inward_rate == pytest.approx(expected_inward, rel=1.0e-3, abs=1e-12)
 
 
-def test_exchange_health_recovers_resolved_two_way_exchange() -> None:
+def test_population_exchange_recovers_resolved_two_way_exchange() -> None:
     """A saturated F-population trace should resolve outward and inward rates."""
     times = np.linspace(0.0, 20_000.0, 12)
     outward_rate = 6.0e-5
@@ -178,7 +187,7 @@ def test_exchange_health_recovers_resolved_two_way_exchange() -> None:
         -total_rate * times
     )
 
-    fit = health._fit_exchange_health(
+    fit = health._fit_population_exchange(
         times,
         values,
         np.full(times.size, 2.0e-4),
@@ -193,7 +202,7 @@ def test_exchange_health_recovers_resolved_two_way_exchange() -> None:
     assert fit.inward_rate == pytest.approx(inward_rate, rel=1.0e-3)
 
 
-def test_control_health_recovers_resolved_two_way_ef_exchange() -> None:
+def test_control_population_recovers_resolved_two_way_ef_exchange() -> None:
     """Joint control populations should resolve visible E-F exchange in both directions."""
     times = np.linspace(0.0, 20_000.0, 12)
     expected_rates = {
@@ -210,7 +219,7 @@ def test_control_health_recovers_resolved_two_way_ef_exchange() -> None:
     )
     errors = np.full_like(ground, 2.0e-4)
 
-    fit = health._fit_control_rates_health(
+    fit = health._fit_control_population_rates(
         times,
         times,
         ground,
@@ -229,7 +238,7 @@ def test_control_health_recovers_resolved_two_way_ef_exchange() -> None:
         assert fit.rates[name] == pytest.approx(expected, rel=0.01)
 
 
-def test_control_health_uses_singular_full_population_covariance() -> None:
+def test_control_population_uses_singular_full_population_covariance() -> None:
     """Control-rate fitting should whiten the resolved simplex covariance modes."""
     times = np.linspace(0.0, 20_000.0, 12)
     expected_rates = {
@@ -248,7 +257,7 @@ def test_control_health_uses_singular_full_population_covariance() -> None:
     covariances = np.tile(simplex_covariance, (times.size, 1, 1))
     errors = np.sqrt(np.diagonal(covariances, axis1=1, axis2=2))
 
-    fit = health._fit_control_rates_health(
+    fit = health._fit_control_population_rates(
         times,
         times,
         ground,
@@ -270,7 +279,7 @@ def test_control_health_uses_singular_full_population_covariance() -> None:
         assert np.isfinite(fit.rate_standard_errors[name])
 
 
-def test_control_health_falls_back_from_malformed_population_covariance() -> None:
+def test_control_population_falls_back_from_malformed_covariance() -> None:
     """Malformed full covariance should fall back to component standard errors."""
     times = np.linspace(0.0, 6000.0, 10)
     expected_rates = {
@@ -289,7 +298,7 @@ def test_control_health_falls_back_from_malformed_population_covariance() -> Non
     malformed = np.tile(np.eye(3), (times.size, 1, 1))
     malformed[1, 0, 0] = -1.0
 
-    fit = health._fit_control_rates_health(
+    fit = health._fit_control_population_rates(
         times,
         times,
         ground,
@@ -326,13 +335,13 @@ def test_target_x_error_uses_full_population_covariance() -> None:
     denominator = population[0] + population[1]
     gradient = np.array(
         [
-            -2.0 * population[1] / denominator**2,
-            2.0 * population[0] / denominator**2,
+            2.0 * population[1] / denominator**2,
+            -2.0 * population[0] / denominator**2,
         ]
     )
     expected = np.sqrt(gradient @ covariance[:2, :2] @ gradient)
 
-    error = health._analytic_target_x_error(cast(Any, fit))
+    error = health._analytic_computational_polarization_error(cast(Any, fit))
 
     assert error == pytest.approx(expected, rel=1.0e-12)
 
@@ -342,7 +351,7 @@ def test_decay_covariance_uses_supplied_errors_as_absolute_scale() -> None:
     times = np.linspace(0.0, 6000.0, 10)
     values = 0.15 + 0.8 * np.exp(-8.0e-5 * times)
 
-    fit = health._fit_decay_health(
+    fit = health._fit_exponential_decay(
         times,
         values,
         np.full(times.size, 2.0e-4),
@@ -360,7 +369,7 @@ def test_decay_fit_with_no_residual_degrees_of_freedom_is_poor() -> None:
     times = np.array([0.0, 1000.0, 2000.0])
     values = 0.15 + 0.8 * np.exp(-8.0e-5 * times)
 
-    fit = health._fit_decay_health(
+    fit = health._fit_exponential_decay(
         times,
         values,
         np.full(times.size, 2.0e-4),
@@ -375,35 +384,35 @@ def test_decay_fit_with_no_residual_degrees_of_freedom_is_poor() -> None:
     assert "no residual degrees of freedom" in fit.message
 
 
-def test_analyze_cr_pulse_health_recovers_synthetic_health_rates(
+def test_analyze_cr_dissipation_recovers_synthetic_rates(
     synthetic_measurements,
 ) -> None:
-    """The public analysis should recover all resolved synthetic health rates."""
+    """The public analysis should recover all resolved synthetic rates."""
     measurements, expected = synthetic_measurements
 
-    analysis = health.analyze_cr_pulse_health(
+    analysis = health.analyze_cr_dissipation(
         measurements,
         population_minimum_change=1.0e-3,
         leakage_minimum_change=1.0e-3,
         pauli_minimum_change=1.0e-3,
         change_sigma_threshold=2.0,
         zx90_echo_timing=health.ZX90Timing(
-            cr_lobe_duration=50.0,
+            cr_duration=50.0,
             echo=True,
             total_duration=200.0,
         ),
-        control_idle_noise=health.IdleHealthNoise(t1=30_000.0, t2_echo=24_000.0),
-        target_idle_noise=health.IdleHealthNoise(t1=35_000.0, t2_echo=28_000.0),
+        control_idle_noise=health.IdleNoiseParameters(t1=30_000.0, t2_echo=24_000.0),
+        target_idle_noise=health.IdleNoiseParameters(t1=35_000.0, t2_echo=28_000.0),
     )
 
     for name in (
         "gamma_control_e_to_g",
         "gamma_control_g_to_e",
         "gamma_control_e_to_f",
-        "gamma_target_x_decay",
+        "gamma_target_t1rho",
         "gamma_target_leakage",
-        "gamma_control_xy_decay",
-        "gamma_target_z_decay",
+        "gamma_control_transverse",
+        "gamma_target_t2rho",
     ):
         assert analysis.cr_active_rates[name] == pytest.approx(expected[name], rel=0.03)
 
@@ -411,25 +420,37 @@ def test_analyze_cr_pulse_health_recovers_synthetic_health_rates(
     assert analysis.cr_active_rates["gamma_target_seepage"] == 0.0
 
     assert analysis.rate_differences_from_reference[
-        "gamma_control_xy_decay"
-    ] == pytest.approx(expected["gamma_control_xy_decay"] - 2.0e-5, rel=0.03)
+        "gamma_control_transverse"
+    ] == pytest.approx(expected["gamma_control_transverse"] - 2.0e-5, rel=0.03)
     assert analysis.rate_differences_from_reference[
-        "gamma_target_z_decay"
-    ] == pytest.approx(expected["gamma_target_z_decay"] - 1.0e-5, rel=0.03)
+        "gamma_target_t2rho"
+    ] == pytest.approx(expected["gamma_target_t2rho"] - 1.0e-5, rel=0.03)
 
     assert analysis.fidelity.available
     assert 0.0 < analysis.fidelity.estimated_fidelity < 1.0
     assert 0.0 < analysis.fidelity.idle_coherence_limit < 1.0
     assert analysis.fidelity.average_leakage > 0.0
+    assert analysis.metadata["analysis_goal"] == "effective_rate_decomposition"
+    assert analysis.cr_active_rates["gamma_control_phi_cr"] == pytest.approx(
+        expected["gamma_control_transverse"]
+        - 0.5 * (expected["gamma_control_e_to_g"] + expected["gamma_control_g_to_e"]),
+        rel=0.03,
+    )
+    assert analysis.cr_active_rates["gamma_target_phi_rho_cr"] == pytest.approx(
+        expected["gamma_target_t2rho"] - 0.5 * expected["gamma_target_t1rho"],
+        rel=0.03,
+    )
     assert (
-        analysis.metadata["analysis_goal"] == "health_check_not_strict_identification"
+        analysis.fidelity.computational_survival_lower
+        <= analysis.fidelity.computational_survival_nominal
+        <= analysis.fidelity.computational_survival_upper
     )
 
 
 def test_rough_fidelity_decreases_when_cr_noise_is_increased() -> None:
     """The rough fidelity should decrease as effective CR noise increases."""
-    control_idle = health.IdleHealthNoise(t1=30_000.0, t2_echo=24_000.0)
-    target_idle = health.IdleHealthNoise(t1=35_000.0, t2_echo=28_000.0)
+    control_idle = health.IdleNoiseParameters(t1=30_000.0, t2_echo=24_000.0)
+    target_idle = health.IdleNoiseParameters(t1=35_000.0, t2_echo=28_000.0)
 
     low_noise = health._rough_fidelity_from_parameters(
         gate_total_duration=200.0,
@@ -438,8 +459,8 @@ def test_rough_fidelity_decreases_when_cr_noise_is_increased() -> None:
         target_idle=target_idle,
         control_xy_rate=4.0e-5,
         control_z_rate=4.0e-5,
-        target_x_rate=4.0e-5,
-        target_z_rate=4.0e-5,
+        target_t1rho_rate=4.0e-5,
+        target_t2rho_rate=4.0e-5,
         control_leakage_rate=0.0,
         target_leakage_rate=0.0,
     )[0]
@@ -450,8 +471,8 @@ def test_rough_fidelity_decreases_when_cr_noise_is_increased() -> None:
         target_idle=target_idle,
         control_xy_rate=2.0e-4,
         control_z_rate=2.0e-4,
-        target_x_rate=2.0e-4,
-        target_z_rate=2.0e-4,
+        target_t1rho_rate=2.0e-4,
+        target_t2rho_rate=2.0e-4,
         control_leakage_rate=5.0e-5,
         target_leakage_rate=5.0e-5,
     )[0]
@@ -468,7 +489,64 @@ def test_idle_noise_loading_rejects_boolean_lifetimes() -> None:
             "Q1",
             {"Q0": True, "Q1": 30_000.0},
             {"Q0": 20_000.0, "Q1": 20_000.0},
+            {"Q0": 15_000.0, "Q1": 15_000.0},
         )
+
+
+def test_idle_noise_loads_stored_t2_star_when_only_t1_and_t2_echo_are_supplied() -> (
+    None
+):
+    """An explicit echo override should not suppress an available stored T2-star."""
+    loader = SimpleNamespace(
+        load_param_data=lambda name: {
+            "Q0": 12_000.0,
+            "Q1": 14_000.0,
+        }
+    )
+    exp = cast(
+        Any,
+        SimpleNamespace(
+            ctx=SimpleNamespace(
+                system_manager=SimpleNamespace(config_loader=loader),
+            )
+        ),
+    )
+
+    control, target = health._load_idle_noise(
+        exp,
+        "Q0",
+        "Q1",
+        {"Q0": 30_000.0, "Q1": 35_000.0},
+        {"Q0": 24_000.0, "Q1": 28_000.0},
+    )
+
+    assert control.t2_star == 12_000.0
+    assert target.t2_star == 14_000.0
+
+
+def test_idle_noise_falls_back_per_qubit_for_missing_stored_t2_star() -> None:
+    """One missing stored T2-star should not disable the other qubit's idle data."""
+    loader = SimpleNamespace(load_param_data=lambda name: {"Q0": 12_000.0})
+    exp = cast(
+        Any,
+        SimpleNamespace(
+            ctx=SimpleNamespace(
+                system_manager=SimpleNamespace(config_loader=loader),
+            )
+        ),
+    )
+
+    with pytest.warns(RuntimeWarning, match="unavailable for Q1"):
+        control, target = health._load_idle_noise(
+            exp,
+            "Q0",
+            "Q1",
+            {"Q0": 30_000.0, "Q1": 35_000.0},
+            {"Q0": 24_000.0, "Q1": 28_000.0},
+        )
+
+    assert control.t2_star == 12_000.0
+    assert target.t2_star == 28_000.0
 
 
 def test_fidelity_uncertainty_stays_unresolved_when_a_rate_error_is_missing() -> None:
@@ -485,19 +563,24 @@ def test_fidelity_uncertainty_stays_unresolved_when_a_rate_error_is_missing() ->
     assert np.isnan(error)
 
 
-def test_analysis_rejects_non_fully_active_control_state_times(
+def test_analysis_accepts_pi_sized_blanks_in_control_state_times(
     synthetic_measurements,
 ) -> None:
-    """Control-state data should require total time to equal CR-active time."""
+    """A/B analysis should separate CR-active time from preserved blank time."""
     measurements, _ = synthetic_measurements
     active_times = dict(measurements.cr_active_times)
-    active_times["control_ground"] = np.asarray(active_times["control_ground"]) * 0.5
+    for protocol in (
+        "control_ground_cr_population",
+        "control_excited_cr_population",
+    ):
+        active_times[protocol] = np.asarray(active_times[protocol]) * 0.5
 
-    with pytest.raises(ValueError, match=r"control_ground.*fully CR-active"):
-        health.analyze_cr_pulse_health(
-            replace(measurements, cr_active_times=active_times),
-            estimate_fidelity=False,
-        )
+    analysis = health.analyze_cr_dissipation(
+        replace(measurements, cr_active_times=active_times),
+        estimate_fidelity=False,
+    )
+
+    assert analysis.metadata["blank_to_cr_active_duration_ratio"] == pytest.approx(1.0)
 
 
 def test_analysis_rejects_nonconstant_echo_duty_cycle(
@@ -506,12 +589,12 @@ def test_analysis_rejects_nonconstant_echo_duty_cycle(
     """Echo correction should reject a duty cycle that varies across points."""
     measurements, _ = synthetic_measurements
     active_times = dict(measurements.cr_active_times)
-    active_times["control_t2_echo"] = np.array(
+    active_times["control_cr_transverse_echo"] = np.array(
         [0.0, 400.0, 790.0, 1200.0, 2000.0, 3200.0, 5200.0]
     )
 
-    with pytest.raises(ValueError, match=r"control_t2_echo.*duty cycle"):
-        health.analyze_cr_pulse_health(
+    with pytest.raises(ValueError, match=r"control_cr_transverse_echo.*duty cycle"):
+        health.analyze_cr_dissipation(
             replace(measurements, cr_active_times=active_times),
             estimate_fidelity=False,
         )
@@ -530,12 +613,15 @@ def test_analysis_rejects_population_outside_probability_simplex(
             }
             for kind in ("actual", "reference")
         }
-        for protocol in ("control_ground", "control_excited")
+        for protocol in (
+            "control_ground_cr_population",
+            "control_excited_cr_population",
+        )
     }
-    populations["control_ground"]["actual"]["Q0"][1] = [-0.1, 1.1, 0.0]
+    populations["control_ground_cr_population"]["actual"]["Q0"][1] = [-0.1, 1.1, 0.0]
 
     with pytest.raises(ValueError, match="probability simplex"):
-        health.analyze_cr_pulse_health(
+        health.analyze_cr_dissipation(
             replace(measurements, populations=populations),
             estimate_fidelity=False,
         )
@@ -544,7 +630,7 @@ def test_analysis_rejects_population_outside_probability_simplex(
 def test_analysis_preserves_other_results_when_target_x_is_undefined(
     synthetic_measurements,
 ) -> None:
-    """Undefined target X should fail only that fit and preserve other health results."""
+    """Undefined target X should fail only that fit and preserve other results."""
     measurements, _ = synthetic_measurements
     populations = {
         protocol: {
@@ -554,25 +640,60 @@ def test_analysis_preserves_other_results_when_target_x_is_undefined(
             }
             for kind in ("actual", "reference")
         }
-        for protocol in ("control_ground", "control_excited")
+        for protocol in (
+            "control_ground_cr_population",
+            "control_excited_cr_population",
+        )
     }
-    populations["control_ground"]["actual"]["Q1"][-1] = [0.0, 0.0, 1.0]
+    populations["control_ground_cr_population"]["actual"]["Q1"][-1] = [0.0, 0.0, 1.0]
 
-    analysis = health.analyze_cr_pulse_health(
+    analysis = health.analyze_cr_dissipation(
         replace(measurements, populations=populations),
         population_minimum_change=1.0e-3,
         leakage_minimum_change=1.0e-3,
         pauli_minimum_change=1.0e-3,
         change_sigma_threshold=2.0,
+        target_idle_noise=health.IdleNoiseParameters(
+            t1=35_000.0,
+            t2_echo=28_000.0,
+        ),
         estimate_fidelity=False,
     )
 
-    target_x_fit = analysis.target_x_fits["control_ground"]["actual"]
+    target_x_fit = analysis.target_t1rho_fits["control_ground_cr_population"]["actual"]
     assert not target_x_fit.success
     assert target_x_fit.assessment.status == "invalid"
-    assert np.isnan(analysis.cr_active_rates["gamma_target_x_decay"])
+    assert np.isnan(analysis.cr_active_rates["gamma_target_t1rho"])
     assert analysis.control_rate_fits["actual"].success
     assert np.isfinite(analysis.cr_active_rates["gamma_control_e_to_g"])
+
+
+def test_analysis_preserves_other_results_when_primary_pauli_is_undefined(
+    synthetic_measurements,
+) -> None:
+    """A NaN derived Pauli point should invalidate only its associated fit."""
+    measurements, _ = synthetic_measurements
+    pauli = {
+        protocol: {
+            component: {
+                kind: np.array(values, copy=True) for kind, values in by_kind.items()
+            }
+            for component, by_kind in by_component.items()
+        }
+        for protocol, by_component in measurements.pauli_expectations.items()
+    }
+    pauli["control_cr_transverse_echo"]["X"]["actual"][-1] = np.nan
+
+    analysis = health.analyze_cr_dissipation(
+        replace(measurements, pauli_expectations=pauli),
+        estimate_fidelity=False,
+    )
+
+    fit = analysis.transverse_echo_fits["control_cr_transverse_echo"]["actual"]
+    assert not fit.success
+    assert fit.assessment.status == "invalid"
+    assert np.isnan(analysis.cr_active_rates["gamma_control_transverse"])
+    assert np.isfinite(analysis.cr_active_rates["gamma_target_t2rho"])
 
 
 def test_error_bars_preserve_missing_uncertainty() -> None:
@@ -583,3 +704,55 @@ def test_error_bars_preserve_missing_uncertainty() -> None:
 
     assert error_bar["visible"] is False
     assert np.all(np.isnan(np.asarray(error_bar["array"], dtype=float)))
+
+
+def test_target_leakage_plot_uses_orange_for_f_population(
+    synthetic_measurements,
+) -> None:
+    """Target F points and fits should use the common orange leakage color."""
+    measurements, _ = synthetic_measurements
+    analysis = health.analyze_cr_dissipation(measurements, estimate_fidelity=False)
+
+    figure = health._plot_target_dissipation(
+        measurements,
+        analysis,
+        "control_ground_cr_population",
+    )
+
+    f_traces = [trace for trace in figure.data if "Pf" in str(trace.name)]
+    assert f_traces
+    for trace in f_traces:
+        color = trace.marker.color if trace.mode == "markers" else trace.line.color
+        assert color == "#FF9500"
+
+
+def test_control_state_plots_use_the_cr_active_fit_axis(
+    synthetic_measurements,
+) -> None:
+    """A/B data and fit curves must share the CR-active-time horizontal axis."""
+    measurements, _ = synthetic_measurements
+    total_times = dict(measurements.total_times)
+    for protocol in (
+        "control_ground_cr_population",
+        "control_excited_cr_population",
+    ):
+        total_times[protocol] = 2.0 * np.asarray(total_times[protocol])
+    measurements = replace(measurements, total_times=total_times)
+    analysis = health.analyze_cr_dissipation(measurements, estimate_fidelity=False)
+    expected_x = measurements.cr_active_times["control_ground_cr_population"] * 1e-3
+
+    control_figure = health._plot_control_population(
+        measurements,
+        analysis,
+        "control_ground_cr_population",
+    )
+    target_figure = health._plot_target_dissipation(
+        measurements,
+        analysis,
+        "control_ground_cr_population",
+    )
+
+    np.testing.assert_allclose(control_figure.data[0].x, expected_x)
+    np.testing.assert_allclose(target_figure.data[0].x, expected_x)
+    assert control_figure.layout.xaxis.title.text == "CR-active time (µs)"
+    assert target_figure.layout.xaxis2.title.text == "CR-active time (µs)"

@@ -13,8 +13,8 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.linalg import block_diag
 
 from qubex.experiment import Experiment
-from qubex.experiment.experiment_constants import DEFAULT_INTERVAL
 from qubex.experiment.models.result import Result
+from qubex.measurement.measurement_defaults import resolve_measurement_defaults
 from qubex.pulse import PulseSchedule
 
 from ._single_shot_batch import measure_single_shot_batch
@@ -636,7 +636,8 @@ def calibrate_gef_population(
     n_shots
         Number of shots per calibration configuration. Defaults to 8192.
     shot_interval
-        Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+        Interval between shots in ns. When omitted, use the resolved
+        `measurement_defaults.yaml` value.
 
     Returns
     -------
@@ -658,11 +659,7 @@ def calibrate_gef_population(
         name="n_shots",
         default=_DEFAULT_CALIBRATION_N_SHOTS,
     )
-    resolved_shot_interval = _resolve_positive_real(
-        shot_interval,
-        name="shot_interval",
-        default=DEFAULT_INTERVAL,
-    )
+    resolved_shot_interval = _resolve_shot_interval(exp, shot_interval)
     analyzers = _build_padded_analyzers(exp, target_list, _CALIBRATION_STEPS)
     raw_iq, summaries = _measure_configurations(
         exp,
@@ -721,7 +718,8 @@ def measure_gef_populations(
         Number of shots per calibration configuration. Defaults to 8192 and is
         ignored when `calibration` is provided.
     shot_interval
-        Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+        Interval between shots in ns. When omitted, use the resolved
+        `measurement_defaults.yaml` value.
     covariance_rcond
         Relative cutoff used by covariance pseudo-inverses. Must be in `[0, 1)`.
     n_bootstrap
@@ -759,11 +757,7 @@ def measure_gef_populations(
         name="n_shots",
         default=_DEFAULT_N_SHOTS,
     )
-    resolved_shot_interval = _resolve_positive_real(
-        shot_interval,
-        name="shot_interval",
-        default=DEFAULT_INTERVAL,
-    )
+    resolved_shot_interval = _resolve_shot_interval(exp, shot_interval)
     covariance_rcond = _validate_covariance_rcond(covariance_rcond)
     resolved_n_bootstrap = _validate_nonnegative_integer(
         n_bootstrap,
@@ -1012,6 +1006,20 @@ def _resolve_positive_real(
     if not np.isfinite(resolved) or resolved <= 0.0:
         raise ValueError(f"{name} must be positive and finite.")
     return resolved
+
+
+def _resolve_shot_interval(exp: Experiment, value: float | None) -> float:
+    """Resolve an explicit interval or the configured measurement default."""
+    if value is not None:
+        return _resolve_positive_real(value, name="shot_interval", default=value)
+    configured = resolve_measurement_defaults(
+        exp.ctx.experiment_system.measurement_defaults
+    ).execution.shot_interval_ns
+    return _resolve_positive_real(
+        value,
+        name="shot_interval",
+        default=configured,
+    )
 
 
 def _validate_nonnegative_integer(value: object, *, name: str) -> int:

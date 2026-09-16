@@ -1,4 +1,4 @@
-"""Tests for CR-pulse health-check measurement orchestration."""
+"""Tests for CR dissipation measurement orchestration."""
 
 # ruff: noqa: SLF001
 
@@ -10,7 +10,7 @@ from typing import cast
 import numpy as np
 import pytest
 
-import qubex.contrib.experiment.cr_pulse_health_check as health
+import qubex.contrib.experiment.cr_dissipation as health
 from qubex.pulse import PulseSchedule
 
 
@@ -64,7 +64,7 @@ def test_characterize_collects_expected_times_and_measurements(
     state = install_characterize_stubs()
     no_echo, echoed = make_zx90_overrides()
 
-    result = health.characterize_cr_pulse_health(
+    result = health.characterize_cr_dissipation(
         fake_exp,
         "Q0",
         "Q1",
@@ -82,51 +82,92 @@ def test_characterize_collects_expected_times_and_measurements(
     measurements = result.data["measurements"]
 
     np.testing.assert_allclose(
-        measurements.total_times["control_ground"],
+        measurements.total_times["control_ground_cr_population"],
         [0.0, 400.0, 800.0],
     )
     np.testing.assert_allclose(
-        measurements.cr_active_times["control_ground"],
+        measurements.cr_active_times["control_ground_cr_population"],
         [0.0, 400.0, 800.0],
     )
     np.testing.assert_allclose(
-        measurements.total_times["control_t2_echo"],
+        measurements.total_times["control_cr_transverse_echo"],
         [0.0, 640.0, 1280.0],
     )
     np.testing.assert_allclose(
-        measurements.total_times["target_t2rho_echo"],
+        measurements.total_times["target_cr_rotating_frame_echo"],
         [0.0, 640.0, 1280.0],
     )
     np.testing.assert_allclose(
-        measurements.cr_active_times["control_t2_echo"],
+        measurements.cr_active_times["control_cr_transverse_echo"],
         [0.0, 400.0, 800.0],
     )
     np.testing.assert_allclose(
-        measurements.cr_active_times["target_t2rho_echo"],
+        measurements.cr_active_times["target_cr_rotating_frame_echo"],
         [0.0, 400.0, 800.0],
     )
 
-    assert len(state.gef_calls) == 3
+    assert len(state.gef_calls) == 6
     assert state.pauli_request_counts == [4, 4, 4]
     assert all(call["n_bootstrap"] == 0 for call in state.gef_calls)
     assert all(call["n_shots"] == 256 for call in state.gef_calls)
+    assert state.reference_pulses[:2] == [("x90", "Q1"), ("x90", "Q1")]
 
     assert len(state.analyze_calls) == 1
     analyzed_measurements, analyze_kwargs = state.analyze_calls[0]
     assert analyzed_measurements is measurements
     assert analyze_kwargs["estimate_fidelity"] is False
+    assert analyze_kwargs["control_idle_noise"] == health.IdleNoiseParameters(
+        30_000.0, 24_000.0, 18_000.0
+    )
+    assert analyze_kwargs["target_idle_noise"] == health.IdleNoiseParameters(
+        35_000.0, 28_000.0, 20_000.0
+    )
 
     assert result.data["measurement_options"]["population_uncertainty_method"] == (
         "analytic_GLS_full_covariance_and_component_SE_no_bootstrap"
     )
     assert measurements.population_covariances is not None
-    assert measurements.population_covariances["control_ground"]["actual"][
-        "Q0"
-    ].shape == (3, 3, 3)
+    assert measurements.population_covariances["control_ground_cr_population"][
+        "actual"
+    ]["Q0"].shape == (3, 3, 3)
     assert result.figure is None
     assert result.figures == {}
     assert result.data["pulse_timing"]["zx90_no_echo"].cr_active_duration == 100.0
     assert result.data["pulse_timing"]["zx90_echo"].cr_active_duration == 100.0
+    pauli_raw = result.data["raw_data"]["pauli_raw_iq"]
+    assert set(pauli_raw["control_cr_transverse_echo"]["X"]["actual"][0]) == {
+        "s1",
+        "s4",
+        "s5",
+    }
+    expected_control_x = (0.9 - 0.09) / (0.9 + 0.09)
+    assert measurements.pauli_expectations["control_cr_transverse_echo"]["X"]["actual"][
+        0
+    ] == pytest.approx(expected_control_x)
+
+
+def test_characterize_uses_configured_shot_interval_when_omitted(
+    fake_exp,
+    install_characterize_stubs,
+) -> None:
+    """A missing runtime interval should resolve from measurement defaults."""
+    state = install_characterize_stubs()
+    no_echo, echoed = make_zx90_overrides()
+
+    result = health.characterize_cr_dissipation(
+        fake_exp,
+        "Q0",
+        "Q1",
+        n_values=(0, 1, 2),
+        zx90_no_echo=no_echo,
+        zx90_echo=echoed,
+        estimate_fidelity=False,
+        enable_tqdm=False,
+        plot=False,
+    )
+
+    assert all(call["shot_interval"] == 500_000.0 for call in state.gef_calls)
+    assert result.data["measurement_options"]["shot_interval"] == 500_000.0
 
 
 def test_characterize_diagnostic_mode_requests_orthogonal_pauli_components(
@@ -137,7 +178,7 @@ def test_characterize_diagnostic_mode_requests_orthogonal_pauli_components(
     state = install_characterize_stubs()
     no_echo, echoed = make_zx90_overrides()
 
-    result = health.characterize_cr_pulse_health(
+    result = health.characterize_cr_dissipation(
         fake_exp,
         "Q0",
         "Q1",
@@ -154,12 +195,20 @@ def test_characterize_diagnostic_mode_requests_orthogonal_pauli_components(
     assert measurements.diagnostic_components_measured
     assert state.pauli_request_counts == [28, 28, 28]
 
-    control_key = health._diagnostic_key("control_ground", "control")
-    target_key = health._diagnostic_key("control_ground", "target")
+    control_key = health._diagnostic_key("control_ground_cr_population", "control")
+    target_key = health._diagnostic_key("control_ground_cr_population", "target")
     assert set(measurements.pauli_expectations[control_key]) == {"X", "Y"}
     assert set(measurements.pauli_expectations[target_key]) == {"Y", "Z"}
-    assert set(measurements.pauli_expectations["control_t2_echo"]) == {"X", "Y", "Z"}
-    assert set(measurements.pauli_expectations["target_t2rho_echo"]) == {"X", "Y", "Z"}
+    assert set(measurements.pauli_expectations["control_cr_transverse_echo"]) == {
+        "X",
+        "Y",
+        "Z",
+    }
+    assert set(measurements.pauli_expectations["target_cr_rotating_frame_echo"]) == {
+        "X",
+        "Y",
+        "Z",
+    }
 
 
 def test_characterize_warns_when_target_f_population_exceeds_threshold(
@@ -171,14 +220,37 @@ def test_characterize_warns_when_target_f_population_exceeds_threshold(
     no_echo, echoed = make_zx90_overrides()
 
     with pytest.warns(RuntimeWarning, match="Maximum measured target F population"):
-        health.characterize_cr_pulse_health(
+        health.characterize_cr_dissipation(
             fake_exp,
             "Q0",
             "Q1",
             n_values=(0, 1, 2),
             zx90_no_echo=no_echo,
             zx90_echo=echoed,
-            target_leakage_warning_threshold=0.01,
+            leakage_warning_threshold=0.01,
+            estimate_fidelity=False,
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+def test_characterize_warns_when_control_f_population_exceeds_threshold(
+    fake_exp,
+    install_characterize_stubs,
+) -> None:
+    """The workflow should also warn for excessive control leakage."""
+    install_characterize_stubs(control_f=0.02)
+    no_echo, echoed = make_zx90_overrides()
+
+    with pytest.warns(RuntimeWarning, match="Maximum measured control F population"):
+        health.characterize_cr_dissipation(
+            fake_exp,
+            "Q0",
+            "Q1",
+            n_values=(0, 1, 2),
+            zx90_no_echo=no_echo,
+            zx90_echo=echoed,
+            leakage_warning_threshold=0.01,
             estimate_fidelity=False,
             enable_tqdm=False,
             plot=False,
@@ -188,7 +260,7 @@ def test_characterize_warns_when_target_f_population_exceeds_threshold(
 def test_characterize_rejects_identical_control_and_target(fake_exp) -> None:
     """The workflow should reject identical canonical control and target labels."""
     with pytest.raises(ValueError, match="must differ"):
-        health.characterize_cr_pulse_health(
+        health.characterize_cr_dissipation(
             fake_exp,
             "Q0",
             "Q0",
@@ -212,7 +284,7 @@ def test_characterize_rejects_analysis_threshold_before_calibration(
     monkeypatch.setattr(health, "calibrate_gef_population", unexpected_calibration)
 
     with pytest.raises(ValueError, match="pauli_minimum_change"):
-        health.characterize_cr_pulse_health(
+        health.characterize_cr_dissipation(
             fake_exp,
             "Q0",
             "Q1",
@@ -220,6 +292,33 @@ def test_characterize_rejects_analysis_threshold_before_calibration(
             zx90_no_echo=no_echo,
             zx90_echo=echoed,
             pauli_minimum_change=-0.1,
+            estimate_fidelity=False,
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+def test_characterize_rejects_mismatched_noecho_cr_active_duration(
+    fake_exp,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A/B and C/D must use the same CR-active exposure per ZX90 call."""
+    no_echo, echoed = make_zx90_overrides()
+    no_echo.cr_duration = 80.0  # type: ignore[attr-defined]
+
+    def unexpected_calibration(*args: object, **kwargs: object) -> None:
+        raise AssertionError("calibration should not run")
+
+    monkeypatch.setattr(health, "calibrate_gef_population", unexpected_calibration)
+
+    with pytest.raises(ValueError, match="same CR-active duration"):
+        health.characterize_cr_dissipation(
+            fake_exp,
+            "Q0",
+            "Q1",
+            n_values=(0, 1, 2),
+            zx90_no_echo=no_echo,
+            zx90_echo=echoed,
             estimate_fidelity=False,
             enable_tqdm=False,
             plot=False,

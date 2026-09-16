@@ -48,6 +48,10 @@ def _mixture(
 class _DummyContext:
     """Resolve dummy qubits and their GE/EF control labels."""
 
+    experiment_system = SimpleNamespace(
+        measurement_defaults={"execution": {"shot_interval_ns": 2468.0}}
+    )
+
     def resolve_qubit_label(self, target: str) -> str:
         """Resolve supported control labels to their qubit."""
         qubit = target.removesuffix("/ef")
@@ -248,10 +252,32 @@ def test_measure_gef_populations_uses_gef_specific_shot_defaults() -> None:
     assert [call["n_shots"] for call in exp.measurement_service.calls[:6]] == [8192] * 6
     assert [call["n_shots"] for call in exp.measurement_service.calls[6:]] == [4096] * 3
     assert result.data["measurement_options"]["n_shots"] == 4096
+    assert all(
+        call["shot_interval"] == 2468.0 for call in exp.measurement_service.calls
+    )
+    assert result.data["measurement_options"]["shot_interval"] == 2468.0
     assert result.data["measurement_options"]["calibration_n_shots"] == 8192
     fit = result.data["fits"]["sequence_0"]["Q0"]
     assert fit.population_covariance.shape == (3, 3)
     assert fit.population_standard_error.shape == (3,)
+
+
+def test_calibrate_gef_population_uses_configured_shot_interval() -> None:
+    """An omitted interval should resolve from measurement defaults."""
+    samples = _state_samples()
+    exp = _DummyExperiment(
+        [_pure(samples, state) for state in ("g", "g", "e", "f", "e", "f")]
+    )
+
+    calibrate_gef_population(
+        exp,  # type: ignore[arg-type]
+        targets="Q0",
+        n_shots=100,
+    )
+
+    assert all(
+        call["shot_interval"] == 2468.0 for call in exp.measurement_service.calls
+    )
 
 
 def test_measure_gef_populations_reuses_supplied_calibration() -> None:

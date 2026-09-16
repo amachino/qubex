@@ -1,4 +1,4 @@
-"""Shared fixtures for CR-pulse health-check tests."""
+"""Shared fixtures for CR dissipation tests."""
 
 # ruff: noqa: SLF001
 
@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-import qubex.contrib.experiment.cr_pulse_health_check as health
+import qubex.contrib.experiment.cr_dissipation as health
 
 
 @dataclass
@@ -54,6 +54,14 @@ class FakePulse:
 class FakeContext:
     """Resolve already-canonical fake qubit labels."""
 
+    def __init__(self) -> None:
+        """Provide config-backed measurement defaults."""
+        self.experiment_system = SimpleNamespace(
+            measurement_defaults={
+                "execution": {"shot_interval_ns": 500_000.0},
+            }
+        )
+
     def resolve_qubit_label(self, label: str) -> str:
         """Return the supplied fake qubit label."""
         return label
@@ -83,14 +91,14 @@ def make_target_population(
     x = np.exp(-x_rate * times)
     pf = 1.0 - np.exp(-leakage_rate * times)
     computational = 1.0 - pf
-    pg = computational * (1.0 - x) / 2.0
-    pe = computational * (1.0 + x) / 2.0
+    pg = computational * (1.0 + x) / 2.0
+    pe = computational * (1.0 - x) / 2.0
     return np.column_stack([pg, pe, pf])
 
 
 @pytest.fixture
 def synthetic_measurements() -> tuple[
-    health.CrPulseHealthMeasurements, dict[str, float]
+    health.CrDissipationMeasurements, dict[str, float]
 ]:
     """Return deterministic measurements with known effective rates."""
     n_values = (0, 1, 2, 3, 5, 8, 13)
@@ -104,10 +112,10 @@ def synthetic_measurements() -> tuple[
         "gamma_control_e_to_g": 5.0e-5,
         "gamma_control_g_to_e": 3.0e-5,
         "gamma_control_e_to_f": 2.0e-5,
-        "gamma_target_x_decay": 8.0e-5,
+        "gamma_target_t1rho": 8.0e-5,
         "gamma_target_leakage": 2.0e-5,
-        "gamma_control_xy_decay": 1.2e-4,
-        "gamma_target_z_decay": 1.0e-4,
+        "gamma_control_transverse": 1.2e-4,
+        "gamma_target_t2rho": 1.0e-4,
     }
 
     control_rates = {
@@ -118,23 +126,23 @@ def synthetic_measurements() -> tuple[
     }
     ground_initial = np.array([1.0, 0.0, 0.0])
     excited_initial = np.array([0.0, 1.0, 0.0])
-    control_ground_actual = health._population_trajectory(
+    control_ground_cr_population_actual = health._population_trajectory(
         control_times, ground_initial, control_rates
     )
-    control_excited_actual = health._population_trajectory(
+    control_excited_cr_population_actual = health._population_trajectory(
         control_times, excited_initial, control_rates
     )
-    control_ground_reference = np.tile(ground_initial, (n.size, 1))
-    control_excited_reference = np.tile(excited_initial, (n.size, 1))
+    control_ground_cr_population_reference = np.tile(ground_initial, (n.size, 1))
+    control_excited_cr_population_reference = np.tile(excited_initial, (n.size, 1))
 
     target_ground_actual = make_target_population(
         control_times,
-        x_rate=expected["gamma_target_x_decay"],
+        x_rate=expected["gamma_target_t1rho"],
         leakage_rate=expected["gamma_target_leakage"],
     )
     target_excited_actual = make_target_population(
         control_times,
-        x_rate=expected["gamma_target_x_decay"],
+        x_rate=expected["gamma_target_t1rho"],
         leakage_rate=expected["gamma_target_leakage"],
     )
     target_ground_reference = make_target_population(
@@ -149,49 +157,53 @@ def synthetic_measurements() -> tuple[
     pauli_se = np.full(n.size, 2.0e-4)
 
     duty = 0.5
-    control_ref_rate = 2.0e-5
+    control_ref_active_rate = 2.0e-5
+    control_idle_rate = 1.0 / 24_000.0
+    control_ref_rate = duty * control_ref_active_rate + (1.0 - duty) * control_idle_rate
     control_actual_total_rate = (
-        duty * expected["gamma_control_xy_decay"] + (1.0 - duty) * control_ref_rate
+        duty * expected["gamma_control_transverse"] + (1.0 - duty) * control_idle_rate
     )
-    target_ref_rate = 1.0e-5
+    target_ref_active_rate = 1.0e-5
+    target_idle_rate = 1.0 / 28_000.0
+    target_ref_rate = duty * target_ref_active_rate + (1.0 - duty) * target_idle_rate
     target_actual_total_rate = (
-        duty * expected["gamma_target_z_decay"] + (1.0 - duty) * target_ref_rate
+        duty * expected["gamma_target_t2rho"] + (1.0 - duty) * target_idle_rate
     )
 
-    measurements = health.CrPulseHealthMeasurements(
+    measurements = health.CrDissipationMeasurements(
         control_qubit="Q0",
         target_qubit="Q1",
         n_values=n_values,
         total_times={
-            "control_ground": control_times,
-            "control_excited": control_times,
-            "control_t2_echo": echo_total_times,
-            "target_t2rho_echo": echo_total_times,
+            "control_ground_cr_population": control_times,
+            "control_excited_cr_population": control_times,
+            "control_cr_transverse_echo": echo_total_times,
+            "target_cr_rotating_frame_echo": echo_total_times,
         },
         cr_active_times={
-            "control_ground": control_times,
-            "control_excited": control_times,
-            "control_t2_echo": echo_cr_times,
-            "target_t2rho_echo": echo_cr_times,
+            "control_ground_cr_population": control_times,
+            "control_excited_cr_population": control_times,
+            "control_cr_transverse_echo": echo_cr_times,
+            "target_cr_rotating_frame_echo": echo_cr_times,
         },
         populations={
-            "control_ground": {
+            "control_ground_cr_population": {
                 "actual": {
-                    "Q0": control_ground_actual,
+                    "Q0": control_ground_cr_population_actual,
                     "Q1": target_ground_actual,
                 },
                 "reference": {
-                    "Q0": control_ground_reference,
+                    "Q0": control_ground_cr_population_reference,
                     "Q1": target_ground_reference,
                 },
             },
-            "control_excited": {
+            "control_excited_cr_population": {
                 "actual": {
-                    "Q0": control_excited_actual,
+                    "Q0": control_excited_cr_population_actual,
                     "Q1": target_excited_actual,
                 },
                 "reference": {
-                    "Q0": control_excited_reference,
+                    "Q0": control_excited_cr_population_reference,
                     "Q1": target_excited_reference,
                 },
             },
@@ -201,35 +213,41 @@ def synthetic_measurements() -> tuple[
                 kind: {"Q0": population_se.copy(), "Q1": population_se.copy()}
                 for kind in ("actual", "reference")
             }
-            for protocol in ("control_ground", "control_excited")
+            for protocol in (
+                "control_ground_cr_population",
+                "control_excited_cr_population",
+            )
         },
         target_x_standard_errors={
             protocol: {kind: target_x_se.copy() for kind in ("actual", "reference")}
-            for protocol in ("control_ground", "control_excited")
+            for protocol in (
+                "control_ground_cr_population",
+                "control_excited_cr_population",
+            )
         },
         pauli_expectations={
-            "control_t2_echo": {
+            "control_cr_transverse_echo": {
                 "X": {
                     "actual": np.exp(-control_actual_total_rate * echo_total_times),
                     "reference": np.exp(-control_ref_rate * echo_total_times),
                 }
             },
-            "target_t2rho_echo": {
-                "Z": {
+            "target_cr_rotating_frame_echo": {
+                "Y": {
                     "actual": np.exp(-target_actual_total_rate * echo_total_times),
                     "reference": np.exp(-target_ref_rate * echo_total_times),
                 }
             },
         },
         pauli_standard_errors={
-            "control_t2_echo": {
+            "control_cr_transverse_echo": {
                 "X": {
                     "actual": pauli_se.copy(),
                     "reference": pauli_se.copy(),
                 }
             },
-            "target_t2rho_echo": {
-                "Z": {
+            "target_cr_rotating_frame_echo": {
+                "Y": {
                     "actual": pauli_se.copy(),
                     "reference": pauli_se.copy(),
                 }
@@ -244,32 +262,37 @@ def synthetic_measurements() -> tuple[
 def install_characterize_stubs(monkeypatch: pytest.MonkeyPatch):
     """Install hardware-free stubs while leaving characterize() itself unpatched."""
 
-    def install(*, target_f: float = 0.002) -> SimpleNamespace:
+    def install(*, control_f: float = 0.01, target_f: float = 0.002) -> SimpleNamespace:
         state = SimpleNamespace(
             gef_calls=[],
             pauli_request_counts=[],
             analyze_calls=[],
+            reference_pulses=[],
         )
+
+        def reference_unit(
+            labels: object, duration: float, **kwargs: object
+        ) -> FakeSchedule:
+            state.reference_pulses.append(kwargs.get("pulse"))
+            return FakeSchedule(duration=duration, name="reference")
 
         monkeypatch.setattr(
             health,
             "_reference_unit",
-            lambda labels, duration, **kwargs: FakeSchedule(
-                duration=duration, name="reference"
-            ),
+            reference_unit,
         )
         monkeypatch.setattr(
             health,
-            "_control_t2_echo_block",
+            "_control_cr_transverse_echo_block",
             lambda exp, control, target, zx90: FakeSchedule(
                 duration=4.0 * zx90.duration, name="control_echo_block"
             ),
         )
         monkeypatch.setattr(
             health,
-            "_target_t2rho_echo_block",
+            "_target_cr_rotating_frame_echo_block",
             lambda exp, control, target, zx90: FakeSchedule(
-                duration=2.0 * zx90.duration, name="target_echo_block"
+                duration=4.0 * zx90.duration, name="target_echo_block"
             ),
         )
         monkeypatch.setattr(
@@ -286,6 +309,19 @@ def install_characterize_stubs(monkeypatch: pytest.MonkeyPatch):
             health,
             "_echo_protocol_sequence",
             lambda exp, control, target, protocol, evolution: evolution,
+        )
+        monkeypatch.setattr(
+            health,
+            "_append_pauli_analyzer",
+            lambda exp, sequence, target, basis: sequence,
+        )
+        monkeypatch.setattr(
+            health,
+            "_load_idle_noise",
+            lambda *args, **kwargs: (
+                health.IdleNoiseParameters(30_000.0, 24_000.0, 18_000.0),
+                health.IdleNoiseParameters(35_000.0, 28_000.0, 20_000.0),
+            ),
         )
 
         calibration = {"Q0": object(), "Q1": object()}
@@ -306,6 +342,8 @@ def install_characterize_stubs(monkeypatch: pytest.MonkeyPatch):
             covariance_rcond: float,
             n_bootstrap: int,
         ) -> SimpleNamespace:
+            if sequences and all(name.startswith("pauli_") for name in sequences):
+                state.pauli_request_counts.append(len(sequences))
             state.gef_calls.append(
                 {
                     "targets": tuple(targets),
@@ -318,17 +356,20 @@ def install_characterize_stubs(monkeypatch: pytest.MonkeyPatch):
             )
             populations: dict[str, dict[str, np.ndarray]] = {}
             fits: dict[str, dict[str, object]] = {}
-            raw_iq: dict[str, dict[str, np.ndarray]] = {}
+            raw_iq: dict[str, dict[str, dict[str, np.ndarray]]] = {}
             moments: dict[str, object] = {}
             for condition in sequences:
                 populations[condition] = {
-                    "Q0": np.array([0.9, 0.09, 0.01]),
+                    "Q0": np.array([0.9, 0.1 - control_f, control_f]),
                     "Q1": np.array([0.55, 0.45 - target_f, target_f]),
                 }
                 fits[condition] = {"Q0": object(), "Q1": object()}
                 raw_iq[condition] = {
-                    "Q0": np.array([0.0 + 0.0j]),
-                    "Q1": np.array([0.0 + 0.0j]),
+                    configuration: {
+                        "Q0": np.array([0.0 + 0.0j]),
+                        "Q1": np.array([0.0 + 0.0j]),
+                    }
+                    for configuration in ("s1", "s4", "s5")
                 }
                 moments[condition] = {"fake": True}
             return SimpleNamespace(
@@ -348,28 +389,9 @@ def install_characterize_stubs(monkeypatch: pytest.MonkeyPatch):
         )
         monkeypatch.setattr(
             health,
-            "_analytic_target_x_error",
+            "_analytic_computational_polarization_error",
             lambda fit: 1.0e-3,
         )
-
-        def measure_pauli_batch(
-            exp: Any,
-            requests: list[tuple[FakeSchedule, str, str]],
-            *,
-            n_shots: int,
-            shot_interval: float,
-        ) -> list[SimpleNamespace]:
-            state.pauli_request_counts.append(len(requests))
-            return [
-                SimpleNamespace(
-                    expectation=0.75,
-                    standard_error=1.0e-3,
-                    raw_iq=np.array([0.0 + 0.0j]),
-                )
-                for _ in requests
-            ]
-
-        monkeypatch.setattr(health, "_measure_pauli_batch", measure_pauli_batch)
 
         analysis = SimpleNamespace(name="analysis")
 
@@ -377,13 +399,13 @@ def install_characterize_stubs(monkeypatch: pytest.MonkeyPatch):
             state.analyze_calls.append((measurements, kwargs))
             return analysis
 
-        monkeypatch.setattr(health, "analyze_cr_pulse_health", analyze)
+        monkeypatch.setattr(health, "analyze_cr_dissipation", analyze)
         monkeypatch.setattr(
             health,
-            "plot_cr_pulse_health",
+            "plot_cr_dissipation",
             lambda measurements, analysis: {"summary": object()},
         )
-        monkeypatch.setattr(health, "_print_health_summary", lambda analysis: None)
+        monkeypatch.setattr(health, "_print_dissipation_summary", lambda analysis: None)
         monkeypatch.setattr(
             health,
             "Result",

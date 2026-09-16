@@ -1,28 +1,30 @@
 """
-Fast health check of decoherence and leakage during cross-resonance pulses.
+Fast dissipation characterization of decoherence and leakage during cross-resonance pulses.
 
 The workflow is intentionally diagnostic rather than a strict parameter-
 identification pipeline.  It measures four physically named protocols:
 
-`control_ground` / `control_excited`
-    Repeated un-echoed ZX90 with the control prepared in `|0>` or `|1>`.
+`control_ground_cr_population` / `control_excited_cr_population`
+    Repeated non-echoed blocks with the control prepared in `|0>` or `|1>`.
+    Each positive CR lobe is followed by a control-pi-sized blank.
     GEF readout provides control populations, target X polarization, and target
     F-state population.
 
-`control_t2_echo`
+`control_cr_transverse_echo`
     Echoed ZX90 sequence whose primary observable is control X.
 
-`target_t2rho_echo`
-    Echoed ZX90 sequence whose primary observable is target Z.  The target
+`target_cr_rotating_frame_echo`
+    Four-ZX90 rotating-frame echo whose primary observable is target Y. The target
     virtual-Z frame update is applied to both the target and CR channels.
 
-Optional orthogonal Pauli measurements are acquired only for diagnosis and are
-never used by the health fits.  Stable observables are assigned nominal zero
-rates; changing observables are fit with small robust models.  Uncertainties are
-local analytic approximations and no raw-shot bootstrap is run.
+Standard references preserve the internal control-pi slots. CR-active windows
+are either disabled or replaced by a calibrated target IX45 with the CR
+envelope. Optional orthogonal Pauli measurements are acquired only for
+diagnosis. Uncertainties are local analytic approximations and no raw-shot
+bootstrap is run.
 
-The primary public entry points are `characterize_cr_pulse_health`,
-`analyze_cr_pulse_health`, and `plot_cr_pulse_health`.
+The primary public entry points are `characterize_cr_dissipation`,
+`analyze_cr_dissipation`, and `plot_cr_dissipation`.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ import warnings
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime
 from itertools import pairwise
 from numbers import Integral, Real
 from typing import TYPE_CHECKING, Literal, cast
@@ -43,13 +46,13 @@ from scipy.linalg import expm
 from scipy.optimize import OptimizeResult, least_squares
 from tqdm.auto import tqdm
 
+from qubex.analysis import fitting
 from qubex.experiment import Experiment
-from qubex.experiment.experiment_constants import DEFAULT_INTERVAL
 from qubex.experiment.models.result import Result
-from qubex.pulse import Blank, PulseSchedule, Waveform
+from qubex.measurement.measurement_defaults import resolve_measurement_defaults
+from qubex.pulse import Blank, FlatTop, PulseSchedule, Waveform
 from qubex.visualization import COLORS
 
-from ._single_shot_batch import measure_single_shot_batch
 from .gef_population_estimation import calibrate_gef_population, measure_gef_populations
 
 if TYPE_CHECKING:
@@ -62,10 +65,14 @@ if TYPE_CHECKING:
 DEFAULT_N_VALUES: tuple[int, ...] = (0, 1, 2, 3, 5, 8, 13, 21, 34, 55)
 DEFAULT_N_SHOTS = 4096
 DEFAULT_CALIBRATION_N_SHOTS = 8192
+DEFAULT_REFERENCE_CALIBRATION_N_SHOTS = 2048
+_REFERENCE_CALIBRATION_NOTE_KEY = "cr_dissipation_reference_ix45"
 
 _BASIS = Literal["X", "Y", "Z"]
-_CONTROL_STATE_PROTOCOL = Literal["control_ground", "control_excited"]
-_ECHO_PROTOCOL = Literal["control_t2_echo", "target_t2rho_echo"]
+_CONTROL_STATE_PROTOCOL = Literal[
+    "control_ground_cr_population", "control_excited_cr_population"
+]
+_ECHO_PROTOCOL = Literal["control_cr_transverse_echo", "target_cr_rotating_frame_echo"]
 _EXCHANGE_MODEL = Literal["stable", "outward_only", "inward_only", "two_way"]
 _CHANGE_STATUS = Literal["stable", "changing", "invalid"]
 _FIT_QUALITY = Literal["stable", "good", "fair", "poor", "failed"]
@@ -79,17 +86,17 @@ _POPULATION_WEIGHTING = Literal[
 ]
 _ROBUST_LOSSES = {"linear", "soft_l1", "huber", "cauchy", "arctan"}
 
-_CONTROL_GROUND = "control_ground"
-_CONTROL_EXCITED = "control_excited"
-_CONTROL_T2_ECHO = "control_t2_echo"
-_TARGET_T2RHO_ECHO = "target_t2rho_echo"
+_CONTROL_GROUND = "control_ground_cr_population"
+_CONTROL_EXCITED = "control_excited_cr_population"
+_CONTROL_TRANSVERSE_ECHO = "control_cr_transverse_echo"
+_TARGET_ROTATING_FRAME_ECHO = "target_cr_rotating_frame_echo"
 _CONTROL_STATE_PROTOCOLS = (_CONTROL_GROUND, _CONTROL_EXCITED)
-_ECHO_PROTOCOLS = (_CONTROL_T2_ECHO, _TARGET_T2RHO_ECHO)
+_ECHO_PROTOCOLS = (_CONTROL_TRANSVERSE_ECHO, _TARGET_ROTATING_FRAME_ECHO)
 _PROTOCOL_LABELS = {
     _CONTROL_GROUND: "Control initialized in |g>",
     _CONTROL_EXCITED: "Control initialized in |e>",
-    _CONTROL_T2_ECHO: "Control T2 echo",
-    _TARGET_T2RHO_ECHO: "Target T2rho echo",
+    _CONTROL_TRANSVERSE_ECHO: "Control CR transverse echo",
+    _TARGET_ROTATING_FRAME_ECHO: "Target CR rotating-frame echo",
 }
 _STATE_NAMES = ("g", "e", "f")
 
@@ -106,9 +113,14 @@ _NAN_BLOCH_FACTORS: tuple[float, float, float] = (
 
 @dataclass(frozen=True)
 class ZX90Timing:
-    """Minimal semantic timing information for one ZX90 schedule, in ns."""
+    """
+    Store Qubex ZX90 timing metadata in ns.
 
-    cr_lobe_duration: float
+    `cr_duration` is the schedule's raw metadata value: one lobe for an echoed
+    ZX90 and the total CR-active duration for an un-echoed schedule call.
+    """
+
+    cr_duration: float
     echo: bool
     total_duration: float
 
@@ -117,7 +129,7 @@ class ZX90Timing:
         if not isinstance(self.echo, bool):
             raise TypeError("echo must be boolean.")
         for name, value in (
-            ("cr_lobe_duration", self.cr_lobe_duration),
+            ("cr_duration", self.cr_duration),
             ("total_duration", self.total_duration),
         ):
             if isinstance(value, bool) or not isinstance(value, Real):
@@ -130,15 +142,70 @@ class ZX90Timing:
     @property
     def cr_active_duration(self) -> float:
         """Return the CR-active time contained in one ZX90 schedule."""
-        return (2.0 if self.echo else 1.0) * self.cr_lobe_duration
+        return (2.0 if self.echo else 1.0) * self.cr_duration
 
 
 @dataclass(frozen=True)
-class IdleHealthNoise:
-    """Idle T1/T2-echo values in ns used only by the rough fidelity estimate."""
+class CrShapedIx45Calibration:
+    """Calibration of one target IX45 lobe shaped like the CR envelope."""
+
+    amplitude: float
+    duration: float
+    ramptime: float
+    ramp_type: str
+    sampling_period: float
+    r_squared: float
+    timestamp: str
+
+    def __post_init__(self) -> None:
+        """Validate the cached calibration payload."""
+        for name, value in (
+            ("amplitude", self.amplitude),
+            ("duration", self.duration),
+            ("ramptime", self.ramptime),
+            ("sampling_period", self.sampling_period),
+        ):
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise TypeError(f"{name} must be a real number.")
+            if not np.isfinite(value):
+                raise ValueError(f"{name} must be finite.")
+        if not 0.0 < self.amplitude <= 1.0:
+            raise ValueError("amplitude must be in (0, 1].")
+        if self.duration <= 0.0 or self.sampling_period <= 0.0:
+            raise ValueError("duration and sampling_period must be positive.")
+        if self.ramptime < 0.0:
+            raise ValueError("ramptime must be nonnegative.")
+        if not isinstance(self.ramp_type, str):
+            raise TypeError("ramp_type must be a string.")
+        if isinstance(self.r_squared, bool) or not isinstance(self.r_squared, Real):
+            raise TypeError("r_squared must be a real number.")
+        if not np.isfinite(self.r_squared) and not np.isnan(self.r_squared):
+            raise ValueError("r_squared must be finite or NaN.")
+        if not isinstance(self.timestamp, str):
+            raise TypeError("timestamp must be a string.")
+
+        for name in (
+            "amplitude",
+            "duration",
+            "ramptime",
+            "sampling_period",
+            "r_squared",
+        ):
+            object.__setattr__(self, name, float(getattr(self, name)))
+
+    @property
+    def fingerprint(self) -> tuple[float, float, str, float]:
+        """Return the pulse-shape fields that determine cache compatibility."""
+        return (self.duration, self.ramptime, self.ramp_type, self.sampling_period)
+
+
+@dataclass(frozen=True)
+class IdleNoiseParameters:
+    """Idle T1/T2 values in ns used by decay corrections and fidelity."""
 
     t1: float
     t2_echo: float
+    t2_star: float | None = None
 
     def __post_init__(self) -> None:
         """Validate the idle lifetime inputs."""
@@ -148,20 +215,35 @@ class IdleHealthNoise:
             if np.isnan(value) or value <= 0:
                 raise ValueError(f"{name} must be positive; +inf is permitted.")
             object.__setattr__(self, name, float(value))
+        if self.t2_star is not None:
+            if (
+                isinstance(self.t2_star, bool)
+                or not isinstance(self.t2_star, Real)
+                or np.isnan(self.t2_star)
+                or self.t2_star <= 0
+            ):
+                raise ValueError("t2_star must be positive; +inf is permitted.")
+            object.__setattr__(self, "t2_star", float(self.t2_star))
         if not np.isinf(self.t1) and (
             np.isinf(self.t2_echo) or self.t2_echo > 2.0 * self.t1
         ):
             warnings.warn(
-                "t2_echo exceeds 2*t1; the rough fidelity estimate will cap "
-                "T2 at the physical 2*T1 limit.",
+                "t2_echo exceeds 2*t1; decay correction and fidelity estimation "
+                "will cap T2 at the physical 2*T1 limit.",
                 RuntimeWarning,
                 stacklevel=2,
             )
 
     @property
     def effective_t2_echo(self) -> float:
-        """Return T2 used by the rough channel, capped by the physical 2*T1 limit."""
+        """Return physical T2 for corrections and fidelity, capped at 2*T1."""
         return min(float(self.t2_echo), 2.0 * float(self.t1))
+
+    @property
+    def effective_t2_star(self) -> float:
+        """Return T2-star for unrefocused blanks, falling back to T2-echo."""
+        value = self.t2_echo if self.t2_star is None else self.t2_star
+        return min(float(value), 2.0 * float(self.t1))
 
 
 @dataclass(frozen=True)
@@ -179,8 +261,8 @@ class ChangeAssessment:
 
 
 @dataclass(frozen=True)
-class DecayHealthFit:
-    """Offset-exponential health fit `offset + amplitude * exp(-rate*t)`."""
+class ExponentialDecayFit:
+    """Offset-exponential fit, ``offset + amplitude * exp(-rate * t)``."""
 
     assessment: ChangeAssessment
     success: bool
@@ -200,7 +282,7 @@ class DecayHealthFit:
 
 
 @dataclass(frozen=True)
-class ExchangeHealthFit:
+class PopulationExchangeFit:
     """
     Store a minimal effective model for an F-state population trajectory.
 
@@ -229,7 +311,7 @@ class ExchangeHealthFit:
 
 
 @dataclass(frozen=True)
-class ControlRateHealthFit:
+class ControlPopulationRateFit:
     """Reduced three-level control-population fit for ground/excited preparation."""
 
     success: bool
@@ -250,8 +332,8 @@ class ControlRateHealthFit:
 
 
 @dataclass(frozen=True)
-class CrPulseHealthFidelityEstimate:
-    """Fast diagnostic fidelity estimate built from measured effective rates."""
+class CrDissipationFidelityEstimate:
+    """Dissipation-limited fidelity and leakage-correlation bounds."""
 
     available: bool
     message: str
@@ -266,11 +348,45 @@ class CrPulseHealthFidelityEstimate:
     parameter_standard_errors: Mapping[str, float]
     metadata: Mapping[str, object]
 
+    @property
+    def estimated_dissipation_limited_fidelity(self) -> float:
+        """Return the nominal dissipation-limited average gate fidelity."""
+        return self.estimated_fidelity
+
+    @property
+    def computational_survival_nominal(self) -> float:
+        """Return survival assuming independent control and target leakage."""
+        return self.computational_survival
+
+    def _metadata_float(self, key: str) -> float:
+        value = self.metadata.get(key, np.nan)
+        return float(value) if isinstance(value, Real) else float("nan")
+
+    @property
+    def computational_survival_lower(self) -> float:
+        """Return the Fréchet lower bound without assuming leakage independence."""
+        return self._metadata_float("computational_survival_lower")
+
+    @property
+    def computational_survival_upper(self) -> float:
+        """Return the Fréchet upper bound without assuming leakage independence."""
+        return self._metadata_float("computational_survival_upper")
+
+    @property
+    def leakage_correlation_fidelity_lower(self) -> float:
+        """Return fidelity rescaled by the lower survival bound."""
+        return self._metadata_float("leakage_correlation_fidelity_lower")
+
+    @property
+    def leakage_correlation_fidelity_upper(self) -> float:
+        """Return fidelity rescaled by the upper survival bound."""
+        return self._metadata_float("leakage_correlation_fidelity_upper")
+
 
 @dataclass(frozen=True)
-class CrPulseHealthMeasurements:
+class CrDissipationMeasurements:
     """
-    Store processed measurements sufficient for offline health-check analysis.
+    Store processed measurements sufficient for offline dissipation characterization analysis.
 
     `total_times` and `cr_active_times` are in ns. Populations and Pauli
     expectations are dimensionless.  Analysis therefore reports rates in
@@ -325,7 +441,7 @@ class CrPulseHealthMeasurements:
                 with np.errstate(divide="ignore", invalid="ignore"):
                     result[protocol][kind] = np.where(
                         denominator > _EPS,
-                        (population[:, 1] - population[:, 0]) / denominator,
+                        (population[:, 0] - population[:, 1]) / denominator,
                         np.nan,
                     )
         return result
@@ -337,26 +453,27 @@ class CrPulseHealthMeasurements:
 
 
 @dataclass(frozen=True)
-class CrPulseHealthAnalysis:
+class CrDissipationAnalysis:
     """
-    Store lightweight health-check fits, summaries, and the fidelity estimate.
+    Store lightweight dissipation characterization fits, summaries, and the fidelity estimate.
 
     `rate_differences_from_reference` stores signed reference differences.
     For the control-state protocols these are direct `actual-reference`
-    differences.  For the two echo protocols they are duty-cycle-corrected
-    CR-active-equivalent-minus-reference differences.  They are reported for
-    interpretation and are not substituted for the nominal health rates.
+    differences on the common CR-active time axis. For the two echo protocols
+    they are `(actual_total_rate - reference_total_rate) / CR_duty_cycle`.
+    They are reported for interpretation and are not substituted for the
+    nominal dissipation rates.
     """
 
-    control_rate_fits: Mapping[str, ControlRateHealthFit]
-    target_x_fits: Mapping[str, Mapping[str, DecayHealthFit]]
-    target_f_fits: Mapping[str, Mapping[str, ExchangeHealthFit]]
-    echo_fits: Mapping[str, Mapping[str, DecayHealthFit]]
+    control_rate_fits: Mapping[str, ControlPopulationRateFit]
+    target_t1rho_fits: Mapping[str, Mapping[str, ExponentialDecayFit]]
+    target_leakage_fits: Mapping[str, Mapping[str, PopulationExchangeFit]]
+    transverse_echo_fits: Mapping[str, Mapping[str, ExponentialDecayFit]]
     cr_active_rates: Mapping[str, float]
     cr_active_rate_standard_errors: Mapping[str, float]
     decay_times: Mapping[str, float]
     rate_differences_from_reference: Mapping[str, float]
-    fidelity: CrPulseHealthFidelityEstimate
+    fidelity: CrDissipationFidelityEstimate
     quality_flags: Mapping[str, str]
     metadata: Mapping[str, object]
 
@@ -365,7 +482,6 @@ class CrPulseHealthAnalysis:
 class _PauliMeasurement:
     expectation: float
     standard_error: float
-    raw_iq: NDArray[np.complex128]
 
 
 # ---------------------------------------------------------------------------
@@ -470,37 +586,364 @@ def _extract_zx90_timing(gate: PulseSchedule) -> ZX90Timing:
     if not np.isfinite(total_duration) or total_duration <= 0:
         raise ValueError("ZX90 schedule duration must be positive and finite.")
     active_duration = (2.0 if echo else 1.0) * cr_duration
-    if not echo and not np.isclose(total_duration, cr_duration, rtol=0.0, atol=1e-9):
-        raise ValueError(
-            "The un-echoed ZX90 must be fully CR-active: its schedule duration "
-            "must equal `cr_duration`."
-        )
     if active_duration > total_duration + 1e-9:
         raise ValueError(
             "ZX90 CR-active duration exceeds the total schedule duration "
             f"({active_duration} ns > {total_duration} ns)."
         )
     return ZX90Timing(
-        cr_lobe_duration=cr_duration,
+        cr_duration=cr_duration,
         echo=echo,
         total_duration=total_duration,
     )
+
+
+def _flat_top_unit_area(pulse: FlatTop) -> float:
+    """Return the discrete area of a unit-amplitude copy of a FlatTop pulse."""
+    unit = FlatTop(
+        duration=pulse.duration,
+        amplitude=1.0,
+        tau=pulse.tau,
+        beta=pulse.beta,
+        type=pulse.type,
+        sampling_period=pulse.sampling_period,
+    )
+    area = float(np.sum(unit.real) * unit.sampling_period)
+    if not np.isfinite(area) or area <= 0.0:
+        raise ValueError("Pulse envelope must have a positive finite area.")
+    return area
+
+
+def _initial_cr_shaped_ix45_amplitude(
+    calibrated_x90: FlatTop,
+    cr_envelope: FlatTop,
+) -> float:
+    """Estimate CR-shaped IX45 amplitude by pulse-area conversion from X90."""
+    return float(
+        0.5
+        * calibrated_x90.amplitude
+        * _flat_top_unit_area(calibrated_x90)
+        / _flat_top_unit_area(cr_envelope)
+    )
+
+
+def _make_cr_shaped_ix45(
+    cr_envelope: FlatTop,
+    amplitude: float,
+    *,
+    allow_zero: bool = False,
+) -> FlatTop:
+    """Create a target pulse with CR geometry; zero is allowed only for a sweep."""
+    if not isinstance(allow_zero, bool):
+        raise TypeError("allow_zero must be boolean.")
+    if isinstance(amplitude, bool) or not isinstance(amplitude, Real):
+        raise TypeError("reference_ix45_amplitude must be a real number.")
+    resolved_amplitude = float(amplitude)
+    lower = 0.0 if allow_zero else np.nextafter(0.0, 1.0)
+    if not np.isfinite(resolved_amplitude) or not lower <= resolved_amplitude <= 1.0:
+        interval = "[0, 1]" if allow_zero else "(0, 1]"
+        raise ValueError(f"reference_ix45_amplitude must be in {interval}.")
+    return FlatTop(
+        duration=cr_envelope.duration,
+        amplitude=resolved_amplitude,
+        tau=cr_envelope.tau,
+        type=cr_envelope.type,
+        sampling_period=cr_envelope.sampling_period,
+    )
+
+
+def _ix45_fingerprint(cr_envelope: FlatTop) -> tuple[float, float, str, float]:
+    """Return the cache fingerprint for a CR-shaped IX45 pulse."""
+    return (
+        float(cr_envelope.duration),
+        float(cr_envelope.tau),
+        str(cr_envelope.type),
+        float(cr_envelope.sampling_period),
+    )
+
+
+def _calibrate_cr_shaped_ix45(
+    exp: Experiment,
+    target_qubit: str,
+    cr_envelope: FlatTop,
+    *,
+    initial_amplitude: float,
+    n_shots: int,
+    shot_interval: float,
+    n_points: int = 21,
+    n_rotations: int = 2,
+    r2_threshold: float = 0.5,
+    plot: bool = False,
+) -> CrShapedIx45Calibration:
+    """Calibrate the actual ``IX45 -> IX45`` reference unit as one X90."""
+    if n_points < 5:
+        raise ValueError("reference_calibration_n_points must be at least five.")
+    if n_rotations < 1:
+        raise ValueError("reference_calibration_n_rotations must be positive.")
+    span = 0.5 / n_rotations
+    lower = float(np.clip(initial_amplitude * (1.0 - span), 0.0, 1.0))
+    upper = float(np.clip(initial_amplitude * (1.0 + span), 0.0, 1.0))
+    if not np.isfinite(lower) or not np.isfinite(upper) or lower >= upper:
+        amplitudes = np.linspace(0.0, 1.0, n_points)
+    else:
+        amplitudes = np.linspace(lower, upper, n_points)
+
+    def sequence(amplitude: float) -> dict[str, Waveform]:
+        ix45 = _make_cr_shaped_ix45(cr_envelope, amplitude, allow_zero=True)
+        return {target_qubit: ix45.repeated(2)}
+
+    sweep = exp.measurement_service.sweep_parameter(
+        sequence=sequence,
+        sweep_range=amplitudes,
+        repetitions=4 * n_rotations,
+        shots=n_shots,
+        interval=shot_interval,
+        plot=False,
+    ).data[target_qubit]
+    fit = fitting.fit_ampl_calib_data(
+        target=target_qubit,
+        amplitude_range=amplitudes,
+        data=np.asarray(sweep.normalized, dtype=np.float64),
+        plot=plot,
+        title="CR-shaped IX45 pair calibration",
+        ylabel="Normalized signal",
+    )
+    fitted_amplitude = float(fit["amplitude"])
+    r_squared = float(fit["r2"])
+    if (
+        not np.isfinite(fitted_amplitude)
+        or not 0.0 < fitted_amplitude <= 1.0
+        or not np.isfinite(r_squared)
+        or r_squared < r2_threshold
+    ):
+        raise RuntimeError(
+            "CR-shaped IX45 calibration failed quality validation: "
+            f"amplitude={fitted_amplitude!r}, r_squared={r_squared!r}, "
+            f"required_r_squared={r2_threshold}."
+        )
+    return CrShapedIx45Calibration(
+        amplitude=fitted_amplitude,
+        duration=float(cr_envelope.duration),
+        ramptime=float(cr_envelope.tau),
+        ramp_type=str(cr_envelope.type),
+        sampling_period=float(cr_envelope.sampling_period),
+        r_squared=r_squared,
+        # CalibrationNote validates cache age with this legacy timestamp format.
+        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+def _resolve_cr_shaped_ix45_calibration(
+    exp: Experiment,
+    control_qubit: str,
+    target_qubit: str,
+    cr_envelope: FlatTop,
+    *,
+    amplitude: float | None,
+    valid_days: int | None,
+    force: bool,
+    n_shots: int,
+    shot_interval: float,
+    n_points: int,
+    n_rotations: int,
+    r2_threshold: float,
+    plot: bool,
+) -> CrShapedIx45Calibration:
+    """Load a compatible IX45 calibration or acquire and cache a new one."""
+    fingerprint = _ix45_fingerprint(cr_envelope)
+    if amplitude is not None:
+        return CrShapedIx45Calibration(
+            amplitude=_positive_real(
+                amplitude, default=1.0, name="reference_ix45_amplitude"
+            ),
+            duration=fingerprint[0],
+            ramptime=fingerprint[1],
+            ramp_type=fingerprint[2],
+            sampling_period=fingerprint[3],
+            r_squared=float("nan"),
+            timestamp="user-supplied",
+        )
+
+    key = f"{control_qubit}-{target_qubit}"
+    note = exp.ctx.calib_note
+    cached = None
+    if not force:
+        try:
+            cached = note.get_property(
+                _REFERENCE_CALIBRATION_NOTE_KEY,
+                key,
+                valid_days,
+            )
+        except AttributeError:
+            # CalibrationNote.get_property currently raises when the property
+            # category itself has never been created. That is a normal first-use
+            # cache miss, not a failed calibration.
+            cached = None
+        except (KeyError, TypeError, ValueError) as exc:
+            warnings.warn(
+                f"Ignoring malformed cached CR-shaped IX45 calibration: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+    if isinstance(cached, Mapping):
+        try:
+            candidate = CrShapedIx45Calibration(**cached)
+        except (TypeError, ValueError):
+            candidate = None
+        if (
+            candidate is not None
+            and candidate.fingerprint == fingerprint
+            and np.isfinite(candidate.amplitude)
+            and 0.0 < candidate.amplitude <= 1.0
+            and np.isfinite(candidate.r_squared)
+            and candidate.r_squared >= r2_threshold
+        ):
+            return candidate
+
+    hpi = exp.pulse.get_hpi_pulse(target_qubit)
+    if not isinstance(hpi, FlatTop):
+        raise TypeError("The calibrated target hpi pulse must be a FlatTop pulse.")
+    calibrated = _calibrate_cr_shaped_ix45(
+        exp,
+        target_qubit,
+        cr_envelope,
+        initial_amplitude=_initial_cr_shaped_ix45_amplitude(hpi, cr_envelope),
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        n_points=n_points,
+        n_rotations=n_rotations,
+        r2_threshold=r2_threshold,
+        plot=plot,
+    )
+    note.put_property(_REFERENCE_CALIBRATION_NOTE_KEY, key, calibrated.__dict__)
+    return calibrated
 
 
 def _build_un_echoed_zx90(
     exp: Experiment,
     control_qubit: str,
     target_qubit: str,
+    *,
+    blank_duration: float = 0.0,
 ) -> PulseSchedule:
-    """Build a full un-echoed ZX90 from two same-sign calibrated CR lobes."""
+    """Build ``C+ -> B_pi,c -> C+ -> B_pi,c`` for protocols A and B."""
     lobe = exp.pulse.zx90(control_qubit, target_qubit, echo=False)
     timing = _extract_zx90_timing(lobe)
     if timing.echo:
         raise ValueError("exp.pulse.zx90(..., echo=False) returned an echoed gate.")
-    gate = lobe.repeated(2)
-    gate.cr_duration = 2 * timing.cr_lobe_duration  # type: ignore[attr-defined]
+    blank = _reference_unit(
+        (control_qubit, f"{control_qubit}-{target_qubit}", target_qubit),
+        blank_duration,
+        frequencies=lobe.get_frequencies(),
+    )
+    with PulseSchedule() as gate:
+        gate.call(lobe, copy=True)
+        gate.call(blank, copy=True)
+        gate.call(lobe, copy=True)
+        gate.call(blank, copy=True)
+    gate.set_frequencies(lobe.get_frequencies())
+    gate.cr_duration = 2 * timing.cr_duration  # type: ignore[attr-defined]
     gate.echo = False  # type: ignore[attr-defined]
     return gate
+
+
+def _echo_pi_slot_duration(zx90_echo: PulseSchedule) -> float:
+    """Return one embedded control-pi slot, including its margins and gaps."""
+    timing = _extract_zx90_timing(zx90_echo)
+    if not timing.echo:
+        raise ValueError("zx90_echo must be echoed.")
+    duration = (timing.total_duration - timing.cr_active_duration) / 2.0
+    if duration < -1e-9:
+        raise ValueError("Echo-pi slot duration cannot be negative.")
+    return max(0.0, duration)
+
+
+def _build_cr_shaped_ix45_lobe(
+    labels: Sequence[str],
+    target_qubit: str,
+    pulse: FlatTop,
+    *,
+    frequencies: Mapping[str, float | None],
+) -> PulseSchedule:
+    """Build one CR-duration target IX45 lobe on the three protocol channels."""
+    return _reference_unit(
+        labels,
+        pulse.duration,
+        pulse_target=target_qubit,
+        pulse=pulse,
+        frequencies=frequencies,
+    )
+
+
+def _build_non_echoed_reference_unit(
+    labels: Sequence[str],
+    target_qubit: str,
+    ix45: FlatTop,
+    blank_duration: float,
+    *,
+    frequencies: Mapping[str, float | None],
+) -> PulseSchedule:
+    """Build the A/B reference with IX45 lobes and preserved pi-sized blanks."""
+    lobe = _build_cr_shaped_ix45_lobe(
+        labels, target_qubit, ix45, frequencies=frequencies
+    )
+    blank = _reference_unit(labels, blank_duration, frequencies=frequencies)
+    with PulseSchedule() as unit:
+        unit.call(lobe, copy=True)
+        unit.call(blank, copy=True)
+        unit.call(lobe, copy=True)
+        unit.call(blank, copy=True)
+    unit.set_frequencies(frequencies)
+    return unit
+
+
+def _build_echoed_reference_unit(
+    zx90_echo: PulseSchedule,
+    control_qubit: str,
+    target_qubit: str,
+    ix45: FlatTop | None,
+) -> PulseSchedule:
+    """Replace CR-active lobes while preserving both internal control-pi slots."""
+    labels = (control_qubit, f"{control_qubit}-{target_qubit}", target_qubit)
+    frequencies = zx90_echo.get_frequencies()
+    lobe_duration = _extract_zx90_timing(zx90_echo).cr_duration
+    if ix45 is None:
+        lobe = _reference_unit(labels, lobe_duration, frequencies=frequencies)
+    else:
+        lobe = _build_cr_shaped_ix45_lobe(
+            labels, target_qubit, ix45, frequencies=frequencies
+        )
+    pi_pulse = getattr(zx90_echo, "pi_pulse", None)
+    slot_duration = _echo_pi_slot_duration(zx90_echo)
+    if pi_pulse is None:
+        raise ValueError(
+            "The echoed ZX90 must expose `pi_pulse` to preserve its reference timing."
+        )
+    if pi_pulse.duration > slot_duration + 1e-9:
+        raise ValueError("Embedded control pi pulse is longer than its inferred slot.")
+    left_margin = max(0.0, (slot_duration - pi_pulse.duration) / 2.0)
+    right_margin = max(0.0, slot_duration - pi_pulse.duration - left_margin)
+
+    def add_pi_slot(schedule: PulseSchedule) -> None:
+        schedule.add(control_qubit, Blank(left_margin))
+        schedule.add(control_qubit, pi_pulse)
+        schedule.add(control_qubit, Blank(right_margin))
+
+    with PulseSchedule(list(labels)) as reference:
+        reference.call(lobe, copy=True)
+        reference.barrier()
+        add_pi_slot(reference)
+        reference.barrier()
+        reference.call(lobe, copy=True)
+        reference.barrier()
+        add_pi_slot(reference)
+    if not np.isclose(reference.duration, zx90_echo.duration):
+        raise ValueError(
+            "Reconstructed reference does not match the echoed ZX90 duration; "
+            f"inferred pi slot was {slot_duration} ns."
+        )
+    reference.set_frequencies(frequencies)
+    return reference
 
 
 def _reference_unit(
@@ -591,21 +1034,21 @@ def _control_state_gef_sequence(
     base: PulseSchedule,
     target_qubit: str,
 ) -> PulseSchedule:
-    """Append target +Y90 so GEF readout yields target X polarization."""
+    """Append target -Y90 so GEF readout yields target X polarization."""
     schedule = base.copy()
     with schedule:
         schedule.barrier()
-        schedule.add(target_qubit, exp.pulse.y90(target_qubit))
+        schedule.add(target_qubit, exp.pulse.y90m(target_qubit))
     return schedule
 
 
-def _control_t2_echo_block(
+def _control_cr_transverse_echo_block(
     exp: Experiment,
     control_qubit: str,
     target_qubit: str,
     zx90: PulseSchedule,
 ) -> PulseSchedule:
-    """Build the four-ZX90 control-T2-echo block used to monitor control X."""
+    """Build ``U-XI-U-(YI+IX)-U-XI-U-YI`` to monitor control X."""
     with PulseSchedule() as block:
         block.call(zx90, copy=True)
         block.barrier()
@@ -614,7 +1057,7 @@ def _control_t2_echo_block(
 
         block.call(zx90, copy=True)
         block.barrier()
-        block.add(control_qubit, exp.pulse.x180(control_qubit))
+        block.add(control_qubit, exp.pulse.y180(control_qubit))
         block.add(target_qubit, exp.pulse.x180(target_qubit))
         block.barrier()
 
@@ -624,18 +1067,20 @@ def _control_t2_echo_block(
         block.barrier()
 
         block.call(zx90, copy=True)
+        block.barrier()
+        block.add(control_qubit, exp.pulse.y180(control_qubit))
     block.set_frequencies(zx90.get_frequencies())
     return block
 
 
-def _target_t2rho_echo_block(
+def _target_cr_rotating_frame_echo_block(
     exp: Experiment,
     control_qubit: str,
     target_qubit: str,
     zx90: PulseSchedule,
 ) -> PulseSchedule:
     """
-    Build the two-ZX90 target-T2rho-echo block used to monitor target Z.
+    Build the four-ZX90 target rotating-frame echo block used to monitor target Y.
 
     Target virtual Z must be applied to both the target channel and the CR
     channel so the relative CR/cancel/rotary phase is preserved.
@@ -645,10 +1090,21 @@ def _target_t2rho_echo_block(
     with PulseSchedule() as block:
         block.call(zx90, copy=True)
         block.barrier()
+        block.add(target_qubit, exp.pulse.y180(target_qubit))
+        block.barrier()
+        block.call(zx90, copy=True)
+        block.barrier()
         block.add(target_qubit, z180)
         block.add(cr_label, z180)
         block.barrier()
         block.call(zx90, copy=True)
+        block.barrier()
+        block.add(target_qubit, exp.pulse.y180(target_qubit))
+        block.barrier()
+        block.call(zx90, copy=True)
+        block.barrier()
+        block.add(target_qubit, z180)
+        block.add(cr_label, z180)
     block.set_frequencies(zx90.get_frequencies())
     return block
 
@@ -660,14 +1116,12 @@ def _echo_protocol_sequence(
     protocol: _ECHO_PROTOCOL,
     evolution: PulseSchedule,
 ) -> PulseSchedule:
-    initial = "+" if protocol == _CONTROL_T2_ECHO else "0"
-    preparation = _state_preparation(
-        exp,
-        control_qubit,
-        target_qubit,
-        cast(Literal["0", "+"], initial),
-        cast(Literal["0", "+"], initial),
-    )
+    if protocol == _CONTROL_TRANSVERSE_ECHO:
+        preparation = _state_preparation(exp, control_qubit, target_qubit, "+", "+")
+    else:
+        preparation = _state_preparation(exp, control_qubit, target_qubit, "0", "0")
+        with preparation:
+            preparation.add(target_qubit, exp.pulse.x90m(target_qubit))
     with PulseSchedule() as schedule:
         schedule.call(preparation, copy=True)
         schedule.call(evolution, copy=True)
@@ -692,49 +1146,6 @@ def _append_pauli_analyzer(
             measurement.barrier()
             measurement.add(target, analyzer)
     return measurement
-
-
-def _summarize_pauli_iq(
-    exp: Experiment,
-    iq: NDArray[np.complex128],
-    target: str,
-) -> _PauliMeasurement:
-    rabi_param = exp.pulse.rabi_params.get(target)
-    if rabi_param is None:
-        raise ValueError(f"Rabi parameters for {target} are not stored.")
-    normalized = np.asarray(rabi_param.normalize(iq), dtype=np.float64)
-    if normalized.shape != iq.shape or not np.all(np.isfinite(normalized)):
-        raise ValueError("Normalized Pauli shots must be finite and match IQ shape.")
-    return _PauliMeasurement(
-        expectation=float(np.mean(normalized)),
-        standard_error=float(np.std(normalized, ddof=1) / np.sqrt(iq.size)),
-        raw_iq=np.asarray(iq, dtype=np.complex128),
-    )
-
-
-def _measure_pauli_batch(
-    exp: Experiment,
-    requests: Sequence[tuple[PulseSchedule, str, _BASIS]],
-    *,
-    n_shots: int,
-    shot_interval: float,
-) -> list[_PauliMeasurement]:
-    schedules = [
-        _append_pauli_analyzer(exp, sequence, target, basis)
-        for sequence, target, basis in requests
-    ]
-    results = measure_single_shot_batch(
-        exp,
-        schedules,
-        n_shots=n_shots,
-        shot_interval=shot_interval,
-    )
-    measurements: list[_PauliMeasurement] = []
-    for (_, target, _), result in zip(requests, results, strict=True):
-        if target not in result:
-            raise ValueError(f"Pauli measurement did not return {target!r}.")
-        measurements.append(_summarize_pauli_iq(exp, result[target], target))
-    return measurements
 
 
 # ---------------------------------------------------------------------------
@@ -930,7 +1341,7 @@ def _run_robust_least_squares(
     robust_loss: str,
     max_nfev: int,
 ) -> tuple[OptimizeResult | None, str | None]:
-    """Run one bounded robust fit without letting numerical failures abort a health check."""
+    """Run one bounded robust fit without letting numerical failures abort a dissipation characterization."""
     try:
         optimization = least_squares(
             residual,
@@ -1044,7 +1455,7 @@ def _rate_to_lifetime(rate: float, rate_error: float) -> tuple[float, float]:
     return float(lifetime), float(error)
 
 
-def _fit_decay_health(
+def _fit_exponential_decay(
     times: ArrayLike,
     values: ArrayLike,
     standard_errors: ArrayLike | None,
@@ -1052,16 +1463,16 @@ def _fit_decay_health(
     minimum_change: float,
     change_sigma_threshold: float,
     robust_loss: str,
-) -> DecayHealthFit:
+) -> ExponentialDecayFit:
     t = np.asarray(times, dtype=np.float64)
     y = np.asarray(values, dtype=np.float64)
     errors = _finite_errors(standard_errors, y.shape)
 
     # A derived observable can legitimately become undefined even when the raw
-    # measurements are finite.  The main example is target X = (Pe-Pg)/(Pg+Pe)
+    # measurements are finite.  The main example is target X = (Pg-Pe)/(Pg+Pe)
     # when essentially all target population has leaked to |f>, so Pg+Pe -> 0.
     # Treat that particular fit as unresolved instead of aborting the entire
-    # health analysis and losing otherwise useful relaxation/leakage diagnostics.
+    # dissipation analysis and losing otherwise useful relaxation/leakage diagnostics.
     if not np.all(np.isfinite(y)):
         if t.ndim != 1 or y.shape != t.shape or t.size < 3:
             raise ValueError(
@@ -1099,13 +1510,13 @@ def _fit_decay_health(
             change_sigma_threshold=change_sigma_threshold,
         )
         dense_t = np.linspace(float(t[0]), float(t[-1]), 400)
-        return DecayHealthFit(
+        return ExponentialDecayFit(
             assessment=assessment,
             success=False,
             quality="failed",
             message=(
                 "Decay observable contains non-finite values; this fit is left "
-                "unresolved so the remaining health analysis can continue."
+                "unresolved so the remaining dissipation analysis can continue."
             ),
             rate=float("nan"),
             rate_standard_error=float("nan"),
@@ -1133,7 +1544,7 @@ def _fit_decay_health(
     if assessment.status == "stable":
         fitted = np.full_like(y, assessment.constant_value)
         curve = np.full_like(dense_t, assessment.constant_value)
-        return DecayHealthFit(
+        return ExponentialDecayFit(
             assessment=assessment,
             success=True,
             quality="stable",
@@ -1174,7 +1585,7 @@ def _fit_decay_health(
         max_nfev=1500,
     )
     if optimization is None:
-        return DecayHealthFit(
+        return ExponentialDecayFit(
             assessment=assessment,
             success=False,
             quality="failed",
@@ -1195,7 +1606,7 @@ def _fit_decay_health(
     finite_solution = params.shape == (3,) and np.all(np.isfinite(params))
     if not finite_solution:
         fitted = np.full_like(y, np.nan)
-        return DecayHealthFit(
+        return ExponentialDecayFit(
             assessment=assessment,
             success=False,
             quality="failed",
@@ -1241,7 +1652,7 @@ def _fit_decay_health(
     if not optimization.success:
         message = "Finite diagnostic fit returned despite optimizer warning: " + message
         quality = "poor"
-    return DecayHealthFit(
+    return ExponentialDecayFit(
         assessment=assessment,
         success=True,
         quality=quality,
@@ -1260,7 +1671,7 @@ def _fit_decay_health(
     )
 
 
-def _fit_exchange_health(
+def _fit_population_exchange(
     times: ArrayLike,
     f_population: ArrayLike,
     standard_errors: ArrayLike | None,
@@ -1268,14 +1679,14 @@ def _fit_exchange_health(
     minimum_change: float,
     change_sigma_threshold: float,
     robust_loss: str,
-) -> ExchangeHealthFit:
+) -> PopulationExchangeFit:
     """
     Fit a minimal effective F-population exchange model.
 
     A stable trace fixes both rates to zero. For a changing trace, the fit
     compares the direction-compatible one-way model with a two-way model and
     uses a BIC-like robust-cost score to prefer the smallest adequate model.
-    The goal is a robust health metric rather than unique microscopic rates.
+    The goal is a robust diagnostic metric rather than unique microscopic rates.
     """
     t = np.asarray(times, dtype=np.float64)
     y = np.asarray(f_population, dtype=np.float64)
@@ -1292,7 +1703,7 @@ def _fit_exchange_health(
     dense_elapsed = dense_t - t[0]
     if assessment.status == "stable":
         fitted = np.full_like(y, assessment.constant_value)
-        return ExchangeHealthFit(
+        return PopulationExchangeFit(
             assessment=assessment,
             model="stable",
             success=True,
@@ -1410,7 +1821,7 @@ def _fit_exchange_health(
         if (candidate := fit_candidate(model_name)) is not None
     ]
     if not candidates:
-        return ExchangeHealthFit(
+        return PopulationExchangeFit(
             assessment=assessment,
             model=preferred_model,
             success=False,
@@ -1497,7 +1908,7 @@ def _fit_exchange_health(
     if not optimization.success:
         quality = "poor"
         message = "Finite diagnostic fit returned despite optimizer warning: " + message
-    return ExchangeHealthFit(
+    return PopulationExchangeFit(
         assessment=assessment,
         model=model,
         success=True,
@@ -1548,7 +1959,7 @@ def _population_trajectory(
     return np.stack([expm(matrix * float(time)) @ initial for time in times])
 
 
-def _fit_control_rates_health(
+def _fit_control_population_rates(
     times_ground: ArrayLike,
     times_excited: ArrayLike,
     populations_ground: ArrayLike,
@@ -1562,7 +1973,7 @@ def _fit_control_rates_health(
     leakage_minimum_change: float,
     change_sigma_threshold: float,
     robust_loss: str,
-) -> ControlRateHealthFit:
+) -> ControlPopulationRateFit:
     t_ground = np.asarray(times_ground, dtype=np.float64)
     t_excited = np.asarray(times_excited, dtype=np.float64)
     p_ground = np.asarray(populations_ground, dtype=np.float64)
@@ -1680,7 +2091,7 @@ def _fit_control_rates_health(
     initial_excited_sum = float(np.sum(initial_excited))
     if initial_ground_sum <= _EPS or initial_excited_sum <= _EPS:
         dense = np.linspace(0.0, max(float(t_ground[-1]), float(t_excited[-1])), 400)
-        return ControlRateHealthFit(
+        return ControlPopulationRateFit(
             success=False,
             quality="failed",
             message=(
@@ -1729,7 +2140,7 @@ def _fit_control_rates_health(
                 fitted[_CONTROL_EXCITED][1:].ravel(),
             ]
         )
-        return ControlRateHealthFit(
+        return ControlPopulationRateFit(
             success=True,
             quality="stable",
             message="No resolvable control-population dynamics; all nominal rates fixed to zero.",
@@ -1908,7 +2319,7 @@ def _fit_control_rates_health(
         nan_rates = {
             name: float("nan") if name in active else 0.0 for name in rate_names
         }
-        return ControlRateHealthFit(
+        return ControlPopulationRateFit(
             success=False,
             quality="failed",
             message="All numerical control-rate model fits failed.",
@@ -2019,7 +2430,7 @@ def _fit_control_rates_health(
     if not optimization.success:
         quality = "poor"
         message = "Finite diagnostic fit returned despite optimizer warning: " + message
-    return ControlRateHealthFit(
+    return ControlPopulationRateFit(
         success=True,
         quality=quality,
         message=message,
@@ -2049,7 +2460,9 @@ def _load_idle_noise(
     target: str,
     idle_t1: Mapping[str, float] | None,
     idle_t2_echo: Mapping[str, float] | None,
-) -> tuple[IdleHealthNoise, IdleHealthNoise]:
+    idle_t2_star: Mapping[str, float] | None = None,
+) -> tuple[IdleNoiseParameters, IdleNoiseParameters]:
+    """Load idle lifetimes, using T2-echo only for missing stored T2-star values."""
     t1 = (
         exp.ctx.system_manager.config_loader.load_param_data("t1")
         if idle_t1 is None
@@ -2060,9 +2473,47 @@ def _load_idle_noise(
         if idle_t2_echo is None
         else idle_t2_echo
     )
+    t2_star_loaded_from_storage = idle_t2_star is None
+    if idle_t2_star is not None:
+        t2_star = idle_t2_star
+    else:
+        try:
+            t2_star = exp.ctx.system_manager.config_loader.load_param_data("t2_star")
+        except (
+            AttributeError,
+            FileNotFoundError,
+            KeyError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
+            warnings.warn(
+                "Stored t2_star is unavailable; using t2_echo for unrefocused "
+                "A/B blanks.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            t2_star = t2
+
+    def t2_star_for(qubit: str) -> float:
+        try:
+            return t2_star[qubit]
+        except KeyError:
+            if not t2_star_loaded_from_storage:
+                raise
+            warnings.warn(
+                f"Stored t2_star is unavailable for {qubit}; using t2_echo for "
+                "its unrefocused A/B blanks.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return t2[qubit]
+
     try:
-        control_noise = IdleHealthNoise(t1[control], t2[control])
-        target_noise = IdleHealthNoise(t1[target], t2[target])
+        control_noise = IdleNoiseParameters(
+            t1[control], t2[control], t2_star_for(control)
+        )
+        target_noise = IdleNoiseParameters(t1[target], t2[target], t2_star_for(target))
     except KeyError as exc:
         raise ValueError(
             f"Idle coherence data missing for qubit {exc.args[0]}."
@@ -2079,19 +2530,19 @@ def _rough_fidelity_from_parameters(
     *,
     gate_total_duration: float,
     gate_cr_duration: float,
-    control_idle: IdleHealthNoise,
-    target_idle: IdleHealthNoise,
+    control_idle: IdleNoiseParameters,
+    target_idle: IdleNoiseParameters,
     control_xy_rate: float,
     control_z_rate: float,
-    target_x_rate: float,
-    target_z_rate: float,
+    target_t1rho_rate: float,
+    target_t2rho_rate: float,
     control_leakage_rate: float,
     target_leakage_rate: float,
 ) -> tuple[float, float, tuple[float, float, float], tuple[float, float, float]]:
     t_cr = max(float(gate_cr_duration), 0.0)
     t_off = max(float(gate_total_duration) - t_cr, 0.0)
 
-    # Health-check rates are nominally zero when a change is not resolved.
+    # Dissipation rates are nominally zero when a change is not resolved.
     # For fidelity only, idle decoherence is used as the fallback for those
     # nominal-zero rates.  Positive measured rates are kept as measured, even
     # when they are lower than the corresponding idle rate.
@@ -2104,12 +2555,18 @@ def _rough_fidelity_from_parameters(
         1.0 / control_idle.t1 if control_z_rate <= 0.0 else control_z_rate
     )
     target_x_active = (
-        1.0 / target_idle.effective_t2_echo if target_x_rate <= 0.0 else target_x_rate
+        1.0 / target_idle.effective_t2_echo
+        if target_t1rho_rate <= 0.0
+        else target_t1rho_rate
     )
     target_y_active = (
-        1.0 / target_idle.effective_t2_echo if target_z_rate <= 0.0 else target_z_rate
+        1.0 / target_idle.effective_t2_echo
+        if target_t2rho_rate <= 0.0
+        else target_t2rho_rate
     )
-    target_z_active = 1.0 / target_idle.t1 if target_z_rate <= 0.0 else target_z_rate
+    target_z_active = (
+        1.0 / target_idle.t1 if target_t2rho_rate <= 0.0 else target_t2rho_rate
+    )
 
     control_lx = np.exp(
         -control_xy_active * t_cr - t_off / control_idle.effective_t2_echo
@@ -2145,8 +2602,8 @@ def _rough_fidelity_from_parameters(
 
 def _idle_fidelity_limit(
     gate_duration: float,
-    control_idle: IdleHealthNoise,
-    target_idle: IdleHealthNoise,
+    control_idle: IdleNoiseParameters,
+    target_idle: IdleNoiseParameters,
 ) -> float:
     cxy = np.exp(-gate_duration / control_idle.effective_t2_echo)
     cz = np.exp(-gate_duration / control_idle.t1)
@@ -2169,7 +2626,7 @@ def _fidelity_standard_error(
     for name, value in parameter_values.items():
         sigma = float(parameter_errors.get(name, float("nan")))
         if not np.isfinite(sigma) or sigma < 0:
-            # A nominal stable-zero rate is unresolved below the health-check
+            # A nominal stable-zero rate is unresolved below the dissipation characterization
             # threshold, not known exactly. Its missing uncertainty therefore
             # leaves the aggregate fidelity uncertainty unresolved as well.
             return float("nan")
@@ -2201,7 +2658,7 @@ def _optional_population_covariance(
     Full population covariance is a best-effort refinement for offline analysis.
     Partially populated measurement objects are therefore allowed to
     omit any protocol/kind/qubit entry.  Malformed entries likewise fall back to
-    component-wise standard errors rather than aborting the entire health check.
+    component-wise standard errors rather than aborting the entire dissipation characterization.
     """
     if population_covariances is None:
         return None
@@ -2218,8 +2675,8 @@ def _optional_population_covariance(
     return covariance
 
 
-def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> None:
-    """Validate the array structure required by offline health analysis."""
+def _validate_dissipation_measurements(measurements: CrDissipationMeasurements) -> None:
+    """Validate the array structure required by offline dissipation analysis."""
     if measurements.control_qubit == measurements.target_qubit:
         raise ValueError("control_qubit and target_qubit must differ.")
     n_values = _validate_n_values(measurements.n_values)
@@ -2233,17 +2690,24 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
         shape: tuple[int, ...],
         *,
         errors: bool = False,
+        allow_nan: bool = False,
     ) -> NDArray[np.float64]:
         result = np.asarray(value, dtype=np.float64)
         if result.shape != shape:
             raise ValueError(f"{name} must have shape {shape}, got {result.shape}.")
         if errors:
             valid = np.isnan(result) | (np.isfinite(result) & (result >= 0))
+        elif allow_nan:
+            valid = np.isnan(result) | np.isfinite(result)
         else:
             valid = np.isfinite(result)
         if not np.all(valid):
             requirement = (
-                "nonnegative finite values or NaN" if errors else "finite values"
+                "nonnegative finite values or NaN"
+                if errors
+                else "finite values or NaN"
+                if allow_nan
+                else "finite values"
             )
             raise ValueError(f"{name} must contain {requirement}.")
         return result
@@ -2268,21 +2732,15 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
             )
         if np.any(active < 0) or np.any(active > total + 1e-9):
             raise ValueError(f"{protocol} CR-active times must lie within total times.")
-        if protocol in _CONTROL_STATE_PROTOCOLS and not np.allclose(
-            active, total, rtol=0.0, atol=1e-9
-        ):
-            raise ValueError(
-                f"{protocol} must be fully CR-active: CR-active and total "
-                "times must match."
-            )
-        if protocol in _ECHO_PROTOCOLS:
-            duty_cycle = active[1:] / total[1:]
-            if not np.allclose(duty_cycle, duty_cycle[0], rtol=1e-9, atol=1e-12):
-                raise ValueError(
-                    f"{protocol} must have a constant CR-active duty cycle."
-                )
+        duty_cycle = active[1:] / total[1:]
+        if not np.allclose(duty_cycle, duty_cycle[0], rtol=1e-9, atol=1e-12):
+            raise ValueError(f"{protocol} must have a constant CR-active duty cycle.")
 
-    for protocol in _CONTROL_STATE_PROTOCOLS:
+    for protocol in (*_CONTROL_STATE_PROTOCOLS, *_ECHO_PROTOCOLS):
+        if protocol not in measurements.populations:
+            if protocol in _ECHO_PROTOCOLS:
+                continue
+            raise ValueError(f"populations[{protocol}] is required.")
         for kind in ("actual", "reference"):
             for qubit in (measurements.control_qubit, measurements.target_qubit):
                 population = array(
@@ -2310,23 +2768,28 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
                     (n_points, 3),
                     errors=True,
                 )
-            array(
-                f"target_x_standard_errors[{protocol}][{kind}]",
-                measurements.target_x_standard_errors[protocol][kind],
-                (n_points,),
-                errors=True,
-            )
+            if protocol in _CONTROL_STATE_PROTOCOLS:
+                array(
+                    f"target_x_standard_errors[{protocol}][{kind}]",
+                    measurements.target_x_standard_errors[protocol][kind],
+                    (n_points,),
+                    errors=True,
+                )
             # Full population covariance is optional and best-effort.  Missing
             # target covariance, partial legacy mappings, malformed shapes, and
             # unusable matrices must not abort offline analysis; the control-rate
             # fit falls back to component-wise SE weighting as needed.
 
-    for protocol, primary in ((_CONTROL_T2_ECHO, "X"), (_TARGET_T2RHO_ECHO, "Z")):
+    for protocol, primary in (
+        (_CONTROL_TRANSVERSE_ECHO, "X"),
+        (_TARGET_ROTATING_FRAME_ECHO, "Y"),
+    ):
         for kind in ("actual", "reference"):
             array(
                 f"pauli_expectations[{protocol}][{primary}][{kind}]",
                 measurements.pauli_expectations[protocol][primary][kind],
                 (n_points,),
+                allow_nan=True,
             )
             array(
                 f"pauli_standard_errors[{protocol}][{primary}][{kind}]",
@@ -2337,8 +2800,8 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
 
     if measurements.diagnostic_components_measured:
         diagnostic_specs = {
-            _CONTROL_T2_ECHO: ("Y", "Z"),
-            _TARGET_T2RHO_ECHO: ("X", "Y"),
+            _CONTROL_TRANSVERSE_ECHO: ("Y", "Z"),
+            _TARGET_ROTATING_FRAME_ECHO: ("X", "Z"),
             _diagnostic_key(_CONTROL_GROUND, "control"): ("X", "Y"),
             _diagnostic_key(_CONTROL_GROUND, "target"): ("Y", "Z"),
             _diagnostic_key(_CONTROL_EXCITED, "control"): ("X", "Y"),
@@ -2351,6 +2814,7 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
                         f"pauli_expectations[{key}][{component}][{kind}]",
                         measurements.pauli_expectations[key][component][kind],
                         (n_points,),
+                        allow_nan=True,
                     )
                     array(
                         f"pauli_standard_errors[{key}][{component}][{kind}]",
@@ -2361,11 +2825,11 @@ def _validate_health_measurements(measurements: CrPulseHealthMeasurements) -> No
 
 
 # ---------------------------------------------------------------------------
-# Offline health analysis
+# Offline dissipation analysis
 # ---------------------------------------------------------------------------
 
 
-def _mean_rate_and_error(fits: Sequence[DecayHealthFit]) -> tuple[float, float]:
+def _mean_rate_and_error(fits: Sequence[ExponentialDecayFit]) -> tuple[float, float]:
     """
     Average control-ground/control-excited rates only when both fits are resolved.
 
@@ -2387,7 +2851,7 @@ def _mean_rate_and_error(fits: Sequence[DecayHealthFit]) -> tuple[float, float]:
 
 
 def _mean_exchange_rate_and_error(
-    fits: Sequence[ExchangeHealthFit],
+    fits: Sequence[PopulationExchangeFit],
     direction: Literal["outward", "inward"],
 ) -> tuple[float, float]:
     """
@@ -2417,24 +2881,31 @@ def _mean_exchange_rate_and_error(
     return value, error
 
 
-def _cr_active_rate_from_echo_fits(
-    measurements: CrPulseHealthMeasurements,
+def _cr_active_rate_from_transverse_echo_fits(
+    measurements: CrDissipationMeasurements,
     protocol: _ECHO_PROTOCOL,
-    actual: DecayHealthFit,
-    reference: DecayHealthFit,
+    actual: ExponentialDecayFit,
+    reference: ExponentialDecayFit,
+    *,
+    idle_rate: float | None,
 ) -> tuple[float, float, float]:
     """
     Convert total-sequence decay into a rough CR-active rate.
 
     The model assumes the measured total decay rate is a duty-cycle mixture of
-    one effective CR-active rate and the reference rate during CR-off time.
-    The third return value is the signed CR-active-minus-reference rate.
+    one effective CR-active rate and the independently measured idle rate
+    during CR-off time. If idle data are unavailable, the reference rate is
+    retained as a documented fallback.
+    The third return value is the signed actual-minus-reference excess rate,
+    normalized to CR-active time.
     """
-    if (
-        not actual.success
-        or not reference.success
-        or not np.isfinite(actual.rate)
-        or not np.isfinite(reference.rate)
+    valid_idle_rate = (
+        idle_rate is not None and np.isfinite(idle_rate) and idle_rate >= 0.0
+    )
+    if not actual.success or not np.isfinite(actual.rate):
+        return float("nan"), float("nan"), float("nan")
+    if not valid_idle_rate and (
+        not reference.success or not np.isfinite(reference.rate)
     ):
         return float("nan"), float("nan"), float("nan")
     total = np.asarray(measurements.total_times[protocol], dtype=np.float64)
@@ -2447,15 +2918,20 @@ def _cr_active_rate_from_echo_fits(
     if not np.isfinite(duty) or duty <= 0 or duty > 1 + 1e-9:
         return float("nan"), float("nan"), float("nan")
     duty = min(duty, 1.0)
-    raw = (actual.rate - (1.0 - duty) * reference.rate) / duty
+    off_rate = float(idle_rate) if valid_idle_rate else float(reference.rate)
+    raw = (actual.rate - (1.0 - duty) * off_rate) / duty
     if not np.isfinite(raw):
         return float("nan"), float("nan"), float("nan")
-    # Keep a nonnegative health rate for lifetimes/fidelity, but preserve the
+    # Keep a nonnegative dissipation rate for lifetimes/fidelity, but preserve the
     # signed duty-cycle-corrected difference as diagnostic information.
-    difference = float(raw - reference.rate)
+    difference = (
+        float((actual.rate - reference.rate) / duty)
+        if reference.success and np.isfinite(reference.rate)
+        else float("nan")
+    )
     cr_rate = max(0.0, float(raw))
 
-    def local_error(fit: DecayHealthFit) -> float:
+    def local_error(fit: ExponentialDecayFit) -> float:
         return (
             float(fit.rate_standard_error)
             if np.isfinite(fit.rate_standard_error) and fit.rate_standard_error >= 0
@@ -2463,12 +2939,15 @@ def _cr_active_rate_from_echo_fits(
         )
 
     aerr = local_error(actual)
-    rerr = local_error(reference)
-    error = (
-        float(np.sqrt(aerr**2 + ((1.0 - duty) * rerr) ** 2) / duty)
-        if np.isfinite(aerr) and np.isfinite(rerr)
-        else float("nan")
-    )
+    if valid_idle_rate:
+        error = float(aerr / duty) if np.isfinite(aerr) else float("nan")
+    else:
+        rerr = local_error(reference)
+        error = (
+            float(np.sqrt(aerr**2 + ((1.0 - duty) * rerr) ** 2) / duty)
+            if np.isfinite(aerr) and np.isfinite(rerr)
+            else float("nan")
+        )
     return cr_rate, error, difference
 
 
@@ -2479,8 +2958,22 @@ def _rate_difference(actual: float, reference: float) -> float:
     return float(actual - reference)
 
 
-def analyze_cr_pulse_health(
-    measurements: CrPulseHealthMeasurements,
+def _subtract_known_rate(rate: float, known_contribution: float) -> float:
+    """Subtract a fixed contribution without converting an unresolved rate to zero."""
+    if not np.isfinite(rate) or not np.isfinite(known_contribution):
+        return float("nan")
+    return max(0.0, float(rate - known_contribution))
+
+
+def _nonnegative_rate_difference(total: float, contribution: float) -> float:
+    """Return a nonnegative residual rate while preserving unresolved inputs."""
+    if not np.isfinite(total) or not np.isfinite(contribution):
+        return float("nan")
+    return max(0.0, float(total - contribution))
+
+
+def analyze_cr_dissipation(
+    measurements: CrDissipationMeasurements,
     *,
     population_minimum_change: float = 0.01,
     leakage_minimum_change: float = 0.003,
@@ -2488,18 +2981,18 @@ def analyze_cr_pulse_health(
     change_sigma_threshold: float = 3.0,
     robust_loss: str = "soft_l1",
     zx90_echo_timing: ZX90Timing | None = None,
-    control_idle_noise: IdleHealthNoise | None = None,
-    target_idle_noise: IdleHealthNoise | None = None,
+    control_idle_noise: IdleNoiseParameters | None = None,
+    target_idle_noise: IdleNoiseParameters | None = None,
     estimate_fidelity: bool = True,
     estimate_fidelity_uncertainty: bool = True,
-) -> CrPulseHealthAnalysis:
+) -> CrDissipationAnalysis:
     """
-    Analyze saved CR-pulse health-check measurements without hardware access.
+    Analyze saved CR-pulse dissipation characterization measurements without hardware access.
 
     Parameters
     ----------
     measurements
-        Processed measurements returned by `characterize_cr_pulse_health`
+        Processed measurements returned by `characterize_cr_dissipation`
         or an equivalent offline data set.
     population_minimum_change
         Minimum resolvable absolute control G/E population change before a
@@ -2517,11 +3010,13 @@ def analyze_cr_pulse_health(
     robust_loss
         Loss passed to `scipy.optimize.least_squares` for changing curves.
     zx90_echo_timing, control_idle_noise, target_idle_noise
-        Optional inputs for the rough fidelity estimate.  They are not needed
-        for the health-rate analysis itself.
+        Echo timing and independently measured idle noise. Idle T1/T2 are used
+        to remove blank/CR-off contributions from the reported CR-active rates;
+        they are also required for the optional fidelity estimate. If idle
+        noise is omitted, echo rates fall back to reference-based correction.
     estimate_fidelity
         Whether to calculate the diagnostic fidelity estimate when its inputs
-        and all required health rates are available.
+        and all required dissipation rates are available.
     estimate_fidelity_uncertainty
         Whether to propagate local fit standard errors to the diagnostic
         fidelity with a fast diagonal finite-difference approximation. The
@@ -2529,7 +3024,7 @@ def analyze_cr_pulse_health(
 
     Returns
     -------
-    CrPulseHealthAnalysis
+    CrDissipationAnalysis
         Lightweight rate fits, approximate time constants, signed rate
         differences from the duration-matched references, quality flags, and the
         optional rough fidelity estimate.
@@ -2538,18 +3033,20 @@ def analyze_cr_pulse_health(
     -----
     Stable curves are assigned a nominal zero rate and are not nonlinearly fit.
     A derived decay observable containing non-finite values is marked invalid and
-    that fit alone is left unresolved so independent health metrics remain usable.
+    that fit alone is left unresolved so independent diagnostics remain usable.
     Changing curves use small robust models.  A finite fit is retained even
     when its residual quality is poor; the quality flag communicates that fact.
     Optional orthogonal diagnostic components are deliberately excluded from
-    every fit.  Echo-protocol rates are CR-active-equivalent health metrics:
-    their duration-matched references do not reproduce the internal echo-pi
-    pulses of the calibrated echoed ZX90 schedule. The control-population fit
+    every fit. Echo-protocol rates are CR-active-equivalent diagnostics, not
+    microscopic Lindblad parameters. Their references preserve the internal
+    echoed-ZX90 control-pi slots. Independently measured idle T2 is used as the
+    nominal CR-off decay; the reference fit is only a fallback. The
+    control-population fit
     fixes each initial population vector to the clipped, normalized `n=0`
     measurement and does not propagate its uncertainty separately.
     Population rows outside the G/E/F probability simplex are rejected.
     """
-    _validate_health_measurements(measurements)
+    _validate_dissipation_measurements(measurements)
     for name, value in (
         ("estimate_fidelity", estimate_fidelity),
         ("estimate_fidelity_uncertainty", estimate_fidelity_uncertainty),
@@ -2565,8 +3062,8 @@ def analyze_cr_pulse_health(
         ("control_idle_noise", control_idle_noise),
         ("target_idle_noise", target_idle_noise),
     ):
-        if value is not None and not isinstance(value, IdleHealthNoise):
-            raise TypeError(f"{name} must be IdleHealthNoise or None.")
+        if value is not None and not isinstance(value, IdleNoiseParameters):
+            raise TypeError(f"{name} must be IdleNoiseParameters or None.")
     robust_loss = _validate_robust_loss(robust_loss)
 
     population_minimum_change = _nonnegative_real(
@@ -2582,21 +3079,21 @@ def analyze_cr_pulse_health(
         change_sigma_threshold, default=3.0, name="change_sigma_threshold"
     )
 
-    control_fits: dict[str, ControlRateHealthFit] = {}
-    target_x_fits: dict[str, dict[str, DecayHealthFit]] = {
+    control_fits: dict[str, ControlPopulationRateFit] = {}
+    target_t1rho_fits: dict[str, dict[str, ExponentialDecayFit]] = {
         _CONTROL_GROUND: {},
         _CONTROL_EXCITED: {},
     }
-    target_f_fits: dict[str, dict[str, ExchangeHealthFit]] = {
+    target_leakage_fits: dict[str, dict[str, PopulationExchangeFit]] = {
         _CONTROL_GROUND: {},
         _CONTROL_EXCITED: {},
     }
 
     target_x = measurements.target_x
     for kind in ("actual", "reference"):
-        control_fits[kind] = _fit_control_rates_health(
-            measurements.total_times[_CONTROL_GROUND],
-            measurements.total_times[_CONTROL_EXCITED],
+        control_fits[kind] = _fit_control_population_rates(
+            measurements.cr_active_times[_CONTROL_GROUND],
+            measurements.cr_active_times[_CONTROL_EXCITED],
             measurements.populations[_CONTROL_GROUND][kind][measurements.control_qubit],
             measurements.populations[_CONTROL_EXCITED][kind][
                 measurements.control_qubit
@@ -2627,8 +3124,8 @@ def analyze_cr_pulse_health(
             robust_loss=robust_loss,
         )
         for protocol in _CONTROL_STATE_PROTOCOLS:
-            target_x_fits[protocol][kind] = _fit_decay_health(
-                measurements.total_times[protocol],
+            target_t1rho_fits[protocol][kind] = _fit_exponential_decay(
+                measurements.cr_active_times[protocol],
                 target_x[protocol][kind],
                 measurements.target_x_standard_errors[protocol][kind],
                 minimum_change=pauli_minimum_change,
@@ -2641,8 +3138,8 @@ def analyze_cr_pulse_health(
             target_errors = measurements.population_standard_errors[protocol][kind][
                 measurements.target_qubit
             ]
-            target_f_fits[protocol][kind] = _fit_exchange_health(
-                measurements.total_times[protocol],
+            target_leakage_fits[protocol][kind] = _fit_population_exchange(
+                measurements.cr_active_times[protocol],
                 target_population[:, 2],
                 target_errors[:, 2],
                 minimum_change=leakage_minimum_change,
@@ -2650,13 +3147,16 @@ def analyze_cr_pulse_health(
                 robust_loss=robust_loss,
             )
 
-    echo_fits: dict[str, dict[str, DecayHealthFit]] = {
-        _CONTROL_T2_ECHO: {},
-        _TARGET_T2RHO_ECHO: {},
+    transverse_echo_fits: dict[str, dict[str, ExponentialDecayFit]] = {
+        _CONTROL_TRANSVERSE_ECHO: {},
+        _TARGET_ROTATING_FRAME_ECHO: {},
     }
-    for protocol, component in ((_CONTROL_T2_ECHO, "X"), (_TARGET_T2RHO_ECHO, "Z")):
+    for protocol, component in (
+        (_CONTROL_TRANSVERSE_ECHO, "X"),
+        (_TARGET_ROTATING_FRAME_ECHO, "Y"),
+    ):
         for kind in ("actual", "reference"):
-            echo_fits[protocol][kind] = _fit_decay_health(
+            transverse_echo_fits[protocol][kind] = _fit_exponential_decay(
                 measurements.total_times[protocol],
                 measurements.pauli_expectations[protocol][component][kind],
                 measurements.pauli_standard_errors[protocol][component][kind],
@@ -2667,97 +3167,162 @@ def analyze_cr_pulse_health(
 
     actual_control = control_fits["actual"]
     reference_control = control_fits["reference"]
-    target_x_rate, target_x_error = _mean_rate_and_error(
+    target_t1rho_rate, target_t1rho_error = _mean_rate_and_error(
         [
-            target_x_fits[_CONTROL_GROUND]["actual"],
-            target_x_fits[_CONTROL_EXCITED]["actual"],
+            target_t1rho_fits[_CONTROL_GROUND]["actual"],
+            target_t1rho_fits[_CONTROL_EXCITED]["actual"],
         ]
     )
     target_leak, target_leak_error = _mean_exchange_rate_and_error(
         [
-            target_f_fits[_CONTROL_GROUND]["actual"],
-            target_f_fits[_CONTROL_EXCITED]["actual"],
+            target_leakage_fits[_CONTROL_GROUND]["actual"],
+            target_leakage_fits[_CONTROL_EXCITED]["actual"],
         ],
         "outward",
     )
     target_seep, target_seep_error = _mean_exchange_rate_and_error(
         [
-            target_f_fits[_CONTROL_GROUND]["actual"],
-            target_f_fits[_CONTROL_EXCITED]["actual"],
+            target_leakage_fits[_CONTROL_GROUND]["actual"],
+            target_leakage_fits[_CONTROL_EXCITED]["actual"],
         ],
         "inward",
     )
 
     control_xy, control_xy_error, control_xy_difference = (
-        _cr_active_rate_from_echo_fits(
+        _cr_active_rate_from_transverse_echo_fits(
             measurements,
-            _CONTROL_T2_ECHO,
-            echo_fits[_CONTROL_T2_ECHO]["actual"],
-            echo_fits[_CONTROL_T2_ECHO]["reference"],
+            _CONTROL_TRANSVERSE_ECHO,
+            transverse_echo_fits[_CONTROL_TRANSVERSE_ECHO]["actual"],
+            transverse_echo_fits[_CONTROL_TRANSVERSE_ECHO]["reference"],
+            idle_rate=(
+                None
+                if control_idle_noise is None
+                else 1.0 / control_idle_noise.effective_t2_echo
+            ),
         )
     )
-    target_z, target_z_error, target_z_difference = _cr_active_rate_from_echo_fits(
-        measurements,
-        _TARGET_T2RHO_ECHO,
-        echo_fits[_TARGET_T2RHO_ECHO]["actual"],
-        echo_fits[_TARGET_T2RHO_ECHO]["reference"],
+    target_t2rho_rate, target_t2rho_error, target_t2rho_difference = (
+        _cr_active_rate_from_transverse_echo_fits(
+            measurements,
+            _TARGET_ROTATING_FRAME_ECHO,
+            transverse_echo_fits[_TARGET_ROTATING_FRAME_ECHO]["actual"],
+            transverse_echo_fits[_TARGET_ROTATING_FRAME_ECHO]["reference"],
+            idle_rate=(
+                None
+                if target_idle_noise is None
+                else 1.0 / target_idle_noise.effective_t2_echo
+            ),
+        )
     )
+    active_axis = np.asarray(
+        measurements.cr_active_times[_CONTROL_GROUND], dtype=np.float64
+    )
+    total_axis = np.asarray(measurements.total_times[_CONTROL_GROUND], dtype=np.float64)
+    positive_active = active_axis > 0.0
+    blank_to_active = (
+        float(
+            np.median(
+                (total_axis[positive_active] - active_axis[positive_active])
+                / active_axis[positive_active]
+            )
+        )
+        if np.any(positive_active)
+        else 0.0
+    )
+    control_down = actual_control.rates["gamma_e_to_g"]
+    target_t1rho_rate_corrected = target_t1rho_rate
+    if control_idle_noise is not None:
+        control_down = _subtract_known_rate(
+            control_down,
+            blank_to_active / control_idle_noise.t1,
+        )
+    if target_idle_noise is not None:
+        target_t1rho_rate_corrected = _subtract_known_rate(
+            target_t1rho_rate,
+            blank_to_active / target_idle_noise.effective_t2_star,
+        )
+    control_population_transverse = 0.5 * (
+        control_down + actual_control.rates["gamma_g_to_e"]
+    )
+    control_phi = _nonnegative_rate_difference(
+        control_xy, control_population_transverse
+    )
+    target_phi_rho = _nonnegative_rate_difference(
+        target_t2rho_rate, 0.5 * target_t1rho_rate_corrected
+    )
+    control_phi_error = float(
+        np.hypot(
+            control_xy_error,
+            0.5
+            * np.hypot(
+                actual_control.rate_standard_errors["gamma_e_to_g"],
+                actual_control.rate_standard_errors["gamma_g_to_e"],
+            ),
+        )
+    )
+    target_phi_rho_error = float(np.hypot(target_t2rho_error, 0.5 * target_t1rho_error))
 
     rate_names = (
         "gamma_control_e_to_g",
         "gamma_control_g_to_e",
         "gamma_control_f_to_e",
         "gamma_control_e_to_f",
-        "gamma_target_x_decay",
+        "gamma_target_t1rho",
         "gamma_target_leakage",
         "gamma_target_seepage",
-        "gamma_control_xy_decay",
-        "gamma_target_z_decay",
+        "gamma_control_transverse",
+        "gamma_target_t2rho",
+        "gamma_control_phi_cr",
+        "gamma_target_phi_rho_cr",
     )
     cr_rates = {
-        "gamma_control_e_to_g": actual_control.rates["gamma_e_to_g"],
+        "gamma_control_e_to_g": control_down,
         "gamma_control_g_to_e": actual_control.rates["gamma_g_to_e"],
         "gamma_control_f_to_e": actual_control.rates["gamma_f_to_e"],
         "gamma_control_e_to_f": actual_control.rates["gamma_e_to_f"],
-        "gamma_target_x_decay": target_x_rate,
+        "gamma_target_t1rho": target_t1rho_rate_corrected,
         "gamma_target_leakage": target_leak,
         "gamma_target_seepage": target_seep,
-        "gamma_control_xy_decay": control_xy,
-        "gamma_target_z_decay": target_z,
+        "gamma_control_transverse": control_xy,
+        "gamma_target_t2rho": target_t2rho_rate,
+        "gamma_control_phi_cr": control_phi,
+        "gamma_target_phi_rho_cr": target_phi_rho,
     }
     cr_errors = {
         "gamma_control_e_to_g": actual_control.rate_standard_errors["gamma_e_to_g"],
         "gamma_control_g_to_e": actual_control.rate_standard_errors["gamma_g_to_e"],
         "gamma_control_f_to_e": actual_control.rate_standard_errors["gamma_f_to_e"],
         "gamma_control_e_to_f": actual_control.rate_standard_errors["gamma_e_to_f"],
-        "gamma_target_x_decay": target_x_error,
+        "gamma_target_t1rho": target_t1rho_error,
         "gamma_target_leakage": target_leak_error,
         "gamma_target_seepage": target_seep_error,
-        "gamma_control_xy_decay": control_xy_error,
-        "gamma_target_z_decay": target_z_error,
+        "gamma_control_transverse": control_xy_error,
+        "gamma_target_t2rho": target_t2rho_error,
+        "gamma_control_phi_cr": control_phi_error,
+        "gamma_target_phi_rho_cr": target_phi_rho_error,
     }
     decay_times = {
         name: _rate_to_lifetime(cr_rates[name], cr_errors[name])[0]
         for name in rate_names
     }
 
-    reference_target_x_rate = _mean_rate_and_error(
+    reference_target_t1rho_rate = _mean_rate_and_error(
         [
-            target_x_fits[_CONTROL_GROUND]["reference"],
-            target_x_fits[_CONTROL_EXCITED]["reference"],
+            target_t1rho_fits[_CONTROL_GROUND]["reference"],
+            target_t1rho_fits[_CONTROL_EXCITED]["reference"],
         ]
     )[0]
     reference_target_leak = _mean_exchange_rate_and_error(
         [
-            target_f_fits[_CONTROL_GROUND]["reference"],
-            target_f_fits[_CONTROL_EXCITED]["reference"],
+            target_leakage_fits[_CONTROL_GROUND]["reference"],
+            target_leakage_fits[_CONTROL_EXCITED]["reference"],
         ],
         "outward",
     )[0]
     reference_target_seep = _mean_exchange_rate_and_error(
         [
-            target_f_fits[_CONTROL_GROUND]["reference"],
-            target_f_fits[_CONTROL_EXCITED]["reference"],
+            target_leakage_fits[_CONTROL_GROUND]["reference"],
+            target_leakage_fits[_CONTROL_EXCITED]["reference"],
         ],
         "inward",
     )[0]
@@ -2778,20 +3343,25 @@ def analyze_cr_pulse_health(
             actual_control.rates["gamma_e_to_f"],
             reference_control.rates["gamma_e_to_f"],
         ),
-        "gamma_target_x_decay": _rate_difference(
-            target_x_rate, reference_target_x_rate
+        "gamma_target_t1rho": _rate_difference(
+            target_t1rho_rate, reference_target_t1rho_rate
         ),
         "gamma_target_leakage": _rate_difference(target_leak, reference_target_leak),
         "gamma_target_seepage": _rate_difference(target_seep, reference_target_seep),
-        "gamma_control_xy_decay": control_xy_difference,
-        "gamma_target_z_decay": target_z_difference,
+        "gamma_control_transverse": control_xy_difference,
+        "gamma_target_t2rho": target_t2rho_difference,
+        # No like-for-like pure-dephasing reference is identified by this
+        # effective model.  Reporting the absolute rates as differences would
+        # be dimensionally valid but semantically misleading.
+        "gamma_control_phi_cr": float("nan"),
+        "gamma_target_phi_rho_cr": float("nan"),
     }
 
     if estimate_fidelity:
         initial_fidelity_message = "Rough fidelity requested but ZX90 timing and idle T1/T2 inputs are incomplete."
     else:
         initial_fidelity_message = "Rough fidelity estimate disabled."
-    fidelity = CrPulseHealthFidelityEstimate(
+    fidelity = CrDissipationFidelityEstimate(
         available=False,
         message=initial_fidelity_message,
         estimated_fidelity=float("nan"),
@@ -2810,16 +3380,13 @@ def analyze_cr_pulse_health(
         for value in (zx90_echo_timing, control_idle_noise, target_idle_noise)
     ):
         timing = cast(ZX90Timing, zx90_echo_timing)
-        control_idle = cast(IdleHealthNoise, control_idle_noise)
-        target_idle = cast(IdleHealthNoise, target_idle_noise)
+        control_idle = cast(IdleNoiseParameters, control_idle_noise)
+        target_idle = cast(IdleNoiseParameters, target_idle_noise)
         raw_parameter_values = {
             "control_xy_rate": control_xy,
-            "control_z_rate": (
-                actual_control.rates["gamma_e_to_g"]
-                + actual_control.rates["gamma_g_to_e"]
-            ),
-            "target_x_rate": target_x_rate,
-            "target_z_rate": target_z,
+            "control_z_rate": (control_down + actual_control.rates["gamma_g_to_e"]),
+            "target_t1rho_rate": target_t1rho_rate_corrected,
+            "target_t2rho_rate": target_t2rho_rate,
             "control_leakage_rate": actual_control.rates["gamma_e_to_f"],
             "target_leakage_rate": target_leak,
         }
@@ -2829,10 +3396,10 @@ def analyze_cr_pulse_health(
                 for name, value in raw_parameter_values.items()
                 if not np.isfinite(value)
             )
-            fidelity = CrPulseHealthFidelityEstimate(
+            fidelity = CrDissipationFidelityEstimate(
                 available=False,
                 message=(
-                    "Rough fidelity unavailable because required health rates are "
+                    "Rough fidelity unavailable because required dissipation rates are "
                     f"unresolved: {missing}."
                 ),
                 estimated_fidelity=float("nan"),
@@ -2882,8 +3449,8 @@ def analyze_cr_pulse_health(
             parameter_errors = {
                 "control_xy_rate": control_xy_error,
                 "control_z_rate": control_z_error,
-                "target_x_rate": target_x_error,
-                "target_z_rate": target_z_error,
+                "target_t1rho_rate": target_t1rho_error,
+                "target_t2rho_rate": target_t2rho_error,
                 "control_leakage_rate": actual_control.rate_standard_errors[
                     "gamma_e_to_f"
                 ],
@@ -2906,12 +3473,27 @@ def analyze_cr_pulse_health(
                 target_idle=target_idle,
                 **parameter_values,
             )
+            control_survival = float(
+                np.exp(
+                    -0.5
+                    * parameter_values["control_leakage_rate"]
+                    * timing.cr_active_duration
+                )
+            )
+            target_survival = float(
+                np.exp(
+                    -parameter_values["target_leakage_rate"] * timing.cr_active_duration
+                )
+            )
+            survival_lower = max(0.0, control_survival + target_survival - 1.0)
+            survival_upper = min(control_survival, target_survival)
+            coherence_factor = value / survival if survival > _EPS else float("nan")
             fidelity_error = (
                 _fidelity_standard_error(parameter_values, parameter_errors, evaluator)
                 if estimate_fidelity_uncertainty
                 else float("nan")
             )
-            fidelity = CrPulseHealthFidelityEstimate(
+            fidelity = CrDissipationFidelityEstimate(
                 available=True,
                 message=(
                     "Diagnostic local-noise fidelity estimate from measured effective rates; "
@@ -2931,12 +3513,12 @@ def analyze_cr_pulse_health(
                 metadata={
                     "diagnostic_only": True,
                     "model": "independent_local_bloch_contractions_plus_uniform_leakage",
-                    "control_xy_from": "control_t2_echo actual/reference duty-cycle corrected",
-                    "target_z_from": "target_t2rho_echo actual/reference duty-cycle corrected",
-                    "target_x_from": "mean control_ground/control_excited target-X decay",
-                    "control_z_from": "control_ground/control_excited control g<->e rates",
+                    "control_xy_from": "control_cr_transverse_echo actual decay with CR-off idle-T2 correction",
+                    "target_transverse_from": "target_cr_rotating_frame_echo actual decay with CR-off idle-T2 correction",
+                    "target_x_from": "mean A/B target-X decay with blank idle-T2-star correction",
+                    "control_z_from": "A/B control g<->e rates with blank idle-T1 correction",
                     "stable_curves_are_nominal_zero": True,
-                    "idle_decoherence_used_for_nonpositive_health_rates": True,
+                    "idle_decoherence_used_for_cr_off_correction": True,
                     "subthreshold_rate_uncertainty_unresolved": True,
                     "positive_measured_rates_are_not_floored_by_idle_rates": True,
                     "idle_t2_capped_at_2t1_for_fidelity": True,
@@ -2950,7 +3532,16 @@ def analyze_cr_pulse_health(
                     "possible_leakage_decoherence_overlap": True,
                     "coherent_gate_errors_not_included": True,
                     "echo_rates_are_cr_active_equivalent_not_strict_cr_only": True,
-                    "echo_reference_does_not_reproduce_internal_zx90_echo_pi": True,
+                    "echo_reference_preserves_internal_zx90_echo_pi": True,
+                    "control_computational_survival": control_survival,
+                    "target_computational_survival": target_survival,
+                    "computational_survival_lower": survival_lower,
+                    "computational_survival_upper": survival_upper,
+                    "leakage_correlation_fidelity_lower": coherence_factor
+                    * survival_lower,
+                    "leakage_correlation_fidelity_upper": coherence_factor
+                    * survival_upper,
+                    "survival_bounds_are_frechet_not_statistical_confidence": True,
                 },
             )
 
@@ -2960,20 +3551,22 @@ def analyze_cr_pulse_health(
     }
     for protocol in _CONTROL_STATE_PROTOCOLS:
         for kind in ("actual", "reference"):
-            quality_flags[f"target_x_{protocol}_{kind}"] = target_x_fits[protocol][
+            quality_flags[f"target_x_{protocol}_{kind}"] = target_t1rho_fits[protocol][
                 kind
             ].quality
-            quality_flags[f"target_f_{protocol}_{kind}"] = target_f_fits[protocol][
-                kind
-            ].quality
+            quality_flags[f"target_f_{protocol}_{kind}"] = target_leakage_fits[
+                protocol
+            ][kind].quality
     for protocol in _ECHO_PROTOCOLS:
         for kind in ("actual", "reference"):
-            quality_flags[f"{protocol}_{kind}"] = echo_fits[protocol][kind].quality
-    return CrPulseHealthAnalysis(
+            quality_flags[f"{protocol}_{kind}"] = transverse_echo_fits[protocol][
+                kind
+            ].quality
+    return CrDissipationAnalysis(
         control_rate_fits=control_fits,
-        target_x_fits=target_x_fits,
-        target_f_fits=target_f_fits,
-        echo_fits=echo_fits,
+        target_t1rho_fits=target_t1rho_fits,
+        target_leakage_fits=target_leakage_fits,
+        transverse_echo_fits=transverse_echo_fits,
         cr_active_rates=cr_rates,
         cr_active_rate_standard_errors=cr_errors,
         decay_times=decay_times,
@@ -2983,7 +3576,7 @@ def analyze_cr_pulse_health(
         metadata={
             "rate_unit": "1/ns",
             "time_unit": "ns",
-            "analysis_goal": "health_check_not_strict_identification",
+            "analysis_goal": "effective_rate_decomposition",
             "robust_loss": robust_loss,
             "population_minimum_change": population_minimum_change,
             "leakage_minimum_change": leakage_minimum_change,
@@ -2999,9 +3592,18 @@ def analyze_cr_pulse_health(
                 "reference": reference_control.population_weighting,
             },
             "diagnostic_components_used_in_fit": False,
+            "population_blank_correction": "post_fit_effective_rate_subtraction",
+            "segmentwise_population_propagator_used": False,
+            "idle_noise_uncertainty_not_propagated": True,
+            "control_blank_idle_e_to_g_subtracted_from_t1": control_idle_noise
+            is not None,
+            "target_blank_transverse_decay_subtracted_from_t2_star": target_idle_noise
+            is not None,
+            "unknown_idle_excitation_leakage_and_seepage_assumed_zero": True,
+            "blank_to_cr_active_duration_ratio": blank_to_active,
             "echo_rate_interpretation": (
-                "CR-active-equivalent; duration-matched references do not "
-                "reproduce internal echoed-ZX90 pi pulses"
+                "CR-active-equivalent with internal echoed-ZX90 pi slots "
+                "preserved in references"
             ),
         },
     )
@@ -3037,12 +3639,13 @@ def _nice_leakage_upper(*arrays: NDArray[np.float64]) -> float:
 
 
 def _plot_control_population(
-    measurements: CrPulseHealthMeasurements,
-    analysis: CrPulseHealthAnalysis,
+    measurements: CrDissipationMeasurements,
+    analysis: CrDissipationAnalysis,
     protocol: _CONTROL_STATE_PROTOCOL,
 ) -> go.Figure:
-    fig = go.Figure()
-    times_us = measurements.total_times[protocol] * 1e-3
+    rows = 2 if measurements.diagnostic_components_measured else 1
+    fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.08)
+    times_us = measurements.cr_active_times[protocol] * 1e-3
     for kind in ("reference", "actual"):
         fit = analysis.control_rate_fits[kind]
         opacity = 0.4 if kind == "reference" else 1.0
@@ -3065,7 +3668,9 @@ def _plot_control_population(
                         ][:, index]
                     ),
                     name=f"{kind} P{state}",
-                )
+                ),
+                row=1,
+                col=1,
             )
             fig.add_trace(
                 go.Scatter(
@@ -3078,40 +3683,73 @@ def _plot_control_population(
                     },
                     opacity=opacity,
                     name=f"{kind} fit P{state}",
-                )
+                ),
+                row=1,
+                col=1,
             )
+    if measurements.diagnostic_components_measured:
+        key = _diagnostic_key(protocol, "control")
+        for component in ("X", "Y"):
+            color = COLORS[("X", "Y", "Z").index(component)]
+            for kind in ("reference", "actual"):
+                fig.add_trace(
+                    go.Scatter(
+                        x=times_us,
+                        y=measurements.pauli_expectations[key][component][kind],
+                        mode="markers",
+                        marker={
+                            "symbol": "diamond-open"
+                            if kind == "reference"
+                            else "circle",
+                            "color": color,
+                        },
+                        opacity=0.4 if kind == "reference" else 1.0,
+                        error_y=_error_bar(
+                            measurements.pauli_standard_errors[key][component][kind]
+                        ),
+                        name=f"{kind} control {component}",
+                    ),
+                    row=2,
+                    col=1,
+                )
+        fig.update_yaxes(title_text="Control X/Y", range=[-1.1, 1.1], row=2, col=1)
+    fig.update_xaxes(title_text="CR-active time (µs)", row=rows, col=1)
     fig.update_layout(
         title=(
             f"{_PROTOCOL_LABELS[protocol]}: control "
-            f"{measurements.control_qubit} GEF health"
+            f"{measurements.control_qubit} GEF dissipation"
         ),
-        xaxis_title="Evolution time (µs)",
+        xaxis_title="CR-active time (µs)",
         yaxis={"title": "Population", "range": [0.0, 1.0]},
+        template="qubex",
     )
     return fig
 
 
-def _plot_target_health(
-    measurements: CrPulseHealthMeasurements,
-    analysis: CrPulseHealthAnalysis,
+def _plot_target_dissipation(
+    measurements: CrDissipationMeasurements,
+    analysis: CrDissipationAnalysis,
     protocol: _CONTROL_STATE_PROTOCOL,
 ) -> go.Figure:
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08)
-    times_us = measurements.total_times[protocol] * 1e-3
+    leakage_row = 3 if measurements.diagnostic_components_measured else 2
+    fig = make_subplots(
+        rows=leakage_row, cols=1, shared_xaxes=True, vertical_spacing=0.06
+    )
+    times_us = measurements.cr_active_times[protocol] * 1e-3
     target_x = measurements.target_x
     leakage_arrays: list[NDArray[np.float64]] = []
     for kind in ("reference", "actual"):
         opacity = 0.4 if kind == "reference" else 1.0
         symbol = "diamond-open" if kind == "reference" else "circle"
-        color = COLORS[1] if kind == "reference" else COLORS[0]
-        xfit = analysis.target_x_fits[protocol][kind]
-        ffit = analysis.target_f_fits[protocol][kind]
+        color = COLORS[2]
+        xfit = analysis.target_t1rho_fits[protocol][kind]
+        ffit = analysis.target_leakage_fits[protocol][kind]
         fig.add_trace(
             go.Scatter(
                 x=times_us,
                 y=target_x[protocol][kind],
                 mode="markers",
-                marker={"symbol": symbol, "color": color},
+                marker={"symbol": symbol, "color": COLORS[2]},
                 opacity=opacity,
                 error_y=_error_bar(
                     measurements.target_x_standard_errors[protocol][kind]
@@ -3128,7 +3766,7 @@ def _plot_target_health(
                 mode="lines",
                 line={
                     "dash": "dot" if kind == "reference" else "solid",
-                    "color": color,
+                    "color": COLORS[2],
                 },
                 opacity=opacity,
                 name=f"{kind} X fit",
@@ -3157,7 +3795,7 @@ def _plot_target_health(
                 error_y=_error_bar(pf_error),
                 name=f"{kind} target Pf",
             ),
-            row=2,
+            row=leakage_row,
             col=1,
         )
         fig.add_trace(
@@ -3172,34 +3810,70 @@ def _plot_target_health(
                 opacity=opacity,
                 name=f"{kind} Pf fit",
             ),
-            row=2,
+            row=leakage_row,
             col=1,
         )
+    if measurements.diagnostic_components_measured:
+        diagnostic_key = _diagnostic_key(protocol, "target")
+        for component in ("Y", "Z"):
+            color = COLORS[("X", "Y", "Z").index(component)]
+            for kind in ("reference", "actual"):
+                fig.add_trace(
+                    go.Scatter(
+                        x=times_us,
+                        y=measurements.pauli_expectations[diagnostic_key][component][
+                            kind
+                        ],
+                        mode="markers",
+                        marker={
+                            "symbol": "diamond-open"
+                            if kind == "reference"
+                            else "circle",
+                            "color": color,
+                        },
+                        opacity=0.4 if kind == "reference" else 1.0,
+                        error_y=_error_bar(
+                            measurements.pauli_standard_errors[diagnostic_key][
+                                component
+                            ][kind]
+                        ),
+                        name=f"{kind} target {component}",
+                    ),
+                    row=2,
+                    col=1,
+                )
+        fig.update_yaxes(title_text="Target Y/Z", range=[-1.1, 1.1], row=2, col=1)
     upper = _nice_leakage_upper(*leakage_arrays)
     fig.update_yaxes(title_text="Target X", range=[-1.1, 1.1], row=1, col=1)
-    fig.update_yaxes(title_text="Target Pf", range=[0.0, upper], row=2, col=1)
-    fig.update_xaxes(title_text="Evolution time (µs)", row=2, col=1)
-    fig.update_layout(title=f"{_PROTOCOL_LABELS[protocol]}: target health")
+    fig.update_yaxes(title_text="Target Pf", range=[0.0, upper], row=leakage_row, col=1)
+    fig.update_xaxes(title_text="CR-active time (µs)", row=leakage_row, col=1)
+    fig.update_layout(
+        title=f"{_PROTOCOL_LABELS[protocol]}: target dissipation", template="qubex"
+    )
     return fig
 
 
-def _plot_echo_health(
-    measurements: CrPulseHealthMeasurements,
-    analysis: CrPulseHealthAnalysis,
+def _plot_echo_dissipation(
+    measurements: CrDissipationMeasurements,
+    analysis: CrDissipationAnalysis,
     protocol: _ECHO_PROTOCOL,
 ) -> go.Figure:
-    primary = "X" if protocol == _CONTROL_T2_ECHO else "Z"
+    primary = "X" if protocol == _CONTROL_TRANSVERSE_ECHO else "Y"
     label = (
         measurements.control_qubit
-        if protocol == _CONTROL_T2_ECHO
+        if protocol == _CONTROL_TRANSVERSE_ECHO
         else measurements.target_qubit
     )
-    fig = go.Figure()
+    has_leakage = protocol in measurements.populations
+    diagnostic_row = 2
+    leakage_row = 2 + int(measurements.diagnostic_components_measured)
+    n_rows = 1 + int(measurements.diagnostic_components_measured) + int(has_leakage)
+    fig = make_subplots(rows=n_rows, cols=1, shared_xaxes=True, vertical_spacing=0.08)
     times_us = measurements.total_times[protocol] * 1e-3
     for kind in ("reference", "actual"):
         opacity = 0.4 if kind == "reference" else 1.0
-        color = COLORS[1] if kind == "reference" else COLORS[0]
-        fit = analysis.echo_fits[protocol][kind]
+        color = COLORS[0]
+        fit = analysis.transverse_echo_fits[protocol][kind]
         fig.add_trace(
             go.Scatter(
                 x=times_us,
@@ -3214,7 +3888,9 @@ def _plot_echo_health(
                     measurements.pauli_standard_errors[protocol][primary][kind]
                 ),
                 name=f"{kind} {primary}",
-            )
+            ),
+            row=1,
+            col=1,
         )
         fig.add_trace(
             go.Scatter(
@@ -3227,7 +3903,9 @@ def _plot_echo_health(
                 },
                 opacity=opacity,
                 name=f"{kind} {primary} fit",
-            )
+            ),
+            row=1,
+            col=1,
         )
 
     if measurements.diagnostic_components_measured:
@@ -3237,13 +3915,17 @@ def _plot_echo_health(
                 or component not in measurements.pauli_expectations[protocol]
             ):
                 continue
+            component_color = COLORS[("X", "Y", "Z").index(component)]
             for kind in ("reference", "actual"):
                 fig.add_trace(
                     go.Scatter(
                         x=times_us,
                         y=measurements.pauli_expectations[protocol][component][kind],
                         mode="markers",
-                        marker={"symbol": "x" if kind == "actual" else "cross-open"},
+                        marker={
+                            "symbol": "circle" if kind == "actual" else "diamond-open",
+                            "color": component_color,
+                        },
                         opacity=0.55 if kind == "reference" else 0.75,
                         error_y=_error_bar(
                             measurements.pauli_standard_errors[protocol][component][
@@ -3251,63 +3933,67 @@ def _plot_echo_health(
                             ]
                         ),
                         name=f"{kind} {component} diagnostic",
-                    )
-                )
-    fig.update_layout(
-        title=f"{_PROTOCOL_LABELS[protocol]}: {label} primary {primary} health",
-        xaxis_title="Evolution time (µs)",
-        yaxis={"title": "Pauli expectation", "range": [-1.1, 1.1]},
-    )
-    return fig
-
-
-def _plot_control_state_diagnostics(
-    measurements: CrPulseHealthMeasurements,
-    protocol: _CONTROL_STATE_PROTOCOL,
-) -> go.Figure:
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08)
-    times_us = measurements.total_times[protocol] * 1e-3
-    for row, key, components, title in (
-        (1, _diagnostic_key(protocol, "control"), ("X", "Y"), "control diagnostics"),
-        (2, _diagnostic_key(protocol, "target"), ("Y", "Z"), "target diagnostics"),
-    ):
-        for component_index, component in enumerate(components):
-            component_color = COLORS[component_index % len(COLORS)]
-            for kind in ("reference", "actual"):
-                fig.add_trace(
-                    go.Scatter(
-                        x=times_us,
-                        y=measurements.pauli_expectations[key][component][kind],
-                        mode="markers",
-                        marker={
-                            "symbol": "diamond-open"
-                            if kind == "reference"
-                            else "circle",
-                            "color": component_color,
-                        },
-                        opacity=0.4 if kind == "reference" else 0.85,
-                        error_y=_error_bar(
-                            measurements.pauli_standard_errors[key][component][kind]
-                        ),
-                        name=f"{kind} {component}",
                     ),
-                    row=row,
+                    row=diagnostic_row,
                     col=1,
                 )
-        fig.update_yaxes(title_text=title, range=[-1.1, 1.1], row=row, col=1)
-    fig.update_xaxes(title_text="Evolution time (µs)", row=2, col=1)
+    fig.update_yaxes(title_text=f"Primary {primary}", range=[-1.1, 1.1], row=1, col=1)
+    if measurements.diagnostic_components_measured:
+        fig.update_yaxes(
+            title_text="Orthogonal components",
+            range=[-1.1, 1.1],
+            row=diagnostic_row,
+            col=1,
+        )
+    if has_leakage:
+        leakage_arrays: list[NDArray[np.float64]] = []
+        observed_qubit = (
+            measurements.control_qubit
+            if protocol == _CONTROL_TRANSVERSE_ECHO
+            else measurements.target_qubit
+        )
+        for kind in ("reference", "actual"):
+            population = measurements.populations[protocol][kind][observed_qubit]
+            errors = measurements.population_standard_errors[protocol][kind][
+                observed_qubit
+            ][:, 2]
+            leakage_arrays.append(population[:, 2])
+            fig.add_trace(
+                go.Scatter(
+                    x=times_us,
+                    y=population[:, 2],
+                    mode="markers",
+                    marker={
+                        "symbol": "diamond-open" if kind == "reference" else "circle",
+                        "color": COLORS[2],
+                    },
+                    opacity=0.4 if kind == "reference" else 1.0,
+                    error_y=_error_bar(errors),
+                    name=f"{kind} {observed_qubit} Pf",
+                ),
+                row=leakage_row,
+                col=1,
+            )
+        fig.update_yaxes(
+            title_text=f"{observed_qubit} Pf",
+            range=[0.0, _nice_leakage_upper(*leakage_arrays)],
+            row=leakage_row,
+            col=1,
+        )
+    fig.update_xaxes(title_text="Evolution time (µs)", row=n_rows, col=1)
     fig.update_layout(
-        title=f"{_PROTOCOL_LABELS[protocol]}: diagnostic Pauli components (not fitted)"
+        title=f"{_PROTOCOL_LABELS[protocol]}: {label} primary {primary} dissipation",
+        template="qubex",
     )
     return fig
 
 
-def plot_cr_pulse_health(
-    measurements: CrPulseHealthMeasurements,
-    analysis: CrPulseHealthAnalysis,
+def plot_cr_dissipation(
+    measurements: CrDissipationMeasurements,
+    analysis: CrDissipationAnalysis,
 ) -> dict[str, go.Figure]:
     """
-    Build the standard data-and-fit figures for a health-check result.
+    Build the standard data-and-fit figures for a dissipation characterization result.
 
     Primary observables include fitted curves.  Optional orthogonal Pauli
     components are shown only as diagnostic points and never receive fit lines.
@@ -3315,7 +4001,7 @@ def plot_cr_pulse_health(
     Parameters
     ----------
     measurements
-        Processed measurements used by `analyze_cr_pulse_health`.
+        Processed measurements used by `analyze_cr_dissipation`.
     analysis
         Analysis result corresponding to `measurements`.
 
@@ -3328,27 +4014,22 @@ def plot_cr_pulse_health(
         f"{_CONTROL_GROUND}_control": _plot_control_population(
             measurements, analysis, _CONTROL_GROUND
         ),
-        f"{_CONTROL_GROUND}_target": _plot_target_health(
+        f"{_CONTROL_GROUND}_target": _plot_target_dissipation(
             measurements, analysis, _CONTROL_GROUND
         ),
         f"{_CONTROL_EXCITED}_control": _plot_control_population(
             measurements, analysis, _CONTROL_EXCITED
         ),
-        f"{_CONTROL_EXCITED}_target": _plot_target_health(
+        f"{_CONTROL_EXCITED}_target": _plot_target_dissipation(
             measurements, analysis, _CONTROL_EXCITED
         ),
-        _CONTROL_T2_ECHO: _plot_echo_health(measurements, analysis, _CONTROL_T2_ECHO),
-        _TARGET_T2RHO_ECHO: _plot_echo_health(
-            measurements, analysis, _TARGET_T2RHO_ECHO
+        _CONTROL_TRANSVERSE_ECHO: _plot_echo_dissipation(
+            measurements, analysis, _CONTROL_TRANSVERSE_ECHO
+        ),
+        _TARGET_ROTATING_FRAME_ECHO: _plot_echo_dissipation(
+            measurements, analysis, _TARGET_ROTATING_FRAME_ECHO
         ),
     }
-    if measurements.diagnostic_components_measured:
-        figures[f"{_CONTROL_GROUND}_diagnostic"] = _plot_control_state_diagnostics(
-            measurements, _CONTROL_GROUND
-        )
-        figures[f"{_CONTROL_EXCITED}_diagnostic"] = _plot_control_state_diagnostics(
-            measurements, _CONTROL_EXCITED
-        )
     return figures
 
 
@@ -3386,8 +4067,8 @@ def _analytic_population_covariance(fit: GefPopulationFit) -> NDArray[np.float64
     return np.full((3, 3), np.nan, dtype=np.float64)
 
 
-def _analytic_target_x_error(fit: GefPopulationFit) -> float:
-    """Propagate full G/E covariance to target X, with component-SE fallback."""
+def _analytic_computational_polarization_error(fit: GefPopulationFit) -> float:
+    """Propagate full G/E covariance to a conditioned Pauli standard error."""
     population = np.asarray(fit.population, dtype=np.float64)
     if population.shape != (3,) or not np.all(np.isfinite(population[:2])):
         return float("nan")
@@ -3411,8 +4092,8 @@ def _analytic_target_x_error(fit: GefPopulationFit) -> float:
         return float("nan")
     gradient = np.array(
         [
-            -2.0 * population[1] / denominator**2,
-            2.0 * population[0] / denominator**2,
+            2.0 * population[1] / denominator**2,
+            -2.0 * population[0] / denominator**2,
         ],
         dtype=np.float64,
     )
@@ -3424,19 +4105,21 @@ def _analytic_target_x_error(fit: GefPopulationFit) -> float:
     return float(np.sqrt(max(variance, 0.0)))
 
 
-def _print_health_summary(analysis: CrPulseHealthAnalysis) -> None:
-    """Print a compact human-readable health summary."""
-    print("CR pulse health check:")
+def _print_dissipation_summary(analysis: CrDissipationAnalysis) -> None:
+    """Print a compact human-readable dissipation summary."""
+    print("CR pulse dissipation characterization:")
     rate_names = (
         "gamma_control_e_to_g",
         "gamma_control_g_to_e",
         "gamma_control_e_to_f",
         "gamma_control_f_to_e",
-        "gamma_target_x_decay",
+        "gamma_target_t1rho",
         "gamma_target_leakage",
         "gamma_target_seepage",
-        "gamma_control_xy_decay",
-        "gamma_target_z_decay",
+        "gamma_control_transverse",
+        "gamma_target_t2rho",
+        "gamma_control_phi_cr",
+        "gamma_target_phi_rho_cr",
     )
     for name in rate_names:
         rate = analysis.cr_active_rates[name]
@@ -3498,7 +4181,7 @@ def _print_health_summary(analysis: CrPulseHealthAnalysis) -> None:
         print(f"  Rough fidelity estimate     : unavailable ({fidelity.message})")
 
 
-def characterize_cr_pulse_health(
+def characterize_cr_dissipation(
     exp: Experiment,
     control_qubit: str,
     target_qubit: str,
@@ -3507,6 +4190,13 @@ def characterize_cr_pulse_health(
     measure_diagnostic_components: bool = False,
     zx90_no_echo: PulseSchedule | None = None,
     zx90_echo: PulseSchedule | None = None,
+    reference_ix45_amplitude: float | None = None,
+    reference_calibration_valid_days: int | None = 30,
+    force_reference_calibration: bool = False,
+    reference_calibration_n_shots: int = DEFAULT_REFERENCE_CALIBRATION_N_SHOTS,
+    reference_calibration_n_points: int = 21,
+    reference_calibration_n_rotations: int = 2,
+    reference_calibration_r2_threshold: float = 0.5,
     n_shots: int | None = DEFAULT_N_SHOTS,
     calibration_n_shots: int | None = DEFAULT_CALIBRATION_N_SHOTS,
     shot_interval: float | None = None,
@@ -3516,16 +4206,17 @@ def characterize_cr_pulse_health(
     pauli_minimum_change: float = 0.05,
     change_sigma_threshold: float = 3.0,
     robust_loss: str = "soft_l1",
-    target_leakage_warning_threshold: float | None = 0.01,
+    leakage_warning_threshold: float | None = 0.01,
     estimate_fidelity: bool = True,
     estimate_fidelity_uncertainty: bool = True,
     idle_t1: Mapping[str, float] | None = None,
     idle_t2_echo: Mapping[str, float] | None = None,
+    idle_t2_star: Mapping[str, float] | None = None,
     enable_tqdm: bool = True,
     plot: bool = True,
 ) -> Result:
     """
-    Run a fast CR-pulse decoherence and leakage health check.
+    Run a fast CR-pulse decoherence and leakage dissipation characterization.
 
     Parameters
     ----------
@@ -3543,13 +4234,27 @@ def characterize_cr_pulse_health(
     zx90_no_echo, zx90_echo
         Optional pulse-schedule overrides. `zx90_no_echo` must be a *full*
         un-echoed ZX90-equivalent schedule (not the single ZX45-like primitive
-        returned by `exp.pulse.zx90(..., echo=False)`) and must be fully
-        CR-active. The echoed override must expose Qubex `cr_duration` and
-        `echo` metadata.
+        returned by `exp.pulse.zx90(..., echo=False)`). Both overrides must expose
+        Qubex `cr_duration` and `echo` metadata. For the full un-echoed override,
+        `cr_duration` is the total CR-active duration of both lobes. Hardware-free
+        overrides without waveform metadata use a duration-matched legacy reference.
+    reference_ix45_amplitude
+        Optional calibrated amplitude for one CR-shaped IX45. When omitted, a
+        compatible cached calibration is loaded or the IX45 pair is calibrated
+        automatically. This does not overwrite the ordinary hpi calibration.
+    reference_calibration_valid_days, force_reference_calibration
+        Cache lifetime and explicit recalibration control for CR-shaped IX45.
+    reference_calibration_n_shots, reference_calibration_n_points
+        Acquisition size of the IX45-pair amplitude calibration.
+    reference_calibration_n_rotations
+        Number of full rotations amplified during the pair calibration.
+    reference_calibration_r2_threshold
+        Minimum accepted coefficient of determination for that calibration.
     n_shots, calibration_n_shots
-        Shots per health measurement and per GEF calibration configuration.
+        Shots per dissipation measurement and per GEF calibration configuration.
     shot_interval
-        Interval between shots in ns. `None` uses `DEFAULT_INTERVAL`.
+        Interval between shots in ns. `None` uses
+        `measurement_defaults.yaml` and then the shared Qubex fallback.
     covariance_rcond
         Relative cutoff used by the analytic GEF covariance pseudo-inverse.
     population_minimum_change, leakage_minimum_change, pauli_minimum_change
@@ -3559,16 +4264,18 @@ def characterize_cr_pulse_health(
         Required robust-range-to-point-SE ratio for declaring a curve changing.
     robust_loss
         Robust least-squares loss used by changing-curve fits.
-    target_leakage_warning_threshold
-        Warn when the measured actual target F population exceeds this value.
-        `None` disables the warning.
+    leakage_warning_threshold
+        Warn when either qubit's measured actual F population exceeds this
+        value. `None` disables the warning and leaves the low-leakage assessment
+        unspecified.
     estimate_fidelity
         Whether to calculate the rough diagnostic fidelity estimate.
     estimate_fidelity_uncertainty
         Whether to propagate local rate errors to that estimate.
-    idle_t1, idle_t2_echo
-        Optional qubit-to-lifetime mappings in ns for the rough fidelity
-        estimate.  Stored Qubex values are used when omitted.
+    idle_t1, idle_t2_echo, idle_t2_star
+        Optional qubit-to-lifetime mappings in ns for blank/CR-off correction
+        and the rough fidelity estimate. Stored Qubex values are used when
+        omitted.
     enable_tqdm
         Whether to display measurement progress.
     plot
@@ -3579,24 +4286,23 @@ def characterize_cr_pulse_health(
     -------
     Result
         `data["measurements"]` contains reusable processed measurements,
-        `data["analysis"]` contains lightweight health fits, and
+        `data["analysis"]` contains lightweight dissipation fits, and
         `data["raw_data"]` retains calibration and IQ information.
 
     Notes
     -----
-    `control_ground`
-        Prepare `|0,+>` and apply the full un-echoed ZX90 `4n` times.
-        Target +Y90 followed by GEF readout gives control G/E/F populations,
-        target X polarization, and target F population.  The duration-matched
-        reference uses target +X90.
-    `control_excited`
-        Same measurement with control prepared in `|1>`. The reference uses
-        target -X90.
-    `control_t2_echo`
+    `control_ground_cr_population`
+        Prepare `|0,+>` and apply ``C+ -> blank -> C+ -> blank`` `4n` times.
+        Target -Y90 followed by GEF readout gives control G/E/F populations,
+        target X polarization, and target F population. The reference replaces
+        both CR lobes by positive CR-shaped IX45 pulses.
+    `control_excited_cr_population`
+        Same measurement with control prepared in `|1>`.
+    `control_cr_transverse_echo`
         Four-ZX90 echoed control sequence.  Control X is the primary observable.
-    `target_t2rho_echo`
-        Two-ZX90 target rotating-frame echo repeated `2n` times. Target Z is
-        the primary observable.  The target virtual-Z frame update is applied
+    `target_cr_rotating_frame_echo`
+        Four-ZX90 target rotating-frame echo repeated `n` times. Target Y is
+        the primary observable. The target virtual-Z frame update is applied
         to both the target and CR channels.
 
     GEF uncertainties use the analytic GLS full covariance when available.
@@ -3609,6 +4315,7 @@ def characterize_cr_pulse_health(
     """
     for name, value in (
         ("measure_diagnostic_components", measure_diagnostic_components),
+        ("force_reference_calibration", force_reference_calibration),
         ("estimate_fidelity", estimate_fidelity),
         ("estimate_fidelity_uncertainty", estimate_fidelity_uncertainty),
         ("enable_tqdm", enable_tqdm),
@@ -3618,6 +4325,24 @@ def characterize_cr_pulse_health(
             raise TypeError(f"{name} must be boolean.")
 
     robust_loss = _validate_robust_loss(robust_loss)
+    if reference_calibration_valid_days is not None and (
+        isinstance(reference_calibration_valid_days, bool)
+        or not isinstance(reference_calibration_valid_days, Integral)
+        or reference_calibration_valid_days < 0
+    ):
+        raise ValueError(
+            "reference_calibration_valid_days must be nonnegative or None."
+        )
+    for name, value, minimum in (
+        ("reference_calibration_n_points", reference_calibration_n_points, 5),
+        ("reference_calibration_n_rotations", reference_calibration_n_rotations, 1),
+    ):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, Integral)
+            or value < minimum
+        ):
+            raise ValueError(f"{name} must be an integer of at least {minimum}.")
     n_values_resolved = _validate_n_values(n_values)
     shots = _resolve_shot_count(n_shots, default=DEFAULT_N_SHOTS, name="n_shots")
     calibration_shots = _resolve_shot_count(
@@ -3625,9 +4350,12 @@ def characterize_cr_pulse_health(
         default=DEFAULT_CALIBRATION_N_SHOTS,
         name="calibration_n_shots",
     )
+    configured_interval = resolve_measurement_defaults(
+        exp.ctx.experiment_system.measurement_defaults
+    ).execution.shot_interval_ns
     interval = _positive_real(
         shot_interval,
-        default=DEFAULT_INTERVAL,
+        default=configured_interval,
         name="shot_interval",
     )
     covariance_rcond = _nonnegative_real(covariance_rcond, name="covariance_rcond")
@@ -3648,9 +4376,15 @@ def characterize_cr_pulse_health(
         name="change_sigma_threshold",
     )
     leakage_warning = _optional_probability(
-        target_leakage_warning_threshold,
-        name="target_leakage_warning_threshold",
+        leakage_warning_threshold,
+        name="leakage_warning_threshold",
     )
+    reference_r2_threshold = _nonnegative_real(
+        reference_calibration_r2_threshold,
+        name="reference_calibration_r2_threshold",
+    )
+    if reference_r2_threshold > 1.0:
+        raise ValueError("reference_calibration_r2_threshold must be in [0, 1].")
 
     control = exp.ctx.resolve_qubit_label(control_qubit)
     target = exp.ctx.resolve_qubit_label(target_qubit)
@@ -3659,16 +4393,68 @@ def characterize_cr_pulse_health(
     cr_label = f"{control}-{target}"
     labels = (control, cr_label, target)
 
-    if zx90_no_echo is None:
-        zx90_no_echo = _build_un_echoed_zx90(exp, control, target)
     if zx90_echo is None:
         zx90_echo = exp.pulse.zx90(control, target, echo=True)
-    noecho_timing = _extract_zx90_timing(zx90_no_echo)
     echo_timing = _extract_zx90_timing(zx90_echo)
-    if noecho_timing.echo:
-        raise ValueError("zx90_no_echo must be un-echoed.")
     if not echo_timing.echo:
         raise ValueError("zx90_echo must be echoed.")
+    if zx90_no_echo is None:
+        zx90_no_echo = _build_un_echoed_zx90(
+            exp,
+            control,
+            target,
+            blank_duration=_echo_pi_slot_duration(zx90_echo),
+        )
+    noecho_timing = _extract_zx90_timing(zx90_no_echo)
+    if noecho_timing.echo:
+        raise ValueError("zx90_no_echo must be un-echoed.")
+    if not np.isclose(
+        noecho_timing.cr_active_duration,
+        echo_timing.cr_active_duration,
+        rtol=0.0,
+        atol=1e-12,
+    ):
+        raise ValueError(
+            "zx90_no_echo and zx90_echo must contain the same CR-active duration "
+            "per ZX90-equivalent schedule call."
+        )
+
+    cr_envelope = getattr(zx90_echo, "cr_waveform", None)
+    ix45_calibration: CrShapedIx45Calibration | None = None
+    ix45: FlatTop | None = None
+    if isinstance(cr_envelope, FlatTop):
+        ix45_calibration = _resolve_cr_shaped_ix45_calibration(
+            exp,
+            control,
+            target,
+            cr_envelope,
+            amplitude=reference_ix45_amplitude,
+            valid_days=reference_calibration_valid_days,
+            force=force_reference_calibration,
+            n_shots=_resolve_shot_count(
+                reference_calibration_n_shots,
+                default=DEFAULT_REFERENCE_CALIBRATION_N_SHOTS,
+                name="reference_calibration_n_shots",
+            ),
+            shot_interval=interval,
+            n_points=reference_calibration_n_points,
+            n_rotations=reference_calibration_n_rotations,
+            r2_threshold=reference_r2_threshold,
+            plot=plot,
+        )
+        ix45 = _make_cr_shaped_ix45(cr_envelope, ix45_calibration.amplitude)
+    elif reference_ix45_amplitude is not None:
+        raise ValueError(
+            "reference_ix45_amplitude requires zx90_echo.cr_waveform metadata."
+        )
+    else:
+        warnings.warn(
+            "zx90_echo does not expose a FlatTop `cr_waveform`; falling back to "
+            "legacy duration-matched single-qubit references instead of the "
+            "specified CR-shaped IX45 references.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     calibration: dict[str, GefPopulationCalibration] = calibrate_gef_population(
         exp,
@@ -3677,35 +4463,37 @@ def characterize_cr_pulse_health(
         shot_interval=interval,
     )
 
+    all_protocols = (*_CONTROL_STATE_PROTOCOLS, *_ECHO_PROTOCOLS)
     populations_buffer: dict[str, dict[str, dict[str, list[NDArray[np.float64]]]]] = {
         protocol: {kind: {control: [], target: []} for kind in ("actual", "reference")}
-        for protocol in _CONTROL_STATE_PROTOCOLS
+        for protocol in all_protocols
     }
     population_error_buffer: dict[
         str, dict[str, dict[str, list[NDArray[np.float64]]]]
     ] = {
         protocol: {kind: {control: [], target: []} for kind in ("actual", "reference")}
-        for protocol in _CONTROL_STATE_PROTOCOLS
+        for protocol in all_protocols
     }
     population_covariance_buffer: dict[
         str, dict[str, dict[str, list[NDArray[np.float64]]]]
     ] = {
         protocol: {kind: {control: [], target: []} for kind in ("actual", "reference")}
-        for protocol in _CONTROL_STATE_PROTOCOLS
+        for protocol in all_protocols
     }
     target_x_error_buffer: dict[str, dict[str, list[float]]] = {
         protocol: {kind: [] for kind in ("actual", "reference")}
         for protocol in _CONTROL_STATE_PROTOCOLS
     }
-    all_protocols = (*_CONTROL_STATE_PROTOCOLS, *_ECHO_PROTOCOLS)
     total_times_buffer = {protocol: [] for protocol in all_protocols}
     cr_times_buffer = {protocol: [] for protocol in all_protocols}
 
     pauli_components: dict[str, tuple[str, ...]] = {
-        _CONTROL_T2_ECHO: ("X", "Y", "Z") if measure_diagnostic_components else ("X",),
-        _TARGET_T2RHO_ECHO: ("Z", "X", "Y")
+        _CONTROL_TRANSVERSE_ECHO: ("X", "Y", "Z")
         if measure_diagnostic_components
-        else ("Z",),
+        else ("X",),
+        _TARGET_ROTATING_FRAME_ECHO: ("Y", "X", "Z")
+        if measure_diagnostic_components
+        else ("Y",),
     }
     if measure_diagnostic_components:
         pauli_components.update(
@@ -3727,7 +4515,7 @@ def characterize_cr_pulse_health(
     gef_raw_iq: dict[str, object] = {}
     gef_population_fits: dict[str, object] = {}
     gef_moment_summaries: dict[str, object] = {}
-    pauli_raw_iq: dict[str, dict[str, dict[str, list[NDArray[np.complex128]]]]] = {
+    pauli_raw_iq: dict[str, dict[str, dict[str, list[object]]]] = {
         key: {
             component: {kind: [] for kind in ("actual", "reference")}
             for component in components
@@ -3737,59 +4525,85 @@ def characterize_cr_pulse_health(
 
     # Build n-independent reference units and echo blocks once.  Repetition of
     # these validated units then preserves actual/reference duration matching.
-    ground_reference_unit = _reference_unit(
-        labels,
-        zx90_no_echo.duration,
-        pulse_target=target,
-        pulse=exp.pulse.x90(target),
-        frequencies=zx90_no_echo.get_frequencies(),
-    )
-    excited_reference_unit = _reference_unit(
-        labels,
-        zx90_no_echo.duration,
-        pulse_target=target,
-        pulse=exp.pulse.x90m(target),
-        frequencies=zx90_no_echo.get_frequencies(),
-    )
+    if ix45 is not None:
+        reference_unit = _build_non_echoed_reference_unit(
+            labels,
+            target,
+            ix45,
+            _echo_pi_slot_duration(zx90_echo),
+            frequencies=zx90_no_echo.get_frequencies(),
+        )
+        ground_reference_unit = reference_unit
+        excited_reference_unit = reference_unit.copy()
+    else:
+        # Explicit schedule overrides used by simulations may not expose the
+        # calibrated CrossResonance waveforms. Retain a duration-matched
+        # fallback so offline/hardware-free callers remain usable.
+        ground_reference_unit = _reference_unit(
+            labels,
+            zx90_no_echo.duration,
+            pulse_target=target,
+            pulse=exp.pulse.x90(target),
+            frequencies=zx90_no_echo.get_frequencies(),
+        )
+        excited_reference_unit = _reference_unit(
+            labels,
+            zx90_no_echo.duration,
+            pulse_target=target,
+            pulse=exp.pulse.x90(target),
+            frequencies=zx90_no_echo.get_frequencies(),
+        )
     _require_matched_duration(zx90_no_echo, ground_reference_unit, name=_CONTROL_GROUND)
     _require_matched_duration(
         zx90_no_echo, excited_reference_unit, name=_CONTROL_EXCITED
     )
 
-    blank_echo_reference_unit = _reference_unit(
-        labels,
-        zx90_echo.duration,
-        frequencies=zx90_echo.get_frequencies(),
+    if ix45 is not None:
+        blank_echo_reference_unit = _build_echoed_reference_unit(
+            zx90_echo, control, target, None
+        )
+        target_echo_reference_unit = _build_echoed_reference_unit(
+            zx90_echo, control, target, ix45
+        )
+    else:
+        blank_echo_reference_unit = _reference_unit(
+            labels,
+            zx90_echo.duration,
+            frequencies=zx90_echo.get_frequencies(),
+        )
+        target_echo_reference_unit = _reference_unit(
+            labels,
+            zx90_echo.duration,
+            pulse_target=target,
+            pulse=exp.pulse.x90(target),
+            frequencies=zx90_echo.get_frequencies(),
+        )
+    control_echo_actual_block = _control_cr_transverse_echo_block(
+        exp, control, target, zx90_echo
     )
-    target_echo_reference_unit = _reference_unit(
-        labels,
-        zx90_echo.duration,
-        pulse_target=target,
-        pulse=exp.pulse.x90(target),
-        frequencies=zx90_echo.get_frequencies(),
-    )
-    control_echo_actual_block = _control_t2_echo_block(exp, control, target, zx90_echo)
-    control_echo_reference_block = _control_t2_echo_block(
+    control_echo_reference_block = _control_cr_transverse_echo_block(
         exp, control, target, blank_echo_reference_unit
     )
-    target_echo_actual_block = _target_t2rho_echo_block(exp, control, target, zx90_echo)
-    target_echo_reference_block = _target_t2rho_echo_block(
+    target_echo_actual_block = _target_cr_rotating_frame_echo_block(
+        exp, control, target, zx90_echo
+    )
+    target_echo_reference_block = _target_cr_rotating_frame_echo_block(
         exp, control, target, target_echo_reference_unit
     )
     _require_matched_duration(
         control_echo_actual_block,
         control_echo_reference_block,
-        name=_CONTROL_T2_ECHO,
+        name=_CONTROL_TRANSVERSE_ECHO,
     )
     _require_matched_duration(
         target_echo_actual_block,
         target_echo_reference_block,
-        name=_TARGET_T2RHO_ECHO,
+        name=_TARGET_ROTATING_FRAME_ECHO,
     )
 
     progress = tqdm(
         n_values_resolved,
-        desc=f"CR health {control}-{target}",
+        desc=f"CR dissipation {control}-{target}",
         disable=not enable_tqdm,
     )
     for n in progress:
@@ -3859,7 +4673,7 @@ def characterize_cr_pulse_health(
                     )
                     if qubit == target:
                         target_x_error_buffer[protocol][kind].append(
-                            _analytic_target_x_error(fit)
+                            _analytic_computational_polarization_error(fit)
                         )
 
         for protocol in _CONTROL_STATE_PROTOCOLS:
@@ -3873,41 +4687,41 @@ def characterize_cr_pulse_health(
             "reference": control_echo_reference_block.repeated(n),
         }
         target_echo_evolutions = {
-            "actual": target_echo_actual_block.repeated(2 * n),
-            "reference": target_echo_reference_block.repeated(2 * n),
+            "actual": target_echo_actual_block.repeated(n),
+            "reference": target_echo_reference_block.repeated(n),
         }
         echo_sequences = {
-            (_CONTROL_T2_ECHO, kind): _echo_protocol_sequence(
+            (_CONTROL_TRANSVERSE_ECHO, kind): _echo_protocol_sequence(
                 exp,
                 control,
                 target,
-                _CONTROL_T2_ECHO,
+                _CONTROL_TRANSVERSE_ECHO,
                 control_echo_evolutions[kind],
             )
             for kind in ("actual", "reference")
         }
         echo_sequences.update(
             {
-                (_TARGET_T2RHO_ECHO, kind): _echo_protocol_sequence(
+                (_TARGET_ROTATING_FRAME_ECHO, kind): _echo_protocol_sequence(
                     exp,
                     control,
                     target,
-                    _TARGET_T2RHO_ECHO,
+                    _TARGET_ROTATING_FRAME_ECHO,
                     target_echo_evolutions[kind],
                 )
                 for kind in ("actual", "reference")
             }
         )
-        total_times_buffer[_CONTROL_T2_ECHO].append(
+        total_times_buffer[_CONTROL_TRANSVERSE_ECHO].append(
             float(control_echo_evolutions["actual"].duration)
         )
-        total_times_buffer[_TARGET_T2RHO_ECHO].append(
+        total_times_buffer[_TARGET_ROTATING_FRAME_ECHO].append(
             float(target_echo_evolutions["actual"].duration)
         )
         # Both echo protocols contain exactly 4n echoed ZX90 schedule calls.
         cr_time = 4.0 * n * echo_timing.cr_active_duration
-        cr_times_buffer[_CONTROL_T2_ECHO].append(cr_time)
-        cr_times_buffer[_TARGET_T2RHO_ECHO].append(cr_time)
+        cr_times_buffer[_CONTROL_TRANSVERSE_ECHO].append(cr_time)
+        cr_times_buffer[_TARGET_ROTATING_FRAME_ECHO].append(cr_time)
 
         requests: list[tuple[str, str, str, PulseSchedule, str, _BASIS]] = [
             (
@@ -3919,8 +4733,8 @@ def characterize_cr_pulse_health(
                 cast(_BASIS, component),
             )
             for protocol, target_qubit_label in (
-                (_CONTROL_T2_ECHO, control),
-                (_TARGET_T2RHO_ECHO, target),
+                (_CONTROL_TRANSVERSE_ECHO, control),
+                (_TARGET_ROTATING_FRAME_ECHO, target),
             )
             for component in pauli_components[protocol]
             for kind in ("actual", "reference")
@@ -3953,27 +4767,73 @@ def characterize_cr_pulse_health(
                 for component in ("Y", "Z")
             )
         if requests:
-            measured = _measure_pauli_batch(
+            pauli_sequences = {
+                f"pauli_{index}": _append_pauli_analyzer(exp, seq, qubit, basis)
+                for index, (_, _, _, seq, qubit, basis) in enumerate(requests)
+            }
+            pauli_gef_result = measure_gef_populations(
                 exp,
-                [(seq, qubit, basis) for _, _, _, seq, qubit, basis in requests],
+                targets=[control, target],
+                sequences=pauli_sequences,
+                calibration=calibration,
                 n_shots=shots,
                 shot_interval=interval,
+                covariance_rcond=covariance_rcond,
+                n_bootstrap=0,
             )
-            for (key, component, kind, _, _, _), measurement in zip(
-                requests, measured, strict=True
-            ):
+            for index, (key, component, kind, _, qubit, _) in enumerate(requests):
+                condition = f"pauli_{index}"
+                population = np.asarray(
+                    pauli_gef_result.data["populations"][condition][qubit],
+                    dtype=np.float64,
+                )
+                fit: GefPopulationFit = pauli_gef_result.data["fits"][condition][qubit]
+                denominator = float(population[0] + population[1])
+                expectation = (
+                    float((population[0] - population[1]) / denominator)
+                    if denominator > _EPS
+                    else float("nan")
+                )
+                measurement = _PauliMeasurement(
+                    expectation=expectation,
+                    standard_error=_analytic_computational_polarization_error(fit),
+                )
                 pauli_buffer[key][component][kind].append(measurement)
-                pauli_raw_iq[key][component][kind].append(measurement.raw_iq)
+                pauli_raw_iq[key][component][kind].append(
+                    pauli_gef_result.data["raw_iq"][condition]
+                )
+                primary = (key == _CONTROL_TRANSVERSE_ECHO and component == "X") or (
+                    key == _TARGET_ROTATING_FRAME_ECHO and component == "Y"
+                )
+                if primary:
+                    for measured_qubit in (control, target):
+                        marginal = np.asarray(
+                            pauli_gef_result.data["populations"][condition][
+                                measured_qubit
+                            ],
+                            dtype=np.float64,
+                        )
+                        marginal_fit: GefPopulationFit = pauli_gef_result.data["fits"][
+                            condition
+                        ][measured_qubit]
+                        populations_buffer[key][kind][measured_qubit].append(marginal)
+                        population_error_buffer[key][kind][measured_qubit].append(
+                            _analytic_population_error(marginal_fit)
+                        )
+                        population_covariance_buffer[key][kind][measured_qubit].append(
+                            _analytic_population_covariance(marginal_fit)
+                        )
 
     populations: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
     population_errors: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
     population_covariances: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
     target_x_errors: dict[str, dict[str, NDArray[np.float64]]] = {}
-    for protocol in _CONTROL_STATE_PROTOCOLS:
+    for protocol in all_protocols:
         populations[protocol] = {}
         population_errors[protocol] = {}
         population_covariances[protocol] = {}
-        target_x_errors[protocol] = {}
+        if protocol in _CONTROL_STATE_PROTOCOLS:
+            target_x_errors[protocol] = {}
         for kind in ("actual", "reference"):
             populations[protocol][kind] = {
                 qubit: np.stack(populations_buffer[protocol][kind][qubit])
@@ -3987,9 +4847,10 @@ def characterize_cr_pulse_health(
                 qubit: np.stack(population_covariance_buffer[protocol][kind][qubit])
                 for qubit in (control, target)
             }
-            target_x_errors[protocol][kind] = np.asarray(
-                target_x_error_buffer[protocol][kind], dtype=np.float64
-            )
+            if protocol in _CONTROL_STATE_PROTOCOLS:
+                target_x_errors[protocol][kind] = np.asarray(
+                    target_x_error_buffer[protocol][kind], dtype=np.float64
+                )
 
     pauli_expectations: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
     pauli_errors: dict[str, dict[str, dict[str, NDArray[np.float64]]]] = {}
@@ -4008,7 +4869,7 @@ def characterize_cr_pulse_health(
                     [value.standard_error for value in values], dtype=np.float64
                 )
 
-    measurements = CrPulseHealthMeasurements(
+    measurements = CrDissipationMeasurements(
         control_qubit=control,
         target_qubit=target,
         n_values=n_values_resolved,
@@ -4031,51 +4892,67 @@ def characterize_cr_pulse_health(
 
     maximum_target_f = max(
         float(np.max(populations[protocol]["actual"][target][:, 2]))
-        for protocol in _CONTROL_STATE_PROTOCOLS
+        for protocol in all_protocols
+    )
+    maximum_control_f = max(
+        float(np.max(populations[protocol]["actual"][control][:, 2]))
+        for protocol in all_protocols
     )
     if leakage_warning is not None and maximum_target_f > leakage_warning:
         warnings.warn(
             f"Maximum measured target F population ({maximum_target_f:.3%}) exceeds "
-            f"the health threshold ({leakage_warning:.3%}).",
+            f"the dissipation threshold ({leakage_warning:.3%}).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    if leakage_warning is not None and maximum_control_f > leakage_warning:
+        warnings.warn(
+            f"Maximum measured control F population ({maximum_control_f:.3%}) "
+            f"exceeds the dissipation threshold ({leakage_warning:.3%}).",
             RuntimeWarning,
             stacklevel=2,
         )
 
-    control_idle: IdleHealthNoise | None = None
-    target_idle: IdleHealthNoise | None = None
-    fidelity_input_error: str | None = None
-    if estimate_fidelity:
-        try:
-            control_idle, target_idle = _load_idle_noise(
-                exp, control, target, idle_t1, idle_t2_echo
-            )
-        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
-            fidelity_input_error = str(exc)
+    control_idle: IdleNoiseParameters | None = None
+    target_idle: IdleNoiseParameters | None = None
+    idle_input_error: str | None = None
+    try:
+        control_idle, target_idle = _load_idle_noise(
+            exp, control, target, idle_t1, idle_t2_echo, idle_t2_star
+        )
+    except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+        idle_input_error = str(exc)
+        warnings.warn(
+            "Idle correction unavailable; reference decay will be used as the "
+            f"CR-off fallback: {idle_input_error}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
-    analysis = analyze_cr_pulse_health(
+    analysis = analyze_cr_dissipation(
         measurements,
         population_minimum_change=population_minimum_change,
         leakage_minimum_change=leakage_minimum_change,
         pauli_minimum_change=pauli_minimum_change,
         change_sigma_threshold=change_sigma_threshold,
         robust_loss=robust_loss,
-        zx90_echo_timing=echo_timing if fidelity_input_error is None else None,
+        zx90_echo_timing=echo_timing if idle_input_error is None else None,
         control_idle_noise=control_idle,
         target_idle_noise=target_idle,
         estimate_fidelity=estimate_fidelity,
         estimate_fidelity_uncertainty=estimate_fidelity_uncertainty,
     )
-    if fidelity_input_error is not None:
+    if estimate_fidelity and idle_input_error is not None:
         warnings.warn(
-            "Rough fidelity estimate skipped: " + fidelity_input_error,
+            "Rough fidelity estimate skipped: " + idle_input_error,
             RuntimeWarning,
             stacklevel=2,
         )
 
     figures: dict[str, go.Figure] = {}
     if plot:
-        figures = plot_cr_pulse_health(measurements, analysis)
-        _print_health_summary(analysis)
+        figures = plot_cr_dissipation(measurements, analysis)
+        _print_dissipation_summary(analysis)
         for figure in figures.values():
             figure.show()
 
@@ -4085,6 +4962,7 @@ def characterize_cr_pulse_health(
             "analysis": analysis,
             "raw_data": {
                 "calibration": calibration,
+                "reference_ix45_calibration": ix45_calibration,
                 "gef_raw_iq": gef_raw_iq,
                 "gef_population_fits": gef_population_fits,
                 "gef_moment_summaries": gef_moment_summaries,
@@ -4096,6 +4974,7 @@ def characterize_cr_pulse_health(
                 "shot_interval": interval,
                 "covariance_rcond": covariance_rcond,
                 "measure_diagnostic_components": measure_diagnostic_components,
+                "reference_ix45_calibration_cache_key": _REFERENCE_CALIBRATION_NOTE_KEY,
                 "population_uncertainty_method": "analytic_GLS_full_covariance_and_component_SE_no_bootstrap",
             },
             "analysis_options": {
@@ -4106,9 +4985,19 @@ def characterize_cr_pulse_health(
                 "robust_loss": robust_loss,
                 "estimate_fidelity": estimate_fidelity,
                 "estimate_fidelity_uncertainty": estimate_fidelity_uncertainty,
-                "fidelity_input_error": fidelity_input_error,
-                "target_leakage_warning_threshold": leakage_warning,
+                "idle_input_error": idle_input_error,
+                "fidelity_input_error": idle_input_error if estimate_fidelity else None,
+                "leakage_warning_threshold": leakage_warning,
                 "maximum_target_f_population": maximum_target_f,
+                "maximum_control_f_population": maximum_control_f,
+                "marginal_conditioning": True,
+                "joint_gef_classification_required": False,
+                "independent_leakage_assumption": True,
+                "approximate_low_leakage": (
+                    None
+                    if leakage_warning is None
+                    else max(maximum_control_f, maximum_target_f) <= leakage_warning
+                ),
             },
             "pulse_timing": {
                 "zx90_no_echo": noecho_timing,
@@ -4123,15 +5012,16 @@ def characterize_cr_pulse_health(
 __all__ = [
     "DEFAULT_N_VALUES",
     "ChangeAssessment",
-    "ControlRateHealthFit",
-    "CrPulseHealthAnalysis",
-    "CrPulseHealthFidelityEstimate",
-    "CrPulseHealthMeasurements",
-    "DecayHealthFit",
-    "ExchangeHealthFit",
-    "IdleHealthNoise",
+    "ControlPopulationRateFit",
+    "CrDissipationAnalysis",
+    "CrDissipationFidelityEstimate",
+    "CrDissipationMeasurements",
+    "CrShapedIx45Calibration",
+    "ExponentialDecayFit",
+    "IdleNoiseParameters",
+    "PopulationExchangeFit",
     "ZX90Timing",
-    "analyze_cr_pulse_health",
-    "characterize_cr_pulse_health",
-    "plot_cr_pulse_health",
+    "analyze_cr_dissipation",
+    "characterize_cr_dissipation",
+    "plot_cr_dissipation",
 ]
