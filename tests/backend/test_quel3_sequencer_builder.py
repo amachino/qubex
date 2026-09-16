@@ -158,6 +158,94 @@ def _make_payload(
     )
 
 
+@pytest.mark.parametrize("peak", [np.nextafter(1.0, np.inf), 1.0 + 1e-8, 1.0 + 1e-7])
+def test_builder_corrects_roundoff_in_waveform_amplitude(peak: float) -> None:
+    """Tiny amplitude overshoots should preserve shape and satisfy strict limits."""
+    values = peak * np.array([1, -1, 1j, -1j, 0.3 + 0.4j], dtype=np.complex128)
+    original = values.copy()
+    payload = _make_payload(
+        waveform_library={
+            "roundoff": Quel3Waveform(iq_array=values, sampling_period_ns=2)
+        },
+        fixed_timelines={},
+    )
+
+    sequencer = Quel3SequencerBuilder().build(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=2,
+        alias_bindings={},
+    )
+
+    actual = sequencer.registered_waveforms["roundoff"].values
+    assert np.all(np.abs(actual) <= 1.0)
+    np.testing.assert_allclose(actual, np.conj(original), rtol=1e-7, atol=0)
+    np.testing.assert_allclose(
+        actual / actual[0], np.conj(original / original[0]), rtol=1e-15, atol=0
+    )
+    np.testing.assert_array_equal(values, original)
+
+
+@pytest.mark.parametrize("values", [[], [0j], [1, -1, 1j, -1j], [0.3 + 0.4j]])
+def test_builder_preserves_waveforms_within_amplitude_limit(
+    values: list[complex],
+) -> None:
+    """Valid and empty waveforms should be registered without amplitude changes."""
+    iq = np.array(values, dtype=np.complex128)
+    payload = _make_payload(
+        waveform_library={"valid": Quel3Waveform(iq_array=iq, sampling_period_ns=2)},
+        fixed_timelines={},
+    )
+    sequencer = Quel3SequencerBuilder().build(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=2,
+        alias_bindings={},
+    )
+    np.testing.assert_array_equal(
+        sequencer.registered_waveforms["valid"].values, np.conj(iq)
+    )
+
+
+@pytest.mark.parametrize(
+    "value", [np.nextafter(1.0 + 1e-7, np.inf), 1.01, -1.01, 0.8 + 0.8j]
+)
+def test_builder_rejects_amplitude_excess_with_waveform_context(value: complex) -> None:
+    """Excessive complex magnitude should report the waveform name and peak."""
+    payload = _make_payload(
+        waveform_library={
+            "excess": Quel3Waveform(iq_array=np.array([value]), sampling_period_ns=2)
+        },
+        fixed_timelines={},
+    )
+    with pytest.raises(ValueError, match=r"excess.*peak magnitude") as exc_info:
+        Quel3SequencerBuilder().build(
+            payload=payload,
+            sequencer_factory=_RecordingSequencer,
+            default_sampling_period_ns=2,
+            alias_bindings={},
+        )
+    assert f"{float(np.abs(value)):.17g}" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf, complex(0, np.nan)])
+def test_builder_rejects_nonfinite_waveforms(value: complex) -> None:
+    """Nonfinite samples should report the waveform name before registration."""
+    payload = _make_payload(
+        waveform_library={
+            "invalid": Quel3Waveform(iq_array=np.array([value]), sampling_period_ns=2)
+        },
+        fixed_timelines={},
+    )
+    with pytest.raises(ValueError, match=r"invalid.*finite"):
+        Quel3SequencerBuilder().build(
+            payload=payload,
+            sequencer_factory=_RecordingSequencer,
+            default_sampling_period_ns=2,
+            alias_bindings={},
+        )
+
+
 def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
     """Given complex IQ and phase, builder should conjugate the complete waveform."""
     waveform_name = "wf_shared_0000"
