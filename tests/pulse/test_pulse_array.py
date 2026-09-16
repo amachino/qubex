@@ -64,6 +64,22 @@ def test_copy():
     assert copy.values == pytest.approx(arr.values)
 
 
+@pytest.mark.parametrize("repetitions", [0, 1, 2, 3])
+def test_repeated_updates_cached_duration(repetitions: int) -> None:
+    """Repeating an array with a cached duration should report its new duration."""
+    arr = PulseArray([Arbitrary([1, 2, 3])])
+    original_duration = arr.cached_duration
+
+    repeated = arr.repeated(repetitions)
+
+    assert repeated.cached_duration == pytest.approx(
+        original_duration * repetitions, rel=1e-12, abs=1e-12
+    )
+    assert repeated.duration == repeated.cached_duration
+    assert arr.duration == original_duration
+    assert arr.cached_duration == original_duration
+
+
 def test_paddded():
     """PulseArray should be padded with zeros."""
     arr = PulseArray([Arbitrary([1, 1]), Arbitrary([2, 2])])

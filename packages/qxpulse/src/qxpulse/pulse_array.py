@@ -292,6 +292,7 @@ class PulseArray(Waveform):
             return self
         new_array = copy.deepcopy(self)
         new_array._elements = list(new_array._elements) * n
+        new_array.reset_cached_duration()
         return new_array
 
     def added(self, obj: Waveform | PhaseShift) -> PulseArray:
