@@ -508,6 +508,10 @@ class Experiment:
         """Return the active state classifiers."""
         return self.ctx.classifiers
 
+    def set_classifier(self, classifiers: TargetMap[StateClassifier]) -> None:
+        """Register state classifiers by target label."""
+        self.ctx.measurement.update_classifiers(classifiers)
+
     @property
     def state_centers(self) -> dict[str, dict[int, complex]]:
         """Return state centers from calibration notes."""
@@ -1852,8 +1856,6 @@ class Experiment:
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -1940,8 +1942,6 @@ class Experiment:
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
             **deprecated_options,
@@ -1994,8 +1994,6 @@ class Experiment:
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -2080,8 +2078,6 @@ class Experiment:
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
             **deprecated_options,

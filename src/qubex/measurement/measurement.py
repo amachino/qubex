@@ -826,8 +826,6 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
@@ -867,10 +865,6 @@ class Measurement:
             Ramp shape type.
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
-        classification_line_param0 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 1.
         plot : bool | None, optional
             Whether to plot readout waveforms and/or results.
         **deprecated_options : Any
@@ -911,8 +905,6 @@ class Measurement:
             readout_amplification=readout_amplification,
             time_integration=time_integration,
             state_classification=state_classification,
-            classification_line_param0=classification_line_param0,
-            classification_line_param1=classification_line_param1,
             plot=plot,
             **deprecated_options,
         )
@@ -936,8 +928,6 @@ class Measurement:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
@@ -978,10 +968,6 @@ class Measurement:
             Whether to apply readout amplification pulses.
         final_measurement : bool | None, optional
             Whether to append a final readout measurement.
-        classification_line_param0 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 1.
         plot : bool | None, optional
             Whether to plot readout waveforms and/or results.
         **deprecated_options : Any
@@ -1023,8 +1009,6 @@ class Measurement:
             final_measurement=final_measurement,
             time_integration=time_integration,
             state_classification=state_classification,
-            classification_line_param0=classification_line_param0,
-            classification_line_param1=classification_line_param1,
             plot=plot,
             **deprecated_options,
         )

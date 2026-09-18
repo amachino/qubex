@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TypeVar
 
+from qubex.backend import BackendKind
 from qubex.system import ExperimentSystem
 
 from .measurement_defaults import (
@@ -30,8 +31,10 @@ class MeasurementConfigFactory:
         self,
         *,
         experiment_system: ExperimentSystem,
+        backend_kind: BackendKind | None = None,
     ) -> None:
         self._experiment_system: ExperimentSystem = experiment_system
+        self._backend_kind: BackendKind | None = backend_kind
 
     def create(
         self,
@@ -76,6 +79,7 @@ class MeasurementConfigFactory:
                 state_classification,
                 DEFAULT_STATE_CLASSIFICATION,
             ),
+            backend_kind=self._backend_kind,
             return_items=resolved_return_items,
             schedule_packing_enabled=schedule_packing_enabled,
             max_repeated_timeline_duration_ns=max_repeated_timeline_duration_ns,

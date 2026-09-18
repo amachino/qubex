@@ -175,6 +175,7 @@ class MeasurementExecutionService:
         """Return a measurement-config factory."""
         return MeasurementConfigFactory(
             experiment_system=self.experiment_system,
+            backend_kind=getattr(self.system_manager, "backend_kind", None),
         )
 
     @property
@@ -202,6 +203,7 @@ class MeasurementExecutionService:
             experiment_system=self.experiment_system,
             execution_mode=self._execution_mode,
             clock_health_checks=self._clock_health_checks,
+            classifiers=self.classifiers,
         )
 
     @property
@@ -1214,8 +1216,6 @@ class MeasurementExecutionService:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
@@ -1262,10 +1262,6 @@ class MeasurementExecutionService:
 
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
-        classification_line_param0 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 1.
 
         Returns
         -------
@@ -1273,9 +1269,16 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
+        quel1_dsp_classification = getattr(
+            self.system_manager, "backend_kind", None
+        ) == "quel1" and (
+            state_classification is True
+            or deprecated_options.get("enable_dsp_classification") is True
+        )
         if (
             time_integration is None
             and deprecated_options.get("enable_dsp_sum") is None
+            and not quel1_dsp_classification
         ):
             time_integration = False
 
@@ -1296,8 +1299,6 @@ class MeasurementExecutionService:
             readout_ramp_type=readout_ramp_type,
             readout_amplification=readout_amplification,
             final_measurement=True,
-            classification_line_param0=classification_line_param0,
-            classification_line_param1=classification_line_param1,
             plot=plot,
             **deprecated_options,
         )
@@ -1327,8 +1328,6 @@ class MeasurementExecutionService:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
@@ -1377,10 +1376,6 @@ class MeasurementExecutionService:
             Whether to apply readout amplification pulses.
         final_measurement : bool | None, optional
             Whether to append a final readout measurement.
-        classification_line_param0 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 1.
         plot : bool | None, optional
             Whether to plot the results.
 
@@ -1390,6 +1385,7 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
+        explicit_time_integration = time_integration
         legacy_options: dict[str, Any] = dict(deprecated_options)
         legacy_keys = {
             "mode",
@@ -1401,8 +1397,6 @@ class MeasurementExecutionService:
             "enable_dsp_demodulation",
             "enable_dsp_sum",
             "enable_dsp_classification",
-            "line_param0",
-            "line_param1",
         }
         unknown_keys = sorted(set(legacy_options) - legacy_keys)
         if unknown_keys:
@@ -1423,9 +1417,6 @@ class MeasurementExecutionService:
                 )
             if shot_averaging is None:
                 shot_averaging = legacy_shot_averaging
-        if shot_averaging is None:
-            shot_averaging = True
-
         n_shots = self._resolve_deprecated_alias(
             new_value=n_shots,
             old_value=legacy_options.pop("shots", None),
@@ -1479,18 +1470,22 @@ class MeasurementExecutionService:
                     "remove this argument or pass None."
                 )
 
+        legacy_enable_dsp_sum = legacy_options.pop("enable_dsp_sum", None)
         time_integration = self._resolve_deprecated_alias(
             new_value=time_integration,
-            old_value=legacy_options.pop("enable_dsp_sum", None),
+            old_value=legacy_enable_dsp_sum,
             old_name="enable_dsp_sum",
             new_name="time_integration",
         )
         if time_integration is None:
             time_integration = True
 
+        legacy_enable_dsp_classification = legacy_options.pop(
+            "enable_dsp_classification", None
+        )
         state_classification = self._resolve_deprecated_alias(
             new_value=state_classification,
-            old_value=legacy_options.pop("enable_dsp_classification", None),
+            old_value=legacy_enable_dsp_classification,
             old_name="enable_dsp_classification",
             new_name="state_classification",
         )
@@ -1499,18 +1494,24 @@ class MeasurementExecutionService:
         if plot is None:
             plot = False
 
-        classification_line_param0 = self._resolve_deprecated_alias(
-            new_value=classification_line_param0,
-            old_value=legacy_options.pop("line_param0", None),
-            old_name="line_param0",
-            new_name="classification_line_param0",
-        )
-        classification_line_param1 = self._resolve_deprecated_alias(
-            new_value=classification_line_param1,
-            old_value=legacy_options.pop("line_param1", None),
-            old_name="line_param1",
-            new_name="classification_line_param1",
-        )
+        if (
+            getattr(self.system_manager, "backend_kind", None) == "quel1"
+            and state_classification
+        ):
+            if shot_averaging is None:
+                shot_averaging = False
+            if shot_averaging:
+                raise ValueError(
+                    "QuEL-1 DSP classification requires shot_averaging=False."
+                )
+            if explicit_time_integration is False or legacy_enable_dsp_sum is False:
+                raise ValueError(
+                    "QuEL-1 DSP classification requires time_integration=True."
+                )
+            time_integration = True
+
+        if shot_averaging is None:
+            shot_averaging = True
 
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
@@ -1538,21 +1539,10 @@ class MeasurementExecutionService:
             plot=plot,
         )
 
-        if classification_line_param0 is None and classification_line_param1 is None:
-            result = self.measurement_schedule_runner.execute_sync(
-                schedule=measurement_schedule,
-                config=measurement_config,
-            )
-        else:
-            quel1_options = Quel1MeasurementOptions(
-                classification_line_param0=classification_line_param0,
-                classification_line_param1=classification_line_param1,
-            )
-            result = self.measurement_schedule_runner.execute_sync(
-                schedule=measurement_schedule,
-                config=measurement_config,
-                quel1_options=quel1_options,
-            )
+        result = self.measurement_schedule_runner.execute_sync(
+            schedule=measurement_schedule,
+            config=measurement_config,
+        )
 
         rawdata_dir = self.system_manager.rawdata_dir
         if rawdata_dir is not None:

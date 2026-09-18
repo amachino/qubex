@@ -15,7 +15,7 @@ from .models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
 )
-from .models.measurement_config import MeasurementConfig
+from .models.measurement_config import MeasurementConfig, ReturnItem
 from .models.measurement_result import MeasurementResult
 
 
@@ -112,9 +112,6 @@ class MeasurementResultConverter:
         else:
             resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
-        resolved_classifiers: dict[str, StateClassifier | None] = {
-            target: classifier_map.get(target) for target in result.data
-        }
         legacy_data: dict[str, list[MeasureData]] = {}
         for target, captures in result.data.items():
             legacy_captures = [
@@ -122,7 +119,10 @@ class MeasurementResultConverter:
                     target=target,
                     mode=mode,
                     raw=np.asarray(capture.data),
-                    classifier=resolved_classifiers.get(target),
+                    classifier=classifier_map.get(target),
+                    preclassified=(
+                        capture.config.primary_return_item == ReturnItem.STATE_SERIES
+                    ),
                     sampling_period=(
                         sampling_period
                         if sampling_period is not None
@@ -180,9 +180,6 @@ class MeasurementResultConverter:
             If `index` is out of range for any target.
         """
         classifier_map = {} if classifiers is None else classifiers
-        resolved_classifiers: dict[str, StateClassifier | None] = {
-            target: classifier_map.get(target) for target in result.data
-        }
         single_data: dict[str, MeasureData] = {}
         resolved_mode: MeasureMode | None = None
         for target, captures in result.data.items():
@@ -205,7 +202,11 @@ class MeasurementResultConverter:
                 target=target,
                 mode=selected_mode,
                 raw=np.asarray(selected_capture.data),
-                classifier=resolved_classifiers.get(target),
+                classifier=classifier_map.get(target),
+                preclassified=(
+                    selected_capture.config.primary_return_item
+                    == ReturnItem.STATE_SERIES
+                ),
                 sampling_period=(
                     sampling_period
                     if sampling_period is not None
