@@ -52,8 +52,10 @@ _ResolvedInterleavedWaveform = Waveform | PulseSchedule | None
 _DEFAULT_BOOTSTRAP_SAMPLES = 2_000
 _DEFAULT_BOOTSTRAP_SEED = 0
 _DEFAULT_ACQUISITION_SEED: int | None = None
-_DEFAULT_PAIRS_PER_SWEEP = 1
-_DEFAULT_SWEEP_TIMEOUT_SECONDS = 300.0
+_DEFAULT_PAIRS_PER_SWEEP: int | None = None
+_DEFAULT_FIXED_N_CLIFFORDS_2Q = (0, 1, 2, 4, 8, 16, 32, 64, 128)
+_DEFAULT_FIXED_N_CLIFFORDS_1Q = (0, 16, 32, 64, 128, 256, 512, 1024, 2048)
+_DEFAULT_SWEEP_TIMEOUT_SECONDS = 1800.0
 _DEFAULT_AUTO_RANGE_REMAINING_FRACTION = 0.10
 _DEFAULT_MAIN_REMAINING_FRACTIONS = (0.90, 0.70, 0.50, 0.30, 0.15, 0.05, 0.02)
 _MIN_RECOMMENDED_TRIALS = 20
@@ -468,7 +470,7 @@ class _SingleAcquisitionContext:
     interleaved_clifford: Clifford
     interleaved_clifford_name: str
     interleaved_waveform: _ResolvedInterleavedWaveform
-    pairs_per_sweep: int
+    pairs_per_sweep: int | None
     x90: _X90Override
     zx90: PulseSchedule | None
     mitigate_readout: bool
@@ -1102,6 +1104,42 @@ def _resolve_target_maximum(
     )
 
 
+def _default_fixed_n_cliffords(
+    target_spec: _TargetSpec,
+) -> NDArray[np.int64]:
+    """Return the default fixed Clifford grid for one target kind."""
+    values = (
+        _DEFAULT_FIXED_N_CLIFFORDS_2Q
+        if target_spec.is_two_qubit
+        else _DEFAULT_FIXED_N_CLIFFORDS_1Q
+    )
+    return np.asarray(values, dtype=np.int64)
+
+
+def _resolve_fixed_n_cliffords(
+    target_spec: _TargetSpec,
+    n_cliffords_range: ArrayLike | None,
+    max_n_cliffords: int | None,
+) -> NDArray[np.int64]:
+    """Resolve explicit/default fixed-range Clifford lengths for one target."""
+    if n_cliffords_range is None and max_n_cliffords is None:
+        return _default_fixed_n_cliffords(target_spec)
+    maximum = _resolve_target_maximum(target_spec, max_n_cliffords)
+    return _resolve_n_cliffords(n_cliffords_range, maximum=maximum)
+
+
+def _resolve_pairs_per_sweep(value: object) -> int | None:
+    """Return a positive pair chunk size, or None to submit every pair at once."""
+    if value is None:
+        return None
+    return _validate_positive_integer(value, name="pairs_per_sweep")
+
+
+def _pair_chunk_size(context: _SingleAcquisitionContext, n_pairs: int) -> int:
+    """Return the number of adjacent pairs submitted in one sweep call."""
+    return n_pairs if context.pairs_per_sweep is None else context.pairs_per_sweep
+
+
 def _resolve_target_acquisition(
     exp: Experiment,
     target: str,
@@ -1136,10 +1174,7 @@ def _resolve_target_acquisition(
             resolved_target_spec,
             interleaved_waveform,
         ),
-        pairs_per_sweep=_validate_positive_integer(
-            pairs_per_sweep,
-            name="pairs_per_sweep",
-        ),
+        pairs_per_sweep=_resolve_pairs_per_sweep(pairs_per_sweep),
         x90=_resolve_x90_override(target, resolved_target_spec, x90),
         zx90=_resolve_zx90_override(target, resolved_target_spec, zx90),
         mitigate_readout=_validate_boolean(
@@ -1390,8 +1425,9 @@ async def _measure_paired_irb_async(
     chunk_records: list[dict[str, object]] = []
     exp.ctx.reset_awg_and_capunits(qubits=set(context.target_spec.qubits))
 
-    for chunk_start in range(0, len(pair_plan), context.pairs_per_sweep):
-        chunk = pair_plan[chunk_start : chunk_start + context.pairs_per_sweep]
+    chunk_size = _pair_chunk_size(context, len(pair_plan))
+    for chunk_start in range(0, len(pair_plan), chunk_size):
+        chunk = pair_plan[chunk_start : chunk_start + chunk_size]
         points = _pair_chunk_points(chunk)
 
         def schedule(
@@ -1491,7 +1527,8 @@ def _run_single_target_acquisition(
     acquisition_seed: int | None,
 ) -> Result:
     """Run one resolved single-target acquisition through the async bridge."""
-    n_pair_chunks = math.ceil(seeds.size / context.pairs_per_sweep)
+    chunk_size = _pair_chunk_size(context, seeds.size)
+    n_pair_chunks = math.ceil(seeds.size / chunk_size)
     bridge_timeout = context.sweep_timeout * n_pair_chunks + 30.0
     bridge = get_shared_async_bridge(key="experiment")
     return bridge.run(
@@ -1558,8 +1595,9 @@ async def _measure_paired_irb_parallel_async(
     }
     exp.ctx.reset_awg_and_capunits(qubits=reset_qubits)
 
-    for chunk_start in range(0, len(pair_plan), first_context.pairs_per_sweep):
-        chunk = pair_plan[chunk_start : chunk_start + first_context.pairs_per_sweep]
+    chunk_size = _pair_chunk_size(first_context, len(pair_plan))
+    for chunk_start in range(0, len(pair_plan), chunk_size):
+        chunk = pair_plan[chunk_start : chunk_start + chunk_size]
         points = _pair_chunk_points(chunk)
 
         def schedule(
@@ -1694,9 +1732,9 @@ def _run_parallel_acquisition(
 ) -> Result:
     """Run one resolved parallel acquisition through the async bridge."""
     first_context = contexts[targets[0]]
-    n_pair_chunks = math.ceil(
-        seeds_by_target[targets[0]].size / first_context.pairs_per_sweep
-    )
+    n_pairs = seeds_by_target[targets[0]].size
+    chunk_size = _pair_chunk_size(first_context, n_pairs)
+    n_pair_chunks = math.ceil(n_pairs / chunk_size)
     bridge_timeout = first_context.sweep_timeout * n_pair_chunks + 30.0
     bridge = get_shared_async_bridge(key="experiment")
     return bridge.run(
@@ -1724,7 +1762,7 @@ def measure_paired_irb(
     seeds: ArrayLike | None = None,
     sequence_seed: int | None = None,
     acquisition_seed: int | None = _DEFAULT_ACQUISITION_SEED,
-    pairs_per_sweep: int = _DEFAULT_PAIRS_PER_SWEEP,
+    pairs_per_sweep: int | None = _DEFAULT_PAIRS_PER_SWEEP,
     max_n_cliffords: int | None = None,
     x90: Waveform | TargetMap[Waveform] | None = None,
     zx90: PulseSchedule | None = None,
@@ -1754,8 +1792,9 @@ def measure_paired_irb(
         Fixed, strictly increasing Clifford lengths. At least four are required.
         Four or five points produce an analysis warning because the decay fit
         has little residual freedom. Mutually exclusive with `max_n_cliffords`.
-        When omitted, use zero and powers of two through the target-specific
-        maximum.
+        When omitted with no `max_n_cliffords`, use the target-specific fixed
+        default grid: `[0, 1, 2, 4, 8, 16, 32, 64, 128]` for 2Q targets or
+        `[0, 16, 32, 64, 128, 256, 512, 1024, 2048]` for 1Q targets.
     n_trials : int | None, optional
         Paired sequence trials per length. Must be at least 2 and defaults to
         30.
@@ -1768,9 +1807,10 @@ def measure_paired_irb(
     acquisition_seed : int | None, optional
         Seed for global pair order and balanced AB/BA order. Defaults to `None`,
         which draws a fresh randomized order for each acquisition.
-    pairs_per_sweep : int, optional
+    pairs_per_sweep : int | None, optional
         Number of complete adjacent pairs submitted in each measurement call.
-        The backend controls physical batching within that call. Defaults to 1.
+        `None` submits all pairs in one measurement call and is the default.
+        Pass a positive integer to split the acquisition into smaller sweep calls.
     max_n_cliffords : int | None, optional
         Upper bound for power-of-two lengths in the default grid. Mutually
         exclusive with `n_cliffords_range`. Defaults to the target-specific
@@ -1791,7 +1831,7 @@ def measure_paired_irb(
         Integrate readout data over time. Defaults to `True`.
     sweep_timeout : float, optional
         Timeout in seconds for each pair-preserving sweep chunk. Defaults to
-        300 seconds.
+        1800 seconds.
 
     Returns
     -------
@@ -1822,9 +1862,9 @@ def measure_paired_irb(
     overhead while preserving adjacent reference/interleaved points inside
     every pair.
 
-    The default `pairs_per_sweep=1` is deliberately conservative until both 1Q
-    and 2Q hardware paths have been benchmarked. Larger values reduce service
-    calls but may lengthen the time separating pairs within a sweep chunk.
+    The default `pairs_per_sweep=None` submits every randomized adjacent pair in
+    one measurement call. Pass a positive integer to limit the number of pairs
+    per call while preserving reference/interleaved adjacency inside each pair.
 
     The returned target payload contains `reference["trials"]` and
     `interleaved["trials"]` matrices with shape `(n_lengths, n_trials)`, plus
@@ -1847,13 +1887,10 @@ def measure_paired_irb(
     )
     resolved_trials = _resolve_paired_n_trials(n_trials)
     _validate_range_choice(n_cliffords_range, max_n_cliffords)
-    resolved_maximum = _resolve_target_maximum(
+    n_cliffords = _resolve_fixed_n_cliffords(
         context.target_spec,
-        max_n_cliffords,
-    )
-    n_cliffords = _resolve_n_cliffords(
         n_cliffords_range,
-        maximum=resolved_maximum,
+        max_n_cliffords,
     )
     resolved_sequence_seed = _validate_optional_rng_seed(
         sequence_seed,
@@ -2662,10 +2699,6 @@ def _curve_fit_warning_messages(
             )
         if not fit.covariance_valid:
             messages.append(f"The {protocol} fit covariance is unavailable.")
-        if fit.reduced_chi_square is not None and fit.reduced_chi_square > 5.0:
-            messages.append(
-                f"The {protocol} reduced chi-square is {fit.reduced_chi_square:.3g}."
-            )
     return messages
 
 
@@ -2809,6 +2842,16 @@ def _make_figure(
             f"{100.0 * gate_fidelity_ci95[1]:.4f}] %"
         )
     )
+    reference_chi_text = (
+        "unavailable"
+        if reference_fit.reduced_chi_square is None
+        else f"{reference_fit.reduced_chi_square:.3g}"
+    )
+    interleaved_chi_text = (
+        "unavailable"
+        if interleaved_fit.reduced_chi_square is None
+        else f"{interleaved_fit.reduced_chi_square:.3g}"
+    )
     figure.add_annotation(
         xref="paper",
         yref="paper",
@@ -2817,7 +2860,9 @@ def _make_figure(
         text=(
             f"F = {100.0 * gate_fidelity:.4f} %<br>"
             f"bootstrap σ = {uncertainty_text}<br>"
-            f"95% CI = {ci_text}"
+            f"95% CI = {ci_text}<br>"
+            f"reduced χ² (ref / IRB) = "
+            f"{reference_chi_text} / {interleaved_chi_text}"
         ),
         showarrow=False,
         align="right",
@@ -3996,7 +4041,7 @@ def _fixed_range_metadata(
 ) -> dict[str, object]:
     """Return high-level range metadata when no pilot was required."""
     return {
-        "mode": ("explicit" if stop_reason == "explicit_range" else "power_of_two"),
+        "mode": ("explicit" if stop_reason == "explicit_range" else "fixed_default"),
         "enabled": False,
         "pilot_grid": np.asarray([], dtype=np.int64),
         "candidate_pilot_grid": np.asarray([], dtype=np.int64),
@@ -4040,13 +4085,10 @@ def _validate_serial_explicit_seed_matrices(
         if explicit_seed_matrix is None:
             continue
         target_spec = contexts[target].target_spec
-        resolved_maximum = _resolve_target_maximum(
+        n_cliffords = _resolve_fixed_n_cliffords(
             target_spec,
-            max_n_cliffords,
-        )
-        n_cliffords = _resolve_n_cliffords(
             n_cliffords_range,
-            maximum=resolved_maximum,
+            max_n_cliffords,
         )
         _resolve_seed_matrix(
             explicit_seed_matrix,
@@ -4056,7 +4098,7 @@ def _validate_serial_explicit_seed_matrices(
 
 
 def _log_paired_irb_summary(target: str, payload: Mapping[str, object]) -> None:
-    """Log one concise statistical and acquisition summary for a target."""
+    """Log only the primary paired-IRB point estimate and bootstrap interval."""
     reference_fit = _mapping(
         _mapping(payload["reference"], name="reference")["fit"],
         name="reference.fit",
@@ -4065,97 +4107,31 @@ def _log_paired_irb_summary(target: str, payload: Mapping[str, object]) -> None:
         _mapping(payload["interleaved"], name="interleaved")["fit"],
         name="interleaved.fit",
     )
-    bootstrap = _mapping(payload["bootstrap"], name="bootstrap")
-    grid_selection = _mapping(payload["grid_selection"], name="grid_selection")
-    diagnostics = _mapping(payload["diagnostics"], name="diagnostics")
     gate_fidelity = float(cast(float, payload["gate_fidelity"]))
     gate_fidelity_error = cast(float | None, payload["gate_fidelity_err"])
     gate_fidelity_ci95 = cast(
         tuple[float, float] | None,
         payload["gate_fidelity_ci95"],
     )
-    bootstrap_requested = int(cast(int, bootstrap["n_requested"]))
-    bootstrap_correlation = cast(float | None, bootstrap["p_correlation"])
-    bootstrap_parameter_bound_quality = cast(
-        bool | None,
-        bootstrap["parameter_bound_quality_valid"],
-    )
-    resampling_status = (
-        "valid" if cast(bool, bootstrap["resampling_valid"]) else "invalid"
-    )
-    optimizer_status = (
-        "disabled"
-        if bootstrap_requested == 0
-        else "not_run"
-        if cast(bool, bootstrap["execution_skipped"])
-        else "valid"
-        if cast(bool, bootstrap["optimizer_valid"])
-        else "invalid"
-    )
-    correlation_status = (
-        "unavailable"
-        if bootstrap_correlation is None
-        else f"{bootstrap_correlation:.3f}"
-    )
-    parameter_bound_quality_status = (
-        "unavailable"
-        if bootstrap_parameter_bound_quality is None
-        else "valid"
-        if bootstrap_parameter_bound_quality
-        else "invalid"
-    )
     logger.info("Paired IRB: %s", target)
     logger.info("p_ref = %.6f", float(cast(float, reference_fit["p"])))
     logger.info("p_irb = %.6f", float(cast(float, interleaved_fit["p"])))
     if gate_fidelity_error is None:
         logger.info("Gate fidelity = %.4f %%", 100.0 * gate_fidelity)
-        logger.info("Statistical uncertainty unavailable")
     else:
         logger.info(
             "Gate fidelity = %.4f ± %.4f %%",
             100.0 * gate_fidelity,
             100.0 * gate_fidelity_error,
         )
-    if gate_fidelity_ci95 is not None:
+    if gate_fidelity_ci95 is None:
+        logger.info("95%% bootstrap CI = unavailable")
+    else:
         logger.info(
             "95%% bootstrap CI = [%.4f, %.4f] %%",
             100.0 * gate_fidelity_ci95[0],
             100.0 * gate_fidelity_ci95[1],
         )
-    logger.info(
-        "Bootstrap: requested = %s, attempted = %s, success = %s, "
-        "resampling = %s, optimizer = %s, p_ref/p_irb corr = %s, "
-        "parameter-bound quality = %s",
-        bootstrap_requested,
-        bootstrap["n_attempted"],
-        bootstrap["n_success"],
-        resampling_status,
-        optimizer_status,
-        correlation_status,
-        parameter_bound_quality_status,
-    )
-    logger.info(
-        "Grid selection: mode = %s, selected main grid = %s, pilot stop = %s (%s)",
-        grid_selection["mode"],
-        np.asarray(grid_selection["selected_main_grid"]).tolist(),
-        grid_selection["pilot_stop_reason"],
-        grid_selection.get("pilot_stop_detail"),
-    )
-    warning_messages = cast(Sequence[object], diagnostics["warnings"])
-    if warning_messages:
-        logger.warning(
-            "Paired IRB diagnostics for %s: %s",
-            target,
-            "; ".join(str(message) for message in warning_messages),
-        )
-    if grid_selection["fallback_used"]:
-        logger.warning(
-            "Paired IRB used the pilot-candidate main-grid fallback for %s: %s.",
-            target,
-            grid_selection["fallback_reason"],
-        )
-    if grid_selection["pilot_stop_reason"] == "max_n_cliffords_reached":
-        logger.warning("Paired IRB auto-range maximum reached for %s.", target)
 
 
 def _analyze_workflow_target(
@@ -4191,7 +4167,7 @@ def _run_parallel_workflow(
     seeds: ArrayLike | Mapping[str, ArrayLike] | None,
     sequence_seed: int | None,
     acquisition_seed: int | None,
-    pairs_per_sweep: int,
+    pairs_per_sweep: int | None,
     max_n_cliffords: int | None,
     x90: _X90Override,
     zx90: _ZX90Override,
@@ -4268,9 +4244,10 @@ def _run_parallel_workflow(
             range_metadata[target]["main_sequence_seed"] = main_sequence_seeds[target]
             range_metadata[target]["main_acquisition_seed"] = main_acquisition_seed
     else:
-        selected_n_cliffords = _resolve_n_cliffords(
+        selected_n_cliffords = _resolve_fixed_n_cliffords(
+            contexts[targets[0]].target_spec,
             n_cliffords_range,
-            maximum=resolved_maximum,
+            max_n_cliffords,
         )
         main_sequence_values = _split_optional_seed(
             sequence_seed,
@@ -4342,7 +4319,7 @@ def _run_serial_workflow(
     seeds: ArrayLike | Mapping[str, ArrayLike] | None,
     sequence_seed: int | None,
     acquisition_seed: int | None,
-    pairs_per_sweep: int,
+    pairs_per_sweep: int | None,
     max_n_cliffords: int | None,
     x90: _X90Override,
     zx90: _ZX90Override,
@@ -4431,13 +4408,10 @@ def _run_serial_workflow(
         else:
             main_sequence_seed = sequence_streams[stream_start]
             main_acquisition_seed = acquisition_streams[stream_start]
-            resolved_maximum = _resolve_target_maximum(
+            selected_n_cliffords = _resolve_fixed_n_cliffords(
                 context.target_spec,
-                max_n_cliffords,
-            )
-            selected_n_cliffords = _resolve_n_cliffords(
                 n_cliffords_range,
-                maximum=resolved_maximum,
+                max_n_cliffords,
             )
             range_metadata = _fixed_range_metadata(
                 selected_n_cliffords,
@@ -4485,7 +4459,7 @@ def paired_interleaved_randomized_benchmarking(
         Waveform | PulseSchedule | TargetMap[Waveform | PulseSchedule] | None
     ) = None,
     n_cliffords_range: ArrayLike | None = None,
-    auto_range: bool = True,
+    auto_range: bool = False,
     pilot_n_trials: int = 6,
     auto_range_remaining_fraction: float = _DEFAULT_AUTO_RANGE_REMAINING_FRACTION,
     main_remaining_fractions: Collection[float] = _DEFAULT_MAIN_REMAINING_FRACTIONS,
@@ -4495,7 +4469,7 @@ def paired_interleaved_randomized_benchmarking(
     acquisition_seed: int | None = _DEFAULT_ACQUISITION_SEED,
     bootstrap_seed: int | None = _DEFAULT_BOOTSTRAP_SEED,
     n_bootstrap: int = _DEFAULT_BOOTSTRAP_SAMPLES,
-    pairs_per_sweep: int = _DEFAULT_PAIRS_PER_SWEEP,
+    pairs_per_sweep: int | None = _DEFAULT_PAIRS_PER_SWEEP,
     max_n_cliffords: int | None = None,
     x90: Waveform | TargetMap[Waveform] | None = None,
     zx90: PulseSchedule | TargetMap[PulseSchedule] | None = None,
@@ -4538,13 +4512,18 @@ def paired_interleaved_randomized_benchmarking(
     n_cliffords_range : ArrayLike | None, optional
         Explicit, strictly increasing Clifford-length grid shared by both arms.
         At least four lengths are required. When supplied, it takes precedence
-        over `auto_range` and is mutually exclusive with `max_n_cliffords`.
+        over `auto_range` and is mutually exclusive with `max_n_cliffords`. With
+        the default `auto_range=False` and no explicit maximum, use
+        `[0, 1, 2, 4, 8, 16, 32, 64, 128]` for 2Q targets or
+        `[0, 16, 32, 64, 128, 256, 512, 1024, 2048]` for 1Q targets.
     auto_range : bool, optional
         When `True` and no explicit range is supplied, use a paired pilot to
         select a fresh main-measurement grid. The pilot uses an unweighted
         two-parameter decay fit with `C=1/d`, an R-squared threshold of 0.5,
-        and the observed-decay safeguard. When `False`, measure the complete
-        power-of-two grid not exceeding `max_n_cliffords`. Defaults to `True`.
+        and the observed-decay safeguard. When `False`, use the fixed grid from
+        `n_cliffords_range`, the target-specific default fixed grid when neither
+        range nor maximum is supplied, or a power-of-two grid through an
+        explicitly supplied `max_n_cliffords`. Defaults to `False`.
     pilot_n_trials : int, optional
         Paired trials per pilot length. When auto-range is active, this must be
         at least 4 and pilot stopping is not evaluated until at least six
@@ -4589,9 +4568,10 @@ def paired_interleaved_randomized_benchmarking(
         Bootstrap replicate count. Defaults to 2000. At least two successful
         replicates, an 80% success rate, and two samples in every AB/BA stratum
         are required to report primary uncertainty.
-    pairs_per_sweep : int, optional
-        Complete adjacent pairs submitted per measurement call. The backend
-        controls physical batching within the call. Defaults to 1.
+    pairs_per_sweep : int | None, optional
+        Complete adjacent pairs submitted per measurement call. `None` submits
+        all pairs in one measurement call and is the default. Pass a positive
+        integer to split the acquisition into smaller sweep calls.
     max_n_cliffords : int | None, optional
         Exact final pilot candidate for auto-range, or an upper bound for the
         fixed power-of-two grid when auto-range is disabled. Mutually exclusive
@@ -4624,7 +4604,7 @@ def paired_interleaved_randomized_benchmarking(
     time_integration : bool, optional
         Integrate readout data over time. Defaults to `True`.
     sweep_timeout : float, optional
-        Timeout in seconds for each sweep chunk. Defaults to 300 seconds.
+        Timeout in seconds for each sweep chunk. Defaults to 1800 seconds.
     sem_floor : float | None, optional
         Common positive SEM floor for both weighted main fits. It does not
         affect the unweighted pilot fit. With the default `None`, use 25% of the
@@ -4682,9 +4662,9 @@ def paired_interleaved_randomized_benchmarking(
     best-effort continuation across targets is required. Use `measure_paired_irb`
     and `analyze_paired_irb` separately for side-effect-free reanalysis.
 
-    The default `pairs_per_sweep=1` is conservative pending 1Q and 2Q hardware
-    benchmarks. Increase it to reduce measurement-service calls when longer
-    sweep chunks are acceptable.
+    The default `pairs_per_sweep=None` submits all randomized adjacent pairs in
+    one measurement-service call. Pass a positive integer to split the
+    acquisition into smaller calls while preserving within-pair adjacency.
     """
     resolved_targets = _normalize_targets(targets)
     _validate_range_choice(n_cliffords_range, max_n_cliffords)
