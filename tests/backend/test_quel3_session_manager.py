@@ -324,7 +324,9 @@ def test_request_retry_preserves_separate_session_creation_budget(
         assert len(clients) == 4
     assert all(len(client.create_session_calls) == 4 for client in clients)
     assert all(context.exit_calls == 1 for context in contexts)
-    assert delays == pytest.approx([0.5, 0.75, 1.125] * len(clients))
+    expected_delays = [0.5, 0.75, 1.125, 0.5] * (len(clients) - 1)
+    expected_delays.extend([0.5, 0.75, 1.125])
+    assert delays == pytest.approx(expected_delays)
 
 
 @pytest.mark.parametrize("fail_first_request", [False, True])

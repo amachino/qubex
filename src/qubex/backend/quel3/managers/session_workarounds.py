@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 QUEL3_SESSION_REQUEST_MAX_ATTEMPTS = 4
+QUEL3_SESSION_REQUEST_RETRY_DELAY_SECONDS = 0.5
 QUELWARE_SESSION_CREATE_TTL_MS = 30_000
 QUELWARE_SESSION_EXTEND_TTL_MS = 30_000
 QUELWARE_SESSION_CREATE_TENTATIVE_TTL_MS = 5_000
@@ -142,12 +143,14 @@ async def run_with_session_request_retry(
                 ) from exc
             logger.warning(
                 "QuEL-3 quelware session request failed; session_token=%s; "
-                "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                "attempt=%d/%d; retrying with a fresh session in %.3g s; cause=%s",
                 session_token,
                 attempt_number,
                 max_attempts,
+                QUEL3_SESSION_REQUEST_RETRY_DELAY_SECONDS,
                 quelware_exception_summary(exc),
             )
+            await asyncio.sleep(QUEL3_SESSION_REQUEST_RETRY_DELAY_SECONDS)
     raise RuntimeError("unreachable QuEL-3 session request retry state")
 
 
