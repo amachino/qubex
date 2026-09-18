@@ -14,12 +14,12 @@ def test_project_optional_dependencies_split_backend_quel1_quel3() -> None:
     )
 
     assert re.search(
-        rf'^backend\s*=\s*\["qxdriver-quel1 == {re.escape(version)}"\]',
+        rf'^backend\s*=\s*\["qubex-driver-quel1 == {re.escape(version)}"\]',
         text,
         re.MULTILINE,
     )
     assert re.search(
-        rf'^quel1\s*=\s*\["qxdriver-quel1 == {re.escape(version)}"\]',
+        rf'^quel1\s*=\s*\["qubex-driver-quel1 == {re.escape(version)}"\]',
         text,
         re.MULTILINE,
     )
