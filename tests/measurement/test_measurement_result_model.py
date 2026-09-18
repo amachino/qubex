@@ -229,8 +229,8 @@ def test_to_measure_result_propagates_sampling_period() -> None:
     assert np.array_equal(single.data["Q00"].times, np.array([0.0]))
 
 
-def test_converter_does_not_attach_classifier_to_state_series(dummy_classifier) -> None:
-    """Raw DSP state conversion should post-select disagreeing line outputs."""
+def test_converter_marks_state_series_as_preclassified(dummy_classifier) -> None:
+    """State-series conversion should retain metadata without CPU classification."""
     config = MeasurementConfig(
         n_shots=4,
         shot_interval=100.0,
@@ -244,7 +244,7 @@ def test_converter_does_not_attach_classifier_to_state_series(dummy_classifier) 
             "Q00": [
                 _make_capture(
                     target="Q00",
-                    raw=np.array([0, 1, 2, 3], dtype=np.uint8),
+                    raw=np.array([0, -1, -1, 1], dtype=np.int64),
                     measurement_config=config,
                     sampling_period=0.4,
                 )
@@ -262,9 +262,11 @@ def test_converter_does_not_attach_classifier_to_state_series(dummy_classifier) 
         classifiers={"Q00": dummy_classifier},
     )
 
-    assert multiple.data["Q00"][0].classifier is None
-    assert single.data["Q00"].classifier is None
-    assert multiple.data["Q00"][0].raw.tolist() == [0, 1, 2, 3]
+    assert multiple.data["Q00"][0].classifier is dummy_classifier
+    assert single.data["Q00"].classifier is dummy_classifier
+    assert multiple.data["Q00"][0].preclassified is True
+    assert single.data["Q00"].preclassified is True
+    assert multiple.data["Q00"][0].raw.tolist() == [0, -1, -1, 1]
     assert single.data["Q00"].classified.tolist() == [0, -1, -1, 1]
     assert single.data["Q00"].counts == {"0": 1, "1": 1}
     assert multiple.get_counts() == {"0": 1, "1": 1}

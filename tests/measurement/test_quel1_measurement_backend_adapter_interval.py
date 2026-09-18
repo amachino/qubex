@@ -5,9 +5,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from qxpulse import Blank, PulseSchedule
 
 from qubex.measurement.adapters.backend_adapter import Quel1MeasurementBackendAdapter
+from qubex.measurement.classifiers import StateClassifierLinear
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
@@ -31,6 +33,13 @@ class _ExperimentSystemStub:
         return SimpleNamespace(sideband=self.sideband_by_target[target])
 
 
+def _linear_classifier() -> StateClassifierLinear:
+    return StateClassifierLinear(
+        lines=((1.0, 2.0, -0.25), (1.0, -3.0, -0.5)),
+        state_map={(False, False): 0, (True, True): 1},
+    )
+
+
 def _make_config(interval: float) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=1,
@@ -39,6 +48,59 @@ def _make_config(interval: float) -> MeasurementConfig:
         time_integration=False,
         state_classification=False,
     )
+
+
+def _make_classification_config() -> MeasurementConfig:
+    return MeasurementConfig(
+        n_shots=1,
+        shot_interval=0.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        backend_kind="quel1",
+    )
+
+
+def _make_capture_request_context(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    classifiers: dict[str, object] | None = None,
+    sideband: str = "U",
+) -> tuple[_BackendControllerStub, Any, MeasurementSchedule]:
+    backend = _BackendControllerStub()
+    adapter = cast(
+        Any,
+        Quel1MeasurementBackendAdapter(
+            backend_controller=cast(Any, backend),
+            experiment_system=cast(
+                Any,
+                _ExperimentSystemStub(sideband_by_target={"RQ00": sideband}),
+            ),
+            classifiers=cast(Any, classifiers),
+        ),
+    )
+
+    def _sampled_sequences(
+        self: Quel1MeasurementBackendAdapter,
+        *,
+        schedule: MeasurementSchedule,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        _ = (self, schedule)
+        return {}, {"RQ00": object()}
+
+    monkeypatch.setattr(
+        adapter,
+        "_create_sampled_sequences",
+        _sampled_sequences.__get__(adapter, Quel1MeasurementBackendAdapter),
+        raising=False,
+    )
+    with PulseSchedule(["RQ00"]) as pulse_schedule:
+        pulse_schedule.add("RQ00", Blank(128.0))
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    return backend, adapter, schedule
 
 
 def test_build_execution_request_adds_one_block_margin_when_interval_nonpositive(
@@ -185,37 +247,7 @@ def test_build_execution_request_keeps_classification_off_without_options(
     monkeypatch,
 ) -> None:
     """Given a normal measurement config, backend payload should not enable DSP classification."""
-    backend = _BackendControllerStub()
-    adapter = cast(
-        Any,
-        Quel1MeasurementBackendAdapter(
-            backend_controller=cast(Any, backend),
-            experiment_system=cast(Any, object()),
-        ),
-    )
-
-    def _sampled_sequences(
-        self: Quel1MeasurementBackendAdapter,
-        *,
-        schedule: MeasurementSchedule,
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        _ = (self, schedule)
-        return {}, {"RQ00": object()}
-
-    monkeypatch.setattr(
-        adapter,
-        "_create_sampled_sequences",
-        _sampled_sequences.__get__(adapter, Quel1MeasurementBackendAdapter),
-        raising=False,
-    )
-
-    with PulseSchedule(["RQ00"]) as pulse_schedule:
-        pulse_schedule.add("RQ00", Blank(128.0))
-
-    schedule = MeasurementSchedule(
-        pulse_schedule=pulse_schedule,
-        capture_schedule=CaptureSchedule(captures=[]),
-    )
+    _, adapter, schedule = _make_capture_request_context(monkeypatch)
 
     request = adapter.build_execution_request(
         schedule=schedule,
@@ -227,59 +259,19 @@ def test_build_execution_request_keeps_classification_off_without_options(
     assert payload.classification_lines is None
 
 
-def test_build_execution_request_scales_gmm_linear_line_constants(monkeypatch) -> None:
-    """Lower-sideband GMM lines should use backend coordinates and e7 units."""
-    backend = _BackendControllerStub()
-    adapter = cast(
-        Any,
-        Quel1MeasurementBackendAdapter(
-            backend_controller=cast(Any, backend),
-            experiment_system=cast(
-                Any,
-                _ExperimentSystemStub(sideband_by_target={"RQ00": "L"}),
-            ),
-        ),
-    )
-
-    def _sampled_sequences(
-        self: Quel1MeasurementBackendAdapter,
-        *,
-        schedule: MeasurementSchedule,
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        _ = (self, schedule)
-        return {}, {"RQ00": object()}
-
-    monkeypatch.setattr(
-        adapter,
-        "_create_sampled_sequences",
-        _sampled_sequences.__get__(adapter, Quel1MeasurementBackendAdapter),
-        raising=False,
-    )
-
-    with PulseSchedule(["RQ00"]) as pulse_schedule:
-        pulse_schedule.add("RQ00", Blank(128.0))
-
-    schedule = MeasurementSchedule(
-        pulse_schedule=pulse_schedule,
-        capture_schedule=CaptureSchedule(captures=[]),
-    )
-    config = MeasurementConfig(
-        n_shots=1,
-        shot_interval=0.0,
-        shot_averaging=False,
-        time_integration=True,
-        state_classification=True,
-        classification_source="gmm_linear",
-        backend_kind="quel1",
+def test_build_execution_request_converts_linear_classifier_for_lower_sideband(
+    monkeypatch,
+) -> None:
+    """Linear classifier lines should use backend coordinates and e7 units."""
+    _, adapter, schedule = _make_capture_request_context(
+        monkeypatch,
+        classifiers={"Q00": _linear_classifier()},
+        sideband="L",
     )
 
     request = adapter.build_execution_request(
         schedule=schedule,
-        config=config,
-        quel1_options=Quel1MeasurementOptions(
-            classification_line_param0={"RQ00": (1.0, 2.0, -0.25)},
-            classification_line_param1={"RQ00": (1.0, -3.0, -0.5)},
-        ),
+        config=_make_classification_config(),
     )
 
     payload = request.payload
@@ -295,61 +287,20 @@ def test_build_execution_request_scales_gmm_linear_line_constants(monkeypatch) -
     )
 
 
-def test_build_execution_request_scales_gmm_linear_line_constants_without_demodulation(
+def test_build_execution_request_scales_linear_classifier_without_demodulation(
     monkeypatch,
 ) -> None:
-    """Given DSP demodulation disabled, GMM line constants use the full raw-I/Q scale."""
-    backend = _BackendControllerStub()
-    adapter = cast(
-        Any,
-        Quel1MeasurementBackendAdapter(
-            backend_controller=cast(Any, backend),
-            experiment_system=cast(
-                Any,
-                _ExperimentSystemStub(sideband_by_target={"RQ00": "U"}),
-            ),
-        ),
-    )
-
-    def _sampled_sequences(
-        self: Quel1MeasurementBackendAdapter,
-        *,
-        schedule: MeasurementSchedule,
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        _ = (self, schedule)
-        return {}, {"RQ00": object()}
-
-    monkeypatch.setattr(
-        adapter,
-        "_create_sampled_sequences",
-        _sampled_sequences.__get__(adapter, Quel1MeasurementBackendAdapter),
-        raising=False,
-    )
-
-    with PulseSchedule(["RQ00"]) as pulse_schedule:
-        pulse_schedule.add("RQ00", Blank(128.0))
-
-    schedule = MeasurementSchedule(
-        pulse_schedule=pulse_schedule,
-        capture_schedule=CaptureSchedule(captures=[]),
-    )
-    config = MeasurementConfig(
-        n_shots=1,
-        shot_interval=0.0,
-        shot_averaging=False,
-        time_integration=True,
-        state_classification=True,
-        classification_source="gmm_linear",
-        backend_kind="quel1",
+    """Without DSP demodulation, line constants should use the raw-I/Q scale."""
+    _, adapter, schedule = _make_capture_request_context(
+        monkeypatch,
+        classifiers={"Q00": _linear_classifier()},
     )
 
     request = adapter.build_execution_request(
         schedule=schedule,
-        config=config,
+        config=_make_classification_config(),
         quel1_options=Quel1MeasurementOptions(
             demodulation=False,
-            classification_line_param0={"RQ00": (1.0, 2.0, -0.25)},
-            classification_line_param1={"RQ00": (1.0, -3.0, -0.5)},
         ),
     )
 
@@ -364,3 +315,31 @@ def test_build_execution_request_scales_gmm_linear_line_constants_without_demodu
         -3.0,
         -(1 << 31),
     )
+
+
+@pytest.mark.parametrize(
+    ("classifiers", "error_type", "match"),
+    [
+        ({}, ValueError, "StateClassifierLinear registered"),
+        ({"Q00": object()}, TypeError, "got object"),
+    ],
+)
+def test_build_execution_request_rejects_unsupported_dsp_classifier_before_io(
+    monkeypatch,
+    classifiers: dict[str, object],
+    error_type: type[Exception],
+    match: str,
+) -> None:
+    """DSP execution should reject missing or unsupported classifiers before I/O."""
+    backend, adapter, schedule = _make_capture_request_context(
+        monkeypatch,
+        classifiers=classifiers,
+    )
+
+    with pytest.raises(error_type, match=match):
+        adapter.build_execution_request(
+            schedule=schedule,
+            config=_make_classification_config(),
+        )
+
+    assert backend.targets == []

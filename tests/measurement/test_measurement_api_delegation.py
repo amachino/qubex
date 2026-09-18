@@ -1350,42 +1350,48 @@ def test_measure_preserves_default_time_integration_for_dsp_classification() -> 
         fake_execute,
         measurement.execution_service,
     )
-
-    measurement.measure(
-        waveforms={"Q00": np.array([0.0 + 0.0j])},
-        classification_source="gmm_linear",
-        classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
-        classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
+    _bind_runtime(
+        measurement,
+        backend_controller=object(),
+        experiment_system=object(),
+        backend_kind="quel1",
     )
-
-    assert called["kwargs"]["time_integration"] is None
 
     measurement.measure(
         waveforms={"Q00": np.array([0.0 + 0.0j])},
         state_classification=True,
-        classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
-        classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
+    )
+
+    assert called["kwargs"]["time_integration"] is None
+
+    measurement.measure(
+        waveforms={"Q00": np.array([0.0 + 0.0j])},
+        enable_dsp_classification=True,
     )
 
     assert called["kwargs"]["time_integration"] is None
 
 
-def test_execute_rejects_explicitly_disabled_gmm_time_integration() -> None:
-    """GMM classification should continue rejecting an explicit False value."""
+def test_execute_rejects_disabled_quel1_dsp_time_integration() -> None:
+    """QuEL-1 DSP classification should reject explicit time integration disablement."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
         load_configs=False,
         connect_devices=False,
     )
+    _bind_runtime(
+        measurement,
+        backend_controller=object(),
+        experiment_system=object(),
+        backend_kind="quel1",
+    )
 
     with pytest.raises(ValueError, match="requires time_integration=True"):
         measurement.execute(
             schedule={"Q00": np.array([0.0 + 0.0j])},
             time_integration=False,
-            classification_source="gmm_linear",
-            classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
-            classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
+            state_classification=True,
         )
 
 
@@ -1620,44 +1626,41 @@ def test_execute_normalizes_optional_flags_with_execute_defaults(
     config = called["config"]
     assert config.time_integration is True
     assert config.state_classification is False
-    assert config.classification_source is None
     assert called["run_quel1_options"] is None
 
-    line_param0 = {"RQ00": (1.0, 0.0, 0.0)}
-    line_param1 = {"RQ00": (1.0, 0.0, -1.0)}
     measurement.execute(
         schedule=pulse_schedule,
         state_classification=True,
-        classification_line_param0=line_param0,
-        classification_line_param1=line_param1,
     )
 
     config = called["config"]
-    options = cast(Quel1MeasurementOptions, called["run_quel1_options"])
     assert config.shot_averaging is False
     assert config.time_integration is True
     assert config.state_classification is True
     assert config.primary_return_item == ReturnItem.STATE_SERIES
-    assert options.classification_line_param0 == line_param0
-    assert options.classification_line_param1 == line_param1
+    assert called["run_quel1_options"] is None
 
 
-def test_execute_rejects_averaged_manual_dsp_classification() -> None:
-    """Manual DSP lines should reject an explicitly averaged-shot configuration."""
+def test_execute_rejects_averaged_quel1_dsp_classification() -> None:
+    """QuEL-1 DSP classification should reject an explicitly averaged mode."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
         load_configs=False,
         connect_devices=False,
     )
+    _bind_runtime(
+        measurement,
+        backend_controller=object(),
+        experiment_system=object(),
+        backend_kind="quel1",
+    )
 
-    with pytest.raises(ValueError, match="require shot_averaging=False"):
+    with pytest.raises(ValueError, match="requires shot_averaging=False"):
         measurement.execute(
             schedule={"Q00": np.array([0.0 + 0.0j])},
             shot_averaging=True,
             state_classification=True,
-            classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
-            classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
         )
 
 

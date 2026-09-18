@@ -10,6 +10,7 @@ from numpy.testing import assert_allclose
 
 from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.adapters.backend_adapter import Quel1MeasurementBackendAdapter
+from qubex.measurement.classifiers import StateClassifierLinear
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
@@ -215,13 +216,11 @@ def test_build_measurement_result_normalizes_time_integrated_single_mode_to_1d()
     )
 
 
-def test_build_measurement_result_treats_manual_dsp_classification_as_state_series() -> (
-    None
-):
-    """Given manual DSP classification flags, conversion should expose state-series data."""
+def test_build_measurement_result_maps_dsp_decisions_to_state_series() -> None:
+    """DSP decisions should be mapped by the registered linear classifier."""
     backend_result = Quel1BackendExecutionResult(
         status={},
-        data={"RQ00": [np.array([0, 3, 0, 3], dtype=np.uint8)]},
+        data={"RQ00": [np.array([0, 1, 2, 3], dtype=np.uint8)]},
         config={},
     )
     adapter = Quel1MeasurementBackendAdapter(
@@ -234,6 +233,12 @@ def test_build_measurement_result_treats_manual_dsp_classification_as_state_seri
             MeasurementConstraintProfile.quel1(),
             require_workaround_capture=False,
         ),
+        classifiers={
+            "Q00": StateClassifierLinear(
+                lines=((1.0, 0.0, 0.0), (1.0, 0.0, -1.0)),
+                state_map={(False, False): 0, (True, True): 1},
+            )
+        },
     )
     config = MeasurementConfig(
         n_shots=4,
@@ -254,4 +259,4 @@ def test_build_measurement_result_treats_manual_dsp_classification_as_state_seri
     capture = result.data["Q00"][0]
     assert result.measurement_config.primary_return_item == ReturnItem.STATE_SERIES
     assert capture.state_series is not None
-    assert capture.data.tolist() == [0, 3, 0, 3]
+    assert capture.data.tolist() == [0, -1, -1, 1]

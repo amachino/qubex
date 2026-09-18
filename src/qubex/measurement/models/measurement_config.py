@@ -28,7 +28,6 @@ class MeasurementConfig(Model):
     shot_averaging: bool
     time_integration: bool
     state_classification: bool
-    classification_source: str | None = None
     backend_kind: BackendKind | None = None
     return_items: tuple[ReturnItem, ...] = ()
 
@@ -38,26 +37,14 @@ class MeasurementConfig(Model):
         if self.n_shots <= 0:
             raise ValueError("n_shots must be positive.")
 
-        if self.classification_source is not None:
-            if self.classification_source != "gmm_linear":
-                raise ValueError(
-                    "classification_source must be `gmm_linear` when provided."
-                )
-            if self.backend_kind != "quel1":
-                raise ValueError(
-                    "classification_source='gmm_linear' requires backend_kind='quel1'."
-                )
-            if not self.state_classification:
-                raise ValueError(
-                    "classification_source='gmm_linear' requires state_classification=True."
-                )
+        if self.backend_kind == "quel1" and self.state_classification:
             if self.shot_averaging:
                 raise ValueError(
-                    "classification_source='gmm_linear' requires shot_averaging=False."
+                    "QuEL-1 DSP classification requires shot_averaging=False."
                 )
             if not self.time_integration:
                 raise ValueError(
-                    "classification_source='gmm_linear' requires time_integration=True."
+                    "QuEL-1 DSP classification requires time_integration=True."
                 )
 
         return_items = tuple(self.return_items)
@@ -120,8 +107,6 @@ class MeasurementConfig(Model):
 
     def _allowed_return_items(self) -> set[ReturnItem]:
         """Return allowed return-item set for the configured mode."""
-        if self.classification_source == "gmm_linear":
-            return {ReturnItem.STATE_SERIES}
         if self.shot_averaging:
             allowed: set[ReturnItem] = {
                 ReturnItem.AVERAGED_WAVEFORM,

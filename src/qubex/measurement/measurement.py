@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 import numpy.typing as npt
 from qxpulse import PulseSchedule, RampType
@@ -817,7 +817,6 @@ class Measurement:
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
-        classification_source: Literal["gmm_linear"] | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -827,12 +826,6 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        classification_line_param0: (
-            dict[str, tuple[float, float, float]] | None
-        ) = None,
-        classification_line_param1: (
-            dict[str, tuple[float, float, float]] | None
-        ) = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
@@ -912,9 +905,6 @@ class Measurement:
             readout_amplification=readout_amplification,
             time_integration=time_integration,
             state_classification=state_classification,
-            classification_source=classification_source,
-            classification_line_param0=classification_line_param0,
-            classification_line_param1=classification_line_param1,
             plot=plot,
             **deprecated_options,
         )
@@ -928,7 +918,6 @@ class Measurement:
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
-        classification_source: Literal["gmm_linear"] | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -939,12 +928,6 @@ class Measurement:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        classification_line_param0: (
-            dict[str, tuple[float, float, float]] | None
-        ) = None,
-        classification_line_param1: (
-            dict[str, tuple[float, float, float]] | None
-        ) = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
@@ -1026,9 +1009,6 @@ class Measurement:
             final_measurement=final_measurement,
             time_integration=time_integration,
             state_classification=state_classification,
-            classification_source=classification_source,
-            classification_line_param0=classification_line_param0,
-            classification_line_param1=classification_line_param1,
             plot=plot,
             **deprecated_options,
         )

@@ -44,7 +44,6 @@ class MeasurementConfigFactory:
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
-        classification_source: str | None = None,
         return_items: Sequence[ReturnItem] | None = None,
     ) -> MeasurementConfig:
         """Create `MeasurementConfig` from optional runtime overrides."""
@@ -78,7 +77,6 @@ class MeasurementConfigFactory:
                 state_classification,
                 DEFAULT_STATE_CLASSIFICATION,
             ),
-            classification_source=classification_source,
             backend_kind=self._backend_kind,
             return_items=resolved_return_items,
         )

@@ -723,10 +723,12 @@ def test_init_sets_default_adapter_and_constraint_profile_for_quel1(
             backend_controller: object,
             experiment_system: object,
             constraint_profile: MeasurementConstraintProfile,
+            classifiers: object,
         ) -> None:
             called["adapter_backend_controller"] = backend_controller
             called["adapter_experiment_system"] = experiment_system
             called["adapter_constraint_profile"] = constraint_profile
+            called["adapter_classifiers"] = classifiers
 
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
@@ -743,15 +745,18 @@ def test_init_sets_default_adapter_and_constraint_profile_for_quel1(
 
     backend_controller = _Quel1Controller()
     experiment_system = object()
+    classifiers = {"Q00": cast(Any, object())}
 
     runner = MeasurementScheduleRunner(
         backend_controller=cast(Any, backend_controller),
         experiment_system=cast(Any, experiment_system),
+        classifiers=classifiers,
     )
 
     assert isinstance(runner, MeasurementScheduleRunner)
     assert called["adapter_backend_controller"] is backend_controller
     assert called["adapter_experiment_system"] is experiment_system
+    assert called["adapter_classifiers"] is classifiers
     profile = cast(MeasurementConstraintProfile, called["adapter_constraint_profile"])
     assert profile.sampling_period_ns == 4.0
     assert profile.enforce_block_alignment is True

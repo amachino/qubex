@@ -40,16 +40,6 @@ class MeasurementResultConverter:
         return MeasureMode.AVG if capture.config.shot_averaging else MeasureMode.SINGLE
 
     @staticmethod
-    def _resolve_legacy_classifier(
-        capture: CaptureData,
-        classifier: StateClassifier | None,
-    ) -> StateClassifier | None:
-        """Return the legacy classifier to attach for one capture payload."""
-        if capture.config.primary_return_item == ReturnItem.STATE_SERIES:
-            return None
-        return classifier
-
-    @staticmethod
     def from_multiple(
         multiple: MultipleMeasureResult,
         *,
@@ -129,9 +119,9 @@ class MeasurementResultConverter:
                     target=target,
                     mode=mode,
                     raw=np.asarray(capture.data),
-                    classifier=MeasurementResultConverter._resolve_legacy_classifier(
-                        capture,
-                        classifier_map.get(target),
+                    classifier=classifier_map.get(target),
+                    preclassified=(
+                        capture.config.primary_return_item == ReturnItem.STATE_SERIES
                     ),
                     sampling_period=(
                         sampling_period
@@ -212,9 +202,10 @@ class MeasurementResultConverter:
                 target=target,
                 mode=selected_mode,
                 raw=np.asarray(selected_capture.data),
-                classifier=MeasurementResultConverter._resolve_legacy_classifier(
-                    selected_capture,
-                    classifier_map.get(target),
+                classifier=classifier_map.get(target),
+                preclassified=(
+                    selected_capture.config.primary_return_item
+                    == ReturnItem.STATE_SERIES
                 ),
                 sampling_period=(
                     sampling_period

@@ -54,33 +54,6 @@ def _format_raw_preview(raw: NDArray) -> str:
     return f"array({preview}, shape={array.shape})"
 
 
-def _has_raw_dsp_classification(data: MeasureData) -> bool:
-    """Return whether legacy raw payload already stores DSP-classified bits."""
-    return (
-        data.mode == MeasureMode.SINGLE
-        and data.classifier is None
-        and np.issubdtype(np.asarray(data.raw).dtype, np.integer)
-    )
-
-
-def _raw_dsp_labels(data: MeasureData) -> NDArray[np.int64]:
-    """Map DSP outputs to logical labels, marking `01`/`10` as rejected shots."""
-    values = np.asarray(data.raw, dtype=np.int64)
-    if values.ndim == 0:
-        values = values.reshape(1)
-    if np.any((values < 0) | (values > 3)):
-        raise ValueError(
-            "Raw DSP classification data must contain packed two-bit values: "
-            "0 (00), 1 (01), 2 (10), or 3 (11)."
-        )
-    # Values 1/2 (`01`/`10`) mean that the two decision lines disagree.  Keep
-    # them in raw data, but use -1 as in the existing soft-decision path.
-    labels = np.full(values.shape, -1, dtype=np.int64)
-    labels[values == 0] = 0
-    labels[values == 3] = 1
-    return labels
-
-
 class MeasureMode(Enum):
     """Measurement mode for result processing."""
 
@@ -112,11 +85,17 @@ class MeasureData:
     raw: NDArray
     classifier: StateClassifier | None = None
     sampling_period: float = SAMPLING_PERIOD_NS
+    preclassified: bool = False
 
     def __post_init__(self) -> None:
         """Validate sampling metadata values."""
         if self.sampling_period <= 0:
             raise ValueError("sampling_period must be positive.")
+        if self.preclassified:
+            if self.mode != MeasureMode.SINGLE:
+                raise ValueError("Preclassified data requires single-shot mode.")
+            if not np.issubdtype(np.asarray(self.raw).dtype, np.integer):
+                raise TypeError("Preclassified data must contain integer state labels.")
 
     def __repr__(self) -> str:
         """Return a compact representation for notebook-friendly display."""
@@ -131,7 +110,8 @@ class MeasureData:
             f"mode={self.mode!r}, "
             f"raw={_format_raw_preview(self.raw)}, "
             f"classifier={classifier}, "
-            f"sampling_period={self.sampling_period})"
+            f"sampling_period={self.sampling_period}, "
+            f"preclassified={self.preclassified})"
         )
 
     @cached_property
@@ -139,8 +119,11 @@ class MeasureData:
         """Return the number of classifier states."""
         if self.classifier is not None:
             return self.classifier.n_states
-        if _has_raw_dsp_classification(self):
-            return 2
+        if self.preclassified:
+            labels = np.asarray(self.raw, dtype=np.int64).reshape(-1)
+            accepted = labels[labels >= 0]
+            if accepted.size > 0:
+                return int(np.max(accepted)) + 1
         raise ValueError("Classifier is not set")
 
     @cached_property
@@ -162,10 +145,10 @@ class MeasureData:
     def classified(self) -> NDArray:
         """Return hard-classified labels for each shot."""
         if self.mode == MeasureMode.SINGLE:
+            if self.preclassified:
+                return np.asarray(self.raw, dtype=np.int64).reshape(-1)
             if self.classifier is not None:
                 return self.classifier.predict(self.kerneled)
-            if _has_raw_dsp_classification(self):
-                return _raw_dsp_labels(self)
             raise ValueError("Classifier is not set")
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
@@ -274,12 +257,12 @@ class MeasureData:
     ) -> NDArray:
         """Return soft classification probabilities for each shot."""
         if self.mode == MeasureMode.SINGLE:
+            if self.preclassified:
+                raise ValueError(
+                    "Soft classification is not available for preclassified data."
+                )
             if self.classifier is not None:
                 return self.classifier.predict_proba(self.kerneled)
-            if _has_raw_dsp_classification(self):
-                raise ValueError(
-                    "Soft classification is not available for raw DSP classification data."
-                )
             raise ValueError("Classifier is not set")
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
@@ -303,9 +286,9 @@ class MeasureData:
         """
         if threshold is None:
             return self.classified
-        if _has_raw_dsp_classification(self):
+        if self.preclassified:
             raise ValueError(
-                "Thresholded classification is not supported for raw DSP classification data."
+                "Thresholded classification is not supported for preclassified data."
             )
         data = self.get_soft_classified_data()
         if len(data) == 0:

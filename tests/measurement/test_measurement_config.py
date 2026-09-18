@@ -53,7 +53,6 @@ def test_factory_applies_context_defaults() -> None:
     assert config.shot_averaging is True
     assert config.time_integration is True
     assert config.state_classification is False
-    assert config.classification_source is None
 
 
 def test_factory_applies_measurement_defaults_overrides() -> None:
@@ -201,35 +200,8 @@ def test_model_rejects_duplicate_return_items() -> None:
         )
 
 
-def test_model_gmm_linear_classification_forces_state_series_return_item() -> None:
-    """Given gmm_linear classification, model should use state-series payloads only."""
-    config = MeasurementConfig(
-        n_shots=4,
-        shot_interval=100.0,
-        shot_averaging=False,
-        time_integration=True,
-        state_classification=True,
-        classification_source="gmm_linear",
-        backend_kind="quel1",
-    )
-
-    assert config.primary_return_item == ReturnItem.STATE_SERIES
-    assert tuple(config.return_items) == (ReturnItem.STATE_SERIES,)
-
-
-def test_model_rejects_invalid_gmm_linear_flag_combinations() -> None:
-    """Given invalid flags, gmm_linear classification config validation should fail."""
-    with pytest.raises(ValidationError, match="requires backend_kind='quel1'"):
-        _ = MeasurementConfig(
-            n_shots=4,
-            shot_interval=100.0,
-            shot_averaging=False,
-            time_integration=True,
-            state_classification=True,
-            classification_source="gmm_linear",
-            backend_kind="quel3",
-        )
-
+def test_model_rejects_invalid_quel1_dsp_classification_modes() -> None:
+    """QuEL-1 DSP classification should only use integrated single-shot mode."""
     with pytest.raises(ValidationError, match="requires shot_averaging=False"):
         _ = MeasurementConfig(
             n_shots=4,
@@ -237,7 +209,6 @@ def test_model_rejects_invalid_gmm_linear_flag_combinations() -> None:
             shot_averaging=True,
             time_integration=True,
             state_classification=True,
-            classification_source="gmm_linear",
             backend_kind="quel1",
         )
 
@@ -248,31 +219,5 @@ def test_model_rejects_invalid_gmm_linear_flag_combinations() -> None:
             shot_averaging=False,
             time_integration=False,
             state_classification=True,
-            classification_source="gmm_linear",
             backend_kind="quel1",
         )
-
-
-def test_factory_forwards_classification_source() -> None:
-    """Given classification_source, factory should persist it on the built config."""
-    experiment_system = type(
-        "_ES",
-        (),
-        {
-            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
-            "measurement_defaults": {},
-        },
-    )()
-    factory = MeasurementConfigFactory(
-        experiment_system=cast(ExperimentSystem, experiment_system),
-        backend_kind="quel1",
-    )
-
-    config = factory.create(
-        shot_averaging=False,
-        time_integration=True,
-        state_classification=True,
-        classification_source="gmm_linear",
-    )
-
-    assert config.classification_source == "gmm_linear"
