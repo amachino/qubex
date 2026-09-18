@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections import Counter
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, TypeVar, cast
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.interfaces import (
+    InstrumentInfoProtocol,
     QuelwareClientFactory,
     QuelwareClientProtocol,
     UnitConfigurationProtocol,
@@ -178,21 +179,110 @@ class Quel3HardwareStateReader:
     def fetch_backend_settings_from_hardware(
         self,
         *,
-        unit_labels_by_box_id: Mapping[str, str],
+        unit_labels: Sequence[str],
         parallel: bool | None = None,
     ) -> dict[str, dict]:
-        """Fetch QuEL-3 backend settings by projecting hardware state."""
-        if len(unit_labels_by_box_id) == 0:
+        """Fetch QuEL-3 backend settings keyed by selected unit labels."""
+        if len(unit_labels) == 0:
             return {}
         state = self.collect_state(
-            unit_labels=tuple(unit_labels_by_box_id.values()),
+            unit_labels=tuple(unit_labels),
             include_diagnostics=False,
             parallel=True if parallel is None else parallel,
             view="instruments",
         )
         return self.project_backend_settings(
             state=state,
-            unit_labels_by_box_id=unit_labels_by_box_id,
+            unit_labels=unit_labels,
+        )
+
+    def read_instrument_infos(
+        self,
+        *,
+        unit_labels: Sequence[str] = (),
+        port_ids: Sequence[str] = (),
+        parallel: bool = True,
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        """
+        Read complete instrument information for cache updates.
+
+        Empty selectors mean all instruments. Port IDs must include their unit
+        label. Returned objects are the original quelware objects, including
+        resource IDs and driver configuration. Unlike diagnostic collection,
+        this operation raises on incomplete acquisition instead of returning
+        partial results. It never changes the instrument cache.
+        """
+        return _run_async(
+            lambda: self._read_instrument_infos(
+                unit_labels=tuple(unit_labels),
+                port_ids=tuple(port_ids),
+                parallel=parallel,
+            )
+        )
+
+    async def _read_instrument_infos(
+        self,
+        *,
+        unit_labels: tuple[str, ...],
+        port_ids: tuple[str, ...],
+        parallel: bool,
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        """Fetch a complete scoped instrument list without projecting raw objects."""
+        selected_units = set(unit_labels)
+        if port_ids:
+            if any(not all(port_id.partition(":")) for port_id in port_ids):
+                raise ValueError("Instrument read port IDs must include a unit label.")
+            port_units = {self._unit_label(port_id) for port_id in port_ids}
+            selected_units = (
+                selected_units & port_units if selected_units else port_units
+            )
+            if not selected_units:
+                return ()
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            discovered_units = set(await _resolve(client.list_unit_labels()))
+            missing_units = selected_units - discovered_units
+            if missing_units:
+                raise ValueError(
+                    f"QuEL-3 units were not discovered: {sorted(missing_units)}."
+                )
+            resources = await client.list_resource_infos()
+            resource_ids = [
+                resource.id
+                for resource in resources
+                if self._category_name(resource.category) == "INSTRUMENT"
+                and (
+                    not selected_units
+                    or ":" not in resource.id
+                    or self._unit_label(resource.id) in selected_units
+                )
+            ]
+            if parallel:
+                results = await asyncio.gather(
+                    *(
+                        client.get_instrument_info(resource_id)
+                        for resource_id in resource_ids
+                    ),
+                    return_exceptions=True,
+                )
+                instrument_infos: list[InstrumentInfoProtocol] = []
+                for result in results:
+                    if isinstance(result, BaseException):
+                        raise result
+                    instrument_infos.append(result)
+            else:
+                instrument_infos = [
+                    await client.get_instrument_info(resource_id)
+                    for resource_id in resource_ids
+                ]
+        selected_ports = set(port_ids)
+        return tuple(
+            info
+            for info in instrument_infos
+            if (not selected_units or self._unit_label(info.port_id) in selected_units)
+            and (not selected_ports or info.port_id in selected_ports)
         )
 
     async def _collect_state(
@@ -772,22 +862,19 @@ class Quel3HardwareStateReader:
         cls,
         *,
         state: Quel3HardwareState,
-        unit_labels_by_box_id: Mapping[str, str],
+        unit_labels: Sequence[str],
     ) -> dict[str, dict]:
-        """Project hardware state into QuEL-3 backend-settings cache data."""
+        """Project hardware state into backend settings keyed by selected unit labels."""
         settings: dict[str, dict] = {
-            box_id: {"instruments": {}} for box_id in unit_labels_by_box_id
+            unit_label: {"instruments": {}} for unit_label in unit_labels
         }
-        box_ids_by_unit_label: dict[str, list[str]] = defaultdict(list)
-        for box_id, unit_label in unit_labels_by_box_id.items():
-            box_ids_by_unit_label[unit_label].append(box_id)
 
         for instrument in state.instruments:
             alias = instrument.normalized_alias or instrument.alias
             if alias is None:
                 continue
-            for box_id in box_ids_by_unit_label.get(instrument.unit_label, ()):
-                settings[box_id]["instruments"][alias] = (
+            if instrument.unit_label in settings:
+                settings[instrument.unit_label]["instruments"][alias] = (
                     cls._backend_settings_instrument(instrument)
                 )
         return settings

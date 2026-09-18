@@ -2852,3 +2852,32 @@ def test_external_devices_config_rejects_invalid_wiring_entries(
             config_dir=config_dir,
             params_dir=params_dir,
         )
+
+
+def test_quel3_example_deploy_uses_unit_labels_as_box_ids() -> None:
+    """The QuEL-3 example should deploy wired targets using configured unit labels."""
+    from qubex.system.quel3 import Quel3TargetDeployPlanner
+
+    example_dir = Path(__file__).resolve().parents[2] / "docs/examples/system"
+    loader = ConfigLoader(
+        system_id="144Q-LF-Q3",
+        config_dir=example_dir / "config",
+        params_dir=example_dir / "params" / "144Q-LF-Q3",
+    )
+    system = loader.get_experiment_system()
+    box = system.get_box("quel3-02-a01")
+    assert box.id == box.name == "quel3-02-a01"
+
+    configuration = Quel3TargetDeployPlanner().build_configuration(
+        experiment_system=system,
+        box_ids=[box.id],
+    )
+
+    assert configuration.instruments
+    assert all(
+        spec.port_id.startswith("quel3-02-a01:") for spec in configuration.instruments
+    )
+    assert {spec.role for spec in configuration.instruments} == {
+        "TRANSMITTER",
+        "TRANSCEIVER",
+    }

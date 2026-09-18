@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import Mock
+
+import pytest
 
 import qubex.visualization as viz
 from qubex.experiment.services.calibration_service import CalibrationService
@@ -20,8 +23,9 @@ class _FigureStub:
         """Accept show calls."""
 
 
-def test_obtain_cr_params_returns_fig_history(monkeypatch) -> None:
-    """Given iterative CR updates, when obtaining CR params, then per-iteration figures are returned."""
+@pytest.fixture
+def service(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Provide a calibration service without hardware dependencies."""
     monkeypatch.setattr(viz, "make_figure", lambda: _FigureStub())
 
     service = cast(Any, object.__new__(CalibrationService))
@@ -37,7 +41,14 @@ def test_obtain_cr_params_returns_fig_history(monkeypatch) -> None:
         calc_control_amplitude=lambda _control_qubit, _max_cr_rabi: 0.25,
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
+    return service
 
+
+@pytest.mark.parametrize("last_duration", [16.0, 10000.0])
+def test_obtain_cr_params_returns_fig_history(
+    service: Any, last_duration: float
+) -> None:
+    """Given iterative CR updates, when obtaining CR params, then per-iteration figures are returned."""
     update_results = [
         {
             "zx90_duration": 16.0,
@@ -51,7 +62,7 @@ def test_obtain_cr_params_returns_fig_history(monkeypatch) -> None:
             "fig_t": "fig-t-1",
         },
         {
-            "zx90_duration": 16.0,
+            "zx90_duration": last_duration,
             "cr_param": {
                 "cr_phase": 0.4,
                 "cancel_amplitude": 0.5,
@@ -78,3 +89,49 @@ def test_obtain_cr_params_returns_fig_history(monkeypatch) -> None:
         {"fig_c": "fig-c-1", "fig_t": "fig-t-1"},
         {"fig_c": "fig-c-2", "fig_t": "fig-t-2"},
     ]
+
+
+@pytest.mark.parametrize("count", [0, 1, 2, 3])
+def test_short_explicit_range_is_input_error(service: Any, count: int) -> None:
+    """Explicit time ranges with fewer than four points should fail before measuring."""
+    service.update_cr_params = Mock()
+    with pytest.raises(ValueError, match=r"time_range.*at least 4"):
+        service.obtain_cr_params(
+            "Q00", "Q01", time_range=list(range(count)), ramptime=16.0
+        )
+    service.update_cr_params.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("duration", "count"), [(3000.0, 3), (5000.0, 2), (10000.0, 1)]
+)
+@pytest.mark.parametrize("stored", [False, True])
+def test_short_generated_range_reports_failure(
+    service: Any, duration: float, count: int, stored: bool
+) -> None:
+    """Short generated time ranges should report calibration failure before measuring."""
+    params = dict(
+        cr_amplitude=0.25, cr_phase=0.0, cancel_amplitude=0.0, cancel_phase=0.0
+    )
+    service.ctx.calib_note.get_cr_param = lambda _: dict(
+        params, zx_rotation_rate=1 / duration
+    )
+    service.update_cr_params = Mock(
+        return_value=dict(
+            zx90_duration=duration,
+            cr_param=params,
+            coeffs={"IX": 0.0, "IY": 0.0},
+            fig_c=None,
+            fig_t=None,
+        )
+    )
+    iteration = 1 if stored else 2
+    with pytest.raises(
+        RuntimeError,
+        match=rf"CR calibration failed.*Q00-Q01.*iteration {iteration}.*{count} time points",
+    ) as caught:
+        service.obtain_cr_params(
+            "Q00", "Q01", use_stored_params=stored, ramptime=16.0, plot=False
+        )
+    assert type(caught.value) is RuntimeError
+    assert service.update_cr_params.call_count == iteration - 1

@@ -1,4 +1,4 @@
-# QuEL-3 Configuration Design
+# QuEL-3 configuration design
 
 ## Purpose
 
@@ -23,13 +23,12 @@ Related policy:
 - Session TTLs are explicit Qubex runtime values:
   - `ttl_ms=30000`
   - `tentative_ttl_ms=5000`
-- Target-to-instrument resolution is performed by runtime-side logic.
-- QuEL-3 system synchronizer is currently a no-op:
-  - no backend-settings snapshot pull path is implemented yet
-- Planned change:
-  - QuEL-3 `push()` path plans deploy requests from `TargetRegistry` in the
-    system layer, then executes deployment through a backend-owned
-    configuration manager
+- Target names are instrument aliases. The controller owns one `InstrumentCache`
+  containing complete hardware information, including resource IDs.
+- QuEL-3 `push()` plans an `InstrumentConfiguration` from `TargetRegistry`, deploys through the
+  configuration manager, then reads touched ports back into the shared cache.
+- QuEL-3 pull collects an independent backend-settings snapshot. Runtime
+  instrument information is acquired during connect, deploy, or explicit refresh.
 - QuEL-3 backend runtime supports only the `server` client mode.
 - Current runtime still uses process-global `SystemManager` singleton state:
   - one active experiment/measurement session per process is assumed
@@ -38,6 +37,46 @@ Related policy:
 - `quelware-client` exposes `PORT`/`INSTRUMENT` resources and currently
   represents readout paths as transceiver-style resources in examples
   (`...:p0p1trx`).
+
+## Instrument configuration and YAML
+
+`InstrumentSpec` contains exactly five configuration fields:
+
+```yaml
+instruments:
+  - port_id: unit-a:tx_p01
+    alias: Q00
+    role: TRANSMITTER
+    frequency_range_min_hz: 4000000000.0
+    frequency_range_max_hz: 4200000000.0
+```
+
+`InstrumentConfiguration.instruments` stores the specifications. The controller
+provides the public API for acquiring, inspecting, saving, loading, and deploying
+them:
+
+```python
+controller.refresh_instrument_cache(unit_labels=["unit-a"])
+configuration = controller.get_instrument_configuration()
+path = controller.save_instrument_configuration("instruments.yaml")
+loaded = controller.load_instrument_configuration(path)
+controller.deploy_instruments(configuration=loaded)
+```
+
+Get and save use cached hardware information without another hardware read.
+Load is pure configuration parsing: it neither deploys nor changes the cache.
+YAML contains specifications only. Resource IDs and driver configuration are
+runtime information held in the controller's private `InstrumentCache`.
+
+Deployment replaces the instruments on touched ports and reads hardware back
+into that cache. Connect loads all existing instruments. Explicit refresh
+replaces all or selected units. An empty
+configuration or an explicitly empty refresh selection performs no work.
+
+`Quel3HardwareState` is an independent diagnostic snapshot. It can contain partial
+data and read issues, and is never used as executable instrument cache input.
+SystemManager pull, hardware-state display, and `is_synced()` leave the
+instrument cache unchanged.
 
 ## Decision log
 
@@ -94,7 +133,8 @@ Status legend:
 - Question: What is the canonical mapping path?
 - Decision:
   - No dedicated target-binding config file in v1.5.0.
-  - Mapping is resolved automatically by Qubex at runtime.
+  - The target name is the instrument alias. Execution reads its resource ID
+    and runtime configuration from the shared cache.
   - Physical source of truth is port-first wiring, not instrument-first mapping.
 
 ### D4. Session resource selection
@@ -129,7 +169,7 @@ Status legend:
 
 - Status: `DECIDED`
 - Decision:
-  - Unresolved or ambiguous alias/resource resolution must fail fast with explicit error.
+  - Missing cached instruments and duplicate aliases must fail with explicit errors.
   - Skip-and-continue behavior and target-label guessing are not allowed in beta contract.
 
 ### D8. Physical identifier base and label layer
@@ -150,8 +190,8 @@ Status legend:
 - Decision:
   - Keep `ExperimentSystem` logical model unchanged:
     - readout output (`read_out`) and input (`read_in`) remain explicit wiring roles.
-  - In QuEL-3 runtime resolution, allow both roles to resolve to one transceiver
-    resource/alias when wiring and instrument metadata are consistent.
+  - The planner combines the paired ports into one transceiver deployment for
+    each readout target; its timeline carries output and capture operations.
   - For measurement execution payload, one readout alias may carry both:
     - waveform events (`tx` side)
     - capture windows (`rx` side)
@@ -166,7 +206,8 @@ Status legend:
 - Question: Is there a QuEL-3 API equivalent to QuEL-1 `dump_box` for LO/NCO-like runtime settings?
 - Current state:
   - QuEL-1 has `dump_box`-based synchronization and cache update.
-  - QuEL-3 path does not expose equivalent settings in Qubex today.
+  - QuEL-3 exposes instrument snapshots containing identity, port, role, and
+    definition information; these are not QuEL-1 per-port tuning settings.
   - Current `quelware-client` surface visible from this workspace includes:
     - `list_resource_infos`
     - `get_port_info`
@@ -175,7 +216,8 @@ Status legend:
   - No confirmed API currently returns QuEL-1-style per-port runtime settings
     (LO/CNCO/FNCO/VATT/FSC) as a pull snapshot.
 - Interim policy for beta:
-  - Treat QuEL-3 backend settings pull/sync as unsupported capability.
+  - Support instrument snapshot pull. Keep saved-settings application separate
+    from acquisition of executable instrument information.
   - Ensure QuEL-1-only introspection utilities fail clearly on QuEL-3.
 
 ### D11. `system` package common vs backend-specific boundary
@@ -231,11 +273,11 @@ Status legend:
     `push()`.
   - Split QuEL-3 push responsibilities explicitly:
     - system-side planner converts active targets into
-      `InstrumentDeployRequest`
+      `InstrumentConfiguration` of five-field `InstrumentSpec` values
     - backend-side `Quel3ConfigurationManager` owns
       `session.deploy_instruments(...)`
-    - deployment result caches live with backend runtime state, not
-      `ExperimentSystem`
+    - `Quel3BackendController` owns the shared `InstrumentCache` and delegates
+      deployment and readback to `Quel3ConfigurationManager`
   - Planner responsibilities:
     - active-target (`ExperimentContext.targets`) -> deploy definition conversion
     - one-instrument-per-target range planning using
@@ -243,15 +285,16 @@ Status legend:
     - port and role derivation from logical target metadata
   - Backend configuration-manager responsibilities:
     - quelware client/session lifecycle for deploy
-    - deploy result capture for execution lookup
+    - readback through `Quel3HardwareStateReader` and updates to the supplied
+      controller-owned cache
   - Shared-port deployment policy:
     - one port may host multiple instruments
-    - configuration manager must not collapse same-port requests to one
+    - configuration manager must not collapse same-port specifications to one
       definition or overwrite earlier deploys accidentally
-    - current deploy policy is:
-      - first request on a port: `append=False`
-      - subsequent requests on the same port, within the same session:
-        `append=True`
+    - send all selected definitions for each port together with `append=False`
+    - replace cache entries on those ports after successful hardware readback
+    - preserve unrelated ports; an empty configuration does not change the cache
+    - if deployment or readback fails, leave touched ports uncached
   - Session/runtime assumption for current scope:
     - `SystemManager` remains singleton-managed
     - QuEL-3 server runtime settings are assumed stable for the active session
@@ -261,7 +304,10 @@ Status legend:
     - move `SystemManager` from process-global singleton state to
       session/experiment-owned state
     - remove remaining ambient runtime assumptions at that point
-  - Keep QuEL-3 backend-settings pull/snapshot capability unsupported.
+  - Execution uses cached instrument information. Operators acquire it through
+    connection, deployment, or explicit controller refresh.
+  - Pull, pure fetch, and `is_synced()` collect diagnostic snapshots independently
+    of executable instrument state.
 
 ## Proposed minimum beta contract
 
@@ -273,7 +319,8 @@ Status legend:
 - Cross-unit synchronized trigger behavior is required and validated.
 - `tx/rx/trx` handling is deterministic:
   - logical readout `read_out`/`read_in` may converge to one transceiver alias in QuEL-3 runtime.
-- Unsupported QuEL-3 settings introspection capability is explicit and non-silent.
+- Instrument snapshot pull is supported; QuEL-1 tuning-cache operations remain
+  backend-specific.
 
 ## Test implications
 

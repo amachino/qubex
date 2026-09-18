@@ -2,9 +2,9 @@
 
 ## Status
 
-- State: `PROPOSED`
+- State: `IMPLEMENTED`
 - Created: 2026-03-05
-- Updated: 2026-03-05
+- Updated: 2026-09-10
 - Related notes:
   - `quel3-configuration-design.md`
   - `quel3-control-system-model-design.md`
@@ -17,7 +17,7 @@ Define the final split between:
 - logical model construction in `ExperimentSystem` (`TargetRegistry`)
 - hardware configuration at `push()` time in backend-specific components
 
-This note focuses on the QuEL-3 path and removes intermediate models that are not required in the current scope.
+This note defines QuEL-3 responsibilities from logical target planning to hardware deployment.
 
 ## Final design summary
 
@@ -28,7 +28,8 @@ This note focuses on the QuEL-3 path and removes intermediate models that are no
 4. QuEL-3 deploy execution is implemented by a backend-side
    `Quel3ConfigurationManager`.
 5. `InstrumentMode.FIXED_TIMELINE` is fixed in this phase.
-6. `backend_settings_pull` remains unsupported on QuEL-3.
+6. `backend_settings_pull` collects independent instrument snapshots.
+   Runtime instrument acquisition occurs on connect, deploy, and explicit refresh.
 7. QuEL-3 does not persist `ExperimentSystem` inside the controller or
    synchronizer just to support `push()`.
 
@@ -75,18 +76,21 @@ Owners:
 - `Quel3SystemSynchronizer` as push entrypoint
 - system-side target deploy planner as logical-to-runtime converter
 - backend-side `Quel3ConfigurationManager` as deploy owner
+- `Quel3BackendController` as owner of the shared `InstrumentCache`
 
 Responsibilities:
 
 - planner:
-  - convert selected targets to one-instrument-per-target deploy requests
+  - convert selected targets to an `InstrumentConfiguration` with one specification per target
   - derive role, port ID, alias, and frequency ranges from logical metadata
 - backend configuration manager:
   - create `InstrumentDefinition` with fixed timeline profile
   - call `session.deploy_instruments(...)`
-  - preserve shared-port multi-instrument deployment by appending later
-    definitions on the same port instead of overwriting them
-  - cache deployed instrument infos for execution path
+  - send all selected definitions for a port together with `append=False`
+  - acquire complete instrument information after deployment
+  - replace touched ports in the supplied cache, preserving other ports
+- backend controller:
+  - own the shared cache and delegate instrument operations to managers
 
 ### QuEL-3 execution layer
 
@@ -100,19 +104,23 @@ Responsibilities:
 
 ## QuEL-3 deploy input model
 
-No generic realization classes are introduced in this phase.
-
-Use one minimal internal grouping model between planner and backend deploy code:
+Use frozen Pydantic models between the planner and controller. Each
+`InstrumentSpec` contains five fields:
 
 ```python
-@dataclass(frozen=True)
-class InstrumentDeployRequest:
-    port_id: str
-    role: InstrumentRole
-    frequency_range_min_hz: float
-    frequency_range_max_hz: float
-    alias: str
-    target_labels: tuple[str, ...]
+from qubex.backend.quel3 import InstrumentConfiguration, InstrumentSpec
+
+configuration = InstrumentConfiguration(
+    instruments=(
+        InstrumentSpec(
+            port_id="unit-a:tx_p01",
+            alias="Q00",
+            role="TRANSMITTER",
+            frequency_range_min_hz=4.0e9,
+            frequency_range_max_hz=4.2e9,
+        ),
+    ),
+)
 ```
 
 Notes:
@@ -127,8 +135,8 @@ Notes:
 
 Derive role from `Target.type`:
 
-- `CTRL_GE`, `CTRL_EF`, `CTRL_FH`, `CTRL_CR`, `PUMP` -> `InstrumentRole.TRANSMITTER`
-- `READ` -> `InstrumentRole.TRANSCEIVER` (v1.5.0 policy)
+- `CTRL_GE`, `CTRL_EF`, `CTRL_FH`, `CTRL_CR`, `CTRL_2Q`, `PUMP` -> `"TRANSMITTER"`
+- `READ` -> `"TRANSCEIVER"`
 
 ### Port mapping
 
@@ -156,66 +164,57 @@ Use the computed range for:
 
 ### Alias policy
 
-- generate deterministic alias from `port_id`, role, and target label
-- keep stable alias naming across repeated push
+- use the exact target label as instrument alias
+- require aliases to be unique across the controller cache
+- keep unit decoration in resource and port IDs
 
 ## QuEL-3 deployment API contract
 
-Based on `quelware-client`:
+Group selected targets by unit-qualified port ID. Build one
+`InstrumentDefinition` per specification, converting its `InstrumentRoleName` to the quelware
+role value, and deploy the entire port batch:
 
 ```python
-for index, request in enumerate(port_requests):
-    profile = FixedTimelineProfile(
-        frequency_range_min=request.frequency_range_min_hz,
-        frequency_range_max=request.frequency_range_max_hz,
-    )
-    definition = InstrumentDefinition(
-        alias=request.alias,
-        mode=InstrumentMode.FIXED_TIMELINE,
-        role=request.role,
-        profile=profile,
-    )
-    inst_infos = await session.deploy_instruments(
-        port_id,
-        definitions=[definition],
-        append=index > 0,
-    )
+await session.deploy_instruments(
+    port_id,
+    definitions=definitions,
+    append=False,
+)
 ```
 
-Notes:
-
-- Multiple logical targets may share one QuEL-3 port.
-- For such ports, deploy order is preserved and later instruments are appended
-  within the same session.
-- This avoids replacing earlier instruments while still letting quelware solve
-  constraints incrementally for one port.
+A port is the replacement boundary. Include every target that must remain on a
+shared port. The configuration manager reads complete hardware information after
+all deploy calls succeed and updates only touched ports in the controller's cache.
+It does not cache the
+deploy response. Other ports are preserved; an empty configuration is a no-op.
 
 ## Manager contract
 
 ```python
 class Quel3TargetDeployPlanner(Protocol):
-    def build_deploy_requests(
+    def build_configuration(
         self,
         *,
         experiment_system: ExperimentSystem,
         box_ids: Sequence[str],
         target_labels: Sequence[str] | None = None,
-    ) -> tuple[InstrumentDeployRequest, ...]:
+    ) -> InstrumentConfiguration:
         ...
 
 
-class Quel3ConfigurationManager(Protocol):
-    async def deploy_instruments(
+class Quel3BackendController(Protocol):
+    def deploy_instruments(
         self,
         *,
-        requests: Sequence[InstrumentDeployRequest],
-    ) -> dict[str, tuple[InstrumentInfo, ...]]:
+        configuration: InstrumentConfiguration,
+        parallel: bool = True,
+    ) -> dict[str, InstrumentInfoProtocol]:
         ...
 ```
 
 Optional delegation:
 
-- `Quel3TargetDeployPlanner` for logical target to deploy-request conversion
+- `Quel3TargetDeployPlanner` for logical targets to instrument configuration
 - `Quel3ConfigurationManager` for client/session/deploy calls
 
 ## Push flow
@@ -223,13 +222,15 @@ Optional delegation:
 1. `SystemManager.push(box_ids)` selects QuEL-3 synchronizer.
 2. `Quel3SystemSynchronizer.sync_experiment_system_to_hardware(...)` is called
    with the current `experiment_system`.
-3. Synchronizer asks the system-side planner for deploy requests.
-4. Synchronizer delegates the requests to backend-side
-   `Quel3ConfigurationManager`.
-5. Configuration manager:
-   - deploys instruments via quelware session
-   - stores returned `inst_infos` in backend runtime state
-6. Push completes.
+3. Synchronizer asks the planner for an `InstrumentConfiguration`.
+4. Synchronizer delegates that configuration to `Quel3BackendController`.
+5. Controller delegates to the configuration manager, passing its shared cache
+   and hardware-state reader. The manager invalidates touched ports and deploys
+   the selected definitions.
+6. The configuration manager reads complete hardware information through the
+   state reader and replaces the touched ports in the supplied `InstrumentCache`.
+7. Push reads a pure backend-settings snapshot for manager state. Execution
+   subsequently uses the cached instruments without resolver discovery.
 
 Reload/runtime note:
 
@@ -246,7 +247,7 @@ Reload/runtime note:
 Capability policy:
 
 - `hardware_push_configure`: supported
-- `backend_settings_pull`: unsupported
+- `backend_settings_pull`: instrument snapshots supported
 
 ## Validation and fail-fast rules
 
@@ -257,36 +258,34 @@ Capability policy:
 - role/range incompatibility is validated by quelware deployment and surfaced as error
 - duplicated alias within deploy batch must fail
 
-## Migration plan
+## Configuration persistence
 
-### Phase 1
+The controller owns the public instrument configuration workflow:
 
-- keep `ExperimentSystem` logical API stable
-- extract deploy-request planning from deploy execution
+- `refresh_instrument_cache()` acquires complete runtime information from hardware.
+- `get_instrument_configuration()` exports specifications from the current cache.
+- `save_instrument_configuration(path)` writes those specifications to YAML.
+- `load_instrument_configuration(path)` returns specifications without hardware
+  access or runtime state changes.
+- `deploy_instruments(configuration=...)` explicitly applies specifications and
+  acquires complete hardware information for the touched ports.
 
-### Phase 2
-
-- wire planner plus backend configuration manager in synchronizer
-- persist deployed instrument infos for execution lookup
-
-### Phase 3
-
-- remove QuEL-3 synchronizer-side cached `ExperimentSystem` state
-- keep pull/snapshot unsupported with explicit error messaging
+YAML contains the five specification fields only. Resource IDs and driver
+configuration remain in the private runtime cache.
 
 ## Test plan
 
 Unit tests:
 
 - role mapping from `Target.type`
-- grouping by `(port_id, role)`
+- grouping by unit-qualified `port_id`
 - frequency-range calculation
-- deterministic alias generation
+- target name equals instrument alias
 
 Integration tests:
 
 - `load -> push` triggers deploy calls on QuEL-3 path
-- deployed `inst_infos` are available for execution manager resolution
+- hardware-read instrument information is available for execution
 - invalid target mapping/range fails with explicit errors
 
 Regression tests:
@@ -294,8 +293,10 @@ Regression tests:
 - existing QuEL-1 push behavior remains unchanged
 - existing QuEL-3 execution path remains intact after deployment-stage addition
 
-## Open questions
+## Cache ownership decision
 
-1. Final canonical conversion from `target.channel.port` to quelware `port_id` string.
-2. Final backend runtime-state location for deployed `inst_infos`
-   (controller-owned cache vs dedicated runtime context).
+`Quel3BackendController` privately owns one `InstrumentCache` shared with managers.
+The cache retains actual hardware information and resource IDs. Connect,
+deployment, and explicit refresh are the acquisition boundaries. Pull and inspection collect
+independent diagnostic snapshots, which can be partial and never populate the
+runtime cache. Applications access configuration through the controller.

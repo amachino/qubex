@@ -332,6 +332,55 @@ def _make_reader(client: _FakeClient) -> Quel3HardwareStateReader:
     return _FakeHardwareStateReader(client)
 
 
+@pytest.mark.parametrize("parallel", [False, True])
+def test_read_instrument_infos_preserves_raw_objects_and_scopes_ports(
+    parallel: bool,
+) -> None:
+    """Cache acquisition should return original hardware objects for selected ports."""
+
+    class Client(_FakeClient):
+        def __init__(self) -> None:
+            self.fetched: list[_InstrumentInfo] = []
+            self.requested_ids: list[str] = []
+
+        async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+            self.requested_ids.append(resource_id)
+            info = await super().get_instrument_info(resource_id)
+            self.fetched.append(info)
+            return info
+
+    client = Client()
+    reader = _make_reader(client)
+    infos = reader.read_instrument_infos(port_ids=("unit-a:tx_p01",), parallel=parallel)
+
+    assert len(infos) == 1
+    assert infos[0] is client.fetched[0]
+    assert infos[0].id == "unit-a:inst-q00"
+    assert client.requested_ids == ["unit-a:inst-q00"]
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_read_instrument_infos_does_not_hide_partial_read_failures(
+    parallel: bool,
+) -> None:
+    """Cache acquisition should fail instead of publishing a partial instrument list."""
+
+    class Client(_FakeClient):
+        async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+            if resource_id == "unit-b:inst-q01":
+                raise RuntimeError("instrument unavailable")
+            return await super().get_instrument_info(resource_id)
+
+    with pytest.raises(RuntimeError, match="instrument unavailable"):
+        _make_reader(Client()).read_instrument_infos(parallel=parallel)
+
+
+def test_read_instrument_infos_filters_unqualified_ids_by_actual_port() -> None:
+    """An unqualified resource ID should be scoped using its returned port ID."""
+    reader = _make_reader(_UnqualifiedOtherUnitResourceClient())
+    assert reader.read_instrument_infos(unit_labels=("unit-a",)) == ()
+
+
 def test_collect_state_normalizes_units_ports_and_instruments() -> None:
     """Given quelware resources, hardware state should expose normalized Qubex data."""
     client = _FakeClient()
@@ -605,15 +654,12 @@ def test_backend_settings_projection_uses_hardware_state_instruments() -> None:
     reader = _make_reader(client)
 
     settings = reader.fetch_backend_settings_from_hardware(
-        unit_labels_by_box_id={
-            "BOX1": "unit-a",
-            "BOX2": "unit-c",
-        },
+        unit_labels=("unit-a", "unit-c"),
         parallel=False,
     )
 
     assert settings == {
-        "BOX1": {
+        "unit-a": {
             "instruments": {
                 "Q00": {
                     "resource_id": "unit-a:inst-q00",
@@ -631,7 +677,7 @@ def test_backend_settings_projection_uses_hardware_state_instruments() -> None:
                 }
             }
         },
-        "BOX2": {"instruments": {}},
+        "unit-c": {"instruments": {}},
     }
     assert configuration_calls == []
 
@@ -642,12 +688,12 @@ def test_backend_settings_fetch_keeps_unqualified_instrument_resources() -> None
     reader = _make_reader(client)
 
     settings = reader.fetch_backend_settings_from_hardware(
-        unit_labels_by_box_id={"BOX1": "unit-a"},
+        unit_labels=("unit-a",),
         parallel=False,
     )
 
-    assert settings["BOX1"]["instruments"]["Q00"]["resource_id"] == "inst-q00"
-    assert settings["BOX1"]["instruments"]["Q00"]["port_id"] == "unit-a:tx_p01"
+    assert settings["unit-a"]["instruments"]["Q00"]["resource_id"] == "inst-q00"
+    assert settings["unit-a"]["instruments"]["Q00"]["port_id"] == "unit-a:tx_p01"
 
 
 def test_collect_state_filters_unqualified_resources_by_resolved_unit() -> None:
@@ -673,3 +719,15 @@ def test_collect_state_scopes_duplicate_aliases_by_unit() -> None:
         "Q00",
     ]
     assert not any(issue.code == "DUPLICATE_INSTRUMENT_ALIAS" for issue in state.issues)
+
+
+def test_backend_settings_fetch_empty_selection_skips_hardware() -> None:
+    """An empty unit selection should return no settings without contacting hardware."""
+    reader = _make_reader(_FakeClient())
+
+    def reject_collect_state(**_: object) -> None:
+        pytest.fail("Empty selection must not collect hardware state.")
+
+    reader.collect_state = reject_collect_state  # type: ignore[method-assign]
+
+    assert reader.fetch_backend_settings_from_hardware(unit_labels=()) == {}

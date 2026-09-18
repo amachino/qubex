@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 from collections.abc import Mapping
 
 import numpy as np
@@ -36,8 +35,6 @@ from qubex.system.target_type import TargetType
 
 from ._capture_shape import normalize_shot_averaged_capture_array
 
-InstrumentAliasMap = Mapping[tuple[str, str], str]
-
 
 def _as_read_only_array(data: object) -> np.ndarray:
     """Return read-only NumPy array view for capture payloads."""
@@ -55,31 +52,15 @@ class Quel3MeasurementBackendAdapter:
         backend_controller: Quel3BackendController,
         experiment_system: ExperimentSystem,
         constraint_profile: MeasurementConstraintProfile | None = None,
-        instrument_alias_map: InstrumentAliasMap | None = None,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
-        self._instrument_alias_map = dict(instrument_alias_map or {})
         self._output_target_labels_by_target: dict[str, str] = {}
-        self._capture_targets_by_alias: dict[str, list[str]] = {}
         if constraint_profile is None:
             constraint_profile = MeasurementConstraintProfile.quel3(
                 sampling_period_ns=backend_controller.sampling_period_ns
             )
         self._constraint_profile = constraint_profile
-
-    @property
-    def instrument_alias_map(self) -> InstrumentAliasMap:
-        """Return configured target-to-instrument alias mapping."""
-        return self._instrument_alias_map
-
-    def set_instrument_alias_map(self, alias_map: InstrumentAliasMap) -> None:
-        """Replace full target-to-alias mapping in adapter layer."""
-        self._instrument_alias_map = dict(alias_map)
-
-    def update_instrument_alias_map(self, alias_map: InstrumentAliasMap) -> None:
-        """Update target-to-alias mapping entries in adapter layer."""
-        self._instrument_alias_map.update(alias_map)
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate schedule with relaxed Quel3 constraints."""
@@ -114,21 +95,10 @@ class Quel3MeasurementBackendAdapter:
         waveform_index = 0
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
         output_target_labels_by_target: dict[str, str] = {}
-        instrument_bindings: dict[str, str] = {}
         target_registry = self._experiment_system.target_registry
-        alias_map = self._instrument_alias_map
 
         for target in pulse_schedule.labels:
             target_info = self._experiment_system.get_target(target)
-            box_id = str(target_info.channel.port.box_id).strip()
-            configured_alias = str(alias_map.get((box_id, target), "")).strip()
-            if len(configured_alias) == 0:
-                raise ValueError(
-                    "Missing QuEL-3 instrument alias mapping for "
-                    f"target `{target}`. Configure instruments before measurement."
-                )
-            instrument_bindings[target] = f"alias:{configured_alias}"
-
             sequence = pulse_schedule.get_sequence(target, copy=False)
             target_type = target_info.type
             events, waveform_index = self._create_waveform_events(
@@ -201,9 +171,7 @@ class Quel3MeasurementBackendAdapter:
             n_iterations=n_iterations,
             shot_interval_ns=math.ceil(config.shot_interval),
             capture_mode=capture_mode,
-            instrument_bindings=instrument_bindings,
         )
-        self._capture_targets_by_alias = self._build_capture_targets_by_alias(payload)
         return BackendExecutionRequest(payload=payload)
 
     def build_measurement_result(
@@ -228,50 +196,21 @@ class Quel3MeasurementBackendAdapter:
                 "QuEL-3 backend result config `sampling_period_ns` must be numeric."
             )
         converted_data: dict[str, list[CaptureData]] = {}
-        for alias, values in backend_result.data.items():
-            capture_targets = self._capture_targets_by_alias.get(alias)
-            if capture_targets is None:
-                output_target = self._output_target_labels_by_target.get(alias, alias)
-                converted_data.setdefault(output_target, []).extend(
-                    [
-                        CaptureData.from_primary_data(
-                            target=output_target,
-                            data=_as_read_only_array(
-                                normalize_shot_averaged_capture_array(value)
-                                if measurement_config.shot_averaging
-                                else value
-                            ),
-                            config=measurement_config,
-                            sampling_period=resolved_sampling_period,
-                        )
-                        for value in values
-                    ]
+        for target, values in backend_result.data.items():
+            output_target = self._output_target_labels_by_target.get(target, target)
+            converted_data.setdefault(output_target, []).extend(
+                CaptureData.from_primary_data(
+                    target=output_target,
+                    data=_as_read_only_array(
+                        normalize_shot_averaged_capture_array(value)
+                        if measurement_config.shot_averaging
+                        else value
+                    ),
+                    config=measurement_config,
+                    sampling_period=resolved_sampling_period,
                 )
-                continue
-            if len(capture_targets) != len(values):
-                raise ValueError(
-                    f"Capture target count mismatch for alias `{alias}`: "
-                    f"targets={len(capture_targets)} values={len(values)}."
-                )
-            for capture_target, capture_value in zip(
-                capture_targets, values, strict=True
-            ):
-                output_target = self._output_target_labels_by_target.get(
-                    capture_target,
-                    capture_target,
-                )
-                converted_data.setdefault(output_target, []).append(
-                    CaptureData.from_primary_data(
-                        target=output_target,
-                        data=_as_read_only_array(
-                            normalize_shot_averaged_capture_array(capture_value)
-                            if measurement_config.shot_averaging
-                            else capture_value
-                        ),
-                        config=measurement_config,
-                        sampling_period=resolved_sampling_period,
-                    )
-                )
+                for value in values
+            )
         return MeasurementResult(
             data=converted_data,
             device_config={},
@@ -398,46 +337,6 @@ class Quel3MeasurementBackendAdapter:
         if not math.isfinite(frequency_value):
             return None
         return frequency_value
-
-    @staticmethod
-    def _build_capture_targets_by_alias(
-        payload: Quel3ExecutionPayload,
-    ) -> dict[str, list[str]]:
-        """Build alias-to-target capture mapping from the request payload."""
-        alias_to_entries: dict[str, list[tuple[float, float, int, str]]] = defaultdict(
-            list
-        )
-        sequence_index = 0
-        for target, timeline in payload.fixed_timelines.items():
-            binding = payload.instrument_bindings.get(target, f"alias:{target}")
-            if binding.startswith("alias:"):
-                alias = binding.removeprefix("alias:").strip() or target
-            else:
-                # Port-based bindings are resolved in backend runtime, so keep
-                # per-target mapping keys in adapter-side bookkeeping.
-                alias = target
-            for _event in timeline.events:
-                sequence_index += 1
-            for window in timeline.capture_windows:
-                alias_to_entries[alias].append(
-                    (
-                        window.start_offset_ns,
-                        window.length_ns,
-                        sequence_index,
-                        target,
-                    )
-                )
-                sequence_index += 1
-        return {
-            alias: [
-                target
-                for _start, _length, _order, target in sorted(
-                    entries,
-                    key=lambda item: (item[0], item[1], item[2]),
-                )
-            ]
-            for alias, entries in alias_to_entries.items()
-        }
 
     @classmethod
     def _create_waveform_events(
