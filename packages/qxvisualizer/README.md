@@ -1,4 +1,10 @@
-# qxvisualizer
+# qubex-visualizer
+
+PyPI distribution: `qubex-visualizer`. Python import: `qxvisualizer` (unchanged).
+
+```bash
+pip install "qubex-visualizer==1.5.0rc4"
+```
 
 `qxvisualizer` is the shared visualization layer extracted from the Qubex project. It provides common Plotly style, figure factory helpers, and generic plotting helpers that higher-level packages like `qxpulse`, `qxsimulator`, and `qubex` build on.
 
@@ -6,7 +12,7 @@
 
 - `qxvisualizer` is a standalone package with no dependency on `qubex`.
 - `qubex`, `qxpulse`, and `qxsimulator` depend on `qxvisualizer` for shared Plotly-based visualization helpers.
-- If you only need shared Plotly style and figure helpers, install `qxvisualizer` directly.
+- If you only need shared Plotly style and figure helpers, install `qubex-visualizer` directly.
 
 ## Requirements
 
@@ -16,10 +22,10 @@
 
 ```bash
 # pip
-pip install "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxvisualizer"
+pip install "qubex-visualizer @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxvisualizer"
 
 # uv
-uv pip install "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxvisualizer"
+uv pip install "qubex-visualizer @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxvisualizer"
 ```
 
 ## pyproject.toml
@@ -27,7 +33,7 @@ uv pip install "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop
 ```toml
 [project]
 dependencies = [
-  "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxvisualizer",
+  "qubex-visualizer @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxvisualizer",
 ]
 ```
 

@@ -1,4 +1,10 @@
-# qxsimulator
+# qubex-simulator
+
+PyPI distribution: `qubex-simulator`. Python import: `qxsimulator` (unchanged).
+
+```bash
+pip install "qubex-simulator==1.5.0rc4"
+```
 
 `qxsimulator` is the quantum system simulation layer extracted from the Qubex project. It contains quantum system models, control signal definitions, and simulation utilities that higher-level packages like `qubex` build on.
 
@@ -6,7 +12,7 @@
 
 - `qxsimulator` is a standalone package with no dependency on `qubex`.
 - `qubex` depends on `qxsimulator` and provides the full experiment framework (backend, measurement, etc.).
-- If you only need simulation utilities, install `qxsimulator` directly.
+- If you only need simulation utilities, install `qubex-simulator` directly.
 
 ## Requirements
 
@@ -16,10 +22,10 @@
 
 ```bash
 # pip
-pip install "qxsimulator @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxsimulator"
+pip install "qubex-simulator @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxsimulator"
 
 # uv
-uv pip install "qxsimulator @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxsimulator"
+uv pip install "qubex-simulator @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxsimulator"
 ```
 
 ## Gate targets and fidelity spaces
@@ -60,7 +66,7 @@ the interaction normalization and sign.
 ```toml
 [project]
 dependencies = [
-  "qxsimulator @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxsimulator",
+  "qubex-simulator @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxsimulator",
 ]
 ```
 

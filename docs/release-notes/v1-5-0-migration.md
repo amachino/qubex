@@ -1,5 +1,7 @@
 # v1.5.0 migration guide
 
+For rc4 distribution-name changes and environment migration, see the [rc4 release notes](v1-5-0.md#release-candidate-4-distribution-names).
+
 Use this guide when upgrading from `v1.4.8` to `v1.5.0`.
 For the high-level summary of what changed, see the
 [v1.5.0 release notes](v1-5-0.md).

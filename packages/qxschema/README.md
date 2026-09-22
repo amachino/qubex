@@ -1,4 +1,10 @@
-# qxschema
+# qubex-schema
+
+PyPI distribution: `qubex-schema`. Python import: `qxschema` (unchanged).
+
+```bash
+pip install "qubex-schema==1.5.0rc4"
+```
 
 `qxschema` is a collection of data models for quantum experiment configurations and results, built on top of the `qxcore` serialization framework to provide a shared experiment interface across different software.
 
@@ -10,10 +16,10 @@
 
 ```bash
 # pip
-pip install "qxschema @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxschema"
+pip install "qubex-schema @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxschema"
 
 # uv
-uv pip install "qxschema @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxschema"
+uv pip install "qubex-schema @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxschema"
 ```
 
 ## pyproject.toml
@@ -21,7 +27,7 @@ uv pip install "qxschema @ git+https://github.com/amachino/qubex.git@develop#sub
 ```toml
 [project]
 dependencies = [
-  "qxschema @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxschema",
+  "qubex-schema @ git+https://github.com/amachino/qubex.git@v1.5.0rc4#subdirectory=packages/qxschema",
 ]
 ```
 

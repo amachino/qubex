@@ -29,14 +29,6 @@ def test_fit_linear_via_wrapper_returns_success() -> None:
     assert result["a"] == pytest.approx(2.0, rel=1e-7, abs=1e-9)
 
 
-def test_qxfitting_is_placeholder_for_now() -> None:
-    """Given qxfitting module, when checking public symbols, then legacy fit entry points are absent."""
-    from qxfitting import fitting as qxfitting_impl
-
-    assert not hasattr(qxfitting_impl, "fit_linear")
-    assert not hasattr(qxfitting_impl, "func_cos")
-
-
 def test_fit_rabi_can_suppress_low_r2_warning(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

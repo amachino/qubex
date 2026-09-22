@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qubex"
-version = "1.5.0rc2"
+version = "1.5.0rc4"
 requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex: Qubit experiment framework"
@@ -30,12 +30,11 @@ dependencies = [
     "pyserial >= 3.5",
     "pyyaml >= 6.0",
     "qctrl-visualizer >= 8.0",
-    "qxcore == 1.5.0rc2",
-    "qxfitting == 1.5.0rc2",
-    "qxpulse == 1.5.0rc2",
-    "qxschema == 1.5.0rc2",
-    "qxsimulator == 1.5.0rc2",
-    "qxvisualizer == 1.5.0rc2",
+    "qubex-core == 1.5.0rc4",
+    "qubex-pulse == 1.5.0rc4",
+    "qubex-schema == 1.5.0rc4",
+    "qubex-simulator == 1.5.0rc4",
+    "qubex-visualizer == 1.5.0rc4",
     "rich >= 13.0",
     "scikit-learn >= 1.0",
     "scipy >= 1.0",
@@ -45,8 +44,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backend = ["qxdriver-quel1 == 1.5.0rc2"]
-quel1 = ["qxdriver-quel1 == 1.5.0rc2"]
+backend = ["qubex-driver-quel1 == 1.5.0rc4"]
+quel1 = ["qubex-driver-quel1 == 1.5.0rc4"]
 quel3 = ["quelware-client >= 0.6.1", "quelware-core >= 0.7.0"]
 
 [project.scripts]
@@ -81,19 +80,17 @@ qubex = ["py.typed", "*.pyi", "clifford/**/*.json"]
 cache-dir = ".cache/uv"
 
 [tool.uv.sources]
-qxdriver_quel1 = { workspace = true }
-qxcore = { workspace = true }
-qxfitting = { workspace = true }
-qxpulse = { workspace = true }
-qxschema = { workspace = true }
-qxsimulator = { workspace = true }
-qxvisualizer = { workspace = true }
+"qubex-driver-quel1" = { workspace = true }
+"qubex-core" = { workspace = true }
+"qubex-pulse" = { workspace = true }
+"qubex-schema" = { workspace = true }
+"qubex-simulator" = { workspace = true }
+"qubex-visualizer" = { workspace = true }
 
 [tool.uv.workspace]
 members = [
     "packages/qxcore",
     "packages/qxdriver-quel1",
-    "packages/qxfitting",
     "packages/qxpulse",
     "packages/qxschema",
     "packages/qxsimulator",
