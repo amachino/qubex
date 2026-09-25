@@ -222,7 +222,7 @@ data:
 ```
 
 This file holds calibrated values only. `optimal_voltage` has no default:
-`measurement.apply_dc_voltages()` skips muxes without one, so a system
+`measurement.apply_optimal_voltages()` skips muxes without one, so a system
 without this file performs no automatic bias application. Direct voltage
 contexts and the reset, idle, and shutdown operations remain available from
 `external_devices.yaml`; reset can enable supported outputs. `idle_voltage` is

@@ -643,28 +643,32 @@ class Measurement:
             yield
 
     @contextmanager
-    def apply_dc_voltages(self, targets: str | Collection[str]) -> Iterator[None]:
+    def apply_optimal_voltages(
+        self,
+        targets: str | Collection[str],
+    ) -> Iterator[None]:
         """
-        Temporarily apply DC voltages to selected targets.
+        Temporarily apply calibrated optimal voltages to selected targets.
 
         Parameters
         ----------
         targets : str | Collection[str]
-            Target label or target labels for temporary DC bias application.
+            Target label or target labels whose muxes should be biased.
 
         Yields
         ------
         None
-            Context where DC voltages are applied.
+            Context where calibrated `optimal_voltage` values are applied.
 
         Notes
         -----
-        DC voltages are removed automatically when exiting the context manager.
+        Muxes without a calibrated `optimal_voltage` are skipped. Calibrated
+        muxes return to their idle voltages when the context exits.
 
         Examples
         --------
         >>> # `session` is an initialized `Measurement` instance.
-        >>> with session.apply_dc_voltages(["Q00", "Q01"]):
+        >>> with session.apply_optimal_voltages(["Q00", "Q01"]):
         ...     _ = session.measure(
         ...         {
         ...             "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
@@ -672,7 +676,14 @@ class Measurement:
         ...         }
         ...     )
         """
-        with self.amplification_service.apply_dc_voltages(targets):
+        with self.amplification_service.apply_optimal_voltages(targets):
+            yield
+
+    @deprecated("Use `apply_optimal_voltages` instead.")
+    @contextmanager
+    def apply_dc_voltages(self, targets: str | Collection[str]) -> Iterator[None]:
+        """Provide a deprecated alias for `apply_optimal_voltages`."""
+        with self.apply_optimal_voltages(targets):
             yield
 
     async def run_measurement(

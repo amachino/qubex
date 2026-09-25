@@ -38,12 +38,12 @@ class MeasurementAmplificationService:
         return self.experiment_system.control_params
 
     @contextmanager
-    def apply_dc_voltages(
+    def apply_optimal_voltages(
         self,
         targets: str | Collection[str],
     ) -> Iterator[None]:
         """
-        Apply amplification-point DC voltages to the specified targets.
+        Apply calibrated optimal voltages to the specified targets.
 
         Parameters
         ----------

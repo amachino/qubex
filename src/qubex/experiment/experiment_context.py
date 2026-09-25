@@ -1395,12 +1395,12 @@ class ExperimentContext:
             )
             return self._read_dc_voltage_states(connection, active_muxes)
 
-    def bias_dc_voltages(
+    def apply_optimal_voltages(
         self,
         muxes: int | str | Collection[int | str] | None = None,
         confirm: bool = True,
     ) -> dict[int, DCVoltageState]:
-        """Ramp the selected calibrated muxes to their bias voltages."""
+        """Ramp the selected calibrated muxes to their optimal voltages."""
         system_manager = self.system_manager
         active_muxes = self._get_active_dc_muxes()
         control_params = self.experiment_system.control_params
@@ -1417,7 +1417,7 @@ class ExperimentContext:
         if not requests:
             return {}
         if not self._confirm_dc_voltage_write(
-            "ramp to the bias DC voltages",
+            "ramp to the optimal DC voltages",
             plan,
             confirm=confirm,
         ):
@@ -1426,7 +1426,7 @@ class ExperimentContext:
             connection.apply_channels(requests)
             return self._read_dc_voltage_states(connection, active_muxes)
 
-    def idle_dc_voltages(
+    def apply_idle_voltages(
         self,
         muxes: int | str | Collection[int | str] | None = None,
         confirm: bool = True,
