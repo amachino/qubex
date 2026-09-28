@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, TypeVar, cast
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.interfaces import (
     InstrumentInfoProtocol,
     QuelwareClientFactory,
@@ -18,7 +19,6 @@ from qubex.backend.quel3.interfaces import (
     UnitConfigurationProtocol,
     UnitControlSpecProtocol,
 )
-from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.models import (
     Quel3HardwareState,
     Quel3HardwareStateIssue,

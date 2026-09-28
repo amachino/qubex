@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal, TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import (
     FixedTimelineProfileFactory,
@@ -25,7 +26,6 @@ from qubex.backend.quel3.interfaces.client import (
     SessionProtocol,
 )
 from qubex.backend.quel3.managers.hardware_state_reader import Quel3HardwareStateReader
-from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
     QuelwareSessionError,

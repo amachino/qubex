@@ -14,6 +14,7 @@ import numpy as np
 
 from qubex.backend.quel3.builders.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces import (
     CaptureModeNamespaceProtocol,
@@ -32,7 +33,6 @@ from qubex.backend.quel3.interfaces import (
     SetCaptureModeFactory,
     SetFrequencyFactory,
 )
-from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_EXTEND_TTL_MS,

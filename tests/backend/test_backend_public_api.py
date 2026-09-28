@@ -66,6 +66,43 @@ def test_backend_quel3_module_hides_migrated_system_defaults() -> None:
     assert not hasattr(quel3, "DEFAULT_PUMP_FREQUENCY_GHZ")
 
 
+def test_quel3_tools_import_and_controller_init_in_fresh_process() -> None:
+    """QuEL-3 tools and configuration should import with one shared reader class."""
+    code = """
+import sys
+
+from qubex.backend.quel3.infra import Quel3RuntimeConfig, Quel3HttpTransportConfig
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig as ConcreteConfig
+from qubex.backend.quel3.managers.configuration_manager import Quel3ConfigurationManager
+from qubex.backend.quel3.managers import Quel3HardwareStateReader
+from qubex.backend.quel3.tools import Quel3MonitorTool
+from qubex.backend.quel3.managers.hardware_state_reader import Quel3HardwareStateReader as ConcreteReader
+from qubex.backend.quel3.tools.monitor_tool import Quel3MonitorTool as ConcreteMonitor
+from qubex.backend.quel3 import Quel3BackendController, Quel3HardwareStateReader as PublicReader
+
+assert Quel3HardwareStateReader is ConcreteReader is PublicReader
+assert Quel3MonitorTool is ConcreteMonitor
+assert ConcreteReader.__module__ == "qubex.backend.quel3.managers.hardware_state_reader"
+
+config = Quel3RuntimeConfig(transport="https", http_transport=Quel3HttpTransportConfig())
+controller = Quel3BackendController(runtime_config=config)
+assert Quel3RuntimeConfig is ConcreteConfig
+assert controller.runtime_config is config
+assert isinstance(controller.configuration_manager, Quel3ConfigurationManager)
+assert isinstance(controller.hardware_state_reader, ConcreteReader)
+assert controller.hardware_state_reader.runtime_config is controller.runtime_config
+assert not any(name.startswith(("quelware_client", "quelware_core")) for name in sys.modules)
+"""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_experiment_import_does_not_load_backend_driver_dependencies() -> None:
     """Given Experiment import, when loading the facade, then backend drivers stay unloaded."""
     code = """

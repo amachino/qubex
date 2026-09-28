@@ -1,4 +1,4 @@
-"""Shared runtime configuration for QuEL-3 managers."""
+"""Shared runtime configuration for QuEL-3 backend components."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from qubex.backend.quel3.interfaces import QuelwareClientFactory
 
 @dataclass(frozen=True)
 class Quel3RuntimeConfig:
-    """Hold quelware runtime settings shared by QuEL-3 managers."""
+    """Hold quelware runtime settings shared by QuEL-3 backend components."""
 
     endpoint: str = "localhost"
     port: int | None = None

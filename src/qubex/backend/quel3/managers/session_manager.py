@@ -8,13 +8,13 @@ from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.interfaces import (
     QuelwareClientFactory,
     QuelwareClientProtocol,
     ResourceIdProtocol,
     SessionProtocol,
 )
-from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_workarounds import (
     QuelwareSessionError,
     enter_quelware_session_with_resource_retry,
