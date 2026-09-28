@@ -6,7 +6,6 @@ import math
 from collections.abc import Mapping
 
 import numpy as np
-from qxpulse import PulseArray
 
 from qubex.backend import (
     BackendExecutionRequest,
@@ -102,7 +101,7 @@ class Quel3MeasurementBackendAdapter:
             target_info = self._experiment_system.get_target(target)
             sequence = pulse_schedule.get_sequence(target, copy=False)
             target_type = target_info.type
-            events, waveform_index = self._create_waveform_events(
+            events, waveform_index = Quel3PulseEventBuilder.build(
                 target_is_read=(target_type is TargetType.READ),
                 sequence=sequence,
                 waveform_name_by_shape_key=waveform_name_by_shape_key,
@@ -338,68 +337,3 @@ class Quel3MeasurementBackendAdapter:
         if not math.isfinite(frequency_value):
             return None
         return frequency_value
-
-    @classmethod
-    def _create_waveform_events(
-        cls,
-        *,
-        target_is_read: bool,
-        sequence: PulseArray,
-        waveform_name_by_shape_key: dict[tuple[str, int], str],
-        waveform_library: dict[str, Quel3Waveform],
-        waveform_index: int,
-    ) -> tuple[tuple[Quel3WaveformEvent, ...], int]:
-        """Create sparse waveform events and shared waveform library entries."""
-        return Quel3PulseEventBuilder.build(
-            sequence=sequence,
-            waveform_name_by_shape_key=waveform_name_by_shape_key,
-            waveform_library=waveform_library,
-            waveform_index=waveform_index,
-            normalize_waveform=lambda shape, sampling_period_ns: (
-                cls._normalize_waveform_for_target(
-                    target_is_read=target_is_read,
-                    shape=shape,
-                    sampling_period_ns=sampling_period_ns,
-                )
-            ),
-        )
-
-    @staticmethod
-    def _normalize_waveform_for_target(
-        *,
-        target_is_read: bool,
-        shape: np.ndarray,
-        sampling_period_ns: float,
-    ) -> tuple[np.ndarray, float]:
-        """
-        Normalize waveform sampling periods for QuEL-3 target classes.
-
-        This is a temporary QuEL-3 workaround while Qubex still carries one
-        backend-level sampling period instead of per-channel `dt`.
-        Control waveforms stay on the shared QuEL-3 control grid (0.4 ns).
-        Readout waveforms are normalized here to the readout grid
-        (`READOUT_SAMPLING_PERIOD_NS`)
-        before registration so mixed control/readout schedules can still be
-        executed through the current single-`dt` stack.
-        """
-        if not target_is_read:
-            return shape, sampling_period_ns
-
-        readout_sampling_period_ns = READOUT_SAMPLING_PERIOD_NS
-        if np.isclose(sampling_period_ns, readout_sampling_period_ns):
-            return shape, sampling_period_ns
-
-        ratio = readout_sampling_period_ns / sampling_period_ns
-        rounded_ratio = round(ratio)
-        if rounded_ratio <= 0 or not np.isclose(ratio, rounded_ratio):
-            raise ValueError(
-                "Readout waveform sampling period must divide the QuEL-3 readout "
-                "sampling period exactly: "
-                f"sampling_period_ns={sampling_period_ns}."
-            )
-        remainder = shape.size % rounded_ratio
-        if remainder != 0:
-            pad_width = rounded_ratio - remainder
-            shape = np.pad(shape, (0, pad_width), mode="edge")
-        reshaped = shape.reshape(-1, rounded_ratio)
-        return reshaped.mean(axis=1), readout_sampling_period_ns

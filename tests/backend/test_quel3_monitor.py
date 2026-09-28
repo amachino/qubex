@@ -23,7 +23,11 @@ from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
 )
-from qubex.backend.quel3.models import InstrumentConfiguration, InstrumentSpec
+from qubex.backend.quel3.models import (
+    InstrumentConfiguration,
+    InstrumentRoleName,
+    InstrumentSpec,
+)
 from qubex.backend.quel3.tools import Quel3MonitorTool
 
 
@@ -176,6 +180,7 @@ def _instrument_info(
     port: str,
     *,
     unit_label: str = "unit-a",
+    role: InstrumentRoleName = "TRANSMITTER",
     frequency_range_min_hz: float = 4e9,
     frequency_range_max_hz: float = 6e9,
 ) -> InstrumentInfoProtocol:
@@ -188,7 +193,7 @@ def _instrument_info(
             definition=SimpleNamespace(
                 alias=alias,
                 mode="FIXED_TIMELINE",
-                role="TRANSMITTER",
+                role=role,
                 profile=SimpleNamespace(
                     frequency_range_min=frequency_range_min_hz,
                     frequency_range_max=frequency_range_max_hz,
@@ -251,7 +256,9 @@ def monitor_schedule_runtime(
                 instrument.frequency_range_max_hz,
             )
         )
-        info = _instrument_info(instrument.alias, instrument.port_id.partition(":")[2])
+        info = _instrument_info(
+            instrument.alias, instrument.port_id.partition(":")[2], role=instrument.role
+        )
         instrument_cache.replace_ports(
             port_ids=(instrument.port_id,), instrument_infos=(info,)
         )
@@ -271,6 +278,7 @@ def monitor_schedule_runtime(
             _instrument_info(
                 spec.alias,
                 spec.port_id.partition(":")[2],
+                role=spec.role,
                 frequency_range_min_hz=spec.frequency_range_min_hz,
                 frequency_range_max_hz=spec.frequency_range_max_hz,
             )
@@ -446,6 +454,63 @@ def test_run_monitor_schedule_executes_multiple_output_channels(
         "output-b",
         monitor_alias,
     ]
+
+
+@pytest.mark.parametrize("role", ["TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
+def test_run_monitor_schedule_normalizes_readout_waveforms(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+    role: InstrumentRoleName,
+) -> None:
+    """Readout instruments should use the same normalized samples in monitor runs."""
+    controller, manager, _ = monitor_schedule_runtime
+    original = _instrument_info("readout", "rx_p00", role=role)
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "read_instrument_infos",
+        lambda **kwargs: (original,),
+    )
+    with PulseSchedule() as schedule:
+        schedule.add("readout", Arbitrary([0.1, 0.3, 0.5], sampling_period=0.4))
+
+    captured = controller.run_monitor_schedule(
+        unit_label="unit-a", pulse_schedule=schedule
+    )
+
+    assert np.array_equal(captured["readout"], [[1 + 2j, 3 + 4j]])
+    assert manager.request is not None
+    timeline = manager.request.payload.fixed_timelines["readout"]
+    waveform = manager.request.payload.waveform_library[
+        timeline.events[0].waveform_name
+    ]
+    assert waveform.sampling_period_ns == pytest.approx(0.8)
+    np.testing.assert_allclose(waveform.iq_array, [0.2, 0.5], rtol=1e-12, atol=1e-12)
+    assert controller.get_instrument_configuration().instruments[0].role == role
+
+
+def test_run_monitor_schedule_rejects_incompatible_readout_before_deletion(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+) -> None:
+    """Incompatible readout sampling should fail before modifying instruments."""
+    controller, manager, actions = monitor_schedule_runtime
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "read_instrument_infos",
+        lambda **kwargs: (_instrument_info("readout", "rx_p00", role="TRANSCEIVER"),),
+    )
+    with PulseSchedule() as schedule:
+        schedule.add("readout", Arbitrary([0.1, 0.3], sampling_period=0.3))
+
+    with pytest.raises(ValueError, match="must divide"):
+        controller.run_monitor_schedule(unit_label="unit-a", pulse_schedule=schedule)
+
+    assert actions == []
+    assert manager.request is None
 
 
 @pytest.mark.parametrize("target_label", ["monitor", "_qubex_monitor"])
