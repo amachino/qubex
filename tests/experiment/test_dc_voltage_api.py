@@ -432,7 +432,10 @@ def test_get_dc_voltage_states_skips_wired_muxes_absent_from_active_system() -> 
     assert dc_controller.calls == [("read_channels", (7,))]
 
 
-@pytest.mark.parametrize("operation", ["bias_dc_voltages", "idle_dc_voltages"])
+@pytest.mark.parametrize(
+    "operation",
+    ["apply_optimal_voltages", "apply_idle_voltages"],
+)
 def test_empty_bulk_selection_returns_without_connecting(operation: str) -> None:
     """An empty bulk selection should return without opening a device connection."""
     dc_controller = _DCVoltageController()
@@ -444,13 +447,13 @@ def test_empty_bulk_selection_returns_without_connecting(operation: str) -> None
     assert dc_controller.calls == []
 
 
-def test_idle_dc_voltages_idles_all_wired_muxes() -> None:
-    """Bulk idling should ramp every wired mux and return the new states."""
+def test_apply_idle_voltages_idles_all_wired_muxes() -> None:
+    """Idle-voltage application should ramp every wired mux."""
     dc_controller = _DCVoltageController()
     dc_controller.voltages.update({7: 0.5, 8: 0.5})
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
-    states = ctx.idle_dc_voltages(confirm=False)
+    states = ctx.apply_idle_voltages(confirm=False)
 
     assert dc_controller.calls[0] == ("idle_channels", (7, 8))
     assert states[6].voltage == pytest.approx(0.0)
@@ -458,12 +461,12 @@ def test_idle_dc_voltages_idles_all_wired_muxes() -> None:
     assert dc_controller.connection_count == 1
 
 
-def test_bias_dc_voltages_applies_calibrated_amplification_points() -> None:
-    """Bulk biasing should ramp each calibrated mux to its jpa_params voltage."""
+def test_apply_optimal_voltages_applies_calibrated_points() -> None:
+    """Optimal-voltage application should use each calibrated mux value."""
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
-    states = ctx.bias_dc_voltages(confirm=False)
+    states = ctx.apply_optimal_voltages(confirm=False)
 
     assert dc_controller.calls[0] == ("apply_channels", (7, 8))
     assert states[6].voltage == pytest.approx(0.76)
@@ -473,7 +476,7 @@ def test_bias_dc_voltages_applies_calibrated_amplification_points() -> None:
 
 @pytest.mark.parametrize(
     "operation",
-    ["reset_dc_voltages", "idle_dc_voltages", "shutdown_dc_voltages"],
+    ["reset_dc_voltages", "apply_idle_voltages", "shutdown_dc_voltages"],
 )
 def test_bulk_writes_skip_wired_muxes_absent_from_active_system(
     operation: str,
@@ -494,10 +497,10 @@ def test_bulk_writes_skip_wired_muxes_absent_from_active_system(
     assert dc_controller.connection_count == 1
 
 
-def test_bias_confirmation_uses_bias_vocabulary(
+def test_optimal_voltage_confirmation_uses_optimal_vocabulary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The bulk bias confirmation should use the API's bias terminology."""
+    """The confirmation should identify the calibrated optimal voltages."""
     prompts: list[str] = []
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
@@ -506,12 +509,12 @@ def test_bias_confirmation_uses_bias_vocabulary(
         lambda prompt: prompts.append(prompt) or False,
     )
 
-    ctx.bias_dc_voltages()
+    ctx.apply_optimal_voltages()
 
-    assert "bias DC voltages" in prompts[0]
+    assert "optimal DC voltages" in prompts[0]
 
 
-def test_bias_dc_voltages_skips_uncalibrated_muxes() -> None:
+def test_apply_optimal_voltages_skips_uncalibrated_muxes() -> None:
     """Muxes without a calibrated optimal voltage should not be biased."""
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(
@@ -522,14 +525,14 @@ def test_bias_dc_voltages_skips_uncalibrated_muxes() -> None:
     # mux 7 has no calibrated optimal_voltage
     ctx.system_manager.experiment_system.control_params = _ControlParams({6: 0.76})
 
-    states = ctx.bias_dc_voltages(confirm=False)
+    states = ctx.apply_optimal_voltages(confirm=False)
 
     assert dc_controller.calls[0] == ("apply_channels", (1,))
     assert states[6].voltage == pytest.approx(0.76)
     assert states[7].voltage == pytest.approx(0.0)
 
 
-def test_bias_dc_voltages_can_be_cancelled_at_the_prompt(
+def test_apply_optimal_voltages_can_be_cancelled_at_the_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Declining the confirmation prompt should not write to the hardware."""
@@ -540,7 +543,7 @@ def test_bias_dc_voltages_can_be_cancelled_at_the_prompt(
         lambda *_args, **_kwargs: False,
     )
 
-    states = ctx.bias_dc_voltages()
+    states = ctx.apply_optimal_voltages()
 
     assert states == {}
     assert dc_controller.calls == []
@@ -608,8 +611,8 @@ def test_bulk_operations_accept_a_mux_selection() -> None:
         dc_controller=dc_controller,
     )
 
-    ctx.bias_dc_voltages(muxes=6, confirm=False)
-    ctx.idle_dc_voltages(muxes=["MUX07"], confirm=False)
+    ctx.apply_optimal_voltages(muxes=6, confirm=False)
+    ctx.apply_idle_voltages(muxes=["MUX07"], confirm=False)
     ctx.reset_dc_voltages(muxes=[6], confirm=False)
     ctx.shutdown_dc_voltages(muxes=["MUX07"], confirm=False)
 
@@ -623,9 +626,9 @@ def test_bulk_operations_accept_a_mux_selection() -> None:
 @pytest.mark.parametrize(
     "operation",
     [
-        "bias_dc_voltages",
+        "apply_optimal_voltages",
         "reset_dc_voltages",
-        "idle_dc_voltages",
+        "apply_idle_voltages",
         "shutdown_dc_voltages",
     ],
 )
@@ -643,7 +646,7 @@ def test_bulk_operations_reject_unsafe_integer_mux_selectors(
     assert dc_controller.calls == []
 
 
-def test_bias_raises_for_an_explicitly_selected_uncalibrated_mux() -> None:
+def test_apply_optimal_raises_for_an_explicitly_selected_uncalibrated_mux() -> None:
     """Explicit selection of an uncalibrated mux should fail, not skip."""
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(
@@ -653,4 +656,4 @@ def test_bias_raises_for_an_explicitly_selected_uncalibrated_mux() -> None:
     ctx.system_manager.experiment_system.control_params = _ControlParams({6: 0.76})
 
     with pytest.raises(ValueError, match="no calibrated `optimal_voltage`"):
-        ctx.bias_dc_voltages(muxes=[6, 7], confirm=False)
+        ctx.apply_optimal_voltages(muxes=[6, 7], confirm=False)

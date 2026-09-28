@@ -11,8 +11,10 @@ from qubex.measurement.services.measurement_amplification_service import (
 )
 
 
-def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) -> None:
-    """Given targets, when applying DC voltages, then service applies mux-indexed voltages."""
+def test_apply_optimal_voltages_resolves_targets_and_applies_voltages(
+    monkeypatch,
+) -> None:
+    """Optimal-voltage application should resolve targets to mux voltages."""
     called: dict[str, Any] = {}
 
     class _Mux:
@@ -71,7 +73,7 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
     )()
     service = MeasurementAmplificationService(context=cast(Any, context))
 
-    with service.apply_dc_voltages(["Q00", "RQ02"]):
+    with service.apply_optimal_voltages(["Q00", "RQ02"]):
         called["inside"] = True
 
     assert called["requests"] == {
@@ -83,8 +85,8 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
     assert called["exited"] is True
 
 
-def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
-    """Given a single target string, when applying DC voltages, then service handles it as one target."""
+def test_apply_optimal_voltages_accepts_single_target(monkeypatch) -> None:
+    """Optimal-voltage application should accept one target string."""
     called: dict[str, Any] = {}
 
     class _Mux:
@@ -136,13 +138,13 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
     )()
     service = MeasurementAmplificationService(context=cast(Any, context))
 
-    with service.apply_dc_voltages("Q00"):
+    with service.apply_optimal_voltages("Q00"):
         pass
 
     assert called["requests"] == {2: (0.25, DCVoltageProfile(channel=2))}
 
 
-def test_apply_dc_voltages_skips_uncalibrated_muxes() -> None:
+def test_apply_optimal_voltages_skips_uncalibrated_muxes() -> None:
     """Muxes without a calibrated optimal voltage should not touch the controller."""
 
     class _ControlParams:
@@ -179,5 +181,5 @@ def test_apply_dc_voltages_skips_uncalibrated_muxes() -> None:
     )()
     service = MeasurementAmplificationService(context=cast(Any, context))
 
-    with service.apply_dc_voltages("Q00"):
+    with service.apply_optimal_voltages("Q00"):
         pass

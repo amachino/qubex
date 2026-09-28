@@ -183,14 +183,14 @@ with experiment.external_devices.dc_voltage(mux=6) as dc:
     state = dc.state
 ```
 
-電圧印加は出力が ON であることが前提で、OFF なら暗黙に ON 化せずエラーになります。`reset_dc_voltages()` は選択した mux を「出力 ON・リセット電圧」の既知状態に揃えます。保守・チップ交換・安全停止時に使う `shutdown_dc_voltages()` はリセット電圧まで ramp して、対応機器では物理出力を OFF にします。通常の実験contextはshutdownせずidleへ戻ります。`get_dc_voltage_states()` はactiveな配線済み全muxを1接続でまとめて読み、`bias_dc_voltages()` は較正済み mux を最適電圧へ、`idle_dc_voltages()` はアイドル電圧へ ramp します。box 系 API と同じく任意の `muxes` 引数 (index またはラベル、省略時はactiveな配線済み全mux) で対象を絞れます。いずれも書き込み操作なので、box への push と同様に実行前へ確認プロンプトが出ます。各一括書き込みと、その直後のreadbackは1つのデバイス接続を共有します。
+電圧印加は出力が ON であることが前提で、OFF なら暗黙に ON 化せずエラーになります。`reset_dc_voltages()` は選択した mux を「出力 ON・リセット電圧」の既知状態に揃えます。保守・チップ交換・安全停止時に使う `shutdown_dc_voltages()` はリセット電圧まで ramp して、対応機器では物理出力を OFF にします。通常の実験contextはshutdownせずidleへ戻ります。`get_dc_voltage_states()` はactiveな配線済み全muxを1接続でまとめて読み、`apply_optimal_voltages()` は較正済み mux を最適電圧へ、`apply_idle_voltages()` はアイドル電圧へ ramp します。box 系 API と同じく任意の `muxes` 引数 (index またはラベル、省略時はactiveな配線済み全mux) で対象を絞れます。いずれも書き込み操作なので、box への push と同様に実行前へ確認プロンプトが出ます。各一括書き込みと、その直後のreadbackは1つのデバイス接続を共有します。contextに紐づく操作とは異なり、一括書き込み後の電圧と出力状態はメソッド終了後も維持されます。最適電圧からidleへ戻すには、対象のmuxに対して `apply_idle_voltages()` を呼びます。
 
 選択が空、または確認を拒否した場合は、装置へ接続せず `{}` を返します。
 
 一時的な context を使わず、較正済みのactiveな配線済み全muxを bias 電圧へ設定する場合は一括操作を使います。
 
 ```python
-experiment.external_devices.bias_dc_voltages()
+experiment.external_devices.apply_optimal_voltages()
 ```
 
 `sweep()` は同じ設定を使って各目標電圧まで順番に ramp します。

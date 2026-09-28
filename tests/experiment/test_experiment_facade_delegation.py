@@ -155,6 +155,14 @@ class _ExperimentContextStub:
         self.calls.append(("shutdown_dc_voltages", kwargs))
         return {6: self.get_dc_voltage_state(mux=6)}
 
+    def apply_optimal_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
+        self.calls.append(("apply_optimal_voltages", kwargs))
+        return {6: self.get_dc_voltage_state(mux=6)}
+
+    def apply_idle_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
+        self.calls.append(("apply_idle_voltages", kwargs))
+        return {6: self.get_dc_voltage_state(mux=6)}
+
     def dc_voltage_control(self, **kwargs: Any):
         self.calls.append(("dc_voltage_control", {"enter": kwargs}))
 
@@ -1267,6 +1275,64 @@ def test_shutdown_dc_voltages_delegates_to_context() -> None:
     assert list(states) == [6]
     assert context_stub.calls[0] == (
         "shutdown_dc_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_apply_optimal_voltages_delegates_to_context() -> None:
+    """Optimal-voltage application should delegate muxes and confirmation."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    states = external_devices.apply_optimal_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_optimal_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_bias_dc_voltages_warns_and_uses_optimal_voltage_api() -> None:
+    """The released bias name should warn and preserve its behavior."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    with pytest.warns(DeprecationWarning, match="apply_optimal_voltages"):
+        states = external_devices.bias_dc_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_optimal_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_apply_idle_voltages_delegates_to_context() -> None:
+    """Idle-voltage application should delegate muxes and confirmation."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    states = external_devices.apply_idle_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_idle_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_idle_dc_voltages_warns_and_uses_idle_voltage_api() -> None:
+    """The released idle name should warn and preserve its behavior."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    with pytest.warns(DeprecationWarning, match="apply_idle_voltages"):
+        states = external_devices.idle_dc_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_idle_voltages",
         {"muxes": [6], "confirm": False},
     )
 

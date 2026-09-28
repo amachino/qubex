@@ -6,6 +6,8 @@ from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+from typing_extensions import deprecated
+
 from .dc_voltage_control import DCVoltageControl
 from .models.dc_voltage_state import DCVoltageState
 
@@ -38,6 +40,12 @@ class ExternalDevices:
         ------
         DCVoltageControl
             Operations bound to the resolved mux.
+
+        Notes
+        -----
+        Voltage changes made through the yielded control are scoped to this
+        context. On normal or exceptional exit, the mux returns to its
+        configured idle voltage.
         """
         with self._ctx.dc_voltage_control(mux=mux) as control:
             yield control
@@ -86,21 +94,25 @@ class ExternalDevices:
         dict[int, DCVoltageState]
             Readback states for every active wired mux after resetting, or an
             empty mapping when the selection is empty or confirmation is declined.
+
+        Notes
+        -----
+        The resulting reset voltage and output state remain in effect after
+        this method returns.
         """
         return self._ctx.reset_dc_voltages(muxes=muxes, confirm=confirm)
 
-    def bias_dc_voltages(
+    def apply_optimal_voltages(
         self,
         muxes: int | str | Collection[int | str] | None = None,
         confirm: bool = True,
     ) -> dict[int, DCVoltageState]:
         """
-        Ramp the selected calibrated muxes to their bias voltages.
+        Ramp the selected calibrated muxes to their optimal voltages.
 
         When `muxes` is omitted, every active wired mux with a calibrated
         `optimal_voltage` in `jpa_params.yaml` is biased and the rest are
-        skipped; an explicitly selected mux without one raises. Ramp back
-        with `idle_dc_voltages()`.
+        skipped; an explicitly selected mux without one raises.
 
         Parameters
         ----------
@@ -112,12 +124,27 @@ class ExternalDevices:
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states for every active wired mux after biasing, or an
-            empty mapping when the selection is empty or confirmation is declined.
-        """
-        return self._ctx.bias_dc_voltages(muxes=muxes, confirm=confirm)
+            Readback states for every active wired mux after applying optimal
+            voltages, or an empty mapping when the selection is empty or
+            confirmation is declined.
 
-    def idle_dc_voltages(
+        Notes
+        -----
+        Optimal voltages remain applied after this method returns. Call
+        `apply_idle_voltages()` to return the muxes to their idle voltages.
+        """
+        return self._ctx.apply_optimal_voltages(muxes=muxes, confirm=confirm)
+
+    @deprecated("Use `apply_optimal_voltages` instead.")
+    def bias_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Provide a deprecated alias for `apply_optimal_voltages`."""
+        return self.apply_optimal_voltages(muxes=muxes, confirm=confirm)
+
+    def apply_idle_voltages(
         self,
         muxes: int | str | Collection[int | str] | None = None,
         confirm: bool = True,
@@ -137,8 +164,21 @@ class ExternalDevices:
         dict[int, DCVoltageState]
             Readback states for every active wired mux after idling, or an
             empty mapping when the selection is empty or confirmation is declined.
+
+        Notes
+        -----
+        The idle voltages remain applied after this method returns.
         """
-        return self._ctx.idle_dc_voltages(muxes=muxes, confirm=confirm)
+        return self._ctx.apply_idle_voltages(muxes=muxes, confirm=confirm)
+
+    @deprecated("Use `apply_idle_voltages` instead.")
+    def idle_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Provide a deprecated alias for `apply_idle_voltages`."""
+        return self.apply_idle_voltages(muxes=muxes, confirm=confirm)
 
     def shutdown_dc_voltages(
         self,
@@ -160,5 +200,10 @@ class ExternalDevices:
         dict[int, DCVoltageState]
             Readback states for every active wired mux after shutdown, or an
             empty mapping when the selection is empty or confirmation is declined.
+
+        Notes
+        -----
+        The resulting reset-voltage and output states remain in effect after
+        this method returns.
         """
         return self._ctx.shutdown_dc_voltages(muxes=muxes, confirm=confirm)
