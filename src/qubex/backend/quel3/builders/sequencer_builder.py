@@ -8,6 +8,7 @@ from typing import TypeVar
 
 import numpy as np
 
+from qubex.backend.quel3 import quel3_backend_constants
 from qubex.backend.quel3.interfaces import (
     SequencerFactoryProtocol,
     SequencerProtocol,
@@ -150,7 +151,7 @@ class Quel3SequencerBuilder:
                         event.start_offset_ns,
                         sampling_period_fs,
                     ),
-                    gain=event.gain,
+                    gain=event.gain * quel3_backend_constants.EVENT_GAIN_SCALE,
                     # Complete the conjugation for the per-event phase.
                     phase_offset_deg=-event.phase_offset_deg,
                 )
