@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import pytest
@@ -33,10 +33,14 @@ from qubex.backend.quel3.tools import Quel3MonitorTool
 
 class _MonitorClient:
     def __init__(self) -> None:
-        self.controls = {"quel3.monitor.mode": "disabled"}
-        self.allowed = ("disabled", "loopback")
+        self.controls = {"quel3.monitor.mode": "open"}
+        self.allowed: tuple[str, ...] = ("open", "loopback")
         self.session_resources: tuple[str, ...] = ()
+        self.session_count = 0
         self.configured: list[tuple[str, dict[str, str]]] = []
+        self.live_instruments: dict[str, set[str]] = {}
+        self.discarded: list[str] = []
+        self.operations: list[tuple[str, str]] = []
 
     async def __aenter__(self) -> _MonitorClient:
         return self
@@ -67,13 +71,26 @@ class _MonitorClient:
         )
 
     def create_session(self, resources: tuple[str, ...]) -> _MonitorClient:
+        self.session_count += 1
         self.session_resources = tuple(resources)
         return self
+
+    async def discard_instruments(self, port_id: str) -> None:
+        self.discarded.append(port_id)
+        self.operations.append(("discard", port_id))
+        self.live_instruments.pop(port_id, None)
 
     async def configure_unit(
         self, unit_label: str, controls: dict[str, str]
     ) -> dict[str, str]:
+        if any(
+            aliases
+            for port_id, aliases in self.live_instruments.items()
+            if port_id.startswith(f"{unit_label}:")
+        ):
+            raise RuntimeError("Unit instruments remain deployed.")
         self.configured.append((unit_label, controls))
+        self.operations.append(("mode", controls["quel3.monitor.mode"]))
         self.controls.update(controls)
         return dict(self.controls)
 
@@ -110,8 +127,10 @@ def test_configure_monitor_mode_rejects_unsupported_value(
     """Unsupported monitor values should fail before changing hardware."""
     controller, client = monitor_runtime
 
-    with pytest.raises(ValueError, match="allowed values"):
-        controller.configure_monitor_mode(unit_label="unit-a", mode="unknown")
+    with pytest.raises(ValueError, match="mode"):
+        controller.configure_monitor_mode(
+            unit_label="unit-a", mode=cast(Any, "unknown")
+        )
 
     assert client.configured == []
 
@@ -137,6 +156,117 @@ def test_configure_monitor_mode_requires_instruments_cleared(
     assert client.configured == []
 
 
+def test_configure_monitor_mode_defaults_to_open(
+    monitor_runtime: tuple[Quel3BackendController, _MonitorClient],
+) -> None:
+    """Omitting the mode should restore normal external output without deletion."""
+    controller, client = monitor_runtime
+    client.controls["quel3.monitor.mode"] = "loopback"
+
+    mode = controller.configure_monitor_mode(unit_label="unit-a")
+
+    assert mode == "open"
+    assert client.configured == [("unit-a", {"quel3.monitor.mode": "open"})]
+    assert client.discarded == []
+
+
+@pytest.mark.parametrize("mode", ["open", "loopback"])
+def test_configure_monitor_mode_clears_live_instruments_in_one_session(
+    monitor_runtime: tuple[Quel3BackendController, _MonitorClient],
+    mode: Literal["open", "loopback"],
+) -> None:
+    """Explicit clearing should discard every selected port and preserve other units."""
+    controller, client = monitor_runtime
+    client.live_instruments = {
+        "unit-a:tx_p00": {"cached-output", "uncached-output"},
+        "unit-a:mon": {"uncached-monitor"},
+        "unit-b:tx_p00": {"other-output"},
+    }
+    other = _instrument_info("other-output", "tx_p00", unit_label="unit-b")
+    controller._instrument_cache.replace_all(
+        instrument_infos=(_instrument_info("cached-output", "tx_p00"), other)
+    )
+
+    applied = controller.configure_monitor_mode(
+        unit_label="unit-a", mode=mode, clear_instruments=True
+    )
+
+    assert applied == mode
+    assert client.session_count == 1
+    assert client.session_resources == ("unit-a:tx_p00", "unit-a:mon")
+    assert set(client.discarded) == {"unit-a:tx_p00", "unit-a:mon"}
+    assert client.operations[-1] == ("mode", mode)
+    assert client.live_instruments == {"unit-b:tx_p00": {"other-output"}}
+    assert controller._instrument_cache.snapshot() == {"other-output": other}
+
+
+def test_configure_monitor_mode_preserves_uncached_instruments_by_default(
+    monitor_runtime: tuple[Quel3BackendController, _MonitorClient],
+) -> None:
+    """Uncached instruments should prevent a mode change without implicit deletion."""
+    controller, client = monitor_runtime
+    client.live_instruments = {"unit-a:tx_p00": {"uncached-output"}}
+
+    with pytest.raises(RuntimeError, match="instruments remain"):
+        controller.configure_monitor_mode(unit_label="unit-a", mode="loopback")
+
+    assert client.discarded == []
+    assert client.controls["quel3.monitor.mode"] == "open"
+    assert client.live_instruments == {"unit-a:tx_p00": {"uncached-output"}}
+
+
+@pytest.mark.parametrize("mode", ["unknown", "loopback"])
+def test_configure_monitor_mode_validates_before_clearing(
+    monitor_runtime: tuple[Quel3BackendController, _MonitorClient], mode: str
+) -> None:
+    """Invalid or unsupported modes should leave live instruments and cache intact."""
+    controller, client = monitor_runtime
+    client.allowed = ("open",)
+    client.live_instruments = {"unit-a:tx_p00": {"output"}}
+    original = _instrument_info("output", "tx_p00")
+    controller._instrument_cache.replace_all(instrument_infos=(original,))
+
+    with pytest.raises(ValueError, match="mode"):
+        controller.configure_monitor_mode(
+            unit_label="unit-a", mode=cast(Any, mode), clear_instruments=True
+        )
+
+    assert client.session_count == 0
+    assert client.discarded == []
+    assert client.configured == []
+    assert client.live_instruments == {"unit-a:tx_p00": {"output"}}
+    assert controller._instrument_cache.snapshot() == {"output": original}
+
+
+def test_configure_monitor_mode_stops_after_deletion_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_runtime: tuple[Quel3BackendController, _MonitorClient],
+) -> None:
+    """Deletion failures should prevent mode changes and invalidate the unit cache."""
+    controller, client = monitor_runtime
+    other = _instrument_info("other", "tx_p00", unit_label="unit-b")
+    controller._instrument_cache.replace_all(
+        instrument_infos=(_instrument_info("output", "tx_p00"), other)
+    )
+    discard = client.discard_instruments
+
+    async def fail_monitor_discard(port_id: str) -> None:
+        if port_id == "unit-a:mon":
+            raise RuntimeError("discard failed")
+        await discard(port_id)
+
+    monkeypatch.setattr(client, "discard_instruments", fail_monitor_discard)
+
+    with pytest.raises(RuntimeError, match="discard failed"):
+        controller.configure_monitor_mode(
+            unit_label="unit-a", mode="loopback", clear_instruments=True
+        )
+
+    assert client.configured == []
+    assert client.controls["quel3.monitor.mode"] == "open"
+    assert controller._instrument_cache.snapshot() == {"other": other}
+
+
 def test_get_monitor_mode_reads_live_unit_control(
     monitor_runtime: tuple[Quel3BackendController, _MonitorClient],
 ) -> None:
@@ -147,6 +277,20 @@ def test_get_monitor_mode_reads_live_unit_control(
     mode = controller.configuration_manager.get_monitor_mode(unit_label="unit-a")
 
     assert mode == "loopback"
+    assert client.configured == []
+
+
+def test_get_monitor_mode_rejects_unknown_readback(
+    monitor_runtime: tuple[Quel3BackendController, _MonitorClient],
+) -> None:
+    """Unexpected live modes should fail before any instrument changes."""
+    controller, client = monitor_runtime
+    client.controls["quel3.monitor.mode"] = "unknown"
+
+    with pytest.raises(ValueError, match="readback"):
+        controller.configuration_manager.get_monitor_mode(unit_label="unit-a")
+
+    assert client.discarded == []
     assert client.configured == []
 
 
@@ -224,7 +368,7 @@ def monitor_schedule_runtime(
     monkeypatch.setattr(
         controller._configuration_manager,
         "get_monitor_mode",
-        lambda **kwargs: "disabled",
+        lambda **kwargs: "open",
         raising=False,
     )
 
@@ -234,7 +378,13 @@ def monitor_schedule_runtime(
         actions.append(("clear", unit_label))
         instrument_cache.replace_units(unit_labels=(unit_label,), instrument_infos=())
 
-    def configure(*, unit_label: str, mode: str = "loopback") -> str:
+    def configure(
+        *,
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        mode: str = "open",
+        clear_instruments: bool = False,
+    ) -> str:
         actions.append(("mode", mode))
         return mode
 
@@ -335,7 +485,7 @@ def test_run_monitor_schedule_restores_instruments_after_empty_capture(
 
     assert actions[-3:] == [
         ("clear", "unit-a"),
-        ("mode", "disabled"),
+        ("mode", "open"),
         ("restore", ("idle", "output-a", "output-b")),
     ]
     assert set(controller._instrument_cache.snapshot()) == {
@@ -406,7 +556,7 @@ def test_run_monitor_schedule_builds_sparse_events_and_reuses_shape(
         ("deploy", "output-a", "unit-a:tx_p00", "TRANSMITTER", 4e9, 6e9),
         ("deploy", monitor_alias, "unit-a:mon", "RECEIVER", 4e9, 6e9),
         ("clear", "unit-a"),
-        ("mode", "disabled"),
+        ("mode", "open"),
         ("restore", ("idle", "output-a", "output-b")),
     ]
     assert {
@@ -586,7 +736,7 @@ def test_run_monitor_schedule_restores_instruments_after_execution_failure(
 
     assert actions[-3:] == [
         ("clear", "unit-a"),
-        ("mode", "disabled"),
+        ("mode", "open"),
         ("restore", ("idle", "output-a", "output-b")),
     ]
 
@@ -634,7 +784,7 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
 
     assert actions[-3:] == [
         ("clear", "unit-a"),
-        ("mode", "disabled"),
+        ("mode", "open"),
         ("restore", ("idle", "output-a", "output-b")),
     ]
 
@@ -758,7 +908,7 @@ def test_monitor_tool_runs_schedule_without_controller_dependency(
     assert np.array_equal(captured["output-a"], [[1 + 2j, 3 + 4j]])
     assert actions[-3:] == [
         ("clear", "unit-a"),
-        ("mode", "disabled"),
+        ("mode", "open"),
         ("restore", ("idle", "output-a", "output-b")),
     ]
 
@@ -766,12 +916,6 @@ def test_monitor_tool_runs_schedule_without_controller_dependency(
 @pytest.mark.parametrize(
     ("controller_method", "tool_method", "arguments", "expected"),
     [
-        (
-            "configure_monitor_mode",
-            "configure_mode",
-            {"unit_label": "unit-a", "mode": "loopback"},
-            "loopback",
-        ),
         (
             "run_monitor_schedule",
             "run_schedule",

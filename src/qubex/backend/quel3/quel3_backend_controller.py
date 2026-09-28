@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -316,7 +316,13 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
 
-    def configure_monitor_mode(self, *, unit_label: str, mode: str = "loopback") -> str:
+    def configure_monitor_mode(
+        self,
+        *,
+        unit_label: str,
+        mode: Literal["open", "loopback"] = "open",
+        clear_instruments: bool = False,
+    ) -> str:
         """
         Set a unit's monitor mode before deploying output and monitor instruments.
 
@@ -324,8 +330,10 @@ class Quel3BackendController(BackendController):
         ----------
         unit_label : str
             Exact QuEL-3 unit label.
-        mode : str, default="loopback"
-            Value supported by the unit's `quel3.monitor.mode` control.
+        mode : {"open", "loopback"}, default="open"
+            Normal external output or monitor loopback mode.
+        clear_instruments : bool, default=False
+            Delete all instruments on this unit before configuring the mode.
 
         Returns
         -------
@@ -335,15 +343,21 @@ class Quel3BackendController(BackendController):
         Raises
         ------
         RuntimeError
-            If the controller has cached instruments on this unit. Call
-            `clear_instruments(unit_label=...)` before changing the mode.
+            If this unit has cached instruments and `clear_instruments` is false.
 
         Notes
         -----
         Quelware also rejects a mode change if uncached instruments remain
-        deployed on the unit. Re-deploy instruments after changing the mode.
+        deployed on the unit. With `clear_instruments=True`, every instrument
+        on this unit is deleted and its cache is invalidated. Instruments are
+        not automatically restored. Re-deploy them after changing the mode.
         """
-        return self._monitor_tool.configure_mode(unit_label=unit_label, mode=mode)
+        return self._configuration_manager.configure_monitor_mode(
+            unit_label=unit_label,
+            instrument_cache=self._instrument_cache,
+            mode=mode,
+            clear_instruments=clear_instruments,
+        )
 
     def deploy_instrument(
         self,

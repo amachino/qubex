@@ -64,45 +64,6 @@ class Quel3MonitorTool:
         self._hardware_state_reader = hardware_state_reader
         self._instrument_cache = instrument_cache
 
-    def configure_mode(self, *, unit_label: str, mode: str = "loopback") -> str:
-        """
-        Set a unit's monitor mode before deploying output and monitor instruments.
-
-        Parameters
-        ----------
-        unit_label : str
-            Exact QuEL-3 unit label.
-        mode : str, default="loopback"
-            Value supported by the unit's `quel3.monitor.mode` control.
-
-        Returns
-        -------
-        str
-            Applied mode reported by quelware.
-
-        Raises
-        ------
-        RuntimeError
-            If the supplied cache contains instruments on this unit. Clear
-            the unit through the configuration manager before changing mode.
-
-        Notes
-        -----
-        Quelware also rejects a mode change if uncached instruments remain
-        deployed on the unit. Re-deploy instruments after changing the mode.
-        """
-        if any(
-            info.port_id.startswith(f"{unit_label}:")
-            for info in self._instrument_cache.snapshot().values()
-        ):
-            raise RuntimeError(
-                "Clear deployed instruments with clear_instruments() before "
-                "changing QuEL-3 monitor mode."
-            )
-        return self._configuration_manager.configure_monitor_mode(
-            unit_label=unit_label, mode=mode
-        )
-
     def run_schedule(
         self,
         *,
@@ -247,7 +208,11 @@ class Quel3MonitorTool:
                 instrument_cache=self._instrument_cache,
                 parallel=parallel,
             )
-            self.configure_mode(unit_label=unit_label, mode="loopback")
+            self._configuration_manager.configure_monitor_mode(
+                unit_label=unit_label,
+                instrument_cache=self._instrument_cache,
+                mode="loopback",
+            )
             for label in labels:
                 spec = original_specs[label]
                 timeline, waveform_library = prepared[label]
@@ -288,7 +253,11 @@ class Quel3MonitorTool:
                 instrument_cache=self._instrument_cache,
                 parallel=parallel,
             )
-            self.configure_mode(unit_label=unit_label, mode=original_mode)
+            self._configuration_manager.configure_monitor_mode(
+                unit_label=unit_label,
+                instrument_cache=self._instrument_cache,
+                mode=original_mode,
+            )
             self._configuration_manager.deploy_instruments(
                 configuration=original_configuration,
                 instrument_cache=self._instrument_cache,
