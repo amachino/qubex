@@ -22,7 +22,6 @@ from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
-    Quel3HardwareStateReader,
 )
 from qubex.backend.quel3.models import InstrumentConfiguration, InstrumentSpec
 from qubex.backend.quel3.tools import Quel3MonitorTool
@@ -281,126 +280,51 @@ def monitor_schedule_runtime(
     return controller, manager, actions
 
 
-def test_run_monitor_iq_returns_raw_capture_and_builds_two_timelines() -> None:
-    """A monitor run should send IQ on the output and return raw monitor samples."""
-    manager = _MonitorExecutionManager()
-    controller = Quel3BackendController(execution_manager=cast(Any, manager))
-    infos = tuple(
-        cast(
-            InstrumentInfoProtocol,
-            SimpleNamespace(
-                id=f"unit-a:{alias}",
-                port_id=f"unit-a:{port}",
-                definition=SimpleNamespace(alias=alias),
-            ),
+@pytest.mark.parametrize("capture_kind", ["missing", "no_windows", "empty"])
+def test_run_monitor_schedule_restores_instruments_after_empty_capture(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+    capture_kind: str,
+) -> None:
+    """Missing or empty IQ should raise and restore the unit's original state."""
+    controller, manager, actions = monitor_schedule_runtime
+
+    def execute(
+        *, request: BackendExecutionRequest, **kwargs: object
+    ) -> Quel3BackendExecutionResult:
+        monitor_alias = next(
+            alias
+            for alias, timeline in request.payload.fixed_timelines.items()
+            if timeline.capture_windows
         )
-        for alias, port in (("output", "tx_p00"), ("monitor", "mon"))
-    )
-    controller._instrument_cache.replace_all(instrument_infos=infos)
-
-    iq = controller.run_monitor_iq(
-        output_alias="output",
-        monitor_alias="monitor",
-        waveform=np.array([0.25 + 0.5j, 0.5 + 0.25j]),
-    )
-
-    assert np.array_equal(iq, np.array([[1 + 2j, 3 + 4j]]))
-    assert manager.request is not None
-    payload = manager.request.payload
-    assert payload.capture_mode is Quel3CaptureMode.RAW_WAVEFORMS
-    assert np.array_equal(
-        payload.waveform_library["monitor_output"].iq_array, [0.25 + 0.5j, 0.5 + 0.25j]
-    )
-    assert len(payload.fixed_timelines["output"].events) == 1
-    assert len(payload.fixed_timelines["monitor"].capture_windows) == 1
-    assert payload.fixed_timelines["monitor"].capture_windows[
-        0
-    ].length_ns == pytest.approx(0.8)
-
-
-def test_run_monitor_iq_requires_monitor_port_alias() -> None:
-    """A non-monitor receiver alias should fail before execution."""
-    manager = _MonitorExecutionManager()
-    controller = Quel3BackendController(execution_manager=cast(Any, manager))
-    infos = tuple(
-        cast(
-            InstrumentInfoProtocol,
-            SimpleNamespace(
-                id=f"unit-a:{alias}",
-                port_id=f"unit-a:{port}",
-                definition=SimpleNamespace(alias=alias),
-            ),
+        data = (
+            {}
+            if capture_kind == "missing"
+            else {monitor_alias: []}
+            if capture_kind == "no_windows"
+            else {monitor_alias: [np.array([], dtype=np.complex128)]}
         )
-        for alias, port in (("output", "tx_p00"), ("receiver", "rx_p00"))
-    )
-    controller._instrument_cache.replace_all(instrument_infos=infos)
+        return Quel3BackendExecutionResult(status={}, data=data, config={})
 
-    with pytest.raises(ValueError, match="monitor port"):
-        controller.run_monitor_iq(
-            output_alias="output",
-            monitor_alias="receiver",
-            waveform=np.array([0.5 + 0j]),
-        )
-
-    assert manager.request is None
-
-
-def test_run_monitor_iq_rejects_same_output_and_monitor_alias() -> None:
-    """A receiver on the monitor port cannot also be the output instrument."""
-    controller = Quel3BackendController()
-    controller._instrument_cache.replace_all(
-        instrument_infos=(
-            cast(
-                InstrumentInfoProtocol,
-                SimpleNamespace(
-                    id="unit-a:monitor",
-                    port_id="unit-a:mon",
-                    definition=SimpleNamespace(alias="monitor"),
-                ),
-            ),
-        )
-    )
-
-    with pytest.raises(ValueError, match="distinct"):
-        controller.run_monitor_iq(
-            output_alias="monitor",
-            monitor_alias="monitor",
-            waveform=np.array([0.5 + 0j]),
-        )
-
-
-def test_run_monitor_iq_raises_when_capture_is_empty() -> None:
-    """An empty capture should raise instead of masquerading as usable IQ."""
-    manager = _MonitorExecutionManager()
-    manager.execute_sync = cast(
-        Any,
-        lambda **kwargs: Quel3BackendExecutionResult(
-            status={},
-            data={"monitor": [np.array([], dtype=np.complex128)]},
-            config={"sampling_period_ns": 0.4},
-        ),
-    )
-    controller = Quel3BackendController(execution_manager=cast(Any, manager))
-    controller._instrument_cache.replace_all(
-        instrument_infos=tuple(
-            cast(
-                InstrumentInfoProtocol,
-                SimpleNamespace(
-                    id=f"unit-a:{alias}",
-                    port_id=f"unit-a:{port}",
-                    definition=SimpleNamespace(alias=alias),
-                ),
-            )
-            for alias, port in (("output", "tx_p00"), ("monitor", "mon"))
-        )
-    )
+    monkeypatch.setattr(manager, "execute_sync", execute)
+    with PulseSchedule() as schedule:
+        schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
 
     with pytest.raises(RuntimeError, match="no IQ data"):
-        controller.run_monitor_iq(
-            output_alias="output",
-            monitor_alias="monitor",
-            waveform=np.array([0.5 + 0j]),
-        )
+        controller.run_monitor_schedule(unit_label="unit-a", pulse_schedule=schedule)
+
+    assert actions[-3:] == [
+        ("clear", "unit-a"),
+        ("mode", "disabled"),
+        ("restore", ("idle", "output-a", "output-b")),
+    ]
+    assert set(controller._instrument_cache.snapshot()) == {
+        "output-a",
+        "output-b",
+        "idle",
+    }
 
 
 def test_run_monitor_schedule_builds_sparse_events_and_reuses_shape(
@@ -438,6 +362,7 @@ def test_run_monitor_schedule_builds_sparse_events_and_reuses_shape(
     assert np.array_equal(iq["drive"], [[1 + 2j, 3 + 4j]])
     assert manager.request is not None
     payload = manager.request.payload
+    assert payload.capture_mode is Quel3CaptureMode.RAW_WAVEFORMS
     assert len(payload.waveform_library) == 1
     assert np.array_equal(
         next(iter(payload.waveform_library.values())).iq_array,
@@ -696,32 +621,6 @@ def test_run_monitor_schedule_rejects_invalid_capture_before_deletion(
     assert actions == []
 
 
-def test_monitor_tool_runs_iq_with_shared_cache() -> None:
-    """The monitor tool should execute IQ directly using its supplied cache."""
-    cache = InstrumentCache()
-    cache.replace_all(
-        instrument_infos=(
-            _instrument_info("output", "tx_p00"),
-            _instrument_info("monitor", "mon"),
-        )
-    )
-    manager = _MonitorExecutionManager()
-    tool = Quel3MonitorTool(
-        configuration_manager=Quel3ConfigurationManager(),
-        execution_manager=cast(Any, manager),
-        hardware_state_reader=Quel3HardwareStateReader(),
-        instrument_cache=cache,
-    )
-
-    captured = tool.run_iq(
-        output_alias="output", monitor_alias="monitor", waveform=[0.5 + 0j]
-    )
-
-    assert np.array_equal(captured, [[1 + 2j, 3 + 4j]])
-    assert manager.request is not None
-    assert set(manager.request.payload.fixed_timelines) == {"output", "monitor"}
-
-
 def test_monitor_tool_runs_schedule_without_controller_dependency(
     monitor_schedule_runtime: tuple[
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
@@ -756,21 +655,6 @@ def test_monitor_tool_runs_schedule_without_controller_dependency(
             "configure_mode",
             {"unit_label": "unit-a", "mode": "loopback"},
             "loopback",
-        ),
-        (
-            "run_monitor_iq",
-            "run_iq",
-            {
-                "output_alias": "output",
-                "monitor_alias": "monitor",
-                "waveform": [0.25 + 0j],
-                "capture_start_ns": 4.0,
-                "capture_length_ns": 8.0,
-                "n_iterations": 2,
-                "shot_interval_ns": 16.0,
-                "parallel": False,
-            },
-            np.array([[1 + 2j]]),
         ),
         (
             "run_monitor_schedule",

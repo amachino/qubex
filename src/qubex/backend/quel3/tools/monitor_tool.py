@@ -25,7 +25,6 @@ from qubex.backend.quel3.models import (
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
     Quel3Waveform,
-    Quel3WaveformEvent,
 )
 
 if TYPE_CHECKING:
@@ -65,7 +64,6 @@ class Quel3MonitorTool:
         self._execution_manager = execution_manager
         self._hardware_state_reader = hardware_state_reader
         self._instrument_cache = instrument_cache
-        self._sampling_period_ns = execution_manager.sampling_period_ns
 
     def configure_mode(self, *, unit_label: str, mode: str = "loopback") -> str:
         """
@@ -104,80 +102,6 @@ class Quel3MonitorTool:
             )
         return self._configuration_manager.configure_monitor_mode(
             unit_label=unit_label, mode=mode
-        )
-
-    def run_iq(
-        self,
-        *,
-        output_alias: str,
-        monitor_alias: str,
-        waveform: npt.ArrayLike,
-        capture_start_ns: float = 0.0,
-        capture_length_ns: float | None = None,
-        n_iterations: int = 1,
-        shot_interval_ns: float = 0.0,
-        parallel: bool = True,
-    ) -> npt.NDArray[np.complex128]:
-        """
-        Play one waveform and return raw IQ captured on the monitor port.
-
-        Parameters
-        ----------
-        output_alias : str
-            Cached output instrument alias.
-        monitor_alias : str
-            Cached receiver alias deployed on the same unit's `mon` port.
-        waveform : ArrayLike
-            One-dimensional complex IQ waveform on the backend sampling grid.
-        capture_start_ns : float, default=0.0
-            Monitor capture start time relative to the output trigger, in ns.
-        capture_length_ns : float | None, optional
-            Capture duration in ns. Defaults to the waveform duration.
-        n_iterations : int, default=1
-            Number of unaveraged captures.
-        shot_interval_ns : float, default=0.0
-            Idle interval between iterations, in ns.
-        parallel : bool, default=True
-            Whether to parallelize instrument execution phases.
-
-        Returns
-        -------
-        NDArray[np.complex128]
-            Raw complex IQ with shape `(n_iterations, samples)`.
-
-        Notes
-        -----
-        Configure monitor mode and deploy both instruments before calling this
-        method. The returned IQ uses the same coordinates as normal QuEL-3
-        backend capture results.
-        """
-        iq_array = np.asarray(waveform, dtype=np.complex128)
-        if iq_array.ndim != 1 or iq_array.size == 0:
-            raise ValueError("Monitor waveform must be a nonempty 1D IQ array.")
-        if not np.all(np.isfinite(iq_array)):
-            raise ValueError("Monitor waveform IQ values must be finite.")
-        duration_ns = float(iq_array.size) * self._sampling_period_ns
-        length_ns = duration_ns if capture_length_ns is None else capture_length_ns
-        return self._execute_monitor_payload(
-            output_timelines={
-                output_alias: Quel3FixedTimeline(
-                    events=(Quel3WaveformEvent("monitor_output", 0.0),),
-                    capture_windows=(),
-                    length_ns=duration_ns,
-                )
-            },
-            waveform_library={
-                "monitor_output": Quel3Waveform(
-                    iq_array=iq_array, sampling_period_ns=self._sampling_period_ns
-                )
-            },
-            duration_ns=duration_ns,
-            monitor_alias=monitor_alias,
-            capture_start_ns=capture_start_ns,
-            capture_length_ns=length_ns,
-            n_iterations=n_iterations,
-            shot_interval_ns=shot_interval_ns,
-            parallel=parallel,
         )
 
     def run_schedule(

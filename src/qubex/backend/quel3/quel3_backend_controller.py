@@ -555,62 +555,6 @@ class Quel3BackendController(BackendController):
         """Return backend sampling period in ns."""
         return self._sampling_period_ns
 
-    def run_monitor_iq(
-        self,
-        *,
-        output_alias: str,
-        monitor_alias: str,
-        waveform: npt.ArrayLike,
-        capture_start_ns: float = 0.0,
-        capture_length_ns: float | None = None,
-        n_iterations: int = 1,
-        shot_interval_ns: float = 0.0,
-        parallel: bool = True,
-    ) -> npt.NDArray[np.complex128]:
-        """
-        Play one waveform and return raw IQ captured on the monitor port.
-
-        Parameters
-        ----------
-        output_alias : str
-            Cached output instrument alias.
-        monitor_alias : str
-            Cached receiver alias deployed on the same unit's `mon` port.
-        waveform : ArrayLike
-            One-dimensional complex IQ waveform on the backend sampling grid.
-        capture_start_ns : float, default=0.0
-            Monitor capture start time relative to the output trigger, in ns.
-        capture_length_ns : float | None, optional
-            Capture duration in ns. Defaults to the waveform duration.
-        n_iterations : int, default=1
-            Number of unaveraged captures.
-        shot_interval_ns : float, default=0.0
-            Idle interval between iterations, in ns.
-        parallel : bool, default=True
-            Whether to parallelize instrument execution phases.
-
-        Returns
-        -------
-        NDArray[np.complex128]
-            Raw complex IQ with shape `(n_iterations, samples)`.
-
-        Notes
-        -----
-        Configure monitor mode and deploy both instruments before calling this
-        method. The returned IQ uses the same coordinates as normal QuEL-3
-        backend capture results.
-        """
-        return self._monitor_tool.run_iq(
-            output_alias=output_alias,
-            monitor_alias=monitor_alias,
-            waveform=waveform,
-            capture_start_ns=capture_start_ns,
-            capture_length_ns=capture_length_ns,
-            n_iterations=n_iterations,
-            shot_interval_ns=shot_interval_ns,
-            parallel=parallel,
-        )
-
     def run_monitor_schedule(
         self,
         *,
