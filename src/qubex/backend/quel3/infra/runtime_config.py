@@ -205,14 +205,3 @@ def _required_string(
     if not isinstance(value, str):
         raise TypeError(f"`{path}.{key}` must be a string.")
     return value
-
-
-def _optional_string(
-    config: Mapping[str, object],
-    key: str,
-    path: str,
-) -> str | None:
-    value = config.get(key)
-    if value is not None and not isinstance(value, str):
-        raise TypeError(f"`{path}.{key}` must be a string.")
-    return cast(str | None, value)
