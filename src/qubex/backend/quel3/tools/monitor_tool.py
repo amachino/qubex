@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from qxpulse import PulseSchedule
 
 
-class Quel3MonitorService:
+class Quel3MonitorTool:
     """
     Own QuEL-3 monitor capture workflows and temporary instrument restoration.
 

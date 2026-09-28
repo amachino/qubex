@@ -25,7 +25,7 @@ from qubex.backend.quel3.managers import (
     Quel3HardwareStateReader,
 )
 from qubex.backend.quel3.models import InstrumentConfiguration, InstrumentSpec
-from qubex.backend.quel3.services import Quel3MonitorService
+from qubex.backend.quel3.tools import Quel3MonitorTool
 
 
 class _MonitorClient:
@@ -696,8 +696,8 @@ def test_run_monitor_schedule_rejects_invalid_capture_before_deletion(
     assert actions == []
 
 
-def test_monitor_service_runs_iq_with_shared_cache() -> None:
-    """The monitor service should execute IQ directly using its supplied cache."""
+def test_monitor_tool_runs_iq_with_shared_cache() -> None:
+    """The monitor tool should execute IQ directly using its supplied cache."""
     cache = InstrumentCache()
     cache.replace_all(
         instrument_infos=(
@@ -706,14 +706,14 @@ def test_monitor_service_runs_iq_with_shared_cache() -> None:
         )
     )
     manager = _MonitorExecutionManager()
-    service = Quel3MonitorService(
+    tool = Quel3MonitorTool(
         configuration_manager=Quel3ConfigurationManager(),
         execution_manager=cast(Any, manager),
         hardware_state_reader=Quel3HardwareStateReader(),
         instrument_cache=cache,
     )
 
-    captured = service.run_iq(
+    captured = tool.run_iq(
         output_alias="output", monitor_alias="monitor", waveform=[0.5 + 0j]
     )
 
@@ -722,14 +722,14 @@ def test_monitor_service_runs_iq_with_shared_cache() -> None:
     assert set(manager.request.payload.fixed_timelines) == {"output", "monitor"}
 
 
-def test_monitor_service_runs_schedule_without_controller_dependency(
+def test_monitor_tool_runs_schedule_without_controller_dependency(
     monitor_schedule_runtime: tuple[
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
 ) -> None:
-    """A standalone monitor service should capture and restore the supplied unit."""
+    """A standalone monitor tool should capture and restore the supplied unit."""
     controller, manager, actions = monitor_schedule_runtime
-    service = Quel3MonitorService(
+    tool = Quel3MonitorTool(
         configuration_manager=controller.configuration_manager,
         execution_manager=cast(Any, manager),
         hardware_state_reader=controller.hardware_state_reader,
@@ -738,7 +738,7 @@ def test_monitor_service_runs_schedule_without_controller_dependency(
     with PulseSchedule() as schedule:
         schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
 
-    captured = service.run_schedule(unit_label="unit-a", pulse_schedule=schedule)
+    captured = tool.run_schedule(unit_label="unit-a", pulse_schedule=schedule)
 
     assert np.array_equal(captured["output-a"], [[1 + 2j, 3 + 4j]])
     assert actions[-3:] == [
@@ -749,7 +749,7 @@ def test_monitor_service_runs_schedule_without_controller_dependency(
 
 
 @pytest.mark.parametrize(
-    ("controller_method", "service_method", "arguments", "expected"),
+    ("controller_method", "tool_method", "arguments", "expected"),
     [
         (
             "configure_monitor_mode",
@@ -794,18 +794,18 @@ def test_monitor_service_runs_schedule_without_controller_dependency(
 def test_controller_delegates_monitor_operations(
     monkeypatch: pytest.MonkeyPatch,
     controller_method: str,
-    service_method: str,
+    tool_method: str,
     arguments: dict[str, Any],
     expected: object,
 ) -> None:
-    """Controller monitor methods should forward arguments and service results."""
+    """Controller monitor methods should forward arguments and tool results."""
     calls: list[dict[str, object]] = []
 
-    def delegate(self: Quel3MonitorService, **kwargs: object) -> object:
+    def delegate(self: Quel3MonitorTool, **kwargs: object) -> object:
         calls.append(kwargs)
         return expected
 
-    monkeypatch.setattr(Quel3MonitorService, service_method, delegate)
+    monkeypatch.setattr(Quel3MonitorTool, tool_method, delegate)
     controller = Quel3BackendController()
 
     result = getattr(controller, controller_method)(**arguments)

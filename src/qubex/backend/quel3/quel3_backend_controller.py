@@ -2,7 +2,7 @@
 QuEL-3 backend controller implementing the shared measurement-facing contract.
 
 This module defines the QuEL-3 concrete `BackendController` implementation
-built on quelware-client managers and services.
+built on quelware-client managers and tools.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from .models import (
     Quel3HardwareStateView,
 )
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
-from .services import Quel3MonitorService
+from .tools import Quel3MonitorTool
 
 if TYPE_CHECKING:
     from qxpulse import PulseSchedule
@@ -49,7 +49,7 @@ class Quel3BackendController(BackendController):
     QuEL-3 backend controller for session lifecycle and execution dispatch.
 
     The controller provides the required shared `BackendController` API for the
-    measurement layer and delegates operations to QuEL-3 managers and services.
+    measurement layer and delegates operations to QuEL-3 managers and tools.
     Backend-specific capabilities are intentionally kept outside the shared
     contract.
     """
@@ -170,7 +170,7 @@ class Quel3BackendController(BackendController):
             )
         )
 
-        self._monitor_service = Quel3MonitorService(
+        self._monitor_tool = Quel3MonitorTool(
             configuration_manager=self._configuration_manager,
             execution_manager=self._execution_manager,
             hardware_state_reader=self._hardware_state_reader,
@@ -343,7 +343,7 @@ class Quel3BackendController(BackendController):
         Quelware also rejects a mode change if uncached instruments remain
         deployed on the unit. Re-deploy instruments after changing the mode.
         """
-        return self._monitor_service.configure_mode(unit_label=unit_label, mode=mode)
+        return self._monitor_tool.configure_mode(unit_label=unit_label, mode=mode)
 
     def deploy_instrument(
         self,
@@ -600,7 +600,7 @@ class Quel3BackendController(BackendController):
         method. The returned IQ uses the same coordinates as normal QuEL-3
         backend capture results.
         """
-        return self._monitor_service.run_iq(
+        return self._monitor_tool.run_iq(
             output_alias=output_alias,
             monitor_alias=monitor_alias,
             waveform=waveform,
@@ -669,7 +669,7 @@ class Quel3BackendController(BackendController):
         if deployment or execution fails. Blanks advance event offsets without
         allocating zero-filled waveform samples.
         """
-        return self._monitor_service.run_schedule(
+        return self._monitor_tool.run_schedule(
             unit_label=unit_label,
             pulse_schedule=pulse_schedule,
             monitor_alias=monitor_alias,
