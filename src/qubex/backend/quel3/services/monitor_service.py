@@ -229,9 +229,10 @@ class Quel3MonitorService:
 
         Notes
         -----
-        Every target must have an explicit finite frequency in GHz. The same
-        frequency is applied to the output and monitor instruments. The method
-        reads the live instruments, clears the selected unit, enters loopback mode, and
+        Schedule frequencies are in GHz. A target without a frequency uses the
+        center of its live instrument's frequency range. The same frequency is
+        applied to the output and monitor instruments. The method reads the
+        live instruments, clears the selected unit, enters loopback mode, and
         executes targets sequentially. It clears temporary instruments and
         restores the original monitor mode and instrument configuration even
         if deployment or execution fails. Blanks advance event offsets without
@@ -303,11 +304,11 @@ class Quel3MonitorService:
                     f"Monitor target {label!r} is not an output instrument."
                 )
             frequency_ghz = pulse_schedule.get_frequency(label)
-            if frequency_ghz is None:
-                raise ValueError(
-                    f"Monitor PulseSchedule target {label!r} requires a finite frequency."
-                )
-            frequency_hz = frequency_ghz * 1e9
+            frequency_hz = (
+                spec.frequency_range_min_hz / 2 + spec.frequency_range_max_hz / 2
+                if frequency_ghz is None
+                else frequency_ghz * 1e9
+            )
             if not math.isfinite(frequency_hz):
                 raise ValueError(
                     f"Monitor PulseSchedule target {label!r} requires a finite frequency."

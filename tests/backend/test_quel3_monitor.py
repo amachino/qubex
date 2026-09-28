@@ -484,7 +484,6 @@ def test_run_monitor_schedule_executes_multiple_output_channels(
     with PulseSchedule() as schedule:
         schedule.add("drive-a", Arbitrary([0.25 + 0j], sampling_period=0.4))
         schedule.add("drive-b", Arbitrary([0.5 + 0j], sampling_period=0.4))
-    schedule.set_frequency("drive-a", 5.0)
     schedule.set_frequency("drive-b", 5.5)
 
     captured = _service_for_controller(controller).run_schedule(
@@ -591,6 +590,48 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
         ("mode", "disabled"),
         ("restore", ("idle", "output-a", "output-b")),
     ]
+
+
+@pytest.mark.parametrize(
+    ("label", "alias_options"),
+    [
+        ("output-a", {}),
+        ("drive", {"output_alias": "output-a"}),
+        ("drive", {"output_aliases": {"drive": "output-a"}}),
+    ],
+)
+def test_run_monitor_schedule_defaults_to_live_instrument_center_frequency(
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+    label: str,
+    alias_options: dict[str, Any],
+) -> None:
+    """Missing frequency should use the mapped live instrument's range center."""
+    controller, manager, _ = monitor_schedule_runtime
+    controller._instrument_cache.replace_all(
+        instrument_infos=(
+            _instrument_info(
+                "output-a",
+                "tx_p00",
+                frequency_range_min_hz=2e9,
+                frequency_range_max_hz=3e9,
+            ),
+        )
+    )
+    with PulseSchedule() as schedule:
+        schedule.add(label, Arbitrary([1 + 0j], sampling_period=0.4))
+
+    captured = _service_for_controller(controller).run_schedule(
+        unit_label="unit-a", pulse_schedule=schedule, **alias_options
+    )
+
+    assert np.array_equal(captured[label], [[1 + 2j, 3 + 4j]])
+    assert manager.request is not None
+    timelines = manager.request.payload.fixed_timelines
+    assert timelines["output-a"].frequency_hz == pytest.approx(5e9)
+    assert timelines["monitor"].frequency_hz == pytest.approx(5e9)
+    assert schedule.get_frequency(label) is None
 
 
 @pytest.mark.parametrize("frequency_ghz", [float("nan"), float("inf"), -float("inf")])
@@ -702,8 +743,6 @@ def test_monitor_service_runs_schedule_without_controller_dependency(
     )
     with PulseSchedule() as schedule:
         schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
-
-    schedule.set_frequency("output-a", 5.0)
 
     captured = service.run_schedule(unit_label="unit-a", pulse_schedule=schedule)
 
