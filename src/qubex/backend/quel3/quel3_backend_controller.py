@@ -2,13 +2,17 @@
 QuEL-3 backend controller implementing the shared measurement-facing contract.
 
 This module defines the QuEL-3 concrete `BackendController` implementation
-built on quelware-client managers.
+built on quelware-client managers and tools.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
+
+import numpy as np
+import numpy.typing as npt
 
 from qubex.backend.backend_controller import (
     BackendController,
@@ -34,6 +38,10 @@ from .models import (
     Quel3HardwareStateView,
 )
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
+from .tools import Quel3MonitorTool
+
+if TYPE_CHECKING:
+    from qxpulse import PulseSchedule
 
 
 class Quel3BackendController(BackendController):
@@ -41,7 +49,7 @@ class Quel3BackendController(BackendController):
     QuEL-3 backend controller for session lifecycle and execution dispatch.
 
     The controller provides the required shared `BackendController` API for the
-    measurement layer and routes concrete operations to QuEL-3 manager classes.
+    measurement layer and delegates operations to QuEL-3 managers and tools.
     Backend-specific capabilities are intentionally kept outside the shared
     contract.
     """
@@ -160,6 +168,13 @@ class Quel3BackendController(BackendController):
             else Quel3HardwareStateReader(
                 runtime_config=resolved_runtime_config,
             )
+        )
+
+        self._monitor_tool = Quel3MonitorTool(
+            configuration_manager=self._configuration_manager,
+            execution_manager=self._execution_manager,
+            hardware_state_reader=self._hardware_state_reader,
+            instrument_cache=self._instrument_cache,
         )
 
     @property
@@ -299,6 +314,49 @@ class Quel3BackendController(BackendController):
             unit_label=unit_label,
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+        )
+
+    def configure_monitor_mode(
+        self,
+        *,
+        unit_label: str,
+        mode: Literal["open", "loopback"] = "open",
+        clear_instruments: bool = False,
+    ) -> str:
+        """
+        Set a unit's monitor mode before deploying output and monitor instruments.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact QuEL-3 unit label.
+        mode : {"open", "loopback"}, default="open"
+            Normal external output or monitor loopback mode.
+        clear_instruments : bool, default=False
+            Delete all instruments on this unit before configuring the mode.
+
+        Returns
+        -------
+        str
+            Applied mode reported by quelware.
+
+        Raises
+        ------
+        RuntimeError
+            If this unit has cached instruments and `clear_instruments` is false.
+
+        Notes
+        -----
+        Quelware also rejects a mode change if uncached instruments remain
+        deployed on the unit. With `clear_instruments=True`, every instrument
+        on this unit is deleted and its cache is invalidated. Instruments are
+        not automatically restored. Re-deploy them after changing the mode.
+        """
+        return self._configuration_manager.configure_monitor_mode(
+            unit_label=unit_label,
+            instrument_cache=self._instrument_cache,
+            mode=mode,
+            clear_instruments=clear_instruments,
         )
 
     def deploy_instrument(
@@ -510,6 +568,69 @@ class Quel3BackendController(BackendController):
     def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
         return self._sampling_period_ns
+
+    def run_monitor_schedule(
+        self,
+        *,
+        pulse_schedule: PulseSchedule,
+        capture_start_ns: float = 0.0,
+        capture_length_ns: float | None = None,
+        n_iterations: int = 1,
+        shot_interval_ns: float = 0.0,
+        parallel: bool = True,
+    ) -> dict[str, npt.NDArray[np.complex128]]:
+        """
+        Run each schedule target on the monitor port and restore the unit state.
+
+        Parameters
+        ----------
+        pulse_schedule : PulseSchedule
+            Valid schedule whose target names uniquely identify live output
+            instrument aliases on a single unit.
+        capture_start_ns : float, default=0.0
+            Capture start time relative to the output trigger, in ns.
+        capture_length_ns : float | None, optional
+            Capture duration in ns. Defaults to the schedule duration.
+        n_iterations : int, default=1
+            Number of unaveraged captures.
+        shot_interval_ns : float, default=0.0
+            Idle interval between iterations, in ns.
+        parallel : bool, default=True
+            Whether to parallelize instrument execution phases.
+
+        Returns
+        -------
+        dict[str, NDArray[np.complex128]]
+            Raw IQ arrays keyed by schedule target, each with shape
+            `(n_iterations, samples)`.
+
+        Raises
+        ------
+        ValueError
+            If a target has no live instrument, its alias is ambiguous, targets
+            span multiple units, or schedule or capture settings are invalid.
+
+        Notes
+        -----
+        The unit is inferred from live instruments matching the schedule's
+        targets. All targets are validated before clearing any instruments.
+        Schedule frequencies are in GHz. A target without a frequency uses the
+        center of its live instrument's frequency range. The same frequency is
+        applied to the output and monitor instruments. The method reads the
+        live instruments, clears the selected unit, enters loopback mode, and
+        executes targets sequentially. It clears temporary instruments and
+        restores the original monitor mode and instrument configuration even
+        if deployment or execution fails. Blanks advance event offsets without
+        allocating zero-filled waveform samples.
+        """
+        return self._monitor_tool.run_schedule(
+            pulse_schedule=pulse_schedule,
+            capture_start_ns=capture_start_ns,
+            capture_length_ns=capture_length_ns,
+            n_iterations=n_iterations,
+            shot_interval_ns=shot_interval_ns,
+            parallel=parallel,
+        )
 
     def execute_sync(
         self,

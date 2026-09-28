@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.instrument_cache import InstrumentCache
@@ -43,6 +43,7 @@ from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_br
 T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
+_MONITOR_MODE_CONTROL_KEY = "quel3.monitor.mode"
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,170 @@ class Quel3ConfigurationManager:
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
         return self._runtime_config.pat_path
+
+    def configure_monitor_mode(
+        self,
+        *,
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        mode: Literal["open", "loopback"] = "open",
+        clear_instruments: bool = False,
+    ) -> str:
+        """
+        Configure one unit's monitor mode before instruments are deployed.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact label of the QuEL-3 unit.
+        instrument_cache : InstrumentCache
+            Shared cache to check and invalidate when instruments are deleted.
+        mode : {"open", "loopback"}, default="open"
+            Normal external output or monitor loopback mode.
+        clear_instruments : bool, default=False
+            Delete every instrument on this unit before configuring the mode.
+
+        Returns
+        -------
+        str
+            Applied monitor mode reported by quelware.
+
+        Raises
+        ------
+        RuntimeError
+            Cached instruments remain and `clear_instruments` is false.
+
+        Notes
+        -----
+        Quelware requires a lock on every port of the unit and no deployed
+        instruments when changing a unit control. Validate the live control
+        before deleting instruments. Deletion and configuration share one
+        all-port session. Deleted instruments are not restored; failures after
+        deletion leave the unit's cache invalidated. Other units are retained.
+        """
+        if not unit_label.strip():
+            raise ValueError("Unit label must not be empty.")
+        if mode not in ("open", "loopback"):
+            raise ValueError("Monitor mode must be 'open' or 'loopback'.")
+        if not clear_instruments and any(
+            info.port_id.partition(":")[0] == unit_label
+            for info in instrument_cache.snapshot().values()
+        ):
+            raise RuntimeError(
+                "Clear deployed instruments with clear_instruments() before "
+                "changing QuEL-3 monitor mode, or pass clear_instruments=True."
+            )
+        return _run_async(
+            lambda: self._configure_monitor_mode(
+                unit_label=unit_label,
+                instrument_cache=instrument_cache,
+                mode=mode,
+                clear_instruments=clear_instruments,
+            )
+        )
+
+    def get_monitor_mode(self, *, unit_label: str) -> Literal["open", "loopback"]:
+        """Read the current monitor mode of one discovered unit."""
+        if not unit_label.strip():
+            raise ValueError("Unit label must not be empty.")
+        return _run_async(lambda: self._get_monitor_mode(unit_label=unit_label))
+
+    async def _get_monitor_mode(
+        self, *, unit_label: str
+    ) -> Literal["open", "loopback"]:
+        """Read the live monitor control before changing instrument state."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if unit_label not in client.list_unit_labels():
+                raise ValueError(f"QuEL-3 unit was not discovered: {unit_label!r}.")
+            configuration = await client.get_unit_configuration(unit_label)
+            control = next(
+                (
+                    spec
+                    for spec in configuration.supported
+                    if spec.key == _MONITOR_MODE_CONTROL_KEY
+                ),
+                None,
+            )
+            if control is None:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} does not support monitor mode."
+                )
+            mode = control.current_value
+            if mode == "open" or mode == "loopback":
+                return mode
+            raise ValueError(f"Unsupported QuEL-3 monitor mode readback: {mode!r}.")
+
+    async def _configure_monitor_mode(
+        self,
+        *,
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        mode: Literal["open", "loopback"],
+        clear_instruments: bool,
+    ) -> str:
+        """Validate the live control and apply it under an all-port session."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if unit_label not in client.list_unit_labels():
+                raise ValueError(f"QuEL-3 unit was not discovered: {unit_label!r}.")
+            configuration = await client.get_unit_configuration(unit_label)
+            control = next(
+                (
+                    spec
+                    for spec in configuration.supported
+                    if spec.key == _MONITOR_MODE_CONTROL_KEY
+                ),
+                None,
+            )
+            if control is None:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} does not support monitor mode."
+                )
+            if mode not in control.allowed_values:
+                raise ValueError(
+                    f"Monitor mode {mode!r} is not supported; "
+                    f"allowed values: {control.allowed_values}."
+                )
+            if control.current_value == mode and not clear_instruments:
+                return mode
+            resources = await client.list_resource_infos()
+            port_ids = tuple(
+                dict.fromkeys(
+                    resource.id
+                    for resource in resources
+                    if str(
+                        getattr(resource.category, "name", resource.category)
+                    ).rsplit(".", maxsplit=1)[-1]
+                    == "PORT"
+                    and resource.id.startswith(f"{unit_label}:")
+                )
+            )
+            if not port_ids:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} has no discovered ports to lock."
+                )
+            async with client.create_session(port_ids) as session:
+                if clear_instruments:
+                    instrument_cache.replace_units(
+                        unit_labels=(unit_label,), instrument_infos=()
+                    )
+                    await self._discard_instruments(
+                        session=session, port_ids=port_ids, parallel=True
+                    )
+                values = await session.configure_unit(
+                    unit_label, {_MONITOR_MODE_CONTROL_KEY: mode}
+                )
+            applied = values.get(_MONITOR_MODE_CONTROL_KEY)
+            if applied != mode:
+                raise RuntimeError(
+                    f"QuEL-3 monitor mode readback was {applied!r}; expected {mode!r}."
+                )
+            return mode
 
     def clear_instruments(
         self,
@@ -186,17 +351,26 @@ class Quel3ConfigurationManager:
             if not port_ids:
                 return
             async with client.create_session(port_ids) as session:
-                if parallel:
-                    results = await asyncio.gather(
-                        *(session.discard_instruments(port_id) for port_id in port_ids),
-                        return_exceptions=True,
-                    )
-                    for result in results:
-                        if isinstance(result, BaseException):
-                            raise result
-                else:
-                    for port_id in port_ids:
-                        await session.discard_instruments(port_id)
+                await self._discard_instruments(
+                    session=session, port_ids=port_ids, parallel=parallel
+                )
+
+    @staticmethod
+    async def _discard_instruments(
+        *, session: SessionProtocol, port_ids: tuple[str, ...], parallel: bool
+    ) -> None:
+        """Finish every discard request before leaving the shared port session."""
+        if parallel:
+            results = await asyncio.gather(
+                *(session.discard_instruments(port_id) for port_id in port_ids),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+        else:
+            for port_id in port_ids:
+                await session.discard_instruments(port_id)
 
     def deploy_instruments(
         self,
