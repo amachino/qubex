@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Literal, TypeVar
@@ -444,14 +444,11 @@ class Quel3ConfigurationManager:
             port_ids=port_ids,
             parallel=parallel,
         )
+        readback_counts = Counter(
+            (InstrumentCache.alias_for(info), info.port_id) for info in instrument_infos
+        )
         for specification in specifications:
-            matches = [
-                info
-                for info in instrument_infos
-                if InstrumentCache.alias_for(info) == specification.alias
-                and info.port_id == specification.port_id
-            ]
-            if len(matches) != 1:
+            if readback_counts[specification.alias, specification.port_id] != 1:
                 raise ValueError(
                     "Hardware readback did not return exactly one instrument "
                     f"for alias `{specification.alias}` on port `{specification.port_id}`."
