@@ -27,8 +27,9 @@ from qubex.backend.quel3 import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
-    Quel3HardwareState,
     Quel3PortDiagnostic,
+    Quel3ResourceReader,
+    Quel3ResourceSnapshot,
     Quel3RuntimeConfig,
     Quel3UnitControlState,
     Quel3UnitState,
@@ -85,12 +86,12 @@ def _make_instrument_cache(
     return cache
 
 
-class _FakeHardwareStateReader:
-    def __init__(self, state: Quel3HardwareState) -> None:
+class _FakeResourceReader:
+    def __init__(self, state: Quel3ResourceSnapshot) -> None:
         self.state = state
         self.last_collect_kwargs: dict[str, object] = {}
 
-    def collect_state(self, **kwargs: object) -> Quel3HardwareState:
+    def collect_snapshot(self, **kwargs: object) -> Quel3ResourceSnapshot:
         self.last_collect_kwargs = dict(kwargs)
         return self.state
 
@@ -162,9 +163,9 @@ def test_quel3_constructor_rejects_alias_map_argument() -> None:
         cast(Any, Quel3BackendController)(alias_map={"RQ00": "inst-00"})
 
 
-def test_get_hardware_state_delegates_to_hardware_state_reader() -> None:
-    """Given hardware state reader, controller should delegate state collection."""
-    state = Quel3HardwareState(
+def test_get_resource_snapshot_delegates_to_resource_reader() -> None:
+    """Given resource snapshot reader, controller should delegate state collection."""
+    state = Quel3ResourceSnapshot(
         generated_at="2026-07-07T00:00:00+00:00",
         endpoint="localhost",
         port=50051,
@@ -175,12 +176,10 @@ def test_get_hardware_state_delegates_to_hardware_state_reader() -> None:
         diagnostics=(),
         issues=(),
     )
-    hardware_state_reader = _FakeHardwareStateReader(state)
-    controller = Quel3BackendController(
-        hardware_state_reader=cast(Any, hardware_state_reader)
-    )
+    resource_reader = _FakeResourceReader(state)
+    controller = Quel3BackendController(resource_reader=cast(Any, resource_reader))
 
-    result = controller.get_hardware_state(
+    result = controller.get_resource_snapshot(
         unit_labels=("unit-a",),
         port_ids=("tx_p01",),
         instrument_aliases=("Q00",),
@@ -190,21 +189,21 @@ def test_get_hardware_state_delegates_to_hardware_state_reader() -> None:
     )
 
     assert result is state
-    assert hardware_state_reader.last_collect_kwargs["unit_labels"] == ("unit-a",)
-    assert hardware_state_reader.last_collect_kwargs["port_ids"] == ("tx_p01",)
-    assert hardware_state_reader.last_collect_kwargs["instrument_aliases"] == ("Q00",)
-    assert hardware_state_reader.last_collect_kwargs["include_diagnostics"] is True
-    assert hardware_state_reader.last_collect_kwargs["parallel"] is False
-    assert hardware_state_reader.last_collect_kwargs["timeout_seconds"] == 1.5
+    assert resource_reader.last_collect_kwargs["unit_labels"] == ("unit-a",)
+    assert resource_reader.last_collect_kwargs["port_ids"] == ("tx_p01",)
+    assert resource_reader.last_collect_kwargs["instrument_aliases"] == ("Q00",)
+    assert resource_reader.last_collect_kwargs["include_diagnostics"] is True
+    assert resource_reader.last_collect_kwargs["parallel"] is False
+    assert resource_reader.last_collect_kwargs["timeout_seconds"] == 1.5
 
 
-def test_get_hardware_state_rejects_old_filter_kwargs() -> None:
-    """Given removed hardware-state filter kwargs, controller raises TypeError."""
+def test_get_resource_snapshot_rejects_old_filter_kwargs() -> None:
+    """Given removed resource snapshot filter kwargs, controller raises TypeError."""
     controller = Quel3BackendController(
-        hardware_state_reader=cast(
+        resource_reader=cast(
             Any,
-            _FakeHardwareStateReader(
-                Quel3HardwareState(
+            _FakeResourceReader(
+                Quel3ResourceSnapshot(
                     generated_at="2026-07-07T00:00:00+00:00",
                     endpoint="localhost",
                     port=50051,
@@ -220,16 +219,20 @@ def test_get_hardware_state_rejects_old_filter_kwargs() -> None:
     )
 
     with pytest.raises(TypeError, match="instrument_port_ids"):
-        cast(Any, controller).get_hardware_state(instrument_port_ids=("unit-a:tx_p01",))
+        cast(Any, controller).get_resource_snapshot(
+            instrument_port_ids=("unit-a:tx_p01",)
+        )
     with pytest.raises(TypeError, match="diagnostic_port_ids"):
-        cast(Any, controller).get_hardware_state(diagnostic_port_ids=("unit-a:tx_p01",))
+        cast(Any, controller).get_resource_snapshot(
+            diagnostic_port_ids=("unit-a:tx_p01",)
+        )
 
 
-def test_print_hardware_state_collects_view_and_delegates_to_state(
+def test_print_resource_snapshot_collects_view_and_delegates_to_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given hardware state, controller should print a Rich hardware-state view."""
-    state = Quel3HardwareState(
+    """Given resource snapshot, controller should print a Rich resource snapshot view."""
+    state = Quel3ResourceSnapshot(
         generated_at="2026-07-07T00:00:00+00:00",
         endpoint="localhost",
         port=50051,
@@ -240,26 +243,24 @@ def test_print_hardware_state_collects_view_and_delegates_to_state(
         diagnostics=(),
         issues=(),
     )
-    hardware_state_reader = _FakeHardwareStateReader(state)
-    controller = Quel3BackendController(
-        hardware_state_reader=cast(Any, hardware_state_reader)
-    )
+    resource_reader = _FakeResourceReader(state)
+    controller = Quel3BackendController(resource_reader=cast(Any, resource_reader))
     printed_views: list[str] = []
     monkeypatch.setattr(
-        Quel3HardwareState,
+        Quel3ResourceSnapshot,
         "print",
         lambda self, *, view: printed_views.append(view),
     )
 
-    controller.print_hardware_state(view="summary")
+    controller.print_resource_snapshot(view="summary")
 
-    assert hardware_state_reader.last_collect_kwargs["view"] == "summary"
+    assert resource_reader.last_collect_kwargs["view"] == "summary"
     assert printed_views == ["summary"]
 
 
-def test_hardware_state_print_omits_absent_endpoint_port() -> None:
+def test_resource_snapshot_print_omits_absent_endpoint_port() -> None:
     """An absent endpoint port should not render as a literal None suffix."""
-    state = Quel3HardwareState(
+    state = Quel3ResourceSnapshot(
         generated_at="2026-07-07T00:00:00+00:00",
         endpoint="api.example.com",
         port=None,
@@ -277,10 +278,10 @@ def test_hardware_state_print_omits_absent_endpoint_port() -> None:
     assert "api.example.com:None" not in output.getvalue()
 
 
-def test_hardware_state_prints_diagnostics_as_raw_yaml() -> None:
+def test_resource_snapshot_prints_diagnostics_as_raw_yaml() -> None:
     """Diagnostic view should print YAML without Rich panels or syntax framing."""
     diagnostic_yaml = "port:\n  id: unit-a:tx_p01\n  state: ready\n"
-    state = Quel3HardwareState(
+    state = Quel3ResourceSnapshot(
         generated_at="2026-07-07T00:00:00+00:00",
         endpoint="localhost",
         port=50051,
@@ -304,9 +305,9 @@ def test_hardware_state_prints_diagnostics_as_raw_yaml() -> None:
     assert output.getvalue() == diagnostic_yaml
 
 
-def test_hardware_state_prints_unit_configuration_controls() -> None:
+def test_resource_snapshot_prints_unit_configuration_controls() -> None:
     """Units view should print each control's current and allowed values."""
-    state = Quel3HardwareState(
+    state = Quel3ResourceSnapshot(
         generated_at="2026-07-07T00:00:00+00:00",
         endpoint="localhost",
         port=50051,
@@ -338,13 +339,13 @@ def test_hardware_state_prints_unit_configuration_controls() -> None:
     assert "disabled, loopback" in rendered
 
 
-def test_print_hardware_state_rejects_console_kwarg() -> None:
+def test_print_resource_snapshot_rejects_console_kwarg() -> None:
     """Given removed console kwarg, controller raises TypeError."""
     controller = Quel3BackendController(
-        hardware_state_reader=cast(
+        resource_reader=cast(
             Any,
-            _FakeHardwareStateReader(
-                Quel3HardwareState(
+            _FakeResourceReader(
+                Quel3ResourceSnapshot(
                     generated_at="2026-07-07T00:00:00+00:00",
                     endpoint="localhost",
                     port=50051,
@@ -362,7 +363,7 @@ def test_print_hardware_state_rejects_console_kwarg() -> None:
     console = Console(file=output, force_terminal=False, width=120)
 
     with pytest.raises(TypeError, match="console"):
-        cast(Any, controller).print_hardware_state(console=console)
+        cast(Any, controller).print_resource_snapshot(console=console)
 
 
 def test_execute_rejects_non_quel3_payload() -> None:
@@ -382,7 +383,7 @@ def test_execute_surfaces_missing_quelware_dependency(
     controller = Quel3BackendController()
     payload = _make_payload()
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        controller.resource_reader,
         "read_instrument_infos",
         lambda **kwargs: cast(
             Any,
@@ -682,6 +683,26 @@ def test_constructor_accepts_quelware_pat_path_runtime_option() -> None:
     assert controller.execution_manager.runtime_config is controller.runtime_config
 
 
+def test_constructor_exposes_resource_reader_with_shared_runtime() -> None:
+    """The default resource reader should use the controller's runtime config."""
+    controller = Quel3BackendController(quelware_endpoint="reader-host")
+
+    assert isinstance(controller.resource_reader, Quel3ResourceReader)
+    assert controller.resource_reader.runtime_config is controller.runtime_config
+    assert controller.resource_reader.quelware_endpoint == "reader-host"
+
+
+def test_constructor_exposes_injected_resource_reader() -> None:
+    """The resource reader property should return the supplied reader unchanged."""
+    runtime_config = Quel3RuntimeConfig(endpoint="reader-host")
+    reader = Quel3ResourceReader(runtime_config=runtime_config)
+
+    controller = Quel3BackendController(resource_reader=reader)
+
+    assert controller.resource_reader is reader
+    assert reader.runtime_config is runtime_config
+
+
 def test_constructor_accepts_injected_managers() -> None:
     """Given injected managers, controller should use those manager instances."""
     connection_manager = SimpleNamespace(
@@ -770,7 +791,7 @@ def test_connect_clears_existing_instrument_cache(
         connection_manager=cast(Any, connection_manager),
     )
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        controller.resource_reader,
         "read_instrument_infos",
         lambda **kwargs: cast(
             Any,
@@ -788,7 +809,7 @@ def test_connect_clears_existing_instrument_cache(
 
     controller.refresh_instrument_cache()
     monkeypatch.setattr(
-        controller.hardware_state_reader, "read_instrument_infos", lambda **kwargs: ()
+        controller.resource_reader, "read_instrument_infos", lambda **kwargs: ()
     )
     controller.connect(["BOX1"])
 
@@ -814,7 +835,7 @@ def test_configuration_operations_receive_the_same_controller_owned_cache() -> N
         captured["refresh"] = kwargs
         return result_infos
 
-    reader = _FakeHardwareStateReader(cast(Any, None))
+    reader = _FakeResourceReader(cast(Any, None))
     controller = Quel3BackendController(
         configuration_manager=cast(
             Any,
@@ -823,7 +844,7 @@ def test_configuration_operations_receive_the_same_controller_owned_cache() -> N
                 refresh_instrument_cache=refresh,
             ),
         ),
-        hardware_state_reader=cast(Any, reader),
+        resource_reader=cast(Any, reader),
     )
     configuration = InstrumentConfiguration()
 
@@ -840,8 +861,8 @@ def test_configuration_operations_receive_the_same_controller_owned_cache() -> N
         captured["deploy"]["instrument_cache"]
         is captured["refresh"]["instrument_cache"]
     )
-    assert captured["deploy"]["hardware_state_reader"] is reader
-    assert captured["refresh"]["hardware_state_reader"] is reader
+    assert captured["deploy"]["resource_reader"] is reader
+    assert captured["refresh"]["resource_reader"] is reader
     assert captured["deploy"]["parallel"] is False
     assert captured["refresh"]["parallel"] is False
     assert captured["refresh"]["unit_labels"] == ("unit-a",)

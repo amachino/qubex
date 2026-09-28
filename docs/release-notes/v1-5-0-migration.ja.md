@@ -264,6 +264,24 @@ from qubex.system import ConfigLoader, ControlSystem, ExperimentSystem, SystemMa
 `qubex.backend.quel1`、`qubex.backend.quel3` のような実装 module に
 集中しています。
 
+### QuEL-3 の resource 取得 API を名前更新する
+
+以前の v1.5.0 release candidate にあった取得 API は、quelware の resource を
+扱うことが明確になる名前へ変更しました。旧名と旧 import path は削除しました。
+
+| 旧 API | 新 API |
+| --- | --- |
+| `Quel3HardwareStateReader` | `qubex.backend.quel3.infra` の `Quel3ResourceReader` |
+| `Quel3HardwareState` | `qubex.backend.quel3.models` の `Quel3ResourceSnapshot` |
+| `Quel3HardwareStateIssue` / `Quel3HardwareStateSeverity` | `Quel3ResourceIssue` / `Quel3ResourceSeverity` |
+| `hardware_state_reader=` / `.hardware_state_reader` | `resource_reader=` / `.resource_reader` |
+| `reader.collect_state()` | `reader.collect_snapshot()` |
+| `controller.get_hardware_state()` | `controller.get_resource_snapshot()` |
+| `controller.print_hardware_state()` | `controller.print_resource_snapshot()` |
+
+reader と snapshot は `qubex.backend.quel3` からも import できます。
+snapshot は実行キャッシュから独立しており、`to_dict()` の field 名は変更しません。
+
 ### よく使う kwargs / property を名前更新する
 
 次は `v1.5.0` でも即 break にはなりませんが、このタイミングで置き換えるべきです。

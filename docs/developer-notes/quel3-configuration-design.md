@@ -73,9 +73,9 @@ into that cache. Connect loads all existing instruments. Explicit refresh
 replaces all or selected units. An empty
 configuration or an explicitly empty refresh selection performs no work.
 
-`Quel3HardwareState` is an independent diagnostic snapshot. It can contain partial
+`Quel3ResourceSnapshot` is an independent diagnostic snapshot. It can contain partial
 data and read issues, and is never used as executable instrument cache input.
-SystemManager pull, hardware-state display, and `is_synced()` leave the
+SystemManager pull, resource snapshot display, and `is_synced()` leave the
 instrument cache unchanged.
 
 `Quel3SystemSynchronizer` converts observed instruments into the system's
@@ -289,7 +289,7 @@ Status legend:
     - port and role derivation from logical target metadata
   - Backend configuration-manager responsibilities:
     - quelware client/session lifecycle for deploy
-    - readback through `Quel3HardwareStateReader` and updates to the supplied
+    - readback through `Quel3ResourceReader` and updates to the supplied
       controller-owned cache
   - Shared-port deployment policy:
     - one port may host multiple instruments

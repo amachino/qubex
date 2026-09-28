@@ -7,12 +7,10 @@ from typing import cast
 
 import pytest
 
+from qubex.backend.quel3.infra import Quel3ResourceReader
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
-from qubex.backend.quel3.managers import (
-    Quel3ConfigurationManager,
-    Quel3HardwareStateReader,
-)
+from qubex.backend.quel3.managers import Quel3ConfigurationManager
 from qubex.backend.quel3.models import InstrumentConfiguration, InstrumentSpec
 
 
@@ -97,8 +95,8 @@ def _reader(
     infos: tuple[InstrumentInfoProtocol, ...],
     *,
     fail: bool = False,
-) -> Quel3HardwareStateReader:
-    return cast(Quel3HardwareStateReader, _Reader(calls, infos, fail=fail))
+) -> Quel3ResourceReader:
+    return cast(Quel3ResourceReader, _Reader(calls, infos, fail=fail))
 
 
 @pytest.mark.parametrize("source", ["memory", "yaml"])
@@ -126,7 +124,7 @@ def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
     result = manager.deploy_instruments(
         configuration=configuration,
         instrument_cache=cache,
-        hardware_state_reader=_reader(calls, (actual,)),
+        resource_reader=_reader(calls, (actual,)),
         parallel=False,
     )
 
@@ -164,7 +162,7 @@ def test_failed_deploy_does_not_retain_stale_resource_ids(failure: str) -> None:
         manager.deploy_instruments(
             configuration=InstrumentConfiguration(instruments=(specification,)),
             instrument_cache=cache,
-            hardware_state_reader=_reader(calls, infos, fail=failure == "read"),
+            resource_reader=_reader(calls, infos, fail=failure == "read"),
         )
 
     assert cache.snapshot() == {"Q01": other}
@@ -181,7 +179,7 @@ def test_empty_deploy_does_not_clear_cache_or_contact_hardware() -> None:
     result = manager.deploy_instruments(
         configuration=InstrumentConfiguration(instruments=()),
         instrument_cache=cache,
-        hardware_state_reader=_reader(calls, ()),
+        resource_reader=_reader(calls, ()),
     )
 
     assert result == {}
@@ -201,7 +199,7 @@ def test_refresh_selected_unit_preserves_other_units() -> None:
     result = _ConfigurationManager(calls).refresh_instrument_cache(
         unit_labels=("unit-a",),
         instrument_cache=cache,
-        hardware_state_reader=_reader(calls, ()),
+        resource_reader=_reader(calls, ()),
     )
 
     assert result == {}
@@ -221,7 +219,7 @@ def test_refresh_all_replaces_complete_cache(include_instrument: bool) -> None:
 
     result = _ConfigurationManager(calls).refresh_instrument_cache(
         instrument_cache=cache,
-        hardware_state_reader=_reader(calls, infos),
+        resource_reader=_reader(calls, infos),
         parallel=False,
     )
 
@@ -248,7 +246,7 @@ def test_failed_refresh_retains_previous_complete_snapshot(failure: str) -> None
         _ConfigurationManager(calls).refresh_instrument_cache(
             unit_labels=("unit-a",),
             instrument_cache=cache,
-            hardware_state_reader=_reader(calls, infos, fail=failure == "read"),
+            resource_reader=_reader(calls, infos, fail=failure == "read"),
         )
 
     assert cache.snapshot() == {"Q00": info, "Q01": other}
@@ -262,7 +260,7 @@ def test_empty_unit_selection_does_not_refresh_all_units() -> None:
     result = _ConfigurationManager(calls).refresh_instrument_cache(
         unit_labels=(),
         instrument_cache=cache,
-        hardware_state_reader=_reader(calls, ()),
+        resource_reader=_reader(calls, ()),
     )
 
     assert result == {}

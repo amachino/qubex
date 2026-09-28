@@ -95,7 +95,7 @@ def test_connect_makes_existing_instruments_available_to_execution(
 
     controller = Quel3BackendController(
         connection_manager=cast(Any, connection),
-        hardware_state_reader=cast(Any, reader),
+        resource_reader=cast(Any, reader),
         execution_manager=cast(
             Any, SimpleNamespace(sampling_period_ns=0.4, execute_sync=execute_sync)
         ),
@@ -124,7 +124,7 @@ def test_failed_connect_discards_stale_cache_and_connection_status(
     reader = _Reader(calls, (_info("unit-a:old"),))
     controller = Quel3BackendController(
         connection_manager=cast(Any, connection),
-        hardware_state_reader=cast(Any, reader),
+        resource_reader=cast(Any, reader),
     )
     controller.refresh_instrument_cache()
     connection.is_connected = True
@@ -146,7 +146,7 @@ def test_repeated_connect_reloads_instruments_from_hardware() -> None:
     reader = _Reader(calls, (_info("unit-a:old"),))
     controller = Quel3BackendController(
         connection_manager=cast(Any, _ConnectionManager(calls)),
-        hardware_state_reader=cast(Any, reader),
+        resource_reader=cast(Any, reader),
     )
 
     controller.connect()
@@ -182,7 +182,7 @@ def test_connect_rejects_missing_units_before_reading_instruments(
     calls: list[object] = []
     controller = Quel3BackendController(
         connection_manager=connection,
-        hardware_state_reader=cast(Any, _Reader(calls, (_info("unit-a:old"),))),
+        resource_reader=cast(Any, _Reader(calls, (_info("unit-a:old"),))),
     )
     if already_connected:
         controller.connect("unit-a")
@@ -245,7 +245,7 @@ def test_connect_warns_and_executes_last_duplicate_alias(
 
     controller = Quel3BackendController(
         connection_manager=cast(Any, _ConnectionManager(calls)),
-        hardware_state_reader=cast(Any, _Reader(calls, (first, last))),
+        resource_reader=cast(Any, _Reader(calls, (first, last))),
         execution_manager=cast(
             Any, SimpleNamespace(sampling_period_ns=0.4, execute_sync=execute_sync)
         ),
@@ -275,7 +275,7 @@ def test_connect_with_empty_selection_clears_cache_without_reading() -> None:
     calls: list[object] = []
     controller = Quel3BackendController(
         connection_manager=cast(Any, _ConnectionManager(calls)),
-        hardware_state_reader=cast(Any, _Reader(calls, (_info("unit-a:old"),))),
+        resource_reader=cast(Any, _Reader(calls, (_info("unit-a:old"),))),
     )
     controller.refresh_instrument_cache()
     calls.clear()

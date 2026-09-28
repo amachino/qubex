@@ -7,7 +7,7 @@ import logging
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import Literal, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import (
     Quel3ClientMode,
@@ -22,7 +22,6 @@ from qubex.backend.quel3.interfaces.client import (
     QuelwareClientFactory,
     SessionProtocol,
 )
-from qubex.backend.quel3.managers.hardware_state_reader import Quel3HardwareStateReader
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
     QuelwareSessionError,
@@ -35,6 +34,9 @@ from qubex.backend.quel3.models import (
     InstrumentSpec,
 )
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
+
+if TYPE_CHECKING:
+    from qubex.backend.quel3.infra.resource_reader import Quel3ResourceReader
 
 T = TypeVar("T")
 
@@ -351,7 +353,7 @@ class Quel3ConfigurationManager:
         *,
         configuration: InstrumentConfiguration,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         """
@@ -366,7 +368,7 @@ class Quel3ConfigurationManager:
         return self._deploy_and_refresh(
             specifications=configuration.instruments,
             instrument_cache=instrument_cache,
-            hardware_state_reader=hardware_state_reader,
+            resource_reader=resource_reader,
             append=False,
             parallel=parallel,
         )
@@ -376,7 +378,7 @@ class Quel3ConfigurationManager:
         *,
         instrument: InstrumentSpec,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         append: bool = True,
         parallel: bool = True,
     ) -> InstrumentInfoProtocol:
@@ -389,7 +391,7 @@ class Quel3ConfigurationManager:
             Instrument definition and its unit-qualified port ID.
         instrument_cache : InstrumentCache
             Controller-owned cache to update after deployment.
-        hardware_state_reader : Quel3HardwareStateReader
+        resource_reader : Quel3ResourceReader
             Reader for complete port readback after deployment.
         append : bool, default=True
             Add or replace this alias while preserving the port's other
@@ -413,7 +415,7 @@ class Quel3ConfigurationManager:
         instrument_infos = self._deploy_and_refresh(
             specifications=(instrument,),
             instrument_cache=instrument_cache,
-            hardware_state_reader=hardware_state_reader,
+            resource_reader=resource_reader,
             append=append,
             parallel=parallel,
         )
@@ -424,7 +426,7 @@ class Quel3ConfigurationManager:
         *,
         specifications: tuple[InstrumentSpec, ...],
         instrument_cache: InstrumentCache,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         append: bool,
         parallel: bool,
     ) -> dict[str, InstrumentInfoProtocol]:
@@ -440,7 +442,7 @@ class Quel3ConfigurationManager:
                 parallel=parallel,
             )
         )
-        instrument_infos = hardware_state_reader.read_instrument_infos(
+        instrument_infos = resource_reader.read_instrument_infos(
             port_ids=port_ids,
             parallel=parallel,
         )
@@ -462,7 +464,7 @@ class Quel3ConfigurationManager:
         self,
         *,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         unit_labels: Sequence[str] | None = None,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
@@ -475,7 +477,7 @@ class Quel3ConfigurationManager:
         """
         if unit_labels is not None and not unit_labels:
             return {}
-        instrument_infos = hardware_state_reader.read_instrument_infos(
+        instrument_infos = resource_reader.read_instrument_infos(
             unit_labels=() if unit_labels is None else tuple(unit_labels),
             parallel=parallel,
         )

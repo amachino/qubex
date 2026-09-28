@@ -68,9 +68,9 @@ aliases and requires unique local aliases across all units.
 
 ## Hardware inspection
 
-`get_hardware_state()` and `print_hardware_state()` collect diagnostic
+`get_resource_snapshot()` and `print_resource_snapshot()` collect diagnostic
 snapshots. Individual read failures appear as issues, so a snapshot can be
-partial. Hardware-state snapshots and backend settings are never execution
+partial. Resource snapshot snapshots and backend settings are never execution
 cache inputs. Inspection and `is_synced()` leave runtime instruments unchanged.
 
 ## Sequencer and result contract

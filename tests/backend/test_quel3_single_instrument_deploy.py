@@ -9,12 +9,12 @@ from typing import Any, cast
 import pytest
 
 from qubex.backend.quel3 import InstrumentSpec, Quel3BackendController
+from qubex.backend.quel3.infra import Quel3ResourceReader
 from qubex.backend.quel3.infra.quelware_imports import QuelwareInstrumentEntities
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
-    Quel3HardwareStateReader,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
 
@@ -166,7 +166,7 @@ def test_single_deploy_updates_the_full_port_and_returns_one_readback(
         instrument=_spec(),
         append=append,
         instrument_cache=cache,
-        hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+        resource_reader=cast(Quel3ResourceReader, hardware),
         parallel=False,
     )
 
@@ -186,7 +186,7 @@ def test_controller_single_deploy_defaults_to_append(
     manager, hardware, _ = deployment
     controller = Quel3BackendController(
         configuration_manager=manager,
-        hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+        resource_reader=cast(Quel3ResourceReader, hardware),
     )
     controller.refresh_instrument_cache()
 
@@ -214,7 +214,7 @@ def test_append_replaces_existing_alias_without_a_preflight_read(
     result = manager.deploy_instrument(
         instrument=_spec(alias="Q00"),
         instrument_cache=cache,
-        hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+        resource_reader=cast(Quel3ResourceReader, hardware),
     )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
@@ -239,7 +239,7 @@ def test_append_does_not_retry_after_an_uncertain_write(
         manager.deploy_instrument(
             instrument=_spec(),
             instrument_cache=cache,
-            hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+            resource_reader=cast(Quel3ResourceReader, hardware),
         )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
@@ -262,7 +262,7 @@ def test_failed_append_readback_does_not_publish_partial_information(
         manager.deploy_instrument(
             instrument=_spec(),
             instrument_cache=cache,
-            hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+            resource_reader=cast(Quel3ResourceReader, hardware),
         )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]

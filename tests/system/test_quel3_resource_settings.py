@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 
 from qubex.backend.quel3 import Quel3BackendController
-from qubex.backend.quel3.models import Quel3HardwareState, Quel3InstrumentState
+from qubex.backend.quel3.models import Quel3InstrumentState, Quel3ResourceSnapshot
 from qubex.system.quel3 import Quel3SystemSynchronizer
 
 
@@ -27,7 +27,7 @@ def test_settings_projection_preserves_scopes_aliases_and_optional_fields(
         frequency_range_min_hz=4e9,
         frequency_range_max_hz=6e9,
     )
-    snapshot = Quel3HardwareState(
+    snapshot = Quel3ResourceSnapshot(
         generated_at="2026-09-29T00:00:00+00:00",
         endpoint="localhost",
         port=None,
@@ -53,12 +53,12 @@ def test_settings_projection_preserves_scopes_aliases_and_optional_fields(
     )
     calls: list[dict[str, object]] = []
 
-    def collect_state(**kwargs: object) -> Quel3HardwareState:
+    def collect_snapshot(**kwargs: object) -> Quel3ResourceSnapshot:
         calls.append(kwargs)
         return snapshot
 
     controller = Quel3BackendController(
-        hardware_state_reader=cast(Any, SimpleNamespace(collect_state=collect_state))
+        resource_reader=cast(Any, SimpleNamespace(collect_snapshot=collect_snapshot))
     )
     synchronizer = Quel3SystemSynchronizer(backend_controller=controller)
 
@@ -117,9 +117,7 @@ def test_empty_settings_selection_skips_collection() -> None:
         pytest.fail("Empty selections must not collect resources.")
 
     controller = Quel3BackendController(
-        hardware_state_reader=cast(
-            Any, SimpleNamespace(collect_state=reject_collection)
-        )
+        resource_reader=cast(Any, SimpleNamespace(collect_snapshot=reject_collection))
     )
     synchronizer = Quel3SystemSynchronizer(backend_controller=controller)
 

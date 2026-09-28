@@ -194,7 +194,7 @@ def test_controller_clear_updates_its_execution_cache(
     infos = (_info("unit-a"), _info("unit-b"))
     controller = Quel3BackendController(
         configuration_manager=manager,
-        hardware_state_reader=cast(
+        resource_reader=cast(
             Any, SimpleNamespace(read_instrument_infos=lambda **kwargs: infos)
         ),
     )

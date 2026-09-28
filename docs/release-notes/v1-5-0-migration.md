@@ -270,6 +270,25 @@ The `qubex.backend` namespace now focuses on backend controller contracts and
 concrete backend implementations such as `qubex.backend.quel1` and
 `qubex.backend.quel3`.
 
+### Rename QuEL-3 resource inspection APIs
+
+QuEL-3 inspection APIs from earlier v1.5.0 release candidates now describe
+quelware resources explicitly. The old names and import paths are removed.
+
+| Previous API | Replacement |
+| --- | --- |
+| `Quel3HardwareStateReader` | `Quel3ResourceReader` in `qubex.backend.quel3.infra` |
+| `Quel3HardwareState` | `Quel3ResourceSnapshot` in `qubex.backend.quel3.models` |
+| `Quel3HardwareStateIssue` / `Quel3HardwareStateSeverity` | `Quel3ResourceIssue` / `Quel3ResourceSeverity` |
+| `hardware_state_reader=` / `.hardware_state_reader` | `resource_reader=` / `.resource_reader` |
+| `reader.collect_state()` | `reader.collect_snapshot()` |
+| `controller.get_hardware_state()` | `controller.get_resource_snapshot()` |
+| `controller.print_hardware_state()` | `controller.print_resource_snapshot()` |
+
+The reader and snapshot are also exported from `qubex.backend.quel3`.
+Snapshots remain independent of the execution cache, and their `to_dict()`
+field names are unchanged.
+
 ### Rename common kwargs and properties
 
 These changes are not hard breaks in `v1.5.0`, but they should be migrated now:

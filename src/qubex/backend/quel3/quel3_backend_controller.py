@@ -23,18 +23,18 @@ from qubex.backend.quel3.infra import Quel3ClientMode, Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
+from .infra import Quel3ResourceReader
 from .managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
     Quel3ExecutionManager,
-    Quel3HardwareStateReader,
     Quel3SessionManager,
 )
 from .models import (
     InstrumentConfiguration,
     InstrumentSpec,
-    Quel3HardwareState,
-    Quel3HardwareStateView,
+    Quel3ResourceSnapshot,
+    Quel3ResourceView,
 )
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
 from .tools import Quel3MonitorTool
@@ -76,7 +76,7 @@ class Quel3BackendController(BackendController):
         session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
         execution_manager: Quel3ExecutionManager | None = None,
-        hardware_state_reader: Quel3HardwareStateReader | None = None,
+        resource_reader: Quel3ResourceReader | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -101,8 +101,8 @@ class Quel3BackendController(BackendController):
             Injected configuration manager for testing or customization.
         execution_manager : Quel3ExecutionManager | None, optional
             Injected execution manager for testing or customization.
-        hardware_state_reader : Quel3HardwareStateReader | None, optional
-            Injected hardware-state reader for testing or customization.
+        resource_reader : Quel3ResourceReader | None, optional
+            Injected resource reader for testing or customization.
         """
         if runtime_config is not None and any(
             value is not None
@@ -161,10 +161,10 @@ class Quel3BackendController(BackendController):
                 session_manager=self._session_manager,
             )
         )
-        self._hardware_state_reader = (
-            hardware_state_reader
-            if hardware_state_reader is not None
-            else Quel3HardwareStateReader(
+        self._resource_reader = (
+            resource_reader
+            if resource_reader is not None
+            else Quel3ResourceReader(
                 runtime_config=resolved_runtime_config,
             )
         )
@@ -172,7 +172,7 @@ class Quel3BackendController(BackendController):
         self._monitor_tool = Quel3MonitorTool(
             configuration_manager=self._configuration_manager,
             execution_manager=self._execution_manager,
-            hardware_state_reader=self._hardware_state_reader,
+            resource_reader=self._resource_reader,
             instrument_cache=self._instrument_cache,
         )
 
@@ -237,9 +237,9 @@ class Quel3BackendController(BackendController):
         return self._execution_manager
 
     @property
-    def hardware_state_reader(self) -> Quel3HardwareStateReader:
-        """Return backend-side QuEL-3 hardware-state reader."""
-        return self._hardware_state_reader
+    def resource_reader(self) -> Quel3ResourceReader:
+        """Return backend-side QuEL-3 resource reader."""
+        return self._resource_reader
 
     def connect(
         self,
@@ -270,7 +270,7 @@ class Quel3BackendController(BackendController):
             )
             if unit_labels is not None and not unit_labels:
                 return
-            instrument_infos = self._hardware_state_reader.read_instrument_infos(
+            instrument_infos = self._resource_reader.read_instrument_infos(
                 unit_labels=() if unit_labels is None else unit_labels,
                 parallel=True if parallel is None else parallel,
             )
@@ -394,7 +394,7 @@ class Quel3BackendController(BackendController):
         return self._configuration_manager.deploy_instrument(
             instrument=instrument,
             instrument_cache=self._instrument_cache,
-            hardware_state_reader=self._hardware_state_reader,
+            resource_reader=self._resource_reader,
             append=append,
             parallel=parallel,
         )
@@ -415,7 +415,7 @@ class Quel3BackendController(BackendController):
         return self._configuration_manager.deploy_instruments(
             configuration=configuration,
             instrument_cache=self._instrument_cache,
-            hardware_state_reader=self._hardware_state_reader,
+            resource_reader=self._resource_reader,
             parallel=parallel,
         )
 
@@ -467,12 +467,12 @@ class Quel3BackendController(BackendController):
         """
         return self._configuration_manager.refresh_instrument_cache(
             instrument_cache=self._instrument_cache,
-            hardware_state_reader=self._hardware_state_reader,
+            resource_reader=self._resource_reader,
             unit_labels=unit_labels,
             parallel=parallel,
         )
 
-    def get_hardware_state(
+    def get_resource_snapshot(
         self,
         *,
         unit_labels: Sequence[str] = (),
@@ -481,9 +481,9 @@ class Quel3BackendController(BackendController):
         include_diagnostics: bool = False,
         parallel: bool = True,
         timeout_seconds: float | None = None,
-    ) -> Quel3HardwareState:
+    ) -> Quel3ResourceSnapshot:
         """
-        Collect one structured QuEL-3 hardware-state snapshot.
+        Collect one structured QuEL-3 resource snapshot.
 
         Read the current hardware without changing the execution cache. The
         snapshot can contain partial results and acquisition issues. Instrument
@@ -505,9 +505,9 @@ class Quel3BackendController(BackendController):
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
-            Timeout for the synchronous hardware-state collection call.
+            Timeout for the synchronous resource snapshot collection call.
         """
-        return self._hardware_state_reader.collect_state(
+        return self._resource_reader.collect_snapshot(
             unit_labels=tuple(unit_labels),
             port_ids=tuple(port_ids),
             instrument_aliases=tuple(instrument_aliases),
@@ -516,10 +516,10 @@ class Quel3BackendController(BackendController):
             timeout_seconds=timeout_seconds,
         )
 
-    def print_hardware_state(
+    def print_resource_snapshot(
         self,
         *,
-        view: Quel3HardwareStateView = "summary",
+        view: Quel3ResourceView = "summary",
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
@@ -528,11 +528,11 @@ class Quel3BackendController(BackendController):
         timeout_seconds: float | None = None,
     ) -> None:
         """
-        Print one QuEL-3 hardware-state view with Rich.
+        Print one QuEL-3 resource snapshot view with Rich.
 
         Parameters
         ----------
-        view : Quel3HardwareStateView, optional
+        view : Quel3ResourceView, optional
             Rendered view name.
         unit_labels : Sequence[str], optional
             Unit labels to inspect. Empty means all discovered units.
@@ -548,11 +548,11 @@ class Quel3BackendController(BackendController):
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
-            Timeout for the synchronous hardware-state collection call.
+            Timeout for the synchronous resource snapshot collection call.
         """
         if include_diagnostics is None:
             include_diagnostics = view in ("diagnostics", "all")
-        state = self._hardware_state_reader.collect_state(
+        state = self._resource_reader.collect_snapshot(
             unit_labels=tuple(unit_labels),
             port_ids=tuple(port_ids),
             instrument_aliases=tuple(instrument_aliases),

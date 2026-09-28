@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from .quel3_target_deploy_planner import Quel3TargetDeployPlanner
 
 if TYPE_CHECKING:
-    from qubex.backend.quel3.models import Quel3HardwareState, Quel3InstrumentState
+    from qubex.backend.quel3.models import Quel3InstrumentState, Quel3ResourceSnapshot
     from qubex.backend.quel3.quel3_backend_controller import Quel3BackendController
     from qubex.system.control_system import Box
     from qubex.system.experiment_system import ExperimentSystem
@@ -91,7 +91,7 @@ class Quel3SystemSynchronizer:
         del experiment_system
         if not box_ids:
             return {}
-        state = self._backend_controller.hardware_state_reader.collect_state(
+        state = self._backend_controller.resource_reader.collect_snapshot(
             unit_labels=tuple(box_ids),
             include_diagnostics=False,
             parallel=True if parallel is None else parallel,
@@ -103,10 +103,10 @@ class Quel3SystemSynchronizer:
     def _project_backend_settings(
         cls,
         *,
-        state: Quel3HardwareState,
+        state: Quel3ResourceSnapshot,
         unit_labels: Sequence[str],
     ) -> dict[str, dict]:
-        """Project hardware state into backend settings keyed by selected unit labels."""
+        """Project resource snapshot into backend settings keyed by selected unit labels."""
         settings: dict[str, dict] = {
             unit_label: {"instruments": {}} for unit_label in unit_labels
         }

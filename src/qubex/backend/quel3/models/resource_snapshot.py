@@ -1,4 +1,4 @@
-"""Hardware-state models for QuEL-3 runtime inspection."""
+"""Resource snapshot models for QuEL-3 runtime inspection."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-Quel3HardwareStateSeverity: TypeAlias = Literal["info", "warning", "error"]
-Quel3HardwareStateView: TypeAlias = Literal[
+Quel3ResourceSeverity: TypeAlias = Literal["info", "warning", "error"]
+Quel3ResourceView: TypeAlias = Literal[
     "summary",
     "units",
     "ports",
@@ -78,10 +78,10 @@ class Quel3PortDiagnostic:
 
 
 @dataclass(frozen=True)
-class Quel3HardwareStateIssue:
-    """One issue found while collecting or evaluating QuEL-3 hardware state."""
+class Quel3ResourceIssue:
+    """One issue found while collecting or evaluating QuEL-3 resource snapshot."""
 
-    severity: Quel3HardwareStateSeverity
+    severity: Quel3ResourceSeverity
     code: str
     message: str
     detail: str | None = None
@@ -89,9 +89,9 @@ class Quel3HardwareStateIssue:
 
 
 @dataclass(frozen=True)
-class Quel3HardwareState:
+class Quel3ResourceSnapshot:
     """
-    Report observed QuEL-3 hardware resources and diagnostic issues.
+    Report observed QuEL-3 resources and diagnostic issues.
 
     A snapshot may omit resources outside the requested view or contain partial
     results after acquisition errors. It does not populate the execution cache
@@ -106,7 +106,7 @@ class Quel3HardwareState:
     ports: tuple[Quel3PortState, ...]
     instruments: tuple[Quel3InstrumentState, ...]
     diagnostics: tuple[Quel3PortDiagnostic, ...] = ()
-    issues: tuple[Quel3HardwareStateIssue, ...] = ()
+    issues: tuple[Quel3ResourceIssue, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable dictionary representation."""
@@ -115,34 +115,34 @@ class Quel3HardwareState:
     def print(
         self,
         *,
-        view: Quel3HardwareStateView = "summary",
+        view: Quel3ResourceView = "summary",
         console: Console | None = None,
     ) -> None:
         """
-        Print one Rich hardware-state view.
+        Print one Rich resource snapshot view.
 
         Parameters
         ----------
-        view : Quel3HardwareStateView, optional
-            Hardware-state view to render.
+        view : Quel3ResourceView, optional
+            Resource snapshot view to render.
         console : Console | None, optional
             Rich console receiving the rendered view. A default console is
             created when omitted.
         """
         output_console = Console(highlight=False) if console is None else console
-        output_console.print(_format_quel3_hardware_state(self, view=view))
+        output_console.print(_format_quel3_resource_snapshot(self, view=view))
 
 
 _RIGHT_HEADERS = {"Units", "Ports", "Instruments", "Diagnostics", "Min GHz", "Max GHz"}
 _NOWRAP_HEADERS = {"Severity", "Unit", "Role", "Mode"}
 
 
-def _format_quel3_hardware_state(
-    state: Quel3HardwareState,
+def _format_quel3_resource_snapshot(
+    state: Quel3ResourceSnapshot,
     *,
-    view: Quel3HardwareStateView = "summary",
+    view: Quel3ResourceView = "summary",
 ) -> RenderableType:
-    """Return a Rich renderable for one QuEL-3 hardware-state view."""
+    """Return a Rich renderable for one QuEL-3 resource snapshot view."""
     if view == "summary":
         return Group(_summary_panel(state), _issues_table(state.issues))
     if view == "units":
@@ -162,11 +162,11 @@ def _format_quel3_hardware_state(
             _diagnostics_group(state),
             _issues_table(state.issues),
         )
-    raise ValueError(f"Unsupported QuEL-3 hardware-state view: {view!r}")
+    raise ValueError(f"Unsupported QuEL-3 resource snapshot view: {view!r}")
 
 
-def _summary_panel(state: Quel3HardwareState) -> Panel:
-    """Return a summary panel for one hardware state."""
+def _summary_panel(state: Quel3ResourceSnapshot) -> Panel:
+    """Return a summary panel for one resource snapshot."""
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold cyan", no_wrap=True)
     grid.add_column()
@@ -185,13 +185,13 @@ def _summary_panel(state: Quel3HardwareState) -> Panel:
     grid.add_row("Diagnostics", str(len(state.diagnostics)))
     return Panel(
         grid,
-        title="QuEL-3 hardware state",
+        title="QuEL-3 resource snapshot",
         border_style=_summary_border_style(state),
         box=box.ROUNDED,
     )
 
 
-def _units_table(state: Quel3HardwareState) -> Table:
+def _units_table(state: Quel3ResourceSnapshot) -> Table:
     """Return a table of unit states."""
     rows = [
         [
@@ -207,7 +207,7 @@ def _units_table(state: Quel3HardwareState) -> Table:
     return _table("Units", ["Unit", "Control", "Current", "Allowed"], rows)
 
 
-def _ports_table(state: Quel3HardwareState) -> Table:
+def _ports_table(state: Quel3ResourceSnapshot) -> Table:
     """Return a table of port states."""
     rows = [
         [
@@ -221,7 +221,7 @@ def _ports_table(state: Quel3HardwareState) -> Table:
     return _table("Ports", ["Port", "Unit", "Role", "Depends on"], rows)
 
 
-def _instruments_table(state: Quel3HardwareState) -> Table:
+def _instruments_table(state: Quel3ResourceSnapshot) -> Table:
     """Return a table of instrument states."""
     instruments = sorted(state.instruments, key=_instrument_sort_key)
     show_unit = len({instrument.unit_label for instrument in instruments}) > 1
@@ -242,8 +242,8 @@ def _instruments_table(state: Quel3HardwareState) -> Table:
     return _table("Instruments", headers, rows)
 
 
-def _diagnostics_group(state: Quel3HardwareState) -> RenderableType:
-    """Return raw diagnostic YAML for one hardware state."""
+def _diagnostics_group(state: Quel3ResourceSnapshot) -> RenderableType:
+    """Return raw diagnostic YAML for one resource snapshot."""
     if not state.diagnostics:
         return Text("(no diagnostics)", style="dim")
     diagnostics: list[RenderableType] = [
@@ -255,8 +255,8 @@ def _diagnostics_group(state: Quel3HardwareState) -> RenderableType:
     return Group(*diagnostics)
 
 
-def _issues_table(issues: tuple[Quel3HardwareStateIssue, ...]) -> Table:
-    """Return a table of hardware-state issues."""
+def _issues_table(issues: tuple[Quel3ResourceIssue, ...]) -> Table:
+    """Return a table of resource snapshot issues."""
     rows = [
         [
             issue.severity,
@@ -325,7 +325,7 @@ def _severity_text(severity: str) -> Text:
     return Text(severity.upper(), style=style)
 
 
-def _summary_border_style(state: Quel3HardwareState) -> str:
+def _summary_border_style(state: Quel3ResourceSnapshot) -> str:
     """Return summary panel border style from issues."""
     severities = {issue.severity for issue in state.issues}
     if "error" in severities:

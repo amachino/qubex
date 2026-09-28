@@ -225,7 +225,7 @@ Optional delegation:
 3. Synchronizer asks the planner for an `InstrumentConfiguration`.
 4. Synchronizer delegates that configuration to `Quel3BackendController`.
 5. Controller delegates to the configuration manager, passing its shared cache
-   and hardware-state reader. The manager invalidates touched ports and deploys
+   and resource reader. The manager invalidates touched ports and deploys
    the selected definitions.
 6. The configuration manager reads complete hardware information through the
    state reader and replaces the touched ports in the supplied `InstrumentCache`.

@@ -429,7 +429,7 @@ def test_quel3_is_synced_preserves_live_instrument_cache(
         config=SimpleNamespace(sampling_period_fs=400_000),
     )
     monkeypatch.setattr(
-        controller.hardware_state_reader, "read_instrument_infos", lambda **_: (info,)
+        controller.resource_reader, "read_instrument_infos", lambda **_: (info,)
     )
     controller.refresh_instrument_cache()
     previous_configuration = controller.get_instrument_configuration()
@@ -496,7 +496,7 @@ def test_quel3_pull_updates_only_backend_settings_snapshot(
     )
     if populate_cache:
         monkeypatch.setattr(
-            controller.hardware_state_reader,
+            controller.resource_reader,
             "read_instrument_infos",
             lambda **_: (info,),
         )
@@ -536,7 +536,7 @@ def test_quel3_pull_updates_only_backend_settings_snapshot(
         fetch_settings,
     )
     monkeypatch.setattr(
-        controller.hardware_state_reader, "read_instrument_infos", reject_runtime_read
+        controller.resource_reader, "read_instrument_infos", reject_runtime_read
     )
 
     manager.pull(["unit-a"], parallel=False)
@@ -964,7 +964,7 @@ def test_quel3_canceled_push_does_not_restore_instruments_from_saved_settings(
     )
     if populate_cache:
         monkeypatch.setattr(
-            controller.hardware_state_reader,
+            controller.resource_reader,
             "read_instrument_infos",
             lambda **_: (info,),
         )
@@ -999,7 +999,7 @@ def test_quel3_canceled_push_does_not_restore_instruments_from_saved_settings(
 
     monkeypatch.setattr(controller, "deploy_instruments", reject_hardware_call)
     monkeypatch.setattr(
-        controller.hardware_state_reader, "read_instrument_infos", reject_hardware_call
+        controller.resource_reader, "read_instrument_infos", reject_hardware_call
     )
     monkeypatch.setattr(
         manager._resolve_system_synchronizer(),  # noqa: SLF001

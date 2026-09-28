@@ -1,4 +1,4 @@
-"""Tests for QuEL-3 hardware state collection."""
+"""Tests for QuEL-3 resource snapshot collection."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from typing import Any, cast
 import pytest
 
 from qubex.backend.quel3 import Quel3BackendController
+from qubex.backend.quel3.infra import Quel3ResourceReader
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
-from qubex.backend.quel3.managers import Quel3HardwareStateReader
 from qubex.system.quel3 import Quel3SystemSynchronizer
 
 
@@ -320,7 +320,7 @@ class _MonitorPortClient(_FakeClient):
         return await super().get_port_info(resource_id)
 
 
-class _FakeHardwareStateReader(Quel3HardwareStateReader):
+class _FakeResourceReader(Quel3ResourceReader):
     def __init__(self, client: _FakeClient) -> None:
         super().__init__()
         self._client = client
@@ -330,8 +330,8 @@ class _FakeHardwareStateReader(Quel3HardwareStateReader):
         return cast(QuelwareClientFactory, lambda endpoint, port: self._client)
 
 
-def _make_reader(client: _FakeClient) -> Quel3HardwareStateReader:
-    return _FakeHardwareStateReader(client)
+def _make_reader(client: _FakeClient) -> Quel3ResourceReader:
+    return _FakeResourceReader(client)
 
 
 @pytest.mark.parametrize("parallel", [False, True])
@@ -383,12 +383,12 @@ def test_read_instrument_infos_filters_unqualified_ids_by_actual_port() -> None:
     assert reader.read_instrument_infos(unit_labels=("unit-a",)) == ()
 
 
-def test_collect_state_normalizes_units_ports_and_instruments() -> None:
-    """Given quelware resources, hardware state should expose normalized Qubex data."""
+def test_collect_snapshot_normalizes_units_ports_and_instruments() -> None:
+    """Given quelware resources, resource snapshot should expose normalized Qubex data."""
     client = _FakeClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(unit_labels=("unit-a",), parallel=False)
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
 
     assert [unit.label for unit in state.units] == ["unit-a"]
     assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
@@ -406,11 +406,11 @@ def test_collect_state_normalizes_units_ports_and_instruments() -> None:
     assert [issue.code for issue in state.issues].count("UNKNOWN_PORT_DEPENDENCY") == 1
 
 
-def test_collect_state_normalizes_unit_configuration_controls() -> None:
-    """Given unit configuration, hardware state should expose supported controls."""
+def test_collect_snapshot_normalizes_unit_configuration_controls() -> None:
+    """Given unit configuration, resource snapshot should expose supported controls."""
     reader = _make_reader(_FakeClient())
 
-    state = reader.collect_state(unit_labels=("unit-a",), parallel=False)
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
 
     assert [unit.label for unit in state.units] == ["unit-a"]
     assert [
@@ -425,8 +425,8 @@ def test_collect_state_normalizes_unit_configuration_controls() -> None:
     ]
 
 
-def test_collect_state_records_unit_configuration_fetch_errors() -> None:
-    """Given failed unit configuration fetch, hardware state should keep an issue."""
+def test_collect_snapshot_records_unit_configuration_fetch_errors() -> None:
+    """Given failed unit configuration fetch, resource snapshot should keep an issue."""
     client = _FakeClient()
 
     async def _fail_unit_configuration(unit_label: str) -> _UnitConfiguration:
@@ -435,7 +435,7 @@ def test_collect_state_records_unit_configuration_fetch_errors() -> None:
     client.get_unit_configuration = _fail_unit_configuration  # type: ignore[method-assign]
     reader = _make_reader(client)
 
-    state = reader.collect_state(unit_labels=("unit-a",), parallel=False)
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
 
     assert state.units[0].controls == ()
     assert any(
@@ -446,12 +446,12 @@ def test_collect_state_records_unit_configuration_fetch_errors() -> None:
     )
 
 
-def test_collect_state_keeps_monitor_port_without_fetching_port_info() -> None:
-    """Given a monitor port, hardware state should not request unsupported port info."""
+def test_collect_snapshot_keeps_monitor_port_without_fetching_port_info() -> None:
+    """Given a monitor port, resource snapshot should not request unsupported port info."""
     client = _MonitorPortClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(unit_labels=("unit-a",), parallel=False)
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
 
     assert [port.id for port in state.ports] == ["unit-a:mon", "unit-a:tx_p01"]
     assert state.ports[0].role is None
@@ -462,8 +462,8 @@ def test_collect_state_keeps_monitor_port_without_fetching_port_info() -> None:
     )
 
 
-def test_collect_state_records_fetch_errors_without_raising() -> None:
-    """Given a failed resource fetch, hardware state should keep an issue."""
+def test_collect_snapshot_records_fetch_errors_without_raising() -> None:
+    """Given a failed resource fetch, resource snapshot should keep an issue."""
     client = _FakeClient()
 
     async def _fail_instrument(resource_id: str) -> _InstrumentInfo:
@@ -472,23 +472,23 @@ def test_collect_state_records_fetch_errors_without_raising() -> None:
     client.get_instrument_info = _fail_instrument  # type: ignore[method-assign]
     reader = _make_reader(client)
 
-    state = reader.collect_state(unit_labels=("unit-a",), parallel=True)
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=True)
 
     assert state.instruments == ()
     assert any(issue.code == "RESOURCE_FETCH_ERROR" for issue in state.issues)
     assert any(issue.resource_id == "unit-a:inst-q00" for issue in state.issues)
 
 
-def test_collect_state_diagnostics_are_opt_in() -> None:
-    """Given diagnostics disabled, hardware state should omit diagnostics."""
+def test_collect_snapshot_diagnostics_are_opt_in() -> None:
+    """Given diagnostics disabled, resource snapshot should omit diagnostics."""
     client = _FakeClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(unit_labels=("unit-a",), include_diagnostics=False)
+    state = reader.collect_snapshot(unit_labels=("unit-a",), include_diagnostics=False)
 
     assert state.diagnostics == ()
 
-    state_with_diagnostics = reader.collect_state(
+    state_with_diagnostics = reader.collect_snapshot(
         unit_labels=("unit-a",),
         include_diagnostics=True,
     )
@@ -496,12 +496,12 @@ def test_collect_state_diagnostics_are_opt_in() -> None:
     assert state_with_diagnostics.diagnostics[0].text == "state: unit-a:tx_p01"
 
 
-def test_collect_state_filters_local_port_after_unit_scoping() -> None:
+def test_collect_snapshot_filters_local_port_after_unit_scoping() -> None:
     """Given selected unit and local port ID, state should keep that unit port."""
     client = _BoxLocalAliasClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(
+    state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         port_ids=("tx_p01",),
         parallel=False,
@@ -511,12 +511,12 @@ def test_collect_state_filters_local_port_after_unit_scoping() -> None:
     assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
 
 
-def test_collect_state_matches_local_port_across_selected_units() -> None:
+def test_collect_snapshot_matches_local_port_across_selected_units() -> None:
     """Given local port ID without unit selection, state should keep all matches."""
     client = _BoxLocalAliasClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(port_ids=("tx_p01",), parallel=False)
+    state = reader.collect_snapshot(port_ids=("tx_p01",), parallel=False)
 
     assert [port.id for port in state.ports] == ["unit-a:tx_p01", "unit-b:tx_p01"]
     assert [instrument.id for instrument in state.instruments] == [
@@ -525,12 +525,12 @@ def test_collect_state_matches_local_port_across_selected_units() -> None:
     ]
 
 
-def test_collect_state_filters_alias_related_ports_and_diagnostics() -> None:
+def test_collect_snapshot_filters_alias_related_ports_and_diagnostics() -> None:
     """Given local alias filter, state should keep matched instruments and ports."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(
+    state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         instrument_aliases=("Q00",),
         include_diagnostics=True,
@@ -542,12 +542,12 @@ def test_collect_state_filters_alias_related_ports_and_diagnostics() -> None:
     assert [diagnostic.port_id for diagnostic in state.diagnostics] == ["unit-a:tx_p01"]
 
 
-def test_collect_state_matches_unit_qualified_alias() -> None:
+def test_collect_snapshot_matches_unit_qualified_alias() -> None:
     """Given unit-qualified alias, state should keep only that unit match."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(
+    state = reader.collect_snapshot(
         instrument_aliases=("unit-b:Q00",),
         parallel=False,
     )
@@ -556,12 +556,12 @@ def test_collect_state_matches_unit_qualified_alias() -> None:
     assert [instrument.id for instrument in state.instruments] == ["unit-b:inst-q00"]
 
 
-def test_collect_state_intersects_port_and_alias_filters() -> None:
+def test_collect_snapshot_intersects_port_and_alias_filters() -> None:
     """Given port and alias filters, state should keep only their intersection."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(
+    state = reader.collect_snapshot(
         port_ids=("unit-a:rx_p02",),
         instrument_aliases=("Q00",),
         include_diagnostics=True,
@@ -573,24 +573,24 @@ def test_collect_state_intersects_port_and_alias_filters() -> None:
     assert state.diagnostics == ()
 
 
-def test_collect_state_units_view_returns_only_units() -> None:
+def test_collect_snapshot_units_view_returns_only_units() -> None:
     """Units view should return only unit state."""
     client = _FakeClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(unit_labels=("unit-a",), view="units")
+    state = reader.collect_snapshot(unit_labels=("unit-a",), view="units")
 
     assert [unit.label for unit in state.units] == ["unit-a"]
     assert state.ports == ()
     assert state.instruments == ()
 
 
-def test_collect_state_ports_view_returns_only_selected_ports() -> None:
+def test_collect_snapshot_ports_view_returns_only_selected_ports() -> None:
     """Ports view should return only selected port state."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(
+    state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         port_ids=("rx_p02",),
         view="ports",
@@ -600,12 +600,12 @@ def test_collect_state_ports_view_returns_only_selected_ports() -> None:
     assert state.instruments == ()
 
 
-def test_collect_state_instruments_view_returns_only_selected_instruments() -> None:
+def test_collect_snapshot_instruments_view_returns_only_selected_instruments() -> None:
     """Instruments view should return only selected instrument state."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(
+    state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         instrument_aliases=("Q00",),
         view="instruments",
@@ -616,12 +616,12 @@ def test_collect_state_instruments_view_returns_only_selected_instruments() -> N
     assert not any(issue.code == "ORPHAN_INSTRUMENT" for issue in state.issues)
 
 
-def test_collect_state_diagnostics_view_returns_selected_diagnostics() -> None:
+def test_collect_snapshot_diagnostics_view_returns_selected_diagnostics() -> None:
     """Diagnostics view should return diagnostics for selected ports."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(
+    state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         port_ids=("rx_p02",),
         include_diagnostics=True,
@@ -632,18 +632,18 @@ def test_collect_state_diagnostics_view_returns_selected_diagnostics() -> None:
     assert state.instruments == ()
 
 
-def test_collect_state_rejects_old_filter_kwargs() -> None:
-    """Given removed hardware-state filter kwargs, reader raises TypeError."""
+def test_collect_snapshot_rejects_old_filter_kwargs() -> None:
+    """Given removed resource snapshot filter kwargs, reader raises TypeError."""
     reader = _make_reader(_FakeClient())
 
     with pytest.raises(TypeError, match="instrument_port_ids"):
-        cast(Any, reader).collect_state(instrument_port_ids=("unit-a:tx_p01",))
+        cast(Any, reader).collect_snapshot(instrument_port_ids=("unit-a:tx_p01",))
     with pytest.raises(TypeError, match="diagnostic_port_ids"):
-        cast(Any, reader).collect_state(diagnostic_port_ids=("unit-a:tx_p01",))
+        cast(Any, reader).collect_snapshot(diagnostic_port_ids=("unit-a:tx_p01",))
 
 
-def test_backend_settings_projection_uses_hardware_state_instruments() -> None:
-    """Given hardware state, backend settings projection should keep deploy cache fields."""
+def test_backend_settings_projection_uses_resource_snapshot_instruments() -> None:
+    """Given resource snapshot, backend settings projection should keep deploy cache fields."""
     client = _FakeClient()
     configuration_calls: list[str] = []
     get_unit_configuration = client.get_unit_configuration
@@ -700,23 +700,23 @@ def test_backend_settings_fetch_keeps_unqualified_instrument_resources() -> None
     assert settings["unit-a"]["instruments"]["Q00"]["port_id"] == "unit-a:tx_p01"
 
 
-def test_collect_state_filters_unqualified_resources_by_resolved_unit() -> None:
+def test_collect_snapshot_filters_unqualified_resources_by_resolved_unit() -> None:
     """Selected-unit collection should filter unqualified resources after fetch."""
     client = _UnqualifiedOtherUnitResourceClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(unit_labels=("unit-a",), parallel=False)
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
 
     assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
     assert state.instruments == ()
 
 
-def test_collect_state_scopes_duplicate_aliases_by_unit() -> None:
+def test_collect_snapshot_scopes_duplicate_aliases_by_unit() -> None:
     """Multi-unit collection should allow box-local normalized aliases."""
     client = _BoxLocalAliasClient()
     reader = _make_reader(client)
 
-    state = reader.collect_state(parallel=False)
+    state = reader.collect_snapshot(parallel=False)
 
     assert [instrument.normalized_alias for instrument in state.instruments] == [
         "Q00",
@@ -726,10 +726,10 @@ def test_collect_state_scopes_duplicate_aliases_by_unit() -> None:
 
 
 def _fetch_settings(
-    reader: Quel3HardwareStateReader, *, box_ids: tuple[str, ...], parallel: bool
+    reader: Quel3ResourceReader, *, box_ids: tuple[str, ...], parallel: bool
 ) -> dict[str, dict]:
     synchronizer = Quel3SystemSynchronizer(
-        backend_controller=Quel3BackendController(hardware_state_reader=reader)
+        backend_controller=Quel3BackendController(resource_reader=reader)
     )
     return synchronizer.fetch_backend_settings_from_hardware(
         experiment_system=cast(Any, None), box_ids=box_ids, parallel=parallel

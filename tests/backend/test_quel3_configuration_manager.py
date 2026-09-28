@@ -13,6 +13,7 @@ import pytest
 
 from qubex.backend.quel3.infra import (
     Quel3HttpTransportConfig,
+    Quel3ResourceReader,
     Quel3RuntimeConfig,
     runtime_config as runtime_config_module,
 )
@@ -21,7 +22,6 @@ from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
-    Quel3HardwareStateReader,
     configuration_manager as configuration_manager_module,
     session_workarounds as session_workarounds_module,
 )
@@ -71,14 +71,14 @@ def _deploy_configuration(
         return infos
 
     reader = cast(
-        Quel3HardwareStateReader,
+        Quel3ResourceReader,
         SimpleNamespace(read_instrument_infos=read_infos),
     )
 
     result = manager.deploy_instruments(
         configuration=configuration,
         instrument_cache=cache,
-        hardware_state_reader=reader,
+        resource_reader=reader,
         parallel=parallel,
     )
 
