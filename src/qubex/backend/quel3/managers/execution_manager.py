@@ -3,35 +3,30 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import TypeGuard, TypeVar, cast
+from typing import TypeGuard, TypeVar
 
 import numpy as np
 
 from qubex.backend.quel3.builders.sequencer_builder import Quel3SequencerBuilder
-from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.infra.quelware_imports import (
+    Quel3ClientMode,
+    QuelwareExecutionApi,
+    load_quelware_execution_api,
+)
 from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces import (
-    CaptureModeNamespaceProtocol,
-    CaptureModeProtocol,
     DirectiveProtocol,
-    InstrumentDriverFactory,
     InstrumentDriverProtocol,
     InstrumentInfoProtocol,
     IqWaveformResultProtocol,
-    QuelwareClientFactory,
     ResourceIdProtocol,
     ResultContainerProtocol,
-    SequencerFactoryProtocol,
-    SequencerProtocol,
     SessionProtocol,
-    SetCaptureModeFactory,
-    SetFrequencyFactory,
 )
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.managers.session_workarounds import (
@@ -85,37 +80,6 @@ class _PayloadExecutionPlan:
     aliases: tuple[str, ...]
     aliases_with_captures: frozenset[str]
     alias_to_instrument_info: dict[str, InstrumentInfoProtocol]
-
-
-@dataclass(frozen=True)
-class _QuelwareExecutionApi:
-    """Lazy-loaded quelware API symbols needed for fixed-timeline execution."""
-
-    client_factory: QuelwareClientFactory
-    sequencer_factory: SequencerFactoryProtocol[SequencerProtocol]
-    fixed_timeline_driver_factory: InstrumentDriverFactory
-    set_frequency_directive_factory: SetFrequencyFactory
-    set_capture_mode_directive_factory: SetCaptureModeFactory
-    capture_mode_namespace: CaptureModeNamespaceProtocol
-
-    def build_capture_mode_directive(
-        self,
-        capture_mode: Quel3CaptureMode,
-    ) -> DirectiveProtocol:
-        """Build one capture-mode directive from payload capture mode."""
-        if capture_mode is Quel3CaptureMode.UNSPECIFIED:
-            raise ValueError(f"Unsupported capture mode: {capture_mode}.")
-        try:
-            mode = cast(
-                CaptureModeProtocol,
-                getattr(self.capture_mode_namespace, capture_mode.name),
-            )
-        except AttributeError as exc:
-            raise RuntimeError(
-                "quelware runtime does not expose required "
-                f"`CaptureMode.{capture_mode.name}`."
-            ) from exc
-        return self.set_capture_mode_directive_factory(mode=mode)
 
 
 class Quel3ExecutionManager:
@@ -266,7 +230,7 @@ class Quel3ExecutionManager:
         self,
         *,
         payload_plans: list[_PayloadExecutionPlan],
-        quelware_api: _QuelwareExecutionApi,
+        quelware_api: QuelwareExecutionApi,
         parallel: bool,
     ) -> list[Quel3BackendExecutionResult]:
         """Execute one payload batch with per-payload quelware sessions."""
@@ -296,7 +260,7 @@ class Quel3ExecutionManager:
         session: SessionProtocol,
         *,
         payload_plan: _PayloadExecutionPlan,
-        quelware_api: _QuelwareExecutionApi,
+        quelware_api: QuelwareExecutionApi,
         parallel: bool,
     ) -> Quel3BackendExecutionResult:
         """Build session-bound drivers and execute one payload plan."""
@@ -321,7 +285,7 @@ class Quel3ExecutionManager:
         alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
         aliases: Sequence[str],
         aliases_with_captures: Collection[str],
-        quelware_api: _QuelwareExecutionApi,
+        quelware_api: QuelwareExecutionApi,
     ) -> _PayloadExecutionSession:
         """Build drivers bound to the supplied payload session."""
         instrument_resource_ids = [
@@ -383,7 +347,7 @@ class Quel3ExecutionManager:
         *,
         payload: Quel3ExecutionPayload,
         session_state: _PayloadExecutionSession,
-        quelware_api: _QuelwareExecutionApi,
+        quelware_api: QuelwareExecutionApi,
         parallel: bool,
     ) -> Quel3BackendExecutionResult:
         """Execute one payload using an already-open payload session."""
@@ -674,40 +638,8 @@ class Quel3ExecutionManager:
             return max(1, rounded_samples)
         return max(1, int(np.ceil(samples)))
 
-    def _load_quelware_api(
-        self,
-    ) -> _QuelwareExecutionApi:
-        """Import quelware helpers lazily and return required symbols."""
-        sequencer_module = importlib.import_module(
-            "quelware_client.client.helpers.sequencer"
-        )
-        directive_module = importlib.import_module("quelware_core.entities.directives")
-        driver_module = importlib.import_module(
-            "quelware_client.core.instrument_driver"
-        )
-        client_factory: QuelwareClientFactory = (
-            self._runtime_config.load_client_factory()
-        )
-        sequencer_factory: SequencerFactoryProtocol[SequencerProtocol] = (
-            sequencer_module.Sequencer
-        )
-        fixed_timeline_driver_factory: InstrumentDriverFactory = (
-            driver_module.create_instrument_driver_fixed_timeline
-        )
-        capture_mode_namespace: CaptureModeNamespaceProtocol = (
-            directive_module.CaptureMode
-        )
-        set_frequency_directive_factory: SetFrequencyFactory = (
-            directive_module.SetFrequency
-        )
-        set_capture_mode_directive_factory: SetCaptureModeFactory = (
-            directive_module.SetCaptureMode
-        )
-        return _QuelwareExecutionApi(
-            client_factory=client_factory,
-            sequencer_factory=sequencer_factory,
-            fixed_timeline_driver_factory=fixed_timeline_driver_factory,
-            capture_mode_namespace=capture_mode_namespace,
-            set_frequency_directive_factory=set_frequency_directive_factory,
-            set_capture_mode_directive_factory=set_capture_mode_directive_factory,
+    def _load_quelware_api(self) -> QuelwareExecutionApi:
+        """Load execution dependencies with the configured client factory."""
+        return load_quelware_execution_api(
+            client_factory=self._runtime_config.load_client_factory()
         )

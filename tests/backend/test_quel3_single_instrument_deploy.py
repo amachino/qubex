@@ -9,12 +9,12 @@ from typing import Any, cast
 import pytest
 
 from qubex.backend.quel3 import InstrumentSpec, Quel3BackendController
+from qubex.backend.quel3.infra.quelware_imports import QuelwareInstrumentEntities
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
     Quel3HardwareStateReader,
-    configuration_manager as configuration_module,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
 
@@ -139,7 +139,7 @@ def deployment(
     monkeypatch.setattr(
         manager, "_load_quelware_client_factory", lambda: lambda *args: hardware
     )
-    entities = configuration_module._QuelwareInstrumentEntities(  # noqa: SLF001
+    entities = QuelwareInstrumentEntities(
         fixed_timeline_profile_factory=cast(Any, SimpleNamespace),
         instrument_definition_factory=cast(Any, SimpleNamespace),
         instrument_mode_namespace=cast(

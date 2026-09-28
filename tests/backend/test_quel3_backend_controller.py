@@ -35,9 +35,9 @@ from qubex.backend.quel3 import (
     Quel3Waveform,
     Quel3WaveformEvent,
 )
+from qubex.backend.quel3.infra.quelware_imports import QuelwareExecutionApi
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.managers import (
-    execution_manager as execution_manager_module,
     session_workarounds as session_workarounds_module,
 )
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
@@ -1285,7 +1285,7 @@ def _make_fake_execution_api(
     sequencer_factory: Any = _FakeSequencer,
 ) -> Any:
     """Create one fake quelware API boundary for execution-manager tests."""
-    return execution_manager_module._QuelwareExecutionApi(
+    return QuelwareExecutionApi(
         client_factory=client_factory,
         sequencer_factory=sequencer_factory,
         fixed_timeline_driver_factory=fixed_timeline_driver_factory,

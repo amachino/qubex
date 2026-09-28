@@ -16,6 +16,7 @@ from qubex.backend.quel3.infra import (
     Quel3RuntimeConfig,
     runtime_config as runtime_config_module,
 )
+from qubex.backend.quel3.infra.quelware_imports import QuelwareInstrumentEntities
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
@@ -99,7 +100,7 @@ def _make_instrument_entities(
     role_namespace: Any,
 ) -> Any:
     """Create one fake instrument-entity boundary for configuration tests."""
-    return configuration_manager_module._QuelwareInstrumentEntities(  # noqa: SLF001
+    return QuelwareInstrumentEntities(
         fixed_timeline_profile_factory=profile_factory,
         instrument_definition_factory=definition_factory,
         instrument_mode_namespace=mode_namespace,

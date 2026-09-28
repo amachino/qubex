@@ -3,25 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypeVar
 
-from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.infra.quelware_imports import (
+    Quel3ClientMode,
+    QuelwareInstrumentEntities,
+    load_quelware_instrument_entities,
+)
 from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import (
-    FixedTimelineProfileFactory,
-    InstrumentDefinitionFactory,
     InstrumentDefinitionProtocol,
     InstrumentInfoProtocol,
-    InstrumentModeNamespaceProtocol,
-    InstrumentRoleNamespaceProtocol,
-    InstrumentRoleProtocol,
     QuelwareClientFactory,
     SessionProtocol,
 )
@@ -35,7 +32,6 @@ from qubex.backend.quel3.managers.session_workarounds import (
 )
 from qubex.backend.quel3.models import (
     InstrumentConfiguration,
-    InstrumentRoleName,
     InstrumentSpec,
 )
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
@@ -44,28 +40,6 @@ T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 _MONITOR_MODE_CONTROL_KEY = "quel3.monitor.mode"
-
-
-@dataclass(frozen=True)
-class _QuelwareInstrumentEntities:
-    """Lazy-loaded quelware instrument entities needed for deployment."""
-
-    fixed_timeline_profile_factory: FixedTimelineProfileFactory
-    instrument_definition_factory: InstrumentDefinitionFactory
-    instrument_mode_namespace: InstrumentModeNamespaceProtocol
-    instrument_role_namespace: InstrumentRoleNamespaceProtocol
-
-    def role_value(self, role: InstrumentRoleName) -> InstrumentRoleProtocol:
-        """Return quelware instrument-role value for one deploy role name."""
-        if role == "TRANSMITTER":
-            return self.instrument_role_namespace.TRANSMITTER
-        if role == "TRANSCEIVER":
-            return self.instrument_role_namespace.TRANSCEIVER
-        if role == "TRANSCEIVER_LOOPBACK":
-            return self.instrument_role_namespace.TRANSCEIVER_LOOPBACK
-        if role == "RECEIVER":
-            return self.instrument_role_namespace.RECEIVER
-        raise ValueError(f"Unsupported QuEL-3 instrument role: {role!r}")
 
 
 def _run_async(
@@ -589,7 +563,7 @@ class Quel3ConfigurationManager:
         *,
         client_factory: QuelwareClientFactory,
         port_batches: tuple[tuple[str, tuple[InstrumentSpec, ...]], ...],
-        instrument_entities: _QuelwareInstrumentEntities,
+        instrument_entities: QuelwareInstrumentEntities,
         append: bool,
         parallel: bool,
         attempt: int,
@@ -669,7 +643,7 @@ class Quel3ConfigurationManager:
         session: SessionProtocol,
         port_id: str,
         port_specifications: tuple[InstrumentSpec, ...],
-        instrument_entities: _QuelwareInstrumentEntities,
+        instrument_entities: QuelwareInstrumentEntities,
         append: bool,
     ) -> None:
         """Deploy one port batch through the active quelware session."""
@@ -699,24 +673,6 @@ class Quel3ConfigurationManager:
         return self._runtime_config.load_client_factory()
 
     @staticmethod
-    def _load_instrument_entities() -> _QuelwareInstrumentEntities:
-        """Import instrument entities lazily from quelware core package."""
-        instrument_module = importlib.import_module("quelware_core.entities.instrument")
-        fixed_timeline_profile_factory: FixedTimelineProfileFactory = (
-            instrument_module.FixedTimelineProfile
-        )
-        instrument_definition_factory: InstrumentDefinitionFactory = (
-            instrument_module.InstrumentDefinition
-        )
-        instrument_mode_namespace: InstrumentModeNamespaceProtocol = (
-            instrument_module.InstrumentMode
-        )
-        instrument_role_namespace: InstrumentRoleNamespaceProtocol = (
-            instrument_module.InstrumentRole
-        )
-        return _QuelwareInstrumentEntities(
-            fixed_timeline_profile_factory=fixed_timeline_profile_factory,
-            instrument_definition_factory=instrument_definition_factory,
-            instrument_mode_namespace=instrument_mode_namespace,
-            instrument_role_namespace=instrument_role_namespace,
-        )
+    def _load_instrument_entities() -> QuelwareInstrumentEntities:
+        """Load the quelware deployment dependencies."""
+        return load_quelware_instrument_entities()
