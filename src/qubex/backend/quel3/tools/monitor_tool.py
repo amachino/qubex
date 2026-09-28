@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -109,9 +108,6 @@ class Quel3MonitorTool:
         *,
         unit_label: str,
         pulse_schedule: PulseSchedule,
-        monitor_alias: str = "monitor",
-        output_alias: str | None = None,
-        output_aliases: Mapping[str, str] | None = None,
         capture_start_ns: float = 0.0,
         capture_length_ns: float | None = None,
         n_iterations: int = 1,
@@ -126,14 +122,7 @@ class Quel3MonitorTool:
         unit_label : str
             Unit containing every scheduled output instrument.
         pulse_schedule : PulseSchedule
-            Valid schedule with one or more output channels.
-        monitor_alias : str, default="monitor"
-            Temporary receiver alias deployed on `<unit_label>:mon`.
-        output_alias : str | None, optional
-            Hardware output alias for a one-channel schedule.
-        output_aliases : Mapping[str, str] | None, optional
-            Map schedule channel labels to hardware output aliases. If omitted,
-            each channel label is used as its output alias.
+            Valid schedule whose target names are output instrument aliases.
         capture_start_ns : float, default=0.0
             Capture start time relative to the output trigger, in ns.
         capture_length_ns : float | None, optional
@@ -164,8 +153,6 @@ class Quel3MonitorTool:
         """
         if not unit_label.strip():
             raise ValueError("Unit label must not be empty.")
-        if not monitor_alias.strip():
-            raise ValueError("Monitor alias must not be empty.")
         labels = pulse_schedule.labels
         if not labels:
             raise ValueError("Monitor PulseSchedule must have at least one channel.")
@@ -180,21 +167,6 @@ class Quel3MonitorTool:
             n_iterations=n_iterations,
             shot_interval_ns=shot_interval_ns,
         )
-        if output_alias is not None and output_aliases is not None:
-            raise ValueError("Specify output_alias or output_aliases, not both.")
-        if output_alias is not None:
-            if len(labels) != 1:
-                raise ValueError("output_alias requires exactly one schedule channel.")
-            resolved_aliases = {labels[0]: output_alias}
-        elif output_aliases is not None:
-            if set(output_aliases) != set(labels):
-                raise ValueError("output_aliases must map every schedule channel.")
-            resolved_aliases = dict(output_aliases)
-        else:
-            resolved_aliases = {label: label for label in labels}
-        if len(set(resolved_aliases.values())) != len(labels):
-            raise ValueError("Output aliases must be distinct.")
-
         original_cache = InstrumentCache()
         original_cache.replace_all(
             instrument_infos=self._hardware_state_reader.read_instrument_infos(
@@ -205,19 +177,20 @@ class Quel3MonitorTool:
         original_specs = {
             spec.alias: spec for spec in original_configuration.instruments
         }
-        prepared: dict[
-            str, tuple[Quel3FixedTimeline, dict[str, Quel3Waveform], float]
-        ] = {}
+        occupied_aliases = set(self._instrument_cache.snapshot()) | set(original_specs)
+        monitor_alias = "_qubex_monitor"
+        suffix = 0
+        while monitor_alias in occupied_aliases:
+            suffix += 1
+            monitor_alias = f"_qubex_monitor_{suffix}"
+        prepared: dict[str, tuple[Quel3FixedTimeline, dict[str, Quel3Waveform]]] = {}
         for label in labels:
-            alias = resolved_aliases[label]
-            if alias == monitor_alias:
-                raise ValueError("Output and monitor aliases must be distinct.")
             try:
-                spec = original_specs[alias]
+                spec = original_specs[label]
             except KeyError as exc:
                 raise ValueError(
                     f"Monitor PulseSchedule target {label!r} has no instrument "
-                    f"{alias!r} on unit {unit_label!r}."
+                    f"on unit {unit_label!r}."
                 ) from exc
             if spec.port_id.partition(":")[0] != unit_label:
                 raise ValueError(
@@ -261,7 +234,6 @@ class Quel3MonitorTool:
                     frequency_hz=frequency_hz,
                 ),
                 waveform_library,
-                frequency_hz,
             )
 
         original_mode = self._configuration_manager.get_monitor_mode(
@@ -276,9 +248,8 @@ class Quel3MonitorTool:
             )
             self.configure_mode(unit_label=unit_label, mode="loopback")
             for label in labels:
-                alias = resolved_aliases[label]
-                spec = original_specs[alias]
-                timeline, waveform_library, frequency_hz = prepared[label]
+                spec = original_specs[label]
+                timeline, waveform_library = prepared[label]
                 self._configuration_manager.deploy_instrument(
                     instrument=spec,
                     instrument_cache=self._instrument_cache,
@@ -299,12 +270,11 @@ class Quel3MonitorTool:
                     append=False,
                     parallel=parallel,
                 )
-                captured[label] = self._execute_monitor_payload(
-                    output_timelines={alias: timeline},
+                captured[label] = self._execute_target(
+                    target=label,
+                    timeline=timeline,
                     waveform_library=waveform_library,
-                    duration_ns=pulse_schedule.duration,
                     monitor_alias=monitor_alias,
-                    monitor_frequency_hz=frequency_hz,
                     capture_start_ns=capture_start_ns,
                     capture_length_ns=resolved_capture_length_ns,
                     n_iterations=n_iterations,
@@ -326,44 +296,27 @@ class Quel3MonitorTool:
             )
         return captured
 
-    def _execute_monitor_payload(
+    def _execute_target(
         self,
         *,
-        output_timelines: dict[str, Quel3FixedTimeline],
+        target: str,
+        timeline: Quel3FixedTimeline,
         waveform_library: dict[str, Quel3Waveform],
-        duration_ns: float,
         monitor_alias: str,
-        monitor_frequency_hz: float | None = None,
         capture_start_ns: float,
         capture_length_ns: float,
         n_iterations: int,
         shot_interval_ns: float,
         parallel: bool,
     ) -> npt.NDArray[np.complex128]:
-        """Validate monitor bindings, execute sparse timelines, and return IQ."""
-        if monitor_alias in output_timelines:
-            raise ValueError("Output and monitor aliases must be distinct.")
-        monitor_info = self._instrument_cache.get(monitor_alias)
-        monitor_unit, _, monitor_port = monitor_info.port_id.partition(":")
-        if monitor_port != "mon":
-            raise ValueError("Monitor alias must be deployed on the monitor port.")
-        for alias in output_timelines:
-            output_info = self._instrument_cache.get(alias)
-            if output_info.port_id.partition(":")[0] != monitor_unit:
-                raise ValueError(
-                    "Output and monitor aliases must belong to the same unit."
-                )
-        self._validate_monitor_capture_settings(
-            capture_start_ns=capture_start_ns,
-            capture_length_ns=capture_length_ns,
-            n_iterations=n_iterations,
-            shot_interval_ns=shot_interval_ns,
+        """Execute one prepared output timeline and return its monitor IQ."""
+        timeline_length_ns = max(
+            timeline.length_ns, capture_start_ns + capture_length_ns
         )
-        timeline_length_ns = max(duration_ns, capture_start_ns + capture_length_ns)
         payload = Quel3ExecutionPayload(
             waveform_library=waveform_library,
             fixed_timelines={
-                **output_timelines,
+                target: timeline,
                 monitor_alias: Quel3FixedTimeline(
                     events=(),
                     capture_windows=(
@@ -372,7 +325,7 @@ class Quel3MonitorTool:
                         ),
                     ),
                     length_ns=timeline_length_ns,
-                    frequency_hz=monitor_frequency_hz,
+                    frequency_hz=timeline.frequency_hz,
                 ),
             },
             n_iterations=n_iterations,

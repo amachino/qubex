@@ -560,9 +560,6 @@ class Quel3BackendController(BackendController):
         *,
         unit_label: str,
         pulse_schedule: PulseSchedule,
-        monitor_alias: str = "monitor",
-        output_alias: str | None = None,
-        output_aliases: Mapping[str, str] | None = None,
         capture_start_ns: float = 0.0,
         capture_length_ns: float | None = None,
         n_iterations: int = 1,
@@ -577,14 +574,7 @@ class Quel3BackendController(BackendController):
         unit_label : str
             Unit containing every scheduled output instrument.
         pulse_schedule : PulseSchedule
-            Valid schedule with one or more output channels.
-        monitor_alias : str, default="monitor"
-            Temporary receiver alias deployed on `<unit_label>:mon`.
-        output_alias : str | None, optional
-            Hardware output alias for a one-channel schedule.
-        output_aliases : Mapping[str, str] | None, optional
-            Map schedule channel labels to hardware output aliases. If omitted,
-            each channel label is used as its output alias.
+            Valid schedule whose target names are output instrument aliases.
         capture_start_ns : float, default=0.0
             Capture start time relative to the output trigger, in ns.
         capture_length_ns : float | None, optional
@@ -616,9 +606,6 @@ class Quel3BackendController(BackendController):
         return self._monitor_tool.run_schedule(
             unit_label=unit_label,
             pulse_schedule=pulse_schedule,
-            monitor_alias=monitor_alias,
-            output_alias=output_alias,
-            output_aliases=output_aliases,
             capture_start_ns=capture_start_ns,
             capture_length_ns=capture_length_ns,
             n_iterations=n_iterations,

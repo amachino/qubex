@@ -175,6 +175,7 @@ def _instrument_info(
     alias: str,
     port: str,
     *,
+    unit_label: str = "unit-a",
     frequency_range_min_hz: float = 4e9,
     frequency_range_max_hz: float = 6e9,
 ) -> InstrumentInfoProtocol:
@@ -182,8 +183,8 @@ def _instrument_info(
     return cast(
         InstrumentInfoProtocol,
         SimpleNamespace(
-            id=f"unit-a:{alias}",
-            port_id=f"unit-a:{port}",
+            id=f"{unit_label}:{alias}",
+            port_id=f"{unit_label}:{port}",
             definition=SimpleNamespace(
                 alias=alias,
                 mode="FIXED_TIMELINE",
@@ -266,10 +267,19 @@ def monitor_schedule_runtime(
         actions.append(
             ("restore", tuple(spec.alias for spec in configuration.instruments))
         )
-        instrument_cache.replace_units(
-            unit_labels=("unit-a",), instrument_infos=originals
+        restored = tuple(
+            _instrument_info(
+                spec.alias,
+                spec.port_id.partition(":")[2],
+                frequency_range_min_hz=spec.frequency_range_min_hz,
+                frequency_range_max_hz=spec.frequency_range_max_hz,
+            )
+            for spec in configuration.instruments
         )
-        return {info.definition.alias: info for info in originals}
+        instrument_cache.replace_units(
+            unit_labels=("unit-a",), instrument_infos=restored
+        )
+        return {info.definition.alias: info for info in restored}
 
     monkeypatch.setattr(controller.configuration_manager, "clear_instruments", clear)
     monkeypatch.setattr(
@@ -336,7 +346,7 @@ def test_run_monitor_schedule_builds_sparse_events_and_reuses_shape(
     controller, manager, actions = monitor_schedule_runtime
     with PulseSchedule() as schedule:
         schedule.add(
-            "drive",
+            "output-a",
             Arbitrary(
                 [0.25 + 0.5j, 0.5 + 0.25j],
                 sampling_period=0.4,
@@ -344,25 +354,28 @@ def test_run_monitor_schedule_builds_sparse_events_and_reuses_shape(
                 phase=np.deg2rad(30),
             ),
         )
-        schedule.add("drive", Blank(0.8, sampling_period=0.4))
-        schedule.add("drive", PhaseShift(np.pi / 2))
+        schedule.add("output-a", Blank(0.8, sampling_period=0.4))
+        schedule.add("output-a", PhaseShift(np.pi / 2))
         schedule.add(
-            "drive",
+            "output-a",
             Arbitrary([0.25 + 0.5j, 0.5 + 0.25j], sampling_period=0.4, scale=0.7),
         )
-    schedule.set_frequency("drive", 5.0)
+    schedule.set_frequency("output-a", 5.0)
 
     iq = controller.run_monitor_schedule(
         unit_label="unit-a",
         pulse_schedule=schedule,
-        output_alias="output-a",
-        monitor_alias="monitor",
     )
 
-    assert np.array_equal(iq["drive"], [[1 + 2j, 3 + 4j]])
+    assert np.array_equal(iq["output-a"], [[1 + 2j, 3 + 4j]])
     assert manager.request is not None
     payload = manager.request.payload
     assert payload.capture_mode is Quel3CaptureMode.RAW_WAVEFORMS
+    monitor_alias = next(
+        alias
+        for alias, timeline in payload.fixed_timelines.items()
+        if timeline.capture_windows
+    )
     assert len(payload.waveform_library) == 1
     assert np.array_equal(
         next(iter(payload.waveform_library.values())).iq_array,
@@ -375,15 +388,15 @@ def test_run_monitor_schedule_builds_sparse_events_and_reuses_shape(
     assert [event.gain for event in events] == pytest.approx([0.5, 0.7])
     assert [event.phase_offset_deg for event in events] == pytest.approx([30, 90])
     assert payload.fixed_timelines["output-a"].frequency_hz == pytest.approx(5e9)
-    assert payload.fixed_timelines["monitor"].frequency_hz == pytest.approx(5e9)
-    assert payload.fixed_timelines["monitor"].capture_windows[0].length_ns == (
+    assert payload.fixed_timelines[monitor_alias].frequency_hz == pytest.approx(5e9)
+    assert payload.fixed_timelines[monitor_alias].capture_windows[0].length_ns == (
         pytest.approx(2.4)
     )
     assert actions == [
         ("clear", "unit-a"),
         ("mode", "loopback"),
         ("deploy", "output-a", "unit-a:tx_p00", "TRANSMITTER", 4e9, 6e9),
-        ("deploy", "monitor", "unit-a:mon", "RECEIVER", 4e9, 6e9),
+        ("deploy", monitor_alias, "unit-a:mon", "RECEIVER", 4e9, 6e9),
         ("clear", "unit-a"),
         ("mode", "disabled"),
         ("restore", ("idle", "output-a", "output-b")),
@@ -401,35 +414,89 @@ def test_run_monitor_schedule_executes_multiple_output_channels(
     """Each target should capture on the monitor port with its own frequency."""
     controller, manager, actions = monitor_schedule_runtime
     with PulseSchedule() as schedule:
-        schedule.add("drive-a", Arbitrary([0.25 + 0j], sampling_period=0.4))
-        schedule.add("drive-b", Arbitrary([0.5 + 0j], sampling_period=0.4))
-    schedule.set_frequency("drive-b", 5.5)
+        schedule.add("output-a", Arbitrary([0.25 + 0j], sampling_period=0.4))
+        schedule.add("output-b", Arbitrary([0.5 + 0j], sampling_period=0.4))
+    schedule.set_frequency("output-b", 5.5)
 
     captured = controller.run_monitor_schedule(
         unit_label="unit-a",
         pulse_schedule=schedule,
-        output_aliases={"drive-a": "output-a", "drive-b": "output-b"},
-        monitor_alias="monitor",
     )
 
-    assert set(captured) == {"drive-a", "drive-b"}
-    assert captured["drive-a"][0, 0] == 1 + 2j
-    assert captured["drive-b"][0, 0] == 2 + 2j
+    assert set(captured) == {"output-a", "output-b"}
+    assert captured["output-a"][0, 0] == 1 + 2j
+    assert captured["output-b"][0, 0] == 2 + 2j
     assert manager.requests is not None
     assert len(manager.requests) == 2
+    monitor_alias = next(
+        alias
+        for alias, timeline in manager.requests[0].payload.fixed_timelines.items()
+        if timeline.capture_windows
+    )
     for request, output, frequency in zip(
         manager.requests, ("output-a", "output-b"), (5e9, 5.5e9), strict=True
     ):
         timelines = request.payload.fixed_timelines
-        assert set(timelines) == {output, "monitor"}
+        assert set(timelines) == {output, monitor_alias}
         assert timelines[output].frequency_hz == pytest.approx(frequency)
-        assert timelines["monitor"].frequency_hz == pytest.approx(frequency)
+        assert timelines[monitor_alias].frequency_hz == pytest.approx(frequency)
     assert [entry[1] for entry in actions if entry[0] == "deploy"] == [
         "output-a",
-        "monitor",
+        monitor_alias,
         "output-b",
-        "monitor",
+        monitor_alias,
     ]
+
+
+@pytest.mark.parametrize("target_label", ["monitor", "_qubex_monitor"])
+def test_run_monitor_schedule_avoids_temporary_alias_collisions(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+    target_label: str,
+) -> None:
+    """Temporary monitor aliases should avoid live outputs and other units' cache."""
+    controller, manager, actions = monitor_schedule_runtime
+    originals = (
+        _instrument_info(target_label, "tx_p00"),
+        _instrument_info("_qubex_monitor_2", "tx_p02"),
+    )
+    other_unit_infos = tuple(
+        _instrument_info(alias, f"tx_p0{index}", unit_label="unit-b")
+        for index, alias in enumerate(("_qubex_monitor", "_qubex_monitor_1"))
+        if alias != target_label
+    )
+    controller._instrument_cache.replace_all(instrument_infos=other_unit_infos)
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "read_instrument_infos",
+        lambda **kwargs: originals,
+    )
+    with PulseSchedule() as schedule:
+        schedule.add(target_label, Arbitrary([0.5 + 0j], sampling_period=0.4))
+
+    captured = controller.run_monitor_schedule(
+        unit_label="unit-a", pulse_schedule=schedule
+    )
+
+    assert np.array_equal(captured[target_label], [[1 + 2j, 3 + 4j]])
+    assert manager.request is not None
+    monitor_alias = next(
+        alias
+        for alias, timeline in manager.request.payload.fixed_timelines.items()
+        if timeline.capture_windows
+    )
+    assert monitor_alias not in {
+        info.definition.alias for info in (*originals, *other_unit_infos)
+    }
+    assert ("deploy", monitor_alias, "unit-a:mon", "RECEIVER", 4e9, 6e9) in actions
+    snapshot = controller._instrument_cache.snapshot()
+    assert set(snapshot) == {
+        info.definition.alias for info in (*originals, *other_unit_infos)
+    }
+    for info in other_unit_infos:
+        assert snapshot[info.definition.alias] is info
 
 
 def test_run_monitor_schedule_restores_instruments_after_execution_failure(
@@ -443,15 +510,13 @@ def test_run_monitor_schedule_restores_instruments_after_execution_failure(
         Any, lambda **kwargs: (_ for _ in ()).throw(RuntimeError("execute failed"))
     )
     with PulseSchedule() as schedule:
-        schedule.add("drive", Arbitrary([1 + 0j], sampling_period=0.4))
-    schedule.set_frequency("drive", 5.0)
+        schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
+    schedule.set_frequency("output-a", 5.0)
 
     with pytest.raises(RuntimeError, match="execute failed"):
         controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
-            output_alias="output-a",
-            monitor_alias="monitor",
         )
 
     assert actions[-3:] == [
@@ -493,15 +558,13 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
         controller.configuration_manager, "deploy_instrument", fail_monitor_deploy
     )
     with PulseSchedule() as schedule:
-        schedule.add("drive", Arbitrary([1 + 0j], sampling_period=0.4))
-    schedule.set_frequency("drive", 5.0)
+        schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
+    schedule.set_frequency("output-a", 5.0)
 
     with pytest.raises(RuntimeError, match="monitor deployment failed"):
         controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
-            output_alias="output-a",
-            monitor_alias="monitor",
         )
 
     assert actions[-3:] == [
@@ -511,22 +574,12 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
     ]
 
 
-@pytest.mark.parametrize(
-    ("label", "alias_options"),
-    [
-        ("output-a", {}),
-        ("drive", {"output_alias": "output-a"}),
-        ("drive", {"output_aliases": {"drive": "output-a"}}),
-    ],
-)
 def test_run_monitor_schedule_defaults_to_live_instrument_center_frequency(
     monitor_schedule_runtime: tuple[
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
-    label: str,
-    alias_options: dict[str, Any],
 ) -> None:
-    """Missing frequency should use the mapped live instrument's range center."""
+    """Missing frequency should use the live instrument's range center."""
     controller, manager, _ = monitor_schedule_runtime
     controller._instrument_cache.replace_all(
         instrument_infos=(
@@ -539,18 +592,21 @@ def test_run_monitor_schedule_defaults_to_live_instrument_center_frequency(
         )
     )
     with PulseSchedule() as schedule:
-        schedule.add(label, Arbitrary([1 + 0j], sampling_period=0.4))
+        schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
 
     captured = controller.run_monitor_schedule(
-        unit_label="unit-a", pulse_schedule=schedule, **alias_options
+        unit_label="unit-a", pulse_schedule=schedule
     )
 
-    assert np.array_equal(captured[label], [[1 + 2j, 3 + 4j]])
+    assert np.array_equal(captured["output-a"], [[1 + 2j, 3 + 4j]])
     assert manager.request is not None
     timelines = manager.request.payload.fixed_timelines
+    monitor_alias = next(
+        alias for alias, timeline in timelines.items() if timeline.capture_windows
+    )
     assert timelines["output-a"].frequency_hz == pytest.approx(5e9)
-    assert timelines["monitor"].frequency_hz == pytest.approx(5e9)
-    assert schedule.get_frequency(label) is None
+    assert timelines[monitor_alias].frequency_hz == pytest.approx(5e9)
+    assert schedule.get_frequency("output-a") is None
 
 
 @pytest.mark.parametrize("frequency_ghz", [float("nan"), float("inf"), -float("inf")])
@@ -563,15 +619,13 @@ def test_run_monitor_schedule_rejects_nonfinite_frequency_before_deletion(
     """An explicit nonfinite frequency should leave hardware untouched."""
     controller, _, actions = monitor_schedule_runtime
     with PulseSchedule() as schedule:
-        schedule.add("drive", Arbitrary([1 + 0j], sampling_period=0.4))
-    schedule.set_frequency("drive", frequency_ghz)
+        schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
+    schedule.set_frequency("output-a", frequency_ghz)
 
     with pytest.raises(ValueError, match="frequency"):
         controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
-            output_alias="output-a",
-            monitor_alias="monitor",
         )
 
     assert actions == []
@@ -582,18 +636,16 @@ def test_run_monitor_schedule_rejects_missing_target_before_deletion(
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
 ) -> None:
-    """An unknown output alias should leave the unit's instruments untouched."""
+    """An unknown schedule target should leave the unit's instruments untouched."""
     controller, _, actions = monitor_schedule_runtime
     with PulseSchedule() as schedule:
-        schedule.add("drive", Arbitrary([1 + 0j], sampling_period=0.4))
-    schedule.set_frequency("drive", 5.0)
+        schedule.add("missing", Arbitrary([1 + 0j], sampling_period=0.4))
+    schedule.set_frequency("missing", 5.0)
 
     with pytest.raises(ValueError, match="has no instrument"):
         controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
-            output_alias="missing",
-            monitor_alias="monitor",
         )
 
     assert actions == []
@@ -607,14 +659,13 @@ def test_run_monitor_schedule_rejects_invalid_capture_before_deletion(
     """Invalid capture settings should not trigger instrument deletion."""
     controller, _, actions = monitor_schedule_runtime
     with PulseSchedule() as schedule:
-        schedule.add("drive", Arbitrary([1 + 0j], sampling_period=0.4))
-    schedule.set_frequency("drive", 5.0)
+        schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
+    schedule.set_frequency("output-a", 5.0)
 
     with pytest.raises(ValueError, match="n_iterations"):
         controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
-            output_alias="output-a",
             n_iterations=0,
         )
 
@@ -662,16 +713,13 @@ def test_monitor_tool_runs_schedule_without_controller_dependency(
             {
                 "unit_label": "unit-a",
                 "pulse_schedule": PulseSchedule(),
-                "monitor_alias": "monitor",
-                "output_alias": None,
-                "output_aliases": {"drive": "output"},
                 "capture_start_ns": 4.0,
                 "capture_length_ns": 8.0,
                 "n_iterations": 2,
                 "shot_interval_ns": 16.0,
                 "parallel": False,
             },
-            {"drive": np.array([[1 + 2j]])},
+            {"output-a": np.array([[1 + 2j]])},
         ),
     ],
 )
