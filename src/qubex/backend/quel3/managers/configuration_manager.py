@@ -43,6 +43,7 @@ from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_br
 T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
+_MONITOR_MODE_CONTROL_KEY = "quel3.monitor.mode"
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,90 @@ class Quel3ConfigurationManager:
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
         return self._runtime_config.pat_path
+
+    def configure_monitor_mode(self, *, unit_label: str, mode: str) -> str:
+        """
+        Configure one unit's monitor mode before instruments are deployed.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact label of the QuEL-3 unit.
+        mode : str
+            Value accepted by the unit's `quel3.monitor.mode` control.
+
+        Returns
+        -------
+        str
+            Applied monitor mode reported by quelware.
+
+        Notes
+        -----
+        Quelware requires a lock on every port of the unit and no deployed
+        instruments when changing a unit control.
+        """
+        if not unit_label.strip():
+            raise ValueError("Unit label must not be empty.")
+        if not mode.strip():
+            raise ValueError("Monitor mode must not be empty.")
+        return _run_async(
+            lambda: self._configure_monitor_mode(unit_label=unit_label, mode=mode)
+        )
+
+    async def _configure_monitor_mode(self, *, unit_label: str, mode: str) -> str:
+        """Validate the live control and apply it under an all-port session."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if unit_label not in client.list_unit_labels():
+                raise ValueError(f"QuEL-3 unit was not discovered: {unit_label!r}.")
+            configuration = await client.get_unit_configuration(unit_label)
+            control = next(
+                (
+                    spec
+                    for spec in configuration.supported
+                    if spec.key == _MONITOR_MODE_CONTROL_KEY
+                ),
+                None,
+            )
+            if control is None:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} does not support monitor mode."
+                )
+            if mode not in control.allowed_values:
+                raise ValueError(
+                    f"Monitor mode {mode!r} is not supported; "
+                    f"allowed values: {control.allowed_values}."
+                )
+            if control.current_value == mode:
+                return mode
+            resources = await client.list_resource_infos()
+            port_ids = tuple(
+                dict.fromkeys(
+                    resource.id
+                    for resource in resources
+                    if str(
+                        getattr(resource.category, "name", resource.category)
+                    ).rsplit(".", maxsplit=1)[-1]
+                    == "PORT"
+                    and resource.id.startswith(f"{unit_label}:")
+                )
+            )
+            if not port_ids:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} has no discovered ports to lock."
+                )
+            async with client.create_session(port_ids) as session:
+                values = await session.configure_unit(
+                    unit_label, {_MONITOR_MODE_CONTROL_KEY: mode}
+                )
+            applied = values.get(_MONITOR_MODE_CONTROL_KEY)
+            if applied != mode:
+                raise RuntimeError(
+                    f"QuEL-3 monitor mode readback was {applied!r}; expected {mode!r}."
+                )
+            return mode
 
     def clear_instruments(
         self,
