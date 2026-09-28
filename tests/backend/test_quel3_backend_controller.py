@@ -882,8 +882,8 @@ def test_constructor_does_not_infer_runtime_config_from_injected_managers() -> N
     assert controller.quelware_pat_path == "/run/secrets/explicit-pat"
 
 
-def test_filter_runnable_payload_drops_empty_aliases() -> None:
-    """Given empty and active timelines, filtering should keep only runnable aliases."""
+def test_prepare_execution_drops_empty_aliases_without_changing_payload() -> None:
+    """Execution preparation should skip empty uncached aliases and preserve the input."""
     payload = _make_payload()
     payload = replace(
         payload,
@@ -897,13 +897,26 @@ def test_filter_runnable_payload_drops_empty_aliases() -> None:
         },
     )
 
-    filtered = Quel3ExecutionManager._filter_runnable_payload(payload)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="unit-a:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    plan = Quel3ExecutionManager._prepare_payload_execution_plan(
+        payload=payload, instrument_cache=cache
+    )
 
-    assert set(filtered.fixed_timelines.keys()) == {"alias-rq00"}
+    assert set(plan.payload.fixed_timelines) == {"alias-rq00"}
+    assert plan.aliases == ("alias-rq00",)
+    assert set(payload.fixed_timelines) == {"alias-empty", "alias-rq00"}
+    assert plan.payload.waveform_library is payload.waveform_library
 
 
-def test_filter_runnable_payload_rejects_all_empty_timelines() -> None:
-    """Given only empty timelines, filtering should fail with a clear error."""
+def test_prepare_execution_rejects_all_empty_timelines() -> None:
+    """Execution preparation should reject empty timelines before looking up the cache."""
     payload = _make_payload()
     payload = replace(
         payload,
@@ -917,7 +930,9 @@ def test_filter_runnable_payload_rejects_all_empty_timelines() -> None:
     )
 
     with pytest.raises(ValueError, match="no waveform events or capture windows"):
-        Quel3ExecutionManager._filter_runnable_payload(payload)
+        Quel3ExecutionManager._prepare_payload_execution_plan(
+            payload=payload, instrument_cache=InstrumentCache()
+        )
 
 
 def test_execute_preserves_logical_alias_with_unit_qualified_hardware_info(

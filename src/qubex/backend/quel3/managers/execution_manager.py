@@ -461,25 +461,26 @@ class Quel3ExecutionManager:
         instrument_cache: InstrumentCache,
     ) -> _PayloadExecutionPlan:
         """Validate cached instruments and prepare runnable timelines for execution."""
-        runnable_payload = cls._filter_runnable_payload(payload)
-        runnable_payload = replace(
-            runnable_payload,
-            fixed_timelines={
-                alias: cls._prepare_timeline(alias=alias, timeline=timeline)
-                for alias, timeline in runnable_payload.fixed_timelines.items()
-            },
-        )
-        aliases = tuple(sorted(runnable_payload.fixed_timelines))
+        timelines = {
+            alias: cls._prepare_timeline(alias=alias, timeline=timeline)
+            for alias, timeline in payload.fixed_timelines.items()
+            if timeline.events or timeline.capture_windows
+        }
+        if not timelines:
+            raise ValueError(
+                "Quel3ExecutionPayload has no waveform events or capture windows to execute."
+            )
+        aliases = tuple(sorted(timelines))
         alias_to_instrument_info = {
             alias: instrument_cache.get(alias) for alias in aliases
         }
         return _PayloadExecutionPlan(
-            payload=runnable_payload,
+            payload=replace(payload, fixed_timelines=timelines),
             aliases=aliases,
             aliases_with_captures=frozenset(
                 alias
-                for alias, timeline in runnable_payload.fixed_timelines.items()
-                if len(timeline.capture_windows) > 0
+                for alias, timeline in timelines.items()
+                if timeline.capture_windows
             ),
             alias_to_instrument_info=alias_to_instrument_info,
         )
@@ -508,22 +509,6 @@ class Quel3ExecutionManager:
                 )
             ),
         )
-
-    @staticmethod
-    def _filter_runnable_payload(
-        payload: Quel3ExecutionPayload,
-    ) -> Quel3ExecutionPayload:
-        """Drop fixed timelines that would export an empty hardware directive."""
-        runnable_timelines = {
-            alias: timeline
-            for alias, timeline in payload.fixed_timelines.items()
-            if len(timeline.events) > 0 or len(timeline.capture_windows) > 0
-        }
-        if len(runnable_timelines) == 0:
-            raise ValueError(
-                "Quel3ExecutionPayload has no waveform events or capture windows to execute."
-            )
-        return replace(payload, fixed_timelines=runnable_timelines)
 
     @staticmethod
     def _extract_capture_samples(
