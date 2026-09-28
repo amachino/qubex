@@ -142,6 +142,35 @@ class Quel3ConfigurationManager:
             lambda: self._configure_monitor_mode(unit_label=unit_label, mode=mode)
         )
 
+    def get_monitor_mode(self, *, unit_label: str) -> str:
+        """Read the current monitor mode of one discovered unit."""
+        if not unit_label.strip():
+            raise ValueError("Unit label must not be empty.")
+        return _run_async(lambda: self._get_monitor_mode(unit_label=unit_label))
+
+    async def _get_monitor_mode(self, *, unit_label: str) -> str:
+        """Read the live monitor control before changing instrument state."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if unit_label not in client.list_unit_labels():
+                raise ValueError(f"QuEL-3 unit was not discovered: {unit_label!r}.")
+            configuration = await client.get_unit_configuration(unit_label)
+            control = next(
+                (
+                    spec
+                    for spec in configuration.supported
+                    if spec.key == _MONITOR_MODE_CONTROL_KEY
+                ),
+                None,
+            )
+            if control is None:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} does not support monitor mode."
+                )
+            return control.current_value
+
     async def _configure_monitor_mode(self, *, unit_label: str, mode: str) -> str:
         """Validate the live control and apply it under an all-port session."""
         client_factory = self._load_quelware_client_factory()

@@ -101,3 +101,16 @@ def test_configure_monitor_mode_rejects_unsupported_value(
         )
 
     assert client.configured == []
+
+
+def test_get_monitor_mode_reads_live_unit_control(
+    monitor_runtime: tuple[Quel3BackendController, _MonitorClient],
+) -> None:
+    """The current mode should be read from the unit before instrument changes."""
+    controller, client = monitor_runtime
+    client.controls["quel3.monitor.mode"] = "loopback"
+
+    mode = controller.configuration_manager.get_monitor_mode(unit_label="unit-a")
+
+    assert mode == "loopback"
+    assert client.configured == []
