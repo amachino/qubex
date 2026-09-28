@@ -245,6 +245,10 @@ these methods take an optional `muxes` selection (indices or labels; all active
 wired muxes when omitted), and all writes prompt for confirmation, like a box
 push.
 Each bulk write and its resulting readback share one device connection.
+Unlike context-scoped operations, bulk writes leave their resulting voltage
+and output states in effect after the method returns. Call
+`apply_idle_voltages()` to return selected muxes from their optimal voltages to
+idle.
 An empty selection or a declined confirmation returns `{}` without opening a
 device connection.
 

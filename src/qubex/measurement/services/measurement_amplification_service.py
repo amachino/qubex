@@ -48,7 +48,9 @@ class MeasurementAmplificationService:
         Parameters
         ----------
         targets : str | Collection[str]
-            Target label or target labels.
+            Qubit label or single-qubit target label, or a collection of them.
+            Each label must resolve to one qubit; mux indices and mux labels are
+            not accepted.
 
         Notes
         -----

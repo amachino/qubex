@@ -40,6 +40,12 @@ class ExternalDevices:
         ------
         DCVoltageControl
             Operations bound to the resolved mux.
+
+        Notes
+        -----
+        Voltage changes made through the yielded control are scoped to this
+        context. On normal or exceptional exit, the mux returns to its
+        configured idle voltage.
         """
         with self._ctx.dc_voltage_control(mux=mux) as control:
             yield control
@@ -88,6 +94,11 @@ class ExternalDevices:
         dict[int, DCVoltageState]
             Readback states for every active wired mux after resetting, or an
             empty mapping when the selection is empty or confirmation is declined.
+
+        Notes
+        -----
+        The resulting reset voltage and output state remain in effect after
+        this method returns.
         """
         return self._ctx.reset_dc_voltages(muxes=muxes, confirm=confirm)
 
@@ -101,8 +112,7 @@ class ExternalDevices:
 
         When `muxes` is omitted, every active wired mux with a calibrated
         `optimal_voltage` in `jpa_params.yaml` is biased and the rest are
-        skipped; an explicitly selected mux without one raises. Ramp back
-        with `apply_idle_voltages()`.
+        skipped; an explicitly selected mux without one raises.
 
         Parameters
         ----------
@@ -117,6 +127,11 @@ class ExternalDevices:
             Readback states for every active wired mux after applying optimal
             voltages, or an empty mapping when the selection is empty or
             confirmation is declined.
+
+        Notes
+        -----
+        Optimal voltages remain applied after this method returns. Call
+        `apply_idle_voltages()` to return the muxes to their idle voltages.
         """
         return self._ctx.apply_optimal_voltages(muxes=muxes, confirm=confirm)
 
@@ -149,6 +164,10 @@ class ExternalDevices:
         dict[int, DCVoltageState]
             Readback states for every active wired mux after idling, or an
             empty mapping when the selection is empty or confirmation is declined.
+
+        Notes
+        -----
+        The idle voltages remain applied after this method returns.
         """
         return self._ctx.apply_idle_voltages(muxes=muxes, confirm=confirm)
 
@@ -181,5 +200,10 @@ class ExternalDevices:
         dict[int, DCVoltageState]
             Readback states for every active wired mux after shutdown, or an
             empty mapping when the selection is empty or confirmation is declined.
+
+        Notes
+        -----
+        The resulting reset-voltage and output states remain in effect after
+        this method returns.
         """
         return self._ctx.shutdown_dc_voltages(muxes=muxes, confirm=confirm)
