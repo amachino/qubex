@@ -27,7 +27,11 @@ from qubex.backend.quel3.models import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from qxpulse import PulseSchedule
+
+    from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
 
 class Quel3MonitorTool:
@@ -67,7 +71,6 @@ class Quel3MonitorTool:
     def run_schedule(
         self,
         *,
-        unit_label: str,
         pulse_schedule: PulseSchedule,
         capture_start_ns: float = 0.0,
         capture_length_ns: float | None = None,
@@ -80,10 +83,9 @@ class Quel3MonitorTool:
 
         Parameters
         ----------
-        unit_label : str
-            Unit containing every scheduled output instrument.
         pulse_schedule : PulseSchedule
-            Valid schedule whose target names are output instrument aliases.
+            Valid schedule whose target names uniquely identify live output
+            instrument aliases on a single unit.
         capture_start_ns : float, default=0.0
             Capture start time relative to the output trigger, in ns.
         capture_length_ns : float | None, optional
@@ -101,8 +103,16 @@ class Quel3MonitorTool:
             Raw IQ arrays keyed by schedule target, each with shape
             `(n_iterations, samples)`.
 
+        Raises
+        ------
+        ValueError
+            If a target has no live instrument, its alias is ambiguous, targets
+            span multiple units, or schedule or capture settings are invalid.
+
         Notes
         -----
+        The unit is inferred from live instruments matching the schedule's
+        targets. All targets are validated before clearing any instruments.
         Schedule frequencies are in GHz. A target without a frequency uses the
         center of its live instrument's frequency range. The same frequency is
         applied to the output and monitor instruments. The method reads the
@@ -112,8 +122,6 @@ class Quel3MonitorTool:
         if deployment or execution fails. Blanks advance event offsets without
         allocating zero-filled waveform samples.
         """
-        if not unit_label.strip():
-            raise ValueError("Unit label must not be empty.")
         labels = pulse_schedule.labels
         if not labels:
             raise ValueError("Monitor PulseSchedule must have at least one channel.")
@@ -128,17 +136,27 @@ class Quel3MonitorTool:
             n_iterations=n_iterations,
             shot_interval_ns=shot_interval_ns,
         )
+        live_instruments = self._hardware_state_reader.read_instrument_infos(
+            parallel=parallel
+        )
+        unit_label = self._resolve_unit_label(
+            target_labels=labels, instrument_infos=live_instruments
+        )
         original_cache = InstrumentCache()
         original_cache.replace_all(
-            instrument_infos=self._hardware_state_reader.read_instrument_infos(
-                unit_labels=(unit_label,), parallel=parallel
+            instrument_infos=(
+                info
+                for info in live_instruments
+                if info.port_id.partition(":")[0] == unit_label
             )
         )
         original_configuration = original_cache.export_configuration()
         original_specs = {
             spec.alias: spec for spec in original_configuration.instruments
         }
-        occupied_aliases = set(self._instrument_cache.snapshot()) | set(original_specs)
+        occupied_aliases = set(self._instrument_cache.snapshot()) | {
+            InstrumentCache.alias_for(info) for info in live_instruments
+        }
         monitor_alias = "_qubex_monitor"
         suffix = 0
         while monitor_alias in occupied_aliases:
@@ -146,17 +164,7 @@ class Quel3MonitorTool:
             monitor_alias = f"_qubex_monitor_{suffix}"
         prepared: dict[str, tuple[Quel3FixedTimeline, dict[str, Quel3Waveform]]] = {}
         for label in labels:
-            try:
-                spec = original_specs[label]
-            except KeyError as exc:
-                raise ValueError(
-                    f"Monitor PulseSchedule target {label!r} has no instrument "
-                    f"on unit {unit_label!r}."
-                ) from exc
-            if spec.port_id.partition(":")[0] != unit_label:
-                raise ValueError(
-                    f"Monitor PulseSchedule target {label!r} belongs to another unit."
-                )
+            spec = original_specs[label]
             if spec.role == "RECEIVER" or spec.port_id.endswith(":mon"):
                 raise ValueError(
                     f"Monitor target {label!r} is not an output instrument."
@@ -265,6 +273,39 @@ class Quel3MonitorTool:
                 parallel=parallel,
             )
         return captured
+
+    @staticmethod
+    def _resolve_unit_label(
+        *,
+        target_labels: Sequence[str],
+        instrument_infos: Sequence[InstrumentInfoProtocol],
+    ) -> str:
+        """Resolve one unit from unique live aliases before changing hardware."""
+        ports_by_alias: dict[str, list[str]] = {}
+        for info in instrument_infos:
+            ports_by_alias.setdefault(InstrumentCache.alias_for(info), []).append(
+                info.port_id
+            )
+        unit_labels: set[str] = set()
+        for label in target_labels:
+            ports = ports_by_alias.get(label, [])
+            if not ports:
+                raise ValueError(
+                    f"Monitor PulseSchedule target {label!r} has no instrument "
+                    "in the live hardware configuration."
+                )
+            if len(ports) > 1:
+                raise ValueError(
+                    f"Monitor PulseSchedule target {label!r} is ambiguous: "
+                    f"instruments exist on ports {sorted(ports)!r}."
+                )
+            unit_labels.add(ports[0].partition(":")[0])
+        if len(unit_labels) != 1:
+            raise ValueError(
+                "Monitor PulseSchedule targets must belong to a single unit; "
+                f"found {sorted(unit_labels)!r}."
+            )
+        return next(iter(unit_labels))
 
     def _execute_target(
         self,

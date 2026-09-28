@@ -572,7 +572,6 @@ class Quel3BackendController(BackendController):
     def run_monitor_schedule(
         self,
         *,
-        unit_label: str,
         pulse_schedule: PulseSchedule,
         capture_start_ns: float = 0.0,
         capture_length_ns: float | None = None,
@@ -585,10 +584,9 @@ class Quel3BackendController(BackendController):
 
         Parameters
         ----------
-        unit_label : str
-            Unit containing every scheduled output instrument.
         pulse_schedule : PulseSchedule
-            Valid schedule whose target names are output instrument aliases.
+            Valid schedule whose target names uniquely identify live output
+            instrument aliases on a single unit.
         capture_start_ns : float, default=0.0
             Capture start time relative to the output trigger, in ns.
         capture_length_ns : float | None, optional
@@ -606,8 +604,16 @@ class Quel3BackendController(BackendController):
             Raw IQ arrays keyed by schedule target, each with shape
             `(n_iterations, samples)`.
 
+        Raises
+        ------
+        ValueError
+            If a target has no live instrument, its alias is ambiguous, targets
+            span multiple units, or schedule or capture settings are invalid.
+
         Notes
         -----
+        The unit is inferred from live instruments matching the schedule's
+        targets. All targets are validated before clearing any instruments.
         Schedule frequencies are in GHz. A target without a frequency uses the
         center of its live instrument's frequency range. The same frequency is
         applied to the output and monitor instruments. The method reads the
@@ -618,7 +624,6 @@ class Quel3BackendController(BackendController):
         allocating zero-filled waveform samples.
         """
         return self._monitor_tool.run_schedule(
-            unit_label=unit_label,
             pulse_schedule=pulse_schedule,
             capture_start_ns=capture_start_ns,
             capture_length_ns=capture_length_ns,

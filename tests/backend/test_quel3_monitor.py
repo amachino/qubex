@@ -351,7 +351,7 @@ def _instrument_info(
 def monitor_schedule_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]]:
-    """Emulate one unit's instrument writes while retaining call order."""
+    """Emulate instrument writes while retaining call order and unit boundaries."""
     manager = _MonitorExecutionManager()
     controller = Quel3BackendController(execution_manager=cast(Any, manager))
     originals = (
@@ -407,7 +407,10 @@ def monitor_schedule_runtime(
             )
         )
         info = _instrument_info(
-            instrument.alias, instrument.port_id.partition(":")[2], role=instrument.role
+            instrument.alias,
+            instrument.port_id.partition(":")[2],
+            unit_label=instrument.port_id.partition(":")[0],
+            role=instrument.role,
         )
         instrument_cache.replace_ports(
             port_ids=(instrument.port_id,), instrument_infos=(info,)
@@ -428,6 +431,7 @@ def monitor_schedule_runtime(
             _instrument_info(
                 spec.alias,
                 spec.port_id.partition(":")[2],
+                unit_label=spec.port_id.partition(":")[0],
                 role=spec.role,
                 frequency_range_min_hz=spec.frequency_range_min_hz,
                 frequency_range_max_hz=spec.frequency_range_max_hz,
@@ -435,7 +439,10 @@ def monitor_schedule_runtime(
             for spec in configuration.instruments
         )
         instrument_cache.replace_units(
-            unit_labels=("unit-a",), instrument_infos=restored
+            unit_labels=tuple(
+                {spec.port_id.partition(":")[0] for spec in configuration.instruments}
+            ),
+            instrument_infos=restored,
         )
         return {info.definition.alias: info for info in restored}
 
@@ -481,7 +488,7 @@ def test_run_monitor_schedule_restores_instruments_after_empty_capture(
         schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
 
     with pytest.raises(RuntimeError, match="no IQ data"):
-        controller.run_monitor_schedule(unit_label="unit-a", pulse_schedule=schedule)
+        controller.run_monitor_schedule(pulse_schedule=schedule)
 
     assert actions[-3:] == [
         ("clear", "unit-a"),
@@ -521,7 +528,6 @@ def test_run_monitor_schedule_builds_sparse_events_and_reuses_shape(
     schedule.set_frequency("output-a", 5.0)
 
     iq = controller.run_monitor_schedule(
-        unit_label="unit-a",
         pulse_schedule=schedule,
     )
 
@@ -577,7 +583,6 @@ def test_run_monitor_schedule_executes_multiple_output_channels(
     schedule.set_frequency("output-b", 5.5)
 
     captured = controller.run_monitor_schedule(
-        unit_label="unit-a",
         pulse_schedule=schedule,
     )
 
@@ -606,6 +611,177 @@ def test_run_monitor_schedule_executes_multiple_output_channels(
     ]
 
 
+def test_run_monitor_schedule_infers_unit_from_live_target_and_restores_it(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+) -> None:
+    """A live target should select its unit and restore all of that unit's instruments."""
+    controller, manager, actions = monitor_schedule_runtime
+    other = _instrument_info("other", "tx_p00")
+    originals = (
+        _instrument_info("unit-b:output-a", "tx_p00", unit_label="unit-b"),
+        _instrument_info("idle", "tx_p01", unit_label="unit-b"),
+    )
+    controller._instrument_cache.replace_all(instrument_infos=(other,))
+    reads: list[bool] = []
+
+    def read(*, parallel: bool = True) -> tuple[InstrumentInfoProtocol, ...]:
+        reads.append(parallel)
+        return (other, *originals)
+
+    monkeypatch.setattr(controller.hardware_state_reader, "read_instrument_infos", read)
+    with PulseSchedule() as schedule:
+        schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
+
+    captured = controller.run_monitor_schedule(pulse_schedule=schedule, parallel=False)
+
+    assert np.array_equal(captured["output-a"], [[1 + 2j, 3 + 4j]])
+    assert manager.request is not None
+    assert reads == [False]
+    assert [entry for entry in actions if entry[0] == "clear"] == [
+        ("clear", "unit-b"),
+        ("clear", "unit-b"),
+    ]
+    assert ("deploy", "output-a", "unit-b:tx_p00", "TRANSMITTER", 4e9, 6e9) in actions
+    assert any(entry[0] == "deploy" and entry[2] == "unit-b:mon" for entry in actions)
+    assert actions[-2:] == [("mode", "open"), ("restore", ("idle", "output-a"))]
+    snapshot = controller._instrument_cache.snapshot()
+    assert set(snapshot) == {"other", "idle", "output-a"}
+    assert snapshot["other"] is other
+    assert snapshot["idle"].port_id == "unit-b:tx_p01"
+    assert snapshot["output-a"].port_id == "unit-b:tx_p00"
+
+
+@pytest.mark.parametrize("qualified_aliases", [False, True])
+def test_run_monitor_schedule_rejects_ambiguous_target_before_deletion(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+    qualified_aliases: bool,
+) -> None:
+    """A target alias on multiple units should fail even when one match is cached."""
+    controller, manager, actions = monitor_schedule_runtime
+    originals = tuple(
+        _instrument_info(
+            f"{unit}:output-a" if qualified_aliases else "output-a",
+            "tx_p00",
+            unit_label=unit,
+        )
+        for unit in ("unit-a", "unit-b")
+    )
+    controller._instrument_cache.replace_all(instrument_infos=originals[:1])
+    original_snapshot = controller._instrument_cache.snapshot()
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "read_instrument_infos",
+        lambda **kwargs: originals,
+    )
+    with PulseSchedule() as schedule:
+        schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
+
+    with pytest.raises(ValueError, match=r"ambiguous.*unit-a.*unit-b"):
+        controller.run_monitor_schedule(pulse_schedule=schedule)
+
+    assert actions == []
+    assert manager.request is None
+    assert controller._instrument_cache.snapshot() == original_snapshot
+
+
+def test_run_monitor_schedule_rejects_multiple_units_before_deletion(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+) -> None:
+    """Targets spanning multiple units should fail before changing any instruments."""
+    controller, manager, actions = monitor_schedule_runtime
+    originals = (
+        _instrument_info("output-a", "tx_p00"),
+        _instrument_info("output-b", "tx_p00", unit_label="unit-b"),
+    )
+    controller._instrument_cache.replace_all(instrument_infos=originals)
+    original_snapshot = controller._instrument_cache.snapshot()
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "read_instrument_infos",
+        lambda **kwargs: originals,
+    )
+    with PulseSchedule() as schedule:
+        schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
+        schedule.add("output-b", Arbitrary([0.5 + 0j], sampling_period=0.4))
+
+    with pytest.raises(ValueError, match=r"single unit.*unit-a.*unit-b"):
+        controller.run_monitor_schedule(pulse_schedule=schedule)
+
+    assert actions == []
+    assert manager.request is None
+    assert controller._instrument_cache.snapshot() == original_snapshot
+
+
+def test_run_monitor_schedule_ignores_unrelated_instrument_configurations(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+) -> None:
+    """Other units' duplicate aliases and unsupported profiles should not block a run."""
+    controller, _, actions = monitor_schedule_runtime
+    unrelated = tuple(
+        _instrument_info("unrelated", "tx_p00", unit_label=unit)
+        for unit in ("unit-b", "unit-c")
+    )
+    cast(Any, unrelated[0]).definition.mode = "OTHER_MODE"
+    cast(Any, unrelated[0]).definition.profile = None
+    original = _instrument_info("output-a", "tx_p00")
+    monkeypatch.setattr(
+        controller.hardware_state_reader,
+        "read_instrument_infos",
+        lambda **kwargs: (original, *unrelated),
+    )
+    with PulseSchedule() as schedule:
+        schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
+
+    captured = controller.run_monitor_schedule(pulse_schedule=schedule)
+
+    assert np.array_equal(captured["output-a"], [[1 + 2j, 3 + 4j]])
+    assert [entry for entry in actions if entry[0] == "clear"] == [
+        ("clear", "unit-a"),
+        ("clear", "unit-a"),
+    ]
+    assert actions[-1] == ("restore", ("output-a",))
+
+
+def test_run_monitor_schedule_read_failure_leaves_instruments_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+    monitor_schedule_runtime: tuple[
+        Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
+    ],
+) -> None:
+    """Failure to read live instruments should leave hardware and cached state intact."""
+    controller, manager, actions = monitor_schedule_runtime
+    controller._instrument_cache.replace_all(
+        instrument_infos=(_instrument_info("output-a", "tx_p00"),)
+    )
+    original_snapshot = controller._instrument_cache.snapshot()
+
+    def read(**kwargs: object) -> tuple[InstrumentInfoProtocol, ...]:
+        raise RuntimeError("instrument snapshot incomplete")
+
+    monkeypatch.setattr(controller.hardware_state_reader, "read_instrument_infos", read)
+    with PulseSchedule() as schedule:
+        schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
+
+    with pytest.raises(RuntimeError, match="snapshot incomplete"):
+        controller.run_monitor_schedule(pulse_schedule=schedule)
+
+    assert actions == []
+    assert manager.request is None
+    assert controller._instrument_cache.snapshot() == original_snapshot
+
+
 @pytest.mark.parametrize("role", ["TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
 def test_run_monitor_schedule_normalizes_readout_waveforms(
     monkeypatch: pytest.MonkeyPatch,
@@ -625,9 +801,7 @@ def test_run_monitor_schedule_normalizes_readout_waveforms(
     with PulseSchedule() as schedule:
         schedule.add("readout", Arbitrary([0.1, 0.3, 0.5], sampling_period=0.4))
 
-    captured = controller.run_monitor_schedule(
-        unit_label="unit-a", pulse_schedule=schedule
-    )
+    captured = controller.run_monitor_schedule(pulse_schedule=schedule)
 
     assert np.array_equal(captured["readout"], [[1 + 2j, 3 + 4j]])
     assert manager.request is not None
@@ -657,7 +831,7 @@ def test_run_monitor_schedule_rejects_incompatible_readout_before_deletion(
         schedule.add("readout", Arbitrary([0.1, 0.3], sampling_period=0.3))
 
     with pytest.raises(ValueError, match="must divide"):
-        controller.run_monitor_schedule(unit_label="unit-a", pulse_schedule=schedule)
+        controller.run_monitor_schedule(pulse_schedule=schedule)
 
     assert actions == []
     assert manager.request is None
@@ -682,18 +856,17 @@ def test_run_monitor_schedule_avoids_temporary_alias_collisions(
         for index, alias in enumerate(("_qubex_monitor", "_qubex_monitor_1"))
         if alias != target_label
     )
+    uncached = _instrument_info("_qubex_monitor_3", "tx_p02", unit_label="unit-b")
     controller._instrument_cache.replace_all(instrument_infos=other_unit_infos)
     monkeypatch.setattr(
         controller.hardware_state_reader,
         "read_instrument_infos",
-        lambda **kwargs: originals,
+        lambda **kwargs: (*originals, uncached),
     )
     with PulseSchedule() as schedule:
         schedule.add(target_label, Arbitrary([0.5 + 0j], sampling_period=0.4))
 
-    captured = controller.run_monitor_schedule(
-        unit_label="unit-a", pulse_schedule=schedule
-    )
+    captured = controller.run_monitor_schedule(pulse_schedule=schedule)
 
     assert np.array_equal(captured[target_label], [[1 + 2j, 3 + 4j]])
     assert manager.request is not None
@@ -703,7 +876,7 @@ def test_run_monitor_schedule_avoids_temporary_alias_collisions(
         if timeline.capture_windows
     )
     assert monitor_alias not in {
-        info.definition.alias for info in (*originals, *other_unit_infos)
+        info.definition.alias for info in (*originals, *other_unit_infos, uncached)
     }
     assert ("deploy", monitor_alias, "unit-a:mon", "RECEIVER", 4e9, 6e9) in actions
     snapshot = controller._instrument_cache.snapshot()
@@ -730,7 +903,6 @@ def test_run_monitor_schedule_restores_instruments_after_execution_failure(
 
     with pytest.raises(RuntimeError, match="execute failed"):
         controller.run_monitor_schedule(
-            unit_label="unit-a",
             pulse_schedule=schedule,
         )
 
@@ -778,7 +950,6 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
 
     with pytest.raises(RuntimeError, match="monitor deployment failed"):
         controller.run_monitor_schedule(
-            unit_label="unit-a",
             pulse_schedule=schedule,
         )
 
@@ -809,9 +980,7 @@ def test_run_monitor_schedule_defaults_to_live_instrument_center_frequency(
     with PulseSchedule() as schedule:
         schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
 
-    captured = controller.run_monitor_schedule(
-        unit_label="unit-a", pulse_schedule=schedule
-    )
+    captured = controller.run_monitor_schedule(pulse_schedule=schedule)
 
     assert np.array_equal(captured["output-a"], [[1 + 2j, 3 + 4j]])
     assert manager.request is not None
@@ -839,7 +1008,6 @@ def test_run_monitor_schedule_rejects_nonfinite_frequency_before_deletion(
 
     with pytest.raises(ValueError, match="frequency"):
         controller.run_monitor_schedule(
-            unit_label="unit-a",
             pulse_schedule=schedule,
         )
 
@@ -852,18 +1020,23 @@ def test_run_monitor_schedule_rejects_missing_target_before_deletion(
     ],
 ) -> None:
     """An unknown schedule target should leave the unit's instruments untouched."""
-    controller, _, actions = monitor_schedule_runtime
+    controller, manager, actions = monitor_schedule_runtime
+    controller._instrument_cache.replace_all(
+        instrument_infos=(_instrument_info("missing", "tx_p00"),)
+    )
+    original_snapshot = controller._instrument_cache.snapshot()
     with PulseSchedule() as schedule:
         schedule.add("missing", Arbitrary([1 + 0j], sampling_period=0.4))
     schedule.set_frequency("missing", 5.0)
 
     with pytest.raises(ValueError, match="has no instrument"):
         controller.run_monitor_schedule(
-            unit_label="unit-a",
             pulse_schedule=schedule,
         )
 
     assert actions == []
+    assert manager.request is None
+    assert controller._instrument_cache.snapshot() == original_snapshot
 
 
 def test_run_monitor_schedule_rejects_invalid_capture_before_deletion(
@@ -879,7 +1052,6 @@ def test_run_monitor_schedule_rejects_invalid_capture_before_deletion(
 
     with pytest.raises(ValueError, match="n_iterations"):
         controller.run_monitor_schedule(
-            unit_label="unit-a",
             pulse_schedule=schedule,
             n_iterations=0,
         )
@@ -892,7 +1064,7 @@ def test_monitor_tool_runs_schedule_without_controller_dependency(
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
 ) -> None:
-    """A standalone monitor tool should capture and restore the supplied unit."""
+    """A standalone monitor tool should infer the unit and restore its instruments."""
     controller, manager, actions = monitor_schedule_runtime
     tool = Quel3MonitorTool(
         configuration_manager=controller.configuration_manager,
@@ -903,7 +1075,7 @@ def test_monitor_tool_runs_schedule_without_controller_dependency(
     with PulseSchedule() as schedule:
         schedule.add("output-a", Arbitrary([1 + 0j], sampling_period=0.4))
 
-    captured = tool.run_schedule(unit_label="unit-a", pulse_schedule=schedule)
+    captured = tool.run_schedule(pulse_schedule=schedule)
 
     assert np.array_equal(captured["output-a"], [[1 + 2j, 3 + 4j]])
     assert actions[-3:] == [
@@ -920,7 +1092,6 @@ def test_monitor_tool_runs_schedule_without_controller_dependency(
             "run_monitor_schedule",
             "run_schedule",
             {
-                "unit_label": "unit-a",
                 "pulse_schedule": PulseSchedule(),
                 "capture_start_ns": 4.0,
                 "capture_length_ns": 8.0,
