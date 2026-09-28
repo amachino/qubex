@@ -2,13 +2,17 @@
 QuEL-3 backend controller implementing the shared measurement-facing contract.
 
 This module defines the QuEL-3 concrete `BackendController` implementation
-built on quelware-client managers.
+built on quelware-client managers and services.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import numpy as np
+import numpy.typing as npt
 
 from qubex.backend.backend_controller import (
     BackendController,
@@ -34,6 +38,10 @@ from .models import (
     Quel3HardwareStateView,
 )
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
+from .services import Quel3MonitorService
+
+if TYPE_CHECKING:
+    from qxpulse import PulseSchedule
 
 
 class Quel3BackendController(BackendController):
@@ -41,7 +49,7 @@ class Quel3BackendController(BackendController):
     QuEL-3 backend controller for session lifecycle and execution dispatch.
 
     The controller provides the required shared `BackendController` API for the
-    measurement layer and routes concrete operations to QuEL-3 manager classes.
+    measurement layer and delegates operations to QuEL-3 managers and services.
     Backend-specific capabilities are intentionally kept outside the shared
     contract.
     """
@@ -160,6 +168,13 @@ class Quel3BackendController(BackendController):
             else Quel3HardwareStateReader(
                 runtime_config=resolved_runtime_config,
             )
+        )
+
+        self._monitor_service = Quel3MonitorService(
+            configuration_manager=self._configuration_manager,
+            execution_manager=self._execution_manager,
+            hardware_state_reader=self._hardware_state_reader,
+            instrument_cache=self._instrument_cache,
         )
 
     @property
@@ -300,6 +315,35 @@ class Quel3BackendController(BackendController):
             instrument_cache=self._instrument_cache,
             parallel=parallel,
         )
+
+    def configure_monitor_mode(self, *, unit_label: str, mode: str = "loopback") -> str:
+        """
+        Set a unit's monitor mode before deploying output and monitor instruments.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact QuEL-3 unit label.
+        mode : str, default="loopback"
+            Value supported by the unit's `quel3.monitor.mode` control.
+
+        Returns
+        -------
+        str
+            Applied mode reported by quelware.
+
+        Raises
+        ------
+        RuntimeError
+            If the controller has cached instruments on this unit. Call
+            `clear_instruments(unit_label=...)` before changing the mode.
+
+        Notes
+        -----
+        Quelware also rejects a mode change if uncached instruments remain
+        deployed on the unit. Re-deploy instruments after changing the mode.
+        """
+        return self._monitor_service.configure_mode(unit_label=unit_label, mode=mode)
 
     def deploy_instrument(
         self,
@@ -510,6 +554,133 @@ class Quel3BackendController(BackendController):
     def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
         return self._sampling_period_ns
+
+    def run_monitor_iq(
+        self,
+        *,
+        output_alias: str,
+        monitor_alias: str,
+        waveform: npt.ArrayLike,
+        capture_start_ns: float = 0.0,
+        capture_length_ns: float | None = None,
+        n_iterations: int = 1,
+        shot_interval_ns: float = 0.0,
+        parallel: bool = True,
+    ) -> npt.NDArray[np.complex128]:
+        """
+        Play one waveform and return raw IQ captured on the monitor port.
+
+        Parameters
+        ----------
+        output_alias : str
+            Cached output instrument alias.
+        monitor_alias : str
+            Cached receiver alias deployed on the same unit's `mon` port.
+        waveform : ArrayLike
+            One-dimensional complex IQ waveform on the backend sampling grid.
+        capture_start_ns : float, default=0.0
+            Monitor capture start time relative to the output trigger, in ns.
+        capture_length_ns : float | None, optional
+            Capture duration in ns. Defaults to the waveform duration.
+        n_iterations : int, default=1
+            Number of unaveraged captures.
+        shot_interval_ns : float, default=0.0
+            Idle interval between iterations, in ns.
+        parallel : bool, default=True
+            Whether to parallelize instrument execution phases.
+
+        Returns
+        -------
+        NDArray[np.complex128]
+            Raw complex IQ with shape `(n_iterations, samples)`.
+
+        Notes
+        -----
+        Configure monitor mode and deploy both instruments before calling this
+        method. The returned IQ uses the same coordinates as normal QuEL-3
+        backend capture results.
+        """
+        return self._monitor_service.run_iq(
+            output_alias=output_alias,
+            monitor_alias=monitor_alias,
+            waveform=waveform,
+            capture_start_ns=capture_start_ns,
+            capture_length_ns=capture_length_ns,
+            n_iterations=n_iterations,
+            shot_interval_ns=shot_interval_ns,
+            parallel=parallel,
+        )
+
+    def run_monitor_schedule(
+        self,
+        *,
+        unit_label: str,
+        pulse_schedule: PulseSchedule,
+        monitor_alias: str = "monitor",
+        output_alias: str | None = None,
+        output_aliases: Mapping[str, str] | None = None,
+        capture_start_ns: float = 0.0,
+        capture_length_ns: float | None = None,
+        n_iterations: int = 1,
+        shot_interval_ns: float = 0.0,
+        parallel: bool = True,
+    ) -> dict[str, npt.NDArray[np.complex128]]:
+        """
+        Run each schedule target on the monitor port and restore the unit state.
+
+        Parameters
+        ----------
+        unit_label : str
+            Unit containing every scheduled output instrument.
+        pulse_schedule : PulseSchedule
+            Valid schedule with one or more output channels.
+        monitor_alias : str, default="monitor"
+            Temporary receiver alias deployed on `<unit_label>:mon`.
+        output_alias : str | None, optional
+            Hardware output alias for a one-channel schedule.
+        output_aliases : Mapping[str, str] | None, optional
+            Map schedule channel labels to hardware output aliases. If omitted,
+            each channel label is used as its output alias.
+        capture_start_ns : float, default=0.0
+            Capture start time relative to the output trigger, in ns.
+        capture_length_ns : float | None, optional
+            Capture duration in ns. Defaults to the schedule duration.
+        n_iterations : int, default=1
+            Number of unaveraged captures.
+        shot_interval_ns : float, default=0.0
+            Idle interval between iterations, in ns.
+        parallel : bool, default=True
+            Whether to parallelize instrument execution phases.
+
+        Returns
+        -------
+        dict[str, NDArray[np.complex128]]
+            Raw IQ arrays keyed by schedule target, each with shape
+            `(n_iterations, samples)`.
+
+        Notes
+        -----
+        Schedule frequencies are in GHz. A target without a frequency uses the
+        center of its live instrument's frequency range. The same frequency is
+        applied to the output and monitor instruments. The method reads the
+        live instruments, clears the selected unit, enters loopback mode, and
+        executes targets sequentially. It clears temporary instruments and
+        restores the original monitor mode and instrument configuration even
+        if deployment or execution fails. Blanks advance event offsets without
+        allocating zero-filled waveform samples.
+        """
+        return self._monitor_service.run_schedule(
+            unit_label=unit_label,
+            pulse_schedule=pulse_schedule,
+            monitor_alias=monitor_alias,
+            output_alias=output_alias,
+            output_aliases=output_aliases,
+            capture_start_ns=capture_start_ns,
+            capture_length_ns=capture_length_ns,
+            n_iterations=n_iterations,
+            shot_interval_ns=shot_interval_ns,
+            parallel=parallel,
+        )
 
     def execute_sync(
         self,

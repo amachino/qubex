@@ -94,9 +94,7 @@ def test_configure_monitor_mode_locks_every_unit_port(
     """Monitor configuration should lock every port and return the applied mode."""
     controller, client = monitor_runtime
 
-    value = controller.configuration_manager.configure_monitor_mode(
-        unit_label="unit-a", mode="loopback"
-    )
+    value = controller.configure_monitor_mode(unit_label="unit-a", mode="loopback")
 
     assert value == "loopback"
     assert client.session_resources == ("unit-a:tx_p00", "unit-a:mon")
@@ -110,9 +108,7 @@ def test_configure_monitor_mode_rejects_unsupported_value(
     controller, client = monitor_runtime
 
     with pytest.raises(ValueError, match="allowed values"):
-        controller.configuration_manager.configure_monitor_mode(
-            unit_label="unit-a", mode="unknown"
-        )
+        controller.configure_monitor_mode(unit_label="unit-a", mode="unknown")
 
     assert client.configured == []
 
@@ -133,9 +129,7 @@ def test_configure_monitor_mode_requires_instruments_cleared(
     controller._instrument_cache.replace_all(instrument_infos=(info,))
 
     with pytest.raises(RuntimeError, match="clear_instruments"):
-        _service_for_controller(controller).configure_mode(
-            unit_label="unit-a", mode="loopback"
-        )
+        controller.configure_monitor_mode(unit_label="unit-a", mode="loopback")
 
     assert client.configured == []
 
@@ -304,7 +298,7 @@ def test_run_monitor_iq_returns_raw_capture_and_builds_two_timelines() -> None:
     )
     controller._instrument_cache.replace_all(instrument_infos=infos)
 
-    iq = _service_for_controller(controller).run_iq(
+    iq = controller.run_monitor_iq(
         output_alias="output",
         monitor_alias="monitor",
         waveform=np.array([0.25 + 0.5j, 0.5 + 0.25j]),
@@ -342,7 +336,7 @@ def test_run_monitor_iq_requires_monitor_port_alias() -> None:
     controller._instrument_cache.replace_all(instrument_infos=infos)
 
     with pytest.raises(ValueError, match="monitor port"):
-        _service_for_controller(controller).run_iq(
+        controller.run_monitor_iq(
             output_alias="output",
             monitor_alias="receiver",
             waveform=np.array([0.5 + 0j]),
@@ -368,7 +362,7 @@ def test_run_monitor_iq_rejects_same_output_and_monitor_alias() -> None:
     )
 
     with pytest.raises(ValueError, match="distinct"):
-        _service_for_controller(controller).run_iq(
+        controller.run_monitor_iq(
             output_alias="monitor",
             monitor_alias="monitor",
             waveform=np.array([0.5 + 0j]),
@@ -402,7 +396,7 @@ def test_run_monitor_iq_raises_when_capture_is_empty() -> None:
     )
 
     with pytest.raises(RuntimeError, match="no IQ data"):
-        _service_for_controller(controller).run_iq(
+        controller.run_monitor_iq(
             output_alias="output",
             monitor_alias="monitor",
             waveform=np.array([0.5 + 0j]),
@@ -434,7 +428,7 @@ def test_run_monitor_schedule_builds_sparse_events_and_reuses_shape(
         )
     schedule.set_frequency("drive", 5.0)
 
-    iq = _service_for_controller(controller).run_schedule(
+    iq = controller.run_monitor_schedule(
         unit_label="unit-a",
         pulse_schedule=schedule,
         output_alias="output-a",
@@ -486,7 +480,7 @@ def test_run_monitor_schedule_executes_multiple_output_channels(
         schedule.add("drive-b", Arbitrary([0.5 + 0j], sampling_period=0.4))
     schedule.set_frequency("drive-b", 5.5)
 
-    captured = _service_for_controller(controller).run_schedule(
+    captured = controller.run_monitor_schedule(
         unit_label="unit-a",
         pulse_schedule=schedule,
         output_aliases={"drive-a": "output-a", "drive-b": "output-b"},
@@ -528,7 +522,7 @@ def test_run_monitor_schedule_restores_instruments_after_execution_failure(
     schedule.set_frequency("drive", 5.0)
 
     with pytest.raises(RuntimeError, match="execute failed"):
-        _service_for_controller(controller).run_schedule(
+        controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
             output_alias="output-a",
@@ -578,7 +572,7 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
     schedule.set_frequency("drive", 5.0)
 
     with pytest.raises(RuntimeError, match="monitor deployment failed"):
-        _service_for_controller(controller).run_schedule(
+        controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
             output_alias="output-a",
@@ -622,7 +616,7 @@ def test_run_monitor_schedule_defaults_to_live_instrument_center_frequency(
     with PulseSchedule() as schedule:
         schedule.add(label, Arbitrary([1 + 0j], sampling_period=0.4))
 
-    captured = _service_for_controller(controller).run_schedule(
+    captured = controller.run_monitor_schedule(
         unit_label="unit-a", pulse_schedule=schedule, **alias_options
     )
 
@@ -648,7 +642,7 @@ def test_run_monitor_schedule_rejects_nonfinite_frequency_before_deletion(
     schedule.set_frequency("drive", frequency_ghz)
 
     with pytest.raises(ValueError, match="frequency"):
-        _service_for_controller(controller).run_schedule(
+        controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
             output_alias="output-a",
@@ -670,7 +664,7 @@ def test_run_monitor_schedule_rejects_missing_target_before_deletion(
     schedule.set_frequency("drive", 5.0)
 
     with pytest.raises(ValueError, match="has no instrument"):
-        _service_for_controller(controller).run_schedule(
+        controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
             output_alias="missing",
@@ -692,7 +686,7 @@ def test_run_monitor_schedule_rejects_invalid_capture_before_deletion(
     schedule.set_frequency("drive", 5.0)
 
     with pytest.raises(ValueError, match="n_iterations"):
-        _service_for_controller(controller).run_schedule(
+        controller.run_monitor_schedule(
             unit_label="unit-a",
             pulse_schedule=schedule,
             output_alias="output-a",
@@ -754,11 +748,67 @@ def test_monitor_service_runs_schedule_without_controller_dependency(
     ]
 
 
-def _service_for_controller(controller: Quel3BackendController) -> Quel3MonitorService:
-    """Bind a standalone service to the test controller's supplied components."""
-    return Quel3MonitorService(
-        configuration_manager=controller.configuration_manager,
-        execution_manager=controller.execution_manager,
-        hardware_state_reader=controller.hardware_state_reader,
-        instrument_cache=controller._instrument_cache,
-    )
+@pytest.mark.parametrize(
+    ("controller_method", "service_method", "arguments", "expected"),
+    [
+        (
+            "configure_monitor_mode",
+            "configure_mode",
+            {"unit_label": "unit-a", "mode": "loopback"},
+            "loopback",
+        ),
+        (
+            "run_monitor_iq",
+            "run_iq",
+            {
+                "output_alias": "output",
+                "monitor_alias": "monitor",
+                "waveform": [0.25 + 0j],
+                "capture_start_ns": 4.0,
+                "capture_length_ns": 8.0,
+                "n_iterations": 2,
+                "shot_interval_ns": 16.0,
+                "parallel": False,
+            },
+            np.array([[1 + 2j]]),
+        ),
+        (
+            "run_monitor_schedule",
+            "run_schedule",
+            {
+                "unit_label": "unit-a",
+                "pulse_schedule": PulseSchedule(),
+                "monitor_alias": "monitor",
+                "output_alias": None,
+                "output_aliases": {"drive": "output"},
+                "capture_start_ns": 4.0,
+                "capture_length_ns": 8.0,
+                "n_iterations": 2,
+                "shot_interval_ns": 16.0,
+                "parallel": False,
+            },
+            {"drive": np.array([[1 + 2j]])},
+        ),
+    ],
+)
+def test_controller_delegates_monitor_operations(
+    monkeypatch: pytest.MonkeyPatch,
+    controller_method: str,
+    service_method: str,
+    arguments: dict[str, Any],
+    expected: object,
+) -> None:
+    """Controller monitor methods should forward arguments and service results."""
+    calls: list[dict[str, object]] = []
+
+    def delegate(self: Quel3MonitorService, **kwargs: object) -> object:
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(Quel3MonitorService, service_method, delegate)
+    controller = Quel3BackendController()
+
+    result = getattr(controller, controller_method)(**arguments)
+
+    assert result is expected
+    assert calls == [arguments]
