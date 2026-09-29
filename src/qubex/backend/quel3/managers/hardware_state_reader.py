@@ -176,26 +176,6 @@ class Quel3HardwareStateReader:
             timeout=timeout,
         )
 
-    def fetch_backend_settings_from_hardware(
-        self,
-        *,
-        unit_labels: Sequence[str],
-        parallel: bool | None = None,
-    ) -> dict[str, dict]:
-        """Fetch QuEL-3 backend settings keyed by selected unit labels."""
-        if len(unit_labels) == 0:
-            return {}
-        state = self.collect_state(
-            unit_labels=tuple(unit_labels),
-            include_diagnostics=False,
-            parallel=True if parallel is None else parallel,
-            view="instruments",
-        )
-        return self.project_backend_settings(
-            state=state,
-            unit_labels=unit_labels,
-        )
-
     def read_instrument_infos(
         self,
         *,
@@ -856,51 +836,6 @@ class Quel3HardwareStateReader:
             )
 
         return tuple([await _fetch_result(resource_id) for resource_id in resource_ids])
-
-    @classmethod
-    def project_backend_settings(
-        cls,
-        *,
-        state: Quel3HardwareState,
-        unit_labels: Sequence[str],
-    ) -> dict[str, dict]:
-        """Project hardware state into backend settings keyed by selected unit labels."""
-        settings: dict[str, dict] = {
-            unit_label: {"instruments": {}} for unit_label in unit_labels
-        }
-
-        for instrument in state.instruments:
-            alias = instrument.normalized_alias or instrument.alias
-            if alias is None:
-                continue
-            if instrument.unit_label in settings:
-                settings[instrument.unit_label]["instruments"][alias] = (
-                    cls._backend_settings_instrument(instrument)
-                )
-        return settings
-
-    @staticmethod
-    def _backend_settings_instrument(instrument: Quel3InstrumentState) -> dict:
-        """Return backend-settings data for one instrument state."""
-        definition: dict[str, object] = {
-            "alias": instrument.alias or instrument.normalized_alias or "",
-            "role": instrument.role,
-        }
-        if instrument.mode is not None:
-            definition["mode"] = instrument.mode
-        profile: dict[str, float] = {}
-        if instrument.frequency_range_min_hz is not None:
-            profile["frequency_range_min"] = instrument.frequency_range_min_hz
-        if instrument.frequency_range_max_hz is not None:
-            profile["frequency_range_max"] = instrument.frequency_range_max_hz
-        if profile:
-            definition["profile"] = profile
-        return {
-            "resource_id": instrument.id,
-            "port_id": instrument.port_id,
-            "role": instrument.role,
-            "definition": definition,
-        }
 
     @classmethod
     def _evaluate_state(

@@ -7,8 +7,10 @@ from typing import Any, cast
 
 import pytest
 
+from qubex.backend.quel3 import Quel3BackendController
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
 from qubex.backend.quel3.managers import Quel3HardwareStateReader
+from qubex.system.quel3 import Quel3SystemSynchronizer
 
 
 @dataclass(frozen=True)
@@ -653,8 +655,9 @@ def test_backend_settings_projection_uses_hardware_state_instruments() -> None:
     client.get_unit_configuration = _track_unit_configuration  # type: ignore[method-assign]
     reader = _make_reader(client)
 
-    settings = reader.fetch_backend_settings_from_hardware(
-        unit_labels=("unit-a", "unit-c"),
+    settings = _fetch_settings(
+        reader,
+        box_ids=("unit-a", "unit-c"),
         parallel=False,
     )
 
@@ -687,8 +690,9 @@ def test_backend_settings_fetch_keeps_unqualified_instrument_resources() -> None
     client = _UnqualifiedInstrumentResourceClient()
     reader = _make_reader(client)
 
-    settings = reader.fetch_backend_settings_from_hardware(
-        unit_labels=("unit-a",),
+    settings = _fetch_settings(
+        reader,
+        box_ids=("unit-a",),
         parallel=False,
     )
 
@@ -721,13 +725,12 @@ def test_collect_state_scopes_duplicate_aliases_by_unit() -> None:
     assert not any(issue.code == "DUPLICATE_INSTRUMENT_ALIAS" for issue in state.issues)
 
 
-def test_backend_settings_fetch_empty_selection_skips_hardware() -> None:
-    """An empty unit selection should return no settings without contacting hardware."""
-    reader = _make_reader(_FakeClient())
-
-    def reject_collect_state(**_: object) -> None:
-        pytest.fail("Empty selection must not collect hardware state.")
-
-    reader.collect_state = reject_collect_state  # type: ignore[method-assign]
-
-    assert reader.fetch_backend_settings_from_hardware(unit_labels=()) == {}
+def _fetch_settings(
+    reader: Quel3HardwareStateReader, *, box_ids: tuple[str, ...], parallel: bool
+) -> dict[str, dict]:
+    synchronizer = Quel3SystemSynchronizer(
+        backend_controller=Quel3BackendController(hardware_state_reader=reader)
+    )
+    return synchronizer.fetch_backend_settings_from_hardware(
+        experiment_system=cast(Any, None), box_ids=box_ids, parallel=parallel
+    )

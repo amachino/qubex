@@ -78,6 +78,10 @@ data and read issues, and is never used as executable instrument cache input.
 SystemManager pull, hardware-state display, and `is_synced()` leave the
 instrument cache unchanged.
 
+`Quel3SystemSynchronizer` converts observed instruments into the system's
+backend-settings format. The reader collects resource information without
+knowing that format. Pulling an empty unit selection performs no reads.
+
 ## Decision log
 
 Status legend:
