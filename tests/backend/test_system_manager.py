@@ -1448,9 +1448,10 @@ def test_resolve_dc_voltage_profile_rejects_invalid_calibrated_idle_voltage(
 
 def test_load_creates_dc_voltage_controller_from_config_loader(
     monkeypatch: pytest.MonkeyPatch,
+    fresh_system_manager: SystemManager,
 ) -> None:
     """Given DC controller config, manager load should install configured controller."""
-    manager = SystemManager.shared()
+    manager = fresh_system_manager
     created_configs: list[DCVoltageControllerConfig] = []
 
     class _FakeConfigLoader:
@@ -1487,6 +1488,7 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
         return SimpleNamespace(config=config, validate_voltage=lambda _: None)
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", lambda _: None)
     monkeypatch.setattr(
         "qubex.external_devices.controller.create_dc_voltage_controller",
         _fake_create_dc_voltage_controller,

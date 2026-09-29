@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import importlib
 
-try:
+# Optional dependency checks must precede the driver imports below.
+from tests._backend_dependencies import require_quel1_backend
+
+driver_package = require_quel1_backend()
+
+if driver_package == "qxdriver_quel1":
     _compat = importlib.import_module("qxdriver_quel1.compat")
     _sampling_period = _compat.DEFAULT_SAMPLING_PERIOD
     QubeCalib = _compat.QubeCalib
@@ -33,7 +38,7 @@ try:
     Converter = _compat.Converter
     CaptureParamTools = _compat.CaptureParamTools
     WaveSequenceTools = _compat.WaveSequenceTools
-except ModuleNotFoundError:
+else:
     _root = importlib.import_module("qubecalib")
     try:
         _clockmaster = importlib.import_module("qubecalib.clockmaster_compat")

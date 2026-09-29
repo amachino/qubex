@@ -13,8 +13,21 @@ import pytest
 
 from qubex.backend.quel1.managers.continuous_wave_manager import (
     Quel1ContinuousWaveChannelSpec,
+    Quel1ContinuousWaveManager,
 )
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
+
+pytestmark = pytest.mark.usefixtures("stub_quel1_driver")
+
+
+@pytest.fixture
+def stub_awg_param(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace AWG model construction in tests of controller behavior."""
+    monkeypatch.setattr(
+        Quel1ContinuousWaveManager,
+        "_build_awg_param",
+        staticmethod(lambda **_: object()),
+    )
 
 
 @dataclass
@@ -120,6 +133,7 @@ def _make_connected_controller(box: _FakeBox) -> Quel1BackendController:
     return controller
 
 
+@pytest.mark.usefixtures("require_quel1_waveforms")
 def test_start_continuous_wave_registers_repeated_chunk_and_starts_wavegen(
     caplog,
 ) -> None:
@@ -224,6 +238,7 @@ def test_start_continuous_wave_rejects_non_grid_frequency() -> None:
     assert box.start_wavegen_calls == []
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_start_continuous_wave_uses_long_chunk_frequency_grid() -> None:
     """Given longer CW chunk, start accepts the finer frequency grid."""
     box = _FakeBox()
@@ -267,6 +282,7 @@ def test_start_continuous_wave_rejects_invalid_blocks_per_chunk() -> None:
     assert box.start_wavegen_calls == []
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_start_continuous_wave_preserves_current_frequencies_by_default() -> None:
     """Given no frequency update flag, start does not reconfigure LO or NCOs."""
     box = _FakeBox()
@@ -291,6 +307,7 @@ def test_start_continuous_wave_preserves_current_frequencies_by_default() -> Non
     assert "fnco_freq" not in box.config_channel_calls[0]
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_start_continuous_wave_allows_awg_freq_without_configure_port() -> None:
     """Given AWG frequency only, start updates waveform without configuring the port."""
     box = _FakeBox()
@@ -310,6 +327,7 @@ def test_start_continuous_wave_allows_awg_freq_without_configure_port() -> None:
     assert "fnco_freq" not in box.config_channel_calls[0]
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_start_continuous_wave_warns_when_fnco_plus_awg_exceeds_alias_limit(
     caplog,
 ) -> None:
@@ -349,6 +367,7 @@ def test_start_continuous_wave_requires_output_update_flag_for_settings() -> Non
     assert box.register_wavedata_calls == []
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_start_continuous_wave_rejects_duplicate_active_channel() -> None:
     """Given active CW on a channel, starting the same channel again raises."""
     box = _FakeBox()
@@ -370,6 +389,7 @@ def test_start_continuous_wave_rejects_duplicate_active_channel() -> None:
         )
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_start_continuous_wave_rejects_same_port_second_channel() -> None:
     """Given active CW on a port, starting another channel on that port raises."""
     box = _FakeBox()
@@ -391,6 +411,7 @@ def test_start_continuous_wave_rejects_same_port_second_channel() -> None:
         )
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_start_continuous_waves_starts_all_channels_in_one_wavegen() -> None:
     """Given multi-channel CW specs, start configures channels before one start."""
     box = _FakeBox()
@@ -451,6 +472,7 @@ def test_start_continuous_waves_starts_all_channels_in_one_wavegen() -> None:
     ]
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_stop_continuous_wave_cancels_active_task_and_forgets_it() -> None:
     """Given active CW, stop cancels the wavegen task and clears state."""
     box = _FakeBox()
@@ -483,6 +505,7 @@ def test_stop_continuous_wave_cancels_active_task_and_forgets_it() -> None:
     )
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_stop_continuous_wave_accepts_legacy_channel_argument() -> None:
     """Given legacy channel stop call, stop still cancels the port CW task."""
     box = _FakeBox()
@@ -507,6 +530,7 @@ def test_stop_continuous_wave_accepts_legacy_channel_argument() -> None:
     assert task.cancel_calls == [{"timeout": 2.0, "polling_period": 0.01}]
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_stop_continuous_wave_rejects_wrong_legacy_channel() -> None:
     """Given mismatched legacy channel stop call, stop raises without cancelling."""
     box = _FakeBox()
@@ -529,6 +553,7 @@ def test_stop_continuous_wave_rejects_wrong_legacy_channel() -> None:
     assert task.cancel_calls == []
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_stop_continuous_wave_rejects_legacy_channel_for_multi_channel_group() -> None:
     """Given multi-channel CW group, channel-qualified stop raises."""
     box = _FakeBox()
@@ -553,6 +578,7 @@ def test_stop_continuous_wave_rejects_legacy_channel_for_multi_channel_group() -
     assert task.cancel_calls == []
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_stop_all_continuous_waves_cancels_every_active_port_task() -> None:
     """Given active CW on multiple ports, stop all cancels each task."""
     box = _FakeBox()
@@ -578,6 +604,7 @@ def test_stop_all_continuous_waves_cancels_every_active_port_task() -> None:
     ]
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_disconnect_stops_active_continuous_waves() -> None:
     """Given active CW, disconnect cancels tasks before clearing backend state."""
     box = _FakeBox()
@@ -595,6 +622,7 @@ def test_disconnect_stops_active_continuous_waves() -> None:
     assert task.cancel_calls == [{"timeout": 2.0, "polling_period": 0.01}]
 
 
+@pytest.mark.usefixtures("stub_awg_param")
 def test_connect_rebuild_stops_active_continuous_waves() -> None:
     """Given active CW, reconnecting different boxes cancels remembered tasks."""
     box = _FakeBox()

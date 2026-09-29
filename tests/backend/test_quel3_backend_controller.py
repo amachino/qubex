@@ -133,9 +133,14 @@ def _make_payload(
     )
 
 
-def test_quel_controllers_implement_backend_controller_contract() -> None:
-    """Given QuEL controllers, both satisfy BackendController protocol."""
+@pytest.mark.usefixtures("stub_quel1_driver")
+def test_quel1_controller_implements_backend_controller_contract() -> None:
+    """The QuEL-1 controller should satisfy the backend controller protocol."""
     assert isinstance(Quel1BackendController(), BackendController)
+
+
+def test_quel3_controller_implements_backend_controller_contract() -> None:
+    """The QuEL-3 controller should satisfy the backend controller protocol."""
     assert isinstance(Quel3BackendController(), BackendController)
 
 

@@ -109,6 +109,7 @@ def test_default_relinkup_noise_threshold_is_1024() -> None:
     assert DEFAULT_BACKGROUND_NOISE_THRESHOLD_RELINKUP == 1024.0
 
 
+@pytest.mark.usefixtures("stub_quel1_driver")
 def test_relinkup_uses_default_awg2222_for_r8(monkeypatch: pytest.MonkeyPatch) -> None:
     """Given R8 box without options, when relinkup runs, then default awg2222 is used."""
     controller = _make_controller()
@@ -137,6 +138,7 @@ def test_relinkup_uses_default_awg2222_for_r8(monkeypatch: pytest.MonkeyPatch) -
     ]
 
 
+@pytest.mark.usefixtures("stub_quel1_driver")
 def test_relinkup_maps_explicit_options(monkeypatch: pytest.MonkeyPatch) -> None:
     """Given explicit options, when relinkup runs, then options are converted and passed."""
     controller = _make_controller()
@@ -168,6 +170,7 @@ def test_relinkup_maps_explicit_options(monkeypatch: pytest.MonkeyPatch) -> None
     ]
 
 
+@pytest.mark.usefixtures("stub_quel1_driver")
 def test_relinkup_rejects_conflicting_awg_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -189,6 +192,7 @@ def test_relinkup_rejects_conflicting_awg_options(
         controller.relinkup("B0")
 
 
+@pytest.mark.usefixtures("stub_quel1_driver")
 def test_relinkup_keeps_explicit_noise_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -211,6 +215,7 @@ def test_relinkup_keeps_explicit_noise_threshold(
     assert fake_box.reconnect_calls == [{"background_noise_threshold": 12345}]
 
 
+@pytest.mark.usefixtures("stub_quel1_driver")
 def test_linkup_uses_default_reconnect_noise_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -241,6 +246,7 @@ def test_linkup_uses_default_reconnect_noise_threshold(
     )
 
 
+@pytest.mark.usefixtures("stub_quel1_driver")
 def test_linkup_keeps_explicit_noise_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

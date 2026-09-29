@@ -8,6 +8,13 @@ from types import SimpleNamespace
 from typing import Any, ClassVar, cast
 
 import pytest
+
+from tests._backend_dependencies import require_distributions
+
+# Optional dependency checks must precede the driver imports below.
+# ruff: noqa: E402
+require_distributions("qxdriver-quel1", "quel-ic-config")
+
 from qxdriver_quel1.clockmaster import compat
 
 

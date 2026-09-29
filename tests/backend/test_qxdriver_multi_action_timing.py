@@ -8,6 +8,13 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+
+from tests._backend_dependencies import require_distributions
+
+# Optional dependency checks must precede the driver imports below.
+# ruff: noqa: E402
+require_distributions("qxdriver-quel1", "quel-ic-config")
+
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 from qxdriver_quel1.driver import multi
 from qxdriver_quel1.driver.single import (
