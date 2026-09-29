@@ -82,6 +82,34 @@ instrument cache unchanged.
 backend-settings format. The reader collects resource information without
 knowing that format. Pulling an empty unit selection performs no reads.
 
+Resource inspection has three owners:
+
+- `infra.Quel3ResourceReader` reads quelware units, ports, instruments, and diagnostics.
+- `models.Quel3ResourceSnapshot` holds immutable observations and `to_dict()` serialization.
+- `formatters.resource_snapshot` renders existing snapshots with Rich through
+  `format_resource_snapshot()` and `print_resource_snapshot()`.
+
+`collect_snapshot()` and the controller's `get_resource_snapshot()` use a
+cumulative `level` to bound acquisition cost:
+
+| Level | Collected information |
+| --- | --- |
+| `unit` | Units and their controls |
+| `port` | Units, controls, and ports |
+| `instrument` (default) | Units, controls, ports, and instruments |
+| `diagnosis` | All of the above plus expensive port diagnostic dumps |
+
+Lower levels never read higher-level information. Port filters require `port`
+or higher; alias filters require `instrument` or higher. Invalid levels and
+incompatible filters fail before resource reads.
+
+The controller's `print_resource_snapshot(view=...)` maps `units`, `ports`, and
+`instruments` to the corresponding levels. `summary` uses `instrument`, while
+`diagnostics` and `all` use `diagnosis`. `Quel3ResourceView` belongs to the
+formatter; reader and model APIs use `Quel3ResourceLevel`. System pull requests
+`instrument` level and projects its instruments into backend settings without
+collecting diagnostic dumps.
+
 ## Decision log
 
 Status legend:

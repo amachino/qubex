@@ -228,7 +228,7 @@ Optional delegation:
    and resource reader. The manager invalidates touched ports and deploys
    the selected definitions.
 6. The configuration manager reads complete hardware information through the
-   state reader and replaces the touched ports in the supplied `InstrumentCache`.
+   resource reader and replaces the touched ports in the supplied `InstrumentCache`.
 7. Push reads a pure backend-settings snapshot for manager state. Execution
    subsequently uses the cached instruments without resolver discovery.
 

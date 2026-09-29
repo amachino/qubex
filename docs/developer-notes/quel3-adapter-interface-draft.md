@@ -66,11 +66,11 @@ aliases and requires unique local aliases across all units.
 - A failed deploy or readback leaves touched ports uncached; unrelated ports
   remain available. An empty instrument configuration changes nothing.
 
-## Hardware inspection
+## Resource inspection
 
 `get_resource_snapshot()` and `print_resource_snapshot()` collect diagnostic
 snapshots. Individual read failures appear as issues, so a snapshot can be
-partial. Resource snapshot snapshots and backend settings are never execution
+partial. Resource snapshots and backend settings are never execution
 cache inputs. Inspection and `is_synced()` leave runtime instruments unchanged.
 
 ## Sequencer and result contract

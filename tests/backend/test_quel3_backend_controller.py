@@ -33,6 +33,7 @@ from qubex.backend.quel3 import (
     Quel3Waveform,
     Quel3WaveformEvent,
 )
+from qubex.backend.quel3.formatters import Quel3ResourceView
 from qubex.backend.quel3.infra.quelware_imports import QuelwareExecutionApi
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.managers import (
@@ -40,6 +41,7 @@ from qubex.backend.quel3.managers import (
 )
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
+from qubex.backend.quel3.models import Quel3ResourceLevel
 
 
 class _FakeCaptureMode(Enum):
@@ -180,16 +182,16 @@ def test_get_resource_snapshot_delegates_to_resource_reader() -> None:
         unit_labels=("unit-a",),
         port_ids=("tx_p01",),
         instrument_aliases=("Q00",),
-        include_diagnostics=True,
+        level="diagnosis",
         parallel=False,
         timeout_seconds=1.5,
     )
 
     assert result is state
+    assert resource_reader.last_collect_kwargs["level"] == "diagnosis"
     assert resource_reader.last_collect_kwargs["unit_labels"] == ("unit-a",)
     assert resource_reader.last_collect_kwargs["port_ids"] == ("tx_p01",)
     assert resource_reader.last_collect_kwargs["instrument_aliases"] == ("Q00",)
-    assert resource_reader.last_collect_kwargs["include_diagnostics"] is True
     assert resource_reader.last_collect_kwargs["parallel"] is False
     assert resource_reader.last_collect_kwargs["timeout_seconds"] == 1.5
 
@@ -225,11 +227,29 @@ def test_get_resource_snapshot_rejects_old_filter_kwargs() -> None:
         )
 
 
-def test_print_resource_snapshot_collects_view_and_delegates_to_formatter(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("view", "level", "expected_output"),
+    [
+        ("summary", "instrument", "QuEL-3 resource snapshot"),
+        ("units", "unit", "Units"),
+        ("ports", "port", "Ports"),
+        ("instruments", "instrument", "Instruments"),
+        ("diagnostics", "diagnosis", "no diagnostics"),
+        (
+            "all",
+            "diagnosis",
+            "QuEL-3 resource snapshot",
+        ),
+    ],
+)
+def test_print_resource_snapshot_uses_cumulative_level_for_view(
+    view: Quel3ResourceView,
+    level: Quel3ResourceLevel,
+    expected_output: str,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Given resource snapshot, controller should print a Rich resource snapshot view."""
-    state = Quel3ResourceSnapshot(
+    """Printing should map each view to its cumulative acquisition level."""
+    snapshot = Quel3ResourceSnapshot(
         generated_at="2026-07-07T00:00:00+00:00",
         endpoint="localhost",
         port=50051,
@@ -237,21 +257,39 @@ def test_print_resource_snapshot_collects_view_and_delegates_to_formatter(
         units=(),
         ports=(),
         instruments=(),
-        diagnostics=(),
-        issues=(),
     )
-    resource_reader = _FakeResourceReader(state)
-    controller = Quel3BackendController(resource_reader=cast(Any, resource_reader))
-    printed_views: list[str] = []
-    monkeypatch.setattr(
-        "qubex.backend.quel3.quel3_backend_controller.print_resource_snapshot",
-        lambda snapshot, *, view: printed_views.append(view),
+    reader = _FakeResourceReader(snapshot)
+    controller = Quel3BackendController(resource_reader=cast(Any, reader))
+
+    controller.print_resource_snapshot(
+        view=view,
+        unit_labels=("unit-a",),
+        port_ids=() if level == "unit" else ("tx_p01",),
+        instrument_aliases=("Q00",) if level in ("instrument", "diagnosis") else (),
+        parallel=False,
+        timeout_seconds=1.5,
     )
 
-    controller.print_resource_snapshot(view="summary")
+    assert reader.last_collect_kwargs == {
+        "level": level,
+        "unit_labels": ("unit-a",),
+        "port_ids": () if level == "unit" else ("tx_p01",),
+        "instrument_aliases": ("Q00",) if level in ("instrument", "diagnosis") else (),
+        "parallel": False,
+        "timeout_seconds": 1.5,
+    }
+    assert expected_output in capsys.readouterr().out
 
-    assert resource_reader.last_collect_kwargs["view"] == "summary"
-    assert printed_views == ["summary"]
+
+def test_print_resource_snapshot_rejects_invalid_view_before_collection() -> None:
+    """An invalid view should fail before contacting the resource reader."""
+    reader = _FakeResourceReader(cast(Any, None))
+    controller = Quel3BackendController(resource_reader=cast(Any, reader))
+
+    with pytest.raises(ValueError, match="view"):
+        controller.print_resource_snapshot(view=cast(Any, "invalid"))
+
+    assert reader.last_collect_kwargs == {}
 
 
 def test_print_resource_snapshot_rejects_console_kwarg() -> None:

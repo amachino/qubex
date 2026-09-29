@@ -289,7 +289,7 @@ snapshot は実行キャッシュから独立しており、`to_dict()` の fiel
 ```python
 from qubex.backend.quel3.formatters import print_resource_snapshot
 
-snapshot = controller.get_resource_snapshot()
+snapshot = controller.get_resource_snapshot(level="instrument")
 print_resource_snapshot(snapshot, view="instruments")
 # 取得と表示をまとめる場合:
 controller.print_resource_snapshot(view="instruments")
@@ -297,6 +297,29 @@ controller.print_resource_snapshot(view="instruments")
 
 `format_resource_snapshot(snapshot, view=...)` は独自のレイアウトに組み込める Rich
 renderable を返します。取得済み snapshot の表示では通信しません。
+
+`collect_snapshot()` と `get_resource_snapshot()` の取得範囲は、累積型の
+`level=` 引数で指定します。reader の旧 `view=` と独立した
+`include_diagnostics=` フラグは、この引数へ置き換えてください。
+
+| level | 取得情報 |
+| --- | --- |
+| `unit` | unit とその control |
+| `port` | unit、control、port |
+| `instrument`（既定） | unit、control、port、instrument |
+| `diagnosis` | 上記すべてと port の診断 dump |
+
+従来 `include_diagnostics=True` で指定していた重い診断取得には、
+`level="diagnosis"` を使ってください。低い level では診断を取得しません。
+`Quel3ResourceLevel` は model package と `qubex.backend.quel3` から import できます。
+
+controller の表示メソッドは `units`、`ports`、`instruments` view をそれぞれ対応する
+level に変換します。`summary` は `instrument`、`diagnostics` と `all` は `diagnosis`
+を使います。formatter の `view=` は取得済み snapshot の表示形式だけを指定します。
+
+`port_ids` は `port` 以上、`instrument_aliases` は `instrument` 以上で指定してください。
+フィルタのために指定 level より上の情報を暗黙に取得することはありません。
+不明な level、view、level と合わないフィルタは通信前に `ValueError` になります。
 
 ### よく使う kwargs / property を名前更新する
 

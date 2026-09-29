@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.backend.quel3.infra import Quel3ResourceReader
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
+from qubex.backend.quel3.models import Quel3ResourceLevel
 from qubex.system.quel3 import Quel3SystemSynchronizer
 
 
@@ -479,18 +481,26 @@ def test_collect_snapshot_records_fetch_errors_without_raising() -> None:
     assert any(issue.resource_id == "unit-a:inst-q00" for issue in state.issues)
 
 
-def test_collect_snapshot_diagnostics_are_opt_in() -> None:
-    """Given diagnostics disabled, resource snapshot should omit diagnostics."""
+def test_collect_snapshot_defaults_to_instruments_without_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default collection should include units, ports, and instruments without diagnostic reads."""
     client = _FakeClient()
+    dump = AsyncMock(wraps=client.dump_port_state)
+    monkeypatch.setattr(client, "dump_port_state", dump)
     reader = _make_reader(client)
 
-    state = reader.collect_snapshot(unit_labels=("unit-a",), include_diagnostics=False)
+    state = reader.collect_snapshot(unit_labels=("unit-a",))
 
+    assert state.units[0].controls
+    assert state.ports
+    assert state.instruments
     assert state.diagnostics == ()
+    dump.assert_not_called()
 
     state_with_diagnostics = reader.collect_snapshot(
         unit_labels=("unit-a",),
-        include_diagnostics=True,
+        level="diagnosis",
     )
 
     assert state_with_diagnostics.diagnostics[0].text == "state: unit-a:tx_p01"
@@ -533,7 +543,7 @@ def test_collect_snapshot_filters_alias_related_ports_and_diagnostics() -> None:
     state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         instrument_aliases=("Q00",),
-        include_diagnostics=True,
+        level="diagnosis",
         parallel=False,
     )
 
@@ -564,7 +574,7 @@ def test_collect_snapshot_intersects_port_and_alias_filters() -> None:
     state = reader.collect_snapshot(
         port_ids=("unit-a:rx_p02",),
         instrument_aliases=("Q00",),
-        include_diagnostics=True,
+        level="diagnosis",
         parallel=False,
     )
 
@@ -573,63 +583,62 @@ def test_collect_snapshot_intersects_port_and_alias_filters() -> None:
     assert state.diagnostics == ()
 
 
-def test_collect_snapshot_units_view_returns_only_units() -> None:
-    """Units view should return only unit state."""
+def test_collect_snapshot_unit_level_returns_only_units() -> None:
+    """Unit level should return units without port or instrument data."""
     client = _FakeClient()
     reader = _make_reader(client)
 
-    state = reader.collect_snapshot(unit_labels=("unit-a",), view="units")
+    state = reader.collect_snapshot(unit_labels=("unit-a",), level="unit")
 
     assert [unit.label for unit in state.units] == ["unit-a"]
     assert state.ports == ()
     assert state.instruments == ()
 
 
-def test_collect_snapshot_ports_view_returns_only_selected_ports() -> None:
-    """Ports view should return only selected port state."""
+def test_collect_snapshot_port_level_returns_selected_ports() -> None:
+    """Port level should return units and the selected ports."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
     state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         port_ids=("rx_p02",),
-        view="ports",
+        level="port",
     )
 
     assert [port.id for port in state.ports] == ["unit-a:rx_p02"]
     assert state.instruments == ()
 
 
-def test_collect_snapshot_instruments_view_returns_only_selected_instruments() -> None:
-    """Instruments view should return only selected instrument state."""
+def test_collect_snapshot_instrument_level_respects_alias_filter() -> None:
+    """Instrument level should include units and ports while filtering instruments."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
     state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         instrument_aliases=("Q00",),
-        view="instruments",
+        level="instrument",
     )
 
-    assert state.ports == ()
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
     assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
     assert not any(issue.code == "ORPHAN_INSTRUMENT" for issue in state.issues)
 
 
-def test_collect_snapshot_diagnostics_view_returns_selected_diagnostics() -> None:
-    """Diagnostics view should return diagnostics for selected ports."""
+def test_collect_snapshot_diagnostics_follow_port_selection() -> None:
+    """Diagnostics should be limited to the selected ports."""
     client = _MultiInstrumentClient()
     reader = _make_reader(client)
 
     state = reader.collect_snapshot(
         unit_labels=("unit-a",),
         port_ids=("rx_p02",),
-        include_diagnostics=True,
-        view="diagnostics",
+        level="diagnosis",
     )
 
     assert [diagnostic.port_id for diagnostic in state.diagnostics] == ["unit-a:rx_p02"]
-    assert state.instruments == ()
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q01"]
 
 
 def test_collect_snapshot_rejects_old_filter_kwargs() -> None:
@@ -682,7 +691,7 @@ def test_backend_settings_projection_uses_resource_snapshot_instruments() -> Non
         },
         "unit-c": {"instruments": {}},
     }
-    assert configuration_calls == []
+    assert configuration_calls == ["unit-a"]
 
 
 def test_backend_settings_fetch_keeps_unqualified_instrument_resources() -> None:
@@ -734,3 +743,95 @@ def _fetch_settings(
     return synchronizer.fetch_backend_settings_from_hardware(
         experiment_system=cast(Any, None), box_ids=box_ids, parallel=parallel
     )
+
+
+@pytest.mark.parametrize(
+    ("level", "expected_reads"),
+    [
+        ("unit", {"get_unit_configuration"}),
+        ("port", {"get_unit_configuration", "list_resource_infos", "get_port_info"}),
+        (
+            "instrument",
+            {
+                "get_unit_configuration",
+                "list_resource_infos",
+                "get_port_info",
+                "get_instrument_info",
+            },
+        ),
+        (
+            "diagnosis",
+            {
+                "get_unit_configuration",
+                "list_resource_infos",
+                "get_port_info",
+                "get_instrument_info",
+                "dump_port_state",
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize("parallel", [False, True])
+def test_collect_snapshot_levels_are_cumulative(
+    level: Quel3ResourceLevel,
+    expected_reads: set[str],
+    parallel: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each level should include all lower-level data without reading higher-level data."""
+    client = _FakeClient()
+    spies = {}
+    for method in (
+        "get_unit_configuration",
+        "list_resource_infos",
+        "get_port_info",
+        "get_instrument_info",
+        "dump_port_state",
+    ):
+        spies[method] = AsyncMock(wraps=getattr(client, method))
+        monkeypatch.setattr(client, method, spies[method])
+
+    snapshot = _make_reader(client).collect_snapshot(
+        unit_labels=("unit-a",),
+        level=level,
+        parallel=parallel,
+    )
+
+    assert {method for method, spy in spies.items() if spy.call_count} == expected_reads
+    assert [unit.label for unit in snapshot.units] == ["unit-a"]
+    assert snapshot.units[0].controls[0].current_value == "loopback"
+    assert [port.id for port in snapshot.ports] == (
+        ["unit-a:tx_p01"] if level != "unit" else []
+    )
+    assert [instrument.id for instrument in snapshot.instruments] == (
+        ["unit-a:inst-q00"] if level in ("instrument", "diagnosis") else []
+    )
+    assert [item.port_id for item in snapshot.diagnostics] == (
+        ["unit-a:tx_p01"] if level == "diagnosis" else []
+    )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"level": "invalid"}, "level"),
+        ({"level": "unit", "port_ids": ("tx_p01",)}, "port_ids"),
+        ({"level": "unit", "instrument_aliases": ("Q00",)}, "instrument_aliases"),
+        ({"level": "port", "instrument_aliases": ("Q00",)}, "instrument_aliases"),
+    ],
+)
+def test_collect_snapshot_rejects_invalid_level_or_filter_before_client_creation(
+    kwargs: dict[str, Any],
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid levels and filters requiring higher-level reads should fail before client creation."""
+    reader = Quel3ResourceReader()
+    monkeypatch.setattr(
+        type(reader.runtime_config),
+        "load_client_factory",
+        lambda self: pytest.fail("Invalid requests must not create a client."),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        reader.collect_snapshot(**kwargs)

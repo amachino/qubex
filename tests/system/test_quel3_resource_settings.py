@@ -102,9 +102,11 @@ def test_settings_projection_preserves_scopes_aliases_and_optional_fields(
     assert calls == [
         {
             "unit_labels": ("unit-a", "unit-b", "unit-c"),
-            "include_diagnostics": False,
             "parallel": parallel is not False,
-            "view": "instruments",
+            "level": "instrument",
+            "port_ids": (),
+            "instrument_aliases": (),
+            "timeout_seconds": None,
         }
     ]
     assert controller.get_instrument_configuration().instruments == ()

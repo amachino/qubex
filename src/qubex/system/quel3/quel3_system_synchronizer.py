@@ -91,19 +91,18 @@ class Quel3SystemSynchronizer:
         del experiment_system
         if not box_ids:
             return {}
-        state = self._backend_controller.resource_reader.collect_snapshot(
+        snapshot = self._backend_controller.get_resource_snapshot(
             unit_labels=tuple(box_ids),
-            include_diagnostics=False,
             parallel=True if parallel is None else parallel,
-            view="instruments",
+            level="instrument",
         )
-        return self._project_backend_settings(state=state, unit_labels=box_ids)
+        return self._project_backend_settings(snapshot=snapshot, unit_labels=box_ids)
 
     @classmethod
     def _project_backend_settings(
         cls,
         *,
-        state: Quel3ResourceSnapshot,
+        snapshot: Quel3ResourceSnapshot,
         unit_labels: Sequence[str],
     ) -> dict[str, dict]:
         """Project resource snapshot into backend settings keyed by selected unit labels."""
@@ -111,7 +110,7 @@ class Quel3SystemSynchronizer:
             unit_label: {"instruments": {}} for unit_label in unit_labels
         }
 
-        for instrument in state.instruments:
+        for instrument in snapshot.instruments:
             alias = instrument.normalized_alias or instrument.alias
             if alias is None:
                 continue

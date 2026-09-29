@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal, TypeAlias
 
 Quel3ResourceSeverity: TypeAlias = Literal["info", "warning", "error"]
+Quel3ResourceLevel: TypeAlias = Literal["unit", "port", "instrument", "diagnosis"]
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,7 @@ class Quel3PortDiagnostic:
 
 @dataclass(frozen=True)
 class Quel3ResourceIssue:
-    """One issue found while collecting or evaluating QuEL-3 resource snapshot."""
+    """One issue found while collecting or evaluating QuEL-3 resources."""
 
     severity: Quel3ResourceSeverity
     code: str
@@ -79,9 +80,10 @@ class Quel3ResourceSnapshot:
     """
     Report observed QuEL-3 resources and diagnostic issues.
 
-    A snapshot may omit resources outside the requested view or contain partial
-    results after acquisition errors. It does not populate the execution cache
-    or represent a deployable `InstrumentConfiguration`.
+    Each acquisition level includes the preceding levels: unit, port, instrument,
+    then diagnosis. Acquisition errors can leave partial results. A snapshot does
+    not populate the execution cache or represent a deployable
+    `InstrumentConfiguration`.
     """
 
     generated_at: str

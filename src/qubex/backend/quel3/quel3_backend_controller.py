@@ -19,12 +19,11 @@ from qubex.backend.backend_controller import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.quel3.infra import Quel3ClientMode, Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
 from .formatters import Quel3ResourceView, print_resource_snapshot
-from .infra import Quel3ResourceReader
+from .infra import Quel3ClientMode, Quel3ResourceReader, Quel3RuntimeConfig
 from .managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
@@ -34,6 +33,7 @@ from .managers import (
 from .models import (
     InstrumentConfiguration,
     InstrumentSpec,
+    Quel3ResourceLevel,
     Quel3ResourceSnapshot,
 )
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
@@ -478,14 +478,14 @@ class Quel3BackendController(BackendController):
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
-        include_diagnostics: bool = False,
+        level: Quel3ResourceLevel = "instrument",
         parallel: bool = True,
         timeout_seconds: float | None = None,
     ) -> Quel3ResourceSnapshot:
         """
         Collect one structured QuEL-3 resource snapshot.
 
-        Read the current hardware without changing the execution cache. The
+        Read the current quelware resources without changing the execution cache. The
         snapshot can contain partial results and acquisition issues. Instrument
         configuration is obtained separately from the last confirmed cache with
         `get_instrument_configuration()`.
@@ -496,22 +496,34 @@ class Quel3BackendController(BackendController):
             Unit labels to inspect. Empty means all discovered units.
         port_ids : Sequence[str], optional
             Full port IDs or local port IDs used to filter ports and
-            instruments.
+            instruments. Requires `port` level or higher.
         instrument_aliases : Sequence[str], optional
             Unit-qualified aliases or local aliases used to filter instruments
-            and their related ports.
-        include_diagnostics : bool, optional
-            Whether to collect diagnostic dumps for the final visible ports.
+            and their related ports. Requires `instrument` level or higher.
+        level : Quel3ResourceLevel, optional
+            Cumulative acquisition depth: `unit` reads unit controls, `port`
+            adds ports, `instrument` adds instruments, and `diagnosis` adds
+            expensive port diagnostic dumps. Defaults to `instrument`.
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
             Timeout for the synchronous resource snapshot collection call.
+
+        Returns
+        -------
+        Quel3ResourceSnapshot
+            Observed resources, including partial results and acquisition issues.
+
+        Raises
+        ------
+        ValueError
+            If the level is unsupported or filters require a higher level.
         """
         return self._resource_reader.collect_snapshot(
             unit_labels=tuple(unit_labels),
             port_ids=tuple(port_ids),
             instrument_aliases=tuple(instrument_aliases),
-            include_diagnostics=include_diagnostics,
+            level=level,
             parallel=parallel,
             timeout_seconds=timeout_seconds,
         )
@@ -523,7 +535,6 @@ class Quel3BackendController(BackendController):
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
-        include_diagnostics: bool | None = None,
         parallel: bool = True,
         timeout_seconds: float | None = None,
     ) -> None:
@@ -533,35 +544,47 @@ class Quel3BackendController(BackendController):
         Parameters
         ----------
         view : Quel3ResourceView, optional
-            Rendered view name.
+            Rendered view name. `units`, `ports`, and `instruments` select the
+            corresponding cumulative acquisition level. `summary` uses
+            `instrument`; `diagnostics` and `all` use `diagnosis`.
         unit_labels : Sequence[str], optional
             Unit labels to inspect. Empty means all discovered units.
         port_ids : Sequence[str], optional
             Full port IDs or local port IDs used to filter ports and
-            instruments.
+            instruments. Requires `port` level or higher.
         instrument_aliases : Sequence[str], optional
             Unit-qualified aliases or local aliases used to filter instruments
-            and their related ports.
-        include_diagnostics : bool | None, optional
-            Whether to collect diagnostic dumps. `None` includes diagnostics
-            for the `diagnostics` and `all` views.
+            and their related ports. Requires `instrument` level or higher.
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
             Timeout for the synchronous resource snapshot collection call.
+
+        Raises
+        ------
+        ValueError
+            If the view is unsupported or filters require a higher level.
+            Validation runs before resource reads.
         """
-        if include_diagnostics is None:
-            include_diagnostics = view in ("diagnostics", "all")
-        state = self._resource_reader.collect_snapshot(
-            unit_labels=tuple(unit_labels),
-            port_ids=tuple(port_ids),
-            instrument_aliases=tuple(instrument_aliases),
-            include_diagnostics=include_diagnostics,
+        level_by_view: dict[Quel3ResourceView, Quel3ResourceLevel] = {
+            "summary": "instrument",
+            "units": "unit",
+            "ports": "port",
+            "instruments": "instrument",
+            "diagnostics": "diagnosis",
+            "all": "diagnosis",
+        }
+        if view not in level_by_view:
+            raise ValueError(f"Unsupported QuEL-3 resource snapshot view: {view!r}")
+        snapshot = self.get_resource_snapshot(
+            unit_labels=unit_labels,
+            port_ids=port_ids,
+            instrument_aliases=instrument_aliases,
+            level=level_by_view[view],
             parallel=parallel,
             timeout_seconds=timeout_seconds,
-            view=view,
         )
-        print_resource_snapshot(state, view=view)
+        print_resource_snapshot(snapshot, view=view)
 
     @property
     def sampling_period_ns(self) -> float:

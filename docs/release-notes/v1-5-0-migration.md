@@ -296,7 +296,7 @@ with the formatter function, and import `Quel3ResourceView` (formerly
 ```python
 from qubex.backend.quel3.formatters import print_resource_snapshot
 
-snapshot = controller.get_resource_snapshot()
+snapshot = controller.get_resource_snapshot(level="instrument")
 print_resource_snapshot(snapshot, view="instruments")
 # Or collect and print in one call:
 controller.print_resource_snapshot(view="instruments")
@@ -304,6 +304,31 @@ controller.print_resource_snapshot(view="instruments")
 
 `format_resource_snapshot(snapshot, view=...)` returns a Rich renderable for
 custom layouts. Formatting an existing snapshot makes no resource reads.
+
+Acquisition uses the cumulative `level=` argument on `collect_snapshot()` and
+`get_resource_snapshot()`. Replace the reader's old `view=` and the separate
+`include_diagnostics=` flag with this single argument.
+
+| Level | Collected information |
+| --- | --- |
+| `unit` | Units and their controls |
+| `port` | Units, controls, and ports |
+| `instrument` (default) | Units, controls, ports, and instruments |
+| `diagnosis` | All of the above plus port diagnostic dumps |
+
+Use `level="diagnosis"` for the expensive diagnostic reads previously requested
+with `include_diagnostics=True`. Lower levels do not perform these reads.
+`Quel3ResourceLevel` is exported from the model package and `qubex.backend.quel3`.
+
+The controller's print method maps `units`, `ports`, and `instruments` views to
+the corresponding levels. `summary` uses `instrument`; `diagnostics` and `all`
+use `diagnosis`. The formatter's `view=` only controls display of an existing
+snapshot.
+
+`port_ids` requires `port` level or higher; `instrument_aliases` requires
+`instrument` level or higher. A filter cannot silently trigger reads above the
+requested level. Unknown levels, views, and incompatible filters raise
+`ValueError` before resource reads.
 
 ### Rename common kwargs and properties
 

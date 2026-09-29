@@ -1,4 +1,4 @@
-"""Resource snapshot reader for QuEL-3 runtime inspection."""
+"""Read QuEL-3 resources through quelware APIs."""
 
 from __future__ import annotations
 
@@ -6,11 +6,9 @@ import asyncio
 import inspect
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, cast, get_args
 
-from qubex.backend.quel3.formatters import Quel3ResourceView
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.interfaces import (
@@ -25,6 +23,7 @@ from qubex.backend.quel3.models import (
     Quel3PortDiagnostic,
     Quel3PortState,
     Quel3ResourceIssue,
+    Quel3ResourceLevel,
     Quel3ResourceSnapshot,
     Quel3UnitControlState,
     Quel3UnitState,
@@ -32,42 +31,6 @@ from qubex.backend.quel3.models import (
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True)
-class _ResourceSnapshotCollectionPlan:
-    """Describe resource snapshot sections required for one collection."""
-
-    collect_unit_configuration: bool
-    collect_ports: bool
-    collect_instruments: bool
-    collect_diagnostics: bool
-
-    @classmethod
-    def build(
-        cls,
-        *,
-        view: Quel3ResourceView | None,
-        include_diagnostics: bool,
-    ) -> _ResourceSnapshotCollectionPlan:
-        """Build a collection plan for one optional rendered view."""
-        if view is not None and view not in {
-            "summary",
-            "units",
-            "ports",
-            "instruments",
-            "diagnostics",
-            "all",
-        }:
-            raise ValueError(f"Unsupported QuEL-3 resource snapshot view: {view!r}")
-        collect_ports = view in (None, "summary", "ports", "diagnostics", "all")
-        collect_instruments = view in (None, "summary", "instruments", "all")
-        return cls(
-            collect_unit_configuration=view in (None, "units", "all"),
-            collect_ports=collect_ports or include_diagnostics,
-            collect_instruments=collect_instruments,
-            collect_diagnostics=include_diagnostics,
-        )
 
 
 def _run_async(
@@ -88,7 +51,7 @@ async def _resolve(value: T | Awaitable[T]) -> T:
 
 
 class Quel3ResourceReader:
-    """Collect read-only QuEL-3 resource snapshot through quelware APIs."""
+    """Read QuEL-3 resources and collect diagnostic snapshots through quelware APIs."""
 
     def __init__(
         self,
@@ -128,10 +91,9 @@ class Quel3ResourceReader:
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
-        include_diagnostics: bool = False,
+        level: Quel3ResourceLevel = "instrument",
         parallel: bool = True,
         timeout_seconds: float | None = None,
-        view: Quel3ResourceView | None = None,
     ) -> Quel3ResourceSnapshot:
         """
         Collect one structured QuEL-3 resource snapshot.
@@ -147,20 +109,37 @@ class Quel3ResourceReader:
             Unit labels to inspect. Empty means all discovered units.
         port_ids : Sequence[str], optional
             Full port IDs such as `unit-a:tx_p01` or local IDs such as
-            `tx_p01`.
+            `tx_p01`. Requires `port` level or higher.
         instrument_aliases : Sequence[str], optional
             Unit-qualified aliases such as `unit-a:Q00` or local aliases such
-            as `Q00`.
-        include_diagnostics : bool, optional
-            Whether to collect diagnostic dumps for the final visible ports.
+            as `Q00`. Requires `instrument` level or higher.
+        level : Quel3ResourceLevel, optional
+            Cumulative acquisition depth: `unit` reads unit controls, `port`
+            adds ports, `instrument` adds instruments, and `diagnosis` adds
+            expensive port diagnostic dumps. Defaults to `instrument`.
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
             Timeout for the synchronous collection call.
-        view : Quel3ResourceView | None, optional
-            Rendered view whose unused hardware sections may be skipped. `None`
-            collects the complete structured state.
+
+        Returns
+        -------
+        Quel3ResourceSnapshot
+            Observed resources, including partial results and acquisition issues.
+
+        Raises
+        ------
+        ValueError
+            If the level is unsupported or filters require a higher level.
         """
+        if level not in get_args(Quel3ResourceLevel):
+            raise ValueError(f"Unsupported QuEL-3 resource level: {level!r}")
+        if port_ids and level == "unit":
+            raise ValueError("port_ids requires level='port' or higher.")
+        if instrument_aliases and level in ("unit", "port"):
+            raise ValueError(
+                "instrument_aliases requires level='instrument' or higher."
+            )
         timeout = (
             DEFAULT_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
         )
@@ -169,9 +148,8 @@ class Quel3ResourceReader:
                 unit_labels=tuple(unit_labels),
                 port_ids=tuple(port_ids),
                 instrument_aliases=tuple(instrument_aliases),
-                include_diagnostics=include_diagnostics,
+                level=level,
                 parallel=parallel,
-                view=view,
             ),
             timeout=timeout,
         )
@@ -271,19 +249,13 @@ class Quel3ResourceReader:
         unit_labels: tuple[str, ...],
         port_ids: tuple[str, ...],
         instrument_aliases: tuple[str, ...],
-        include_diagnostics: bool,
+        level: Quel3ResourceLevel,
         parallel: bool,
-        view: Quel3ResourceView | None,
     ) -> Quel3ResourceSnapshot:
         """Collect resource snapshot from one quelware client context."""
         generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        collection_plan = _ResourceSnapshotCollectionPlan.build(
-            view=view,
-            include_diagnostics=include_diagnostics,
-        )
-        needs_instrument_lookup = collection_plan.collect_instruments or (
-            collection_plan.collect_ports and bool(instrument_aliases)
-        )
+        collect_ports = level != "unit"
+        collect_instruments = level in ("instrument", "diagnosis")
         client_factory = self._load_quelware_client_factory()
         async with client_factory(
             self._runtime_config.endpoint,
@@ -300,11 +272,10 @@ class Quel3ResourceReader:
             units, unit_issues = await self._collect_units(
                 client=client,
                 unit_labels=visible_unit_labels,
-                include_configuration=collection_plan.collect_unit_configuration,
                 parallel=parallel,
             )
             resource_infos: list[object] = []
-            if collection_plan.collect_ports or needs_instrument_lookup:
+            if collect_ports:
                 resource_infos = [
                     resource_info
                     for resource_info in await _resolve(client.list_resource_infos())
@@ -316,7 +287,7 @@ class Quel3ResourceReader:
 
             resolved_instruments: tuple[Quel3InstrumentState, ...] = ()
             instrument_issues: tuple[Quel3ResourceIssue, ...] = ()
-            if needs_instrument_lookup:
+            if collect_instruments:
                 instrument_resource_infos = self._filter_instrument_resource_infos(
                     resource_infos=resource_infos,
                     selected_unit_labels=selected_unit_labels,
@@ -332,7 +303,7 @@ class Quel3ResourceReader:
                     selected_unit_labels=selected_unit_labels,
                     parallel=parallel,
                 )
-            visible_instruments = self._filter_visible_instruments(
+            instruments = self._filter_visible_instruments(
                 instruments=resolved_instruments,
                 port_ids=port_ids,
                 instrument_aliases=instrument_aliases,
@@ -340,12 +311,12 @@ class Quel3ResourceReader:
 
             ports: tuple[Quel3PortState, ...] = ()
             port_issues: tuple[Quel3ResourceIssue, ...] = ()
-            if collection_plan.collect_ports:
+            if collect_ports:
                 port_resource_infos = self._filter_port_resource_infos(
                     resource_infos=resource_infos,
                     port_ids=port_ids,
                     instrument_aliases=instrument_aliases,
-                    visible_instruments=visible_instruments,
+                    visible_instruments=instruments,
                 )
                 ports, port_issues = await self._collect_ports(
                     client=client,
@@ -355,34 +326,33 @@ class Quel3ResourceReader:
                 )
                 ports = self._filter_visible_ports(
                     ports=ports,
-                    visible_instruments=visible_instruments,
+                    visible_instruments=instruments,
                     port_ids=port_ids,
                     instrument_aliases=instrument_aliases,
                 )
 
-            instruments = (
-                visible_instruments if collection_plan.collect_instruments else ()
-            )
-            diagnostics, diagnostic_issues = await self._collect_diagnostics(
-                client=client,
-                ports=ports,
-                include_diagnostics=collection_plan.collect_diagnostics,
-                parallel=parallel,
-            )
+            diagnostics: tuple[Quel3PortDiagnostic, ...] = ()
+            diagnostic_issues: tuple[Quel3ResourceIssue, ...] = ()
+            if level == "diagnosis":
+                diagnostics, diagnostic_issues = await self._collect_diagnostics(
+                    client=client,
+                    ports=ports,
+                    parallel=parallel,
+                )
 
         issues = (
             *unit_issues,
             *port_issues,
             *instrument_issues,
             *diagnostic_issues,
-            *self._evaluate_state(
+            *self._evaluate_snapshot(
                 selected_unit_labels=selected_unit_labels,
                 discovered_unit_labels=discovered_unit_labels,
                 units=units,
                 ports=ports,
                 instruments=instruments,
-                evaluate_ports=collection_plan.collect_ports,
-                evaluate_instruments=collection_plan.collect_instruments,
+                evaluate_ports=collect_ports,
+                evaluate_instruments=collect_instruments,
             ),
         )
         return Quel3ResourceSnapshot(
@@ -411,12 +381,9 @@ class Quel3ResourceReader:
         *,
         client: QuelwareClientProtocol,
         unit_labels: tuple[str, ...],
-        include_configuration: bool,
         parallel: bool,
     ) -> tuple[tuple[Quel3UnitState, ...], tuple[Quel3ResourceIssue, ...]]:
         """Collect unit configuration and preserve per-unit failures as issues."""
-        if not include_configuration:
-            return tuple(Quel3UnitState(label=label) for label in unit_labels), ()
 
         async def _fetch(unit_label: str) -> Quel3UnitState:
             configuration = await _resolve(client.get_unit_configuration(unit_label))
@@ -567,12 +534,9 @@ class Quel3ResourceReader:
         *,
         client: QuelwareClientProtocol,
         ports: Sequence[Quel3PortState],
-        include_diagnostics: bool,
         parallel: bool,
     ) -> tuple[tuple[Quel3PortDiagnostic, ...], tuple[Quel3ResourceIssue, ...]]:
-        """Collect optional port diagnostic dumps."""
-        if not include_diagnostics:
-            return (), ()
+        """Collect diagnostic dumps for the selected ports."""
         port_ids = tuple(port.id for port in ports)
 
         async def _fetch(port_id: str) -> Quel3PortDiagnostic:
@@ -833,7 +797,7 @@ class Quel3ResourceReader:
         return tuple([await _fetch_result(resource_id) for resource_id in resource_ids])
 
     @classmethod
-    def _evaluate_state(
+    def _evaluate_snapshot(
         cls,
         *,
         selected_unit_labels: tuple[str, ...],
