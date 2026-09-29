@@ -187,12 +187,13 @@ def test_build_measurement_result_keeps_monitor_labels() -> None:
     )
 
 
-def test_create_sampled_sequences_accepts_monitor_capture_targets() -> None:
-    """Given monitor capture labels, when building sampled sequences, then monitor channels are included."""
+@pytest.mark.parametrize("words", [0, 4, 8, 12, 16, 1, 2, 3, 5])
+def test_create_sampled_sequences_validates_words_with_monitor_targets(words) -> None:
+    """Monitor captures coexist with aligned mux offsets and reject unaligned mux offsets."""
     profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD_NS)
 
     class _ExperimentSystemStub:
-        control_params = SimpleNamespace(capture_delay_word={0: 1})
+        control_params = SimpleNamespace(capture_delay_word={0: words})
 
         @staticmethod
         def resolve_qubit_label(label: str) -> str:
@@ -283,6 +284,11 @@ def test_create_sampled_sequences_accepts_monitor_capture_targets() -> None:
         ),
     )
 
+    if words % 4:
+        with pytest.raises(ValueError, match=r"MUX0.*multiple of 4 words"):
+            adapter._create_sampled_sequences(schedule=measurement_schedule)  # noqa: SLF001
+        return
+
     gen_sequences, cap_sequences = adapter._create_sampled_sequences(  # noqa: SLF001
         schedule=measurement_schedule
     )
@@ -291,7 +297,7 @@ def test_create_sampled_sequences_accepts_monitor_capture_targets() -> None:
     assert set(cap_sequences.keys()) == {"Q00", "B0.MNTR0.IN"}
 
 
-@pytest.mark.parametrize("words", [0, 3])
+@pytest.mark.parametrize("words", [0, 4, 8, 12])
 def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_phase(
     monkeypatch, words
 ) -> None:
@@ -544,7 +550,7 @@ def test_create_sampled_sequences_skips_readout_phase_shift_when_capture_targets
     profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD_NS)
 
     class _ExperimentSystemStub:
-        control_params = SimpleNamespace(capture_delay_word={0: 1})
+        control_params = SimpleNamespace(capture_delay_word={0: 4})
 
         @staticmethod
         def resolve_qubit_label(label: str) -> str:

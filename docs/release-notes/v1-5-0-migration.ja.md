@@ -622,3 +622,15 @@ restored = type(result).load(path)
 `v1.5.0` では legacy input がいくつか互換用に残っているため、段階的移行も可能です。
 まず import と runtime selector を更新し、その後 parameter file と
 warning が出る call site を順に移していく方法でも進められます。
+
+## QuEL-1 の capture delay の刻み幅
+
+QuEL-1 の `capture_delay_word` は、非負整数かつ 4 の倍数
+（16 入力 samples、32 ns）を必須とします。設定読み込み時と測定シーケンス
+構築時に、条件を満たさない値を `ValueError` として拒否します。
+`check_waveform()` の一時的な合計遅延も 32 ns の倍数が必要です。
+`capture_delay.yaml` の粗い遅延の単位は `ndelay`（128 ns）のままです。
+
+既存の word 設定が 1、2、3 などの場合、測定前に 4 words 刻みで再調整してください。
+自動的な丸めはキャプチャタイミングを変えるため行いません。
+QuEL-3 の分解能は従来どおり 0.8 ns です。

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
 from qubex.backend.quel1.quel1_backend_constants import (
     BLOCK_LENGTH,
+    CAPTURE_DELAY_RESOLUTION_NS,
     WORD_DURATION_NS,
     WORD_LENGTH,
 )
@@ -58,21 +59,22 @@ class Quel1SystemSynchronizer:
 
         Notes
         -----
-        QuEL-1 requires multiples of 8 ns. Normalize the word remainder to
-        0 through 15. Restore control parameters, channels and controller delays
-        on exit, including partial controller-update failures.
+        QuEL-1 requires multiples of 32 ns (4 words) for decimated capture.
+        Normalize the word remainder to 0, 4, 8 or 12. Restore control parameters,
+        channels and controller delays on exit, including partial controller-update
+        failures.
         """
         coarse = {}
         offsets = {}
         for index, delay in capture_delay.items():
-            words = delay / WORD_DURATION_NS
-            if not math.isclose(words, round(words), rel_tol=0.0, abs_tol=1e-8):
+            steps = delay / CAPTURE_DELAY_RESOLUTION_NS
+            if not math.isclose(steps, round(steps), rel_tol=0.0, abs_tol=1e-8):
                 raise ValueError(
                     f"QuEL-1 capture delay for MUX{index} must be a multiple of "
-                    f"{WORD_DURATION_NS} ns; got {delay} ns."
+                    f"{CAPTURE_DELAY_RESOLUTION_NS} ns; got {delay} ns."
                 )
             coarse[index], offsets[index] = divmod(
-                round(words), BLOCK_LENGTH // WORD_LENGTH
+                round(delay / WORD_DURATION_NS), BLOCK_LENGTH // WORD_LENGTH
             )
         params = experiment_system.control_params
         original_delays = {index: params.capture_delay[index] for index in coarse}

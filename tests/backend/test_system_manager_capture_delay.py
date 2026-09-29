@@ -30,7 +30,7 @@ def _make_manager(monkeypatch: pytest.MonkeyPatch, backend: str):
             # Native config units: ndelay for QuEL-1, ns for QuEL-3.
             capture_delay={0: 8, 1: 16},
             capture_delay_word=(
-                {0: 2, 1: 0} if backend == "quel1" else {0: None, 1: None}
+                {0: 4, 1: 0} if backend == "quel1" else {0: None, 1: None}
             ),
         ),
         resolve_qubit_label=lambda label: "Q00",
@@ -60,7 +60,7 @@ def test_capture_delay_reports_uninitialized_backend(monkeypatch) -> None:
             RuntimeError,
             match=r"^Cannot override capture delay: backend controller is not initialized\.$",
         ),
-        manager.modified_capture_delay({0: 24}),
+        manager.modified_capture_delay({0: 32}),
     ):
         pytest.fail("Override accepted without an initialized backend")
     assert system.control_params.capture_delay == {0: 8, 1: 16}
@@ -72,7 +72,7 @@ def test_capture_delay_reports_uninitialized_backend(monkeypatch) -> None:
     ("backend", "delay"),
     [
         ("quel1", 0),
-        ("quel1", 776.0),
+        ("quel1", 800.0),
         ("quel3", 0),
         ("quel3", 24.0),
         ("quel3", 0.8),
@@ -84,7 +84,7 @@ def test_capture_delay_is_temporary(monkeypatch, backend, delay, fail) -> None:
     """Capture delay overrides affect selected muxes and restore after success or failure."""
     manager, system, controller, channels = _make_manager(monkeypatch, backend)
     original = system.control_params.capture_delay
-    expected_words = {0: 2, 1: 0} if backend == "quel1" else {0: None, 1: None}
+    expected_words = {0: 4, 1: 0} if backend == "quel1" else {0: None, 1: None}
     assert system.control_params.capture_delay_word == expected_words
 
     def run() -> None:
@@ -150,26 +150,26 @@ def test_capture_delay_restores_after_controller_failure(monkeypatch) -> None:
     ]
     with (
         pytest.raises(RuntimeError, match="update failed"),
-        manager.modified_capture_delay({0: 24}),
+        manager.modified_capture_delay({0: 32}),
     ):
         pytest.fail("Controller failure was ignored")
     assert system.control_params.capture_delay == {0: 8, 1: 16}
     assert [channel.ndelay for channel in channels] == [8, 8]
     assert controller.set_capture_ndelay.call_count == 3
-    assert system.control_params.capture_delay_word == {0: 2, 1: 0}
+    assert system.control_params.capture_delay_word == {0: 4, 1: 0}
 
 
 @pytest.mark.parametrize("backend", ["quel1", "quel3"])
 def test_capture_delay_accepts_distinct_mux_values(monkeypatch, backend) -> None:
     """Mux-keyed overrides preserve distinct values and leave the input dictionary unchanged."""
     manager, system, controller, _channels = _make_manager(monkeypatch, backend)
-    overrides = {0: 16, 1: 24}
+    overrides = {0: 32, 1: 64}
     with manager.modified_capture_delay(overrides):
         assert system.control_params.capture_delay == (
             {0: 0, 1: 0} if backend == "quel1" else overrides
         )
     assert system.control_params.capture_delay == {0: 8, 1: 16}
-    assert overrides == {0: 16, 1: 24}
+    assert overrides == {0: 32, 1: 64}
     if backend == "quel1":
         controller.define_channel.assert_not_called()
     else:
@@ -274,7 +274,7 @@ def test_capture_delay_uses_synchronizer_context(monkeypatch, failure) -> None:
     @contextmanager
     def modified_capture_delay(*, experiment_system, capture_delay):
         assert experiment_system is system
-        assert capture_delay == {0: 24}
+        assert capture_delay == {0: 32}
         events.append("enter")
         try:
             if failure == "enter":
@@ -290,7 +290,7 @@ def test_capture_delay_uses_synchronizer_context(monkeypatch, failure) -> None:
     )
 
     def run():
-        with manager.modified_capture_delay({0: 24}):
+        with manager.modified_capture_delay({0: 32}):
             assert events == ["enter"]
             assert system.control_params.capture_delay == {0: 8, 1: 16}
             if failure == "body":
@@ -309,7 +309,15 @@ def test_capture_delay_uses_synchronizer_context(monkeypatch, failure) -> None:
 
 @pytest.mark.parametrize(
     ("delay", "ndelay", "word"),
-    [(0, 0, 0), (8, 0, 1), (120, 0, 15), (128, 1, 0), (776.0, 6, 1), (2048, 16, 0)],
+    [
+        (0, 0, 0),
+        (32, 0, 4),
+        (64, 0, 8),
+        (96, 0, 12),
+        (128, 1, 0),
+        (800.0, 6, 4),
+        (2048, 16, 0),
+    ],
 )
 @pytest.mark.parametrize("fail", [False, True])
 def test_ns_delay_splits_and_restores_words(monkeypatch, delay, ndelay, word, fail):
@@ -334,11 +342,11 @@ def test_ns_delay_splits_and_restores_words(monkeypatch, delay, ndelay, word, fa
     else:
         run()
     assert system.control_params.capture_delay_word is original_words
-    assert original_words == {0: 2, 1: 0}
+    assert original_words == {0: 4, 1: 0}
     assert system.control_params.capture_delay == {0: 8, 1: 16}
 
 
-@pytest.mark.parametrize(("backend", "step"), [("quel1", 8), ("quel3", 0.8)])
+@pytest.mark.parametrize(("backend", "step"), [("quel1", 32), ("quel3", 0.8)])
 @pytest.mark.parametrize("value", [777.0, 8000001.0])
 def test_ns_delay_rejects_off_grid_values_before_any_update(
     monkeypatch, backend, step, value
@@ -347,11 +355,26 @@ def test_ns_delay_rejects_off_grid_values_before_any_update(
     manager, system, controller, _ = _make_manager(monkeypatch, backend)
     with (
         pytest.raises(ValueError, match=rf"multiple of {step}(?:\.0)? ns"),
-        manager.modified_capture_delay({0: 776.0, 1: value}),
+        manager.modified_capture_delay({0: 800.0, 1: value}),
     ):
         pytest.fail("Off-grid delay accepted")
     assert system.control_params.capture_delay == {0: 8, 1: 16}
     assert system.control_params.capture_delay_word == (
-        {0: 2, 1: 0} if backend == "quel1" else {0: None, 1: None}
+        {0: 4, 1: 0} if backend == "quel1" else {0: None, 1: None}
     )
+    assert controller.mock_calls == []
+
+
+@pytest.mark.parametrize("delay", [8, 16, 24, 120, 776.0])
+def test_quel1_rejects_word_aligned_delays_before_updates(monkeypatch, delay):
+    """Delays outside the decimated capture grid fail before any state changes."""
+    manager, system, controller, channels = _make_manager(monkeypatch, "quel1")
+    with (
+        pytest.raises(ValueError, match=r"MUX1.*multiple of 32"),
+        manager.modified_capture_delay({0: 32, 1: delay}),
+    ):
+        pytest.fail("Unaligned delay accepted")
+    assert system.control_params.capture_delay == {0: 8, 1: 16}
+    assert system.control_params.capture_delay_word == {0: 4, 1: 0}
+    assert [channel.ndelay for channel in channels] == [8, 8]
     assert controller.mock_calls == []

@@ -1,0 +1,5 @@
+meta:
+  description: Capture delay offsets in multiples of 4 words (32 ns)
+  unit: word
+data:
+  0: 0
