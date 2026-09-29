@@ -8,11 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from qubex.backend.quel3.infra import (
-    quelware_http_transport as quelware_http_transport_module,
-    quelware_imports as quelware_imports_module,
-)
-from qubex.backend.quel3.infra.quelware_http_transport import ProtobufHttpChannel
+from qubex.backend.quel3.infra import quelware_imports as quelware_imports_module
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
@@ -46,6 +42,7 @@ def test_load_client_factory_returns_server_client(
     """Given server mode, loading the client factory should return the quelware server client."""
     captured: dict[str, object] = {}
     original_channel = object()
+    channel_factory = object()
     grpc_module = SimpleNamespace(Channel=original_channel)
 
     def _create_quelware_client(endpoint: str, port: int) -> tuple[str, int]:
@@ -62,6 +59,8 @@ def test_load_client_factory_returns_server_client(
             return client_module
         if name == "quelware_client.client._grpc":
             return grpc_module
+        if name == "grpclib.client":
+            return SimpleNamespace(Channel=channel_factory)
         return real_import_module(name)
 
     monkeypatch.setattr(
@@ -75,10 +74,8 @@ def test_load_client_factory_returns_server_client(
     )
     result = client_factory("worker-host", 61000)
 
-    from grpclib.client import Channel
-
     assert result == ("worker-host", 61000)
-    assert captured["channel"] is Channel
+    assert captured["channel"] is channel_factory
     assert grpc_module.Channel is original_channel
 
 
@@ -112,6 +109,8 @@ def test_load_client_factory_binds_pat_for_server_mode(
             return client_module
         if name == "quelware_client.client._grpc":
             return grpc_module
+        if name == "grpclib.client":
+            return SimpleNamespace(Channel=object())
         return real_import_module(name)
 
     monkeypatch.setattr(
@@ -134,6 +133,7 @@ def test_load_client_factory_binds_pat_for_server_mode(
 def test_load_client_factory_scopes_https_channel_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
+    quel3_http_transport,
 ) -> None:
     """HTTPS transport should restore the upstream channel after client creation."""
     client_id_path = tmp_path / "client-id"
@@ -178,7 +178,7 @@ def test_load_client_factory_scopes_https_channel_override(
     result = client_factory("api.example.com", 443)
 
     assert result == ("api.example.com", 443)
-    assert isinstance(captured["channel"], ProtobufHttpChannel)
+    assert isinstance(captured["channel"], quel3_http_transport.ProtobufHttpChannel)
     assert grpc_module.Channel is original_channel
 
 
@@ -206,6 +206,10 @@ def test_load_client_factory_restores_channel_after_creation_error(
     monkeypatch.setattr(
         quelware_imports_module.importlib, "import_module", _import_module
     )
+    channel_factory = object()
+    monkeypatch.setattr(
+        quelware_imports_module, "_load_channel_factory", lambda **_: channel_factory
+    )
     client_factory = quelware_imports_module.load_quelware_client_factory(
         client_mode="server",
         transport="http",
@@ -220,6 +224,7 @@ def test_load_client_factory_restores_channel_after_creation_error(
 def test_load_client_factory_reads_file_backed_proxy_url(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
+    quel3_http_transport,
 ) -> None:
     """An explicit proxy should be read from its secret file without trailing newlines."""
     proxy_url_path = tmp_path / "proxy-url"
@@ -254,7 +259,7 @@ def test_load_client_factory_reads_file_backed_proxy_url(
         _import_module,
     )
     monkeypatch.setattr(
-        quelware_http_transport_module,
+        quel3_http_transport,
         "ProtobufHttpChannel",
         _Channel,
     )
