@@ -138,15 +138,15 @@ wheels = [
 
 [[package]]
 name = "betterproto2"
-version = "0.9.1"
+version = "0.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/02/4ae507aa18b8aa1681ea6e9f0dec08fabd610a94ade584fd9b071d286bf1/betterproto2-0.9.1.tar.gz", hash = "sha256:59d518cfbdd316e216c3d7f53448a6956432c7bd86ab9918fd8793c88c623cce", size = 143980, upload-time = "2025-10-15T09:36:24.425Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/88/7249571b6d525968afbc70f4fc7774cee5cdd55ecebe084a0d49f75513cb/betterproto2-0.10.0.tar.gz", hash = "sha256:fa0bcc3b87b6fd9151cd0058c153e480830f55fddb5afe3fef92e842490be266", size = 16997, upload-time = "2026-05-10T13:02:19.29Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/a3/44f9d1188ee3802d2402efb121e7a9ce4c825eaa34ca739fbfb8979526a2/betterproto2-0.9.1-py3-none-any.whl", hash = "sha256:de0544b4b2b6b5a05ce0c1bfac36d232f745087b02907e748f31466becfc3dbd", size = 19562, upload-time = "2025-10-15T09:36:23.169Z" },
+    { url = "https://files.pythonhosted.org/packages/56/e8/596fde3196b253cee2c7a94df2d434b043d99c5a565fb3110468501b2562/betterproto2-0.10.0-py3-none-any.whl", hash = "sha256:be80a0cb1aee34f1b5e424db43884bde659ce1dbc323676aa0d47930e70a898b", size = 19904, upload-time = "2026-05-10T13:02:17.757Z" },
 ]
 
 [[package]]
@@ -482,7 +482,7 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/66/54/eb9bfc647b19f2009dd5c7f5ec51c4e6ca831725f1aea7a993034f483147/contourpy-1.3.2.tar.gz", hash = "sha256:b6945942715a034c671b7fc54f9588126b0b8bf23db2696e3ca8328f3ff0ab54", size = 13466130, upload-time = "2025-04-15T17:47:53.79Z" }
 wheels = [
@@ -557,7 +557,7 @@ resolution-markers = [
     "(python_full_version == '3.11.*' and platform_machine != 'ARM64') or (python_full_version == '3.11.*' and sys_platform != 'win32')",
 ]
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "python_full_version >= '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/58/01/1253e6698a07380cd31a736d248a3f2a50a7c88779a1813da27503cadc2a/contourpy-1.3.3.tar.gz", hash = "sha256:083e12155b210502d0bca491432bb04d56dc3432f95a979b429f2848c3dbe880", size = 13466174, upload-time = "2025-07-26T12:03:12.549Z" }
 wheels = [
@@ -911,7 +911,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -1153,17 +1153,17 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "decorator" },
-    { name = "exceptiongroup" },
-    { name = "jedi" },
-    { name = "matplotlib-inline" },
-    { name = "pexpect", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "prompt-toolkit" },
-    { name = "pygments" },
-    { name = "stack-data" },
-    { name = "traitlets" },
-    { name = "typing-extensions" },
+    { name = "colorama", marker = "python_full_version < '3.11' and sys_platform == 'win32'" },
+    { name = "decorator", marker = "python_full_version < '3.11'" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
+    { name = "jedi", marker = "python_full_version < '3.11'" },
+    { name = "matplotlib-inline", marker = "python_full_version < '3.11'" },
+    { name = "pexpect", marker = "python_full_version < '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "prompt-toolkit", marker = "python_full_version < '3.11'" },
+    { name = "pygments", marker = "python_full_version < '3.11'" },
+    { name = "stack-data", marker = "python_full_version < '3.11'" },
+    { name = "traitlets", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/40/18/f8598d287006885e7136451fdea0755af4ebcbfe342836f24deefaed1164/ipython-8.39.0.tar.gz", hash = "sha256:4110ae96012c379b8b6db898a07e186c40a2a1ef5d57a7fa83166047d9da7624", size = 5513971, upload-time = "2026-03-27T10:02:13.94Z" }
 wheels = [
@@ -1179,17 +1179,17 @@ resolution-markers = [
     "(python_full_version == '3.11.*' and platform_machine != 'ARM64') or (python_full_version == '3.11.*' and sys_platform != 'win32')",
 ]
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "decorator" },
-    { name = "ipython-pygments-lexers" },
-    { name = "jedi" },
-    { name = "matplotlib-inline" },
-    { name = "pexpect", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "prompt-toolkit" },
-    { name = "pygments" },
-    { name = "stack-data" },
-    { name = "traitlets" },
-    { name = "typing-extensions" },
+    { name = "colorama", marker = "python_full_version == '3.11.*' and sys_platform == 'win32'" },
+    { name = "decorator", marker = "python_full_version == '3.11.*'" },
+    { name = "ipython-pygments-lexers", marker = "python_full_version == '3.11.*'" },
+    { name = "jedi", marker = "python_full_version == '3.11.*'" },
+    { name = "matplotlib-inline", marker = "python_full_version == '3.11.*'" },
+    { name = "pexpect", marker = "python_full_version == '3.11.*' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "prompt-toolkit", marker = "python_full_version == '3.11.*'" },
+    { name = "pygments", marker = "python_full_version == '3.11.*'" },
+    { name = "stack-data", marker = "python_full_version == '3.11.*'" },
+    { name = "traitlets", marker = "python_full_version == '3.11.*'" },
+    { name = "typing-extensions", marker = "python_full_version == '3.11.*'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c5/25/daae0e764047b0a2480c7bbb25d48f4f509b5818636562eeac145d06dfee/ipython-9.10.1.tar.gz", hash = "sha256:e170e9b2a44312484415bdb750492699bf329233b03f2557a9692cce6466ada4", size = 4426663, upload-time = "2026-03-27T09:53:26.244Z" }
 wheels = [
@@ -1207,16 +1207,16 @@ resolution-markers = [
     "(python_full_version == '3.12.*' and platform_machine != 'ARM64') or (python_full_version == '3.12.*' and sys_platform != 'win32')",
 ]
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "decorator" },
-    { name = "ipython-pygments-lexers" },
-    { name = "jedi" },
-    { name = "matplotlib-inline" },
-    { name = "pexpect", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "prompt-toolkit" },
-    { name = "pygments" },
-    { name = "stack-data" },
-    { name = "traitlets" },
+    { name = "colorama", marker = "python_full_version >= '3.12' and sys_platform == 'win32'" },
+    { name = "decorator", marker = "python_full_version >= '3.12'" },
+    { name = "ipython-pygments-lexers", marker = "python_full_version >= '3.12'" },
+    { name = "jedi", marker = "python_full_version >= '3.12'" },
+    { name = "matplotlib-inline", marker = "python_full_version >= '3.12'" },
+    { name = "pexpect", marker = "python_full_version >= '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "prompt-toolkit", marker = "python_full_version >= '3.12'" },
+    { name = "pygments", marker = "python_full_version >= '3.12'" },
+    { name = "stack-data", marker = "python_full_version >= '3.12'" },
+    { name = "traitlets", marker = "python_full_version >= '3.12'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3a/73/7114f80a8f9cabdb13c27732dce24af945b2923dcab80723602f7c8bc2d8/ipython-9.12.0.tar.gz", hash = "sha256:01daa83f504b693ba523b5a407246cabde4eb4513285a3c6acaff11a66735ee4", size = 4428879, upload-time = "2026-03-27T09:42:45.312Z" }
 wheels = [
@@ -1228,7 +1228,7 @@ name = "ipython-pygments-lexers"
 version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pygments" },
+    { name = "pygments", marker = "python_full_version >= '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ef/4c/5dd1d8af08107f88c7f741ead7a40854b8ac24ddf9ae850afbcf698aa552/ipython_pygments_lexers-1.1.1.tar.gz", hash = "sha256:09c0138009e56b6854f9535736f4171d855c8c08a563a0dcd8022f78355c7e81", size = 8393, upload-time = "2025-01-17T11:24:34.505Z" }
 wheels = [
@@ -2392,7 +2392,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "python_full_version < '3.11' or platform_machine != 'ARM64' or sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -3245,8 +3245,8 @@ requires-dist = [
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
-    { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.6.1" },
-    { name = "quelware-core", marker = "extra == 'quel3'", specifier = ">=0.7.0" },
+    { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.7.2" },
+    { name = "quelware-core", marker = "extra == 'quel3'", specifier = ">=0.9.0" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxdriver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
     { name = "qxdriver-quel1", marker = "extra == 'quel1'", editable = "packages/qxdriver-quel1" },
@@ -3313,7 +3313,7 @@ wheels = [
 
 [[package]]
 name = "quelware-client"
-version = "0.6.1"
+version = "0.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "betterproto2" },
@@ -3321,14 +3321,14 @@ dependencies = [
     { name = "quelware-core" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/c6/266578158306570a46631ceb3178869ac8d9760f0807565b6c6a4c5c8a3e/quelware_client-0.6.1.tar.gz", hash = "sha256:e1e7f7c00755baf5709eeec5228aa79503df2f954e20e9b54f97b4524dd72f7a", size = 65690, upload-time = "2026-08-18T06:19:58.333Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/b5/4c8257fee2be75a0ada5314ec81e9ba0df29372ef082ffbb415159061aeb/quelware_client-0.7.2.tar.gz", hash = "sha256:32e0fffea5947cee45f8e10c868fbe820a91e7a99f5db8091c711ff13188e593", size = 69275, upload-time = "2026-09-29T08:56:23.048Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/30/d755c8b600833b23a9182f785ec068689fff994d75e2e054ce3eef9b3dc2/quelware_client-0.6.1-py3-none-any.whl", hash = "sha256:5f78dfd671a045cc706dff966446947b9f6ce3ea0055426fa6b128221f5e072e", size = 46568, upload-time = "2026-08-18T06:19:56.879Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/83/fdd2a49bdaa48958070dc51bd81007a84f13409029834ef7e08fba6a5b4c/quelware_client-0.7.2-py3-none-any.whl", hash = "sha256:931331dad9e23b963d55b75184dbb16ca8756535e709b5f7aadc5e4da171f143", size = 48478, upload-time = "2026-09-29T08:56:18.594Z" },
 ]
 
 [[package]]
 name = "quelware-core"
-version = "0.7.0"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "betterproto2" },
@@ -3338,9 +3338,9 @@ dependencies = [
     { name = "numpy" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/5b/98d9473ad89e2255263b784cea17a4c8a597be5ff058b9734b7c9420b688/quelware_core-0.7.0.tar.gz", hash = "sha256:a1260aa149396bf42551d72ce243382f053c3824a7bac8b1b1176dc70b01d1a5", size = 57892, upload-time = "2026-09-14T06:56:56.454Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ab/36/ef003cad8d56bc945fbb30b1a7f8134a8fd241ee05cc60178fcc290c40a7/quelware_core-0.9.0.tar.gz", hash = "sha256:abe8c543228fc29f6ee636ba5bfc4ffbf4df6c9023685500c266c4929ee74921", size = 57970, upload-time = "2026-09-29T08:56:24.07Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/97/623b1ff7b4362c16d5872392db73d3e244bc1b8f586fbcb5cb28c614f0ec/quelware_core-0.7.0-py3-none-any.whl", hash = "sha256:e1734f8b528f1b7072f40bc2bbcfc4b615bb09d62d2539f9b03c69c7bc3dec39", size = 44884, upload-time = "2026-09-14T06:56:55.083Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/62/6be2af83a255f020f4a40140646a1504a8e3dad86c68096e2af64ba35926/quelware_core-0.9.0-py3-none-any.whl", hash = "sha256:9fe4e5706382ef71599b8a01b3d95bcfbb78b3f858038f88981f0339f8405864", size = 45014, upload-time = "2026-09-29T08:56:20.14Z" },
 ]
 
 [[package]]
@@ -3731,10 +3731,10 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 dependencies = [
-    { name = "joblib" },
-    { name = "numpy" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "threadpoolctl" },
+    { name = "joblib", marker = "python_full_version < '3.11'" },
+    { name = "numpy", marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "threadpoolctl", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/98/c2/a7855e41c9d285dfe86dc50b250978105dce513d6e459ea66a6aeb0e1e0c/scikit_learn-1.7.2.tar.gz", hash = "sha256:20e9e49ecd130598f1ca38a1d85090e1a600147b9c02fa6f15d69cb53d968fda", size = 7193136, upload-time = "2025-09-09T08:21:29.075Z" }
 wheels = [
@@ -3783,10 +3783,10 @@ resolution-markers = [
     "(python_full_version == '3.11.*' and platform_machine != 'ARM64') or (python_full_version == '3.11.*' and sys_platform != 'win32')",
 ]
 dependencies = [
-    { name = "joblib" },
-    { name = "numpy" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "threadpoolctl" },
+    { name = "joblib", marker = "python_full_version >= '3.11'" },
+    { name = "numpy", marker = "python_full_version >= '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "threadpoolctl", marker = "python_full_version >= '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0e/d4/40988bf3b8e34feec1d0e6a051446b1f66225f8529b9309becaeef62b6c4/scikit_learn-1.8.0.tar.gz", hash = "sha256:9bccbb3b40e3de10351f8f5068e105d0f4083b1a65fa07b6634fbc401a6287fd", size = 7335585, upload-time = "2025-12-10T07:08:53.618Z" }
 wheels = [
@@ -3836,7 +3836,7 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0f/37/6964b830433e654ec7485e45a00fc9a27cf868d622838f6b6d9c5ec0d532/scipy-1.15.3.tar.gz", hash = "sha256:eae3cf522bc7df64b42cad3925c876e1b0b6c35c1337c93e12c0f366f55b0eaf", size = 59419214, upload-time = "2025-05-08T16:13:05.955Z" }
 wheels = [
@@ -3900,7 +3900,7 @@ resolution-markers = [
     "(python_full_version == '3.11.*' and platform_machine != 'ARM64') or (python_full_version == '3.11.*' and sys_platform != 'win32')",
 ]
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "python_full_version >= '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7a/97/5a3609c4f8d58b039179648e62dd220f89864f56f7357f5d4f45c29eb2cc/scipy-1.17.1.tar.gz", hash = "sha256:95d8e012d8cb8816c226aef832200b1d45109ed4464303e997c5b13122b297c0", size = 30573822, upload-time = "2026-02-23T00:26:24.851Z" }
 wheels = [
