@@ -270,6 +270,66 @@ The `qubex.backend` namespace now focuses on backend controller contracts and
 concrete backend implementations such as `qubex.backend.quel1` and
 `qubex.backend.quel3`.
 
+### Rename QuEL-3 resource inspection APIs
+
+QuEL-3 inspection APIs from earlier v1.5.0 release candidates now describe
+quelware resources explicitly. The old names and import paths are removed.
+
+| Previous API | Replacement |
+| --- | --- |
+| `Quel3HardwareStateReader` | `Quel3ResourceReader` in `qubex.backend.quel3.infra` |
+| `Quel3HardwareState` | `Quel3ResourceSnapshot` in `qubex.backend.quel3.models` |
+| `Quel3HardwareStateIssue` / `Quel3HardwareStateSeverity` | `Quel3ResourceIssue` / `Quel3ResourceSeverity` |
+| `hardware_state_reader=` / `.hardware_state_reader` | `resource_reader=` / `.resource_reader` |
+| `reader.collect_state()` | `reader.collect_snapshot()` |
+| `controller.get_hardware_state()` | `controller.get_resource_snapshot()` |
+| `controller.print_hardware_state()` | `controller.print_resource_snapshot()` |
+
+The reader and snapshot are also exported from `qubex.backend.quel3`.
+Snapshots remain independent of the execution cache, and their `to_dict()`
+field names are unchanged.
+
+Rendering no longer belongs to the snapshot model. Replace `snapshot.print()`
+with the formatter function, and import `Quel3ResourceView` (formerly
+`Quel3HardwareStateView`) from `qubex.backend.quel3.formatters`.
+
+```python
+from qubex.backend.quel3.formatters import print_resource_snapshot
+
+snapshot = controller.get_resource_snapshot(level="instrument")
+print_resource_snapshot(snapshot, view="instruments")
+# Or collect and print in one call:
+controller.print_resource_snapshot(view="instruments")
+```
+
+`format_resource_snapshot(snapshot, view=...)` returns a Rich renderable for
+custom layouts. Formatting an existing snapshot makes no resource reads.
+
+Acquisition uses the cumulative `level=` argument on `collect_snapshot()` and
+`get_resource_snapshot()`. Replace the reader's old `view=` and the separate
+`include_diagnostics=` flag with this single argument.
+
+| Level | Collected information |
+| --- | --- |
+| `unit` | Units and their controls |
+| `port` | Units, controls, and ports |
+| `instrument` (default) | Units, controls, ports, and instruments |
+| `diagnosis` | All of the above plus port diagnostic dumps |
+
+Use `level="diagnosis"` for the expensive diagnostic reads previously requested
+with `include_diagnostics=True`. Lower levels do not perform these reads.
+`Quel3ResourceLevel` is exported from the model package and `qubex.backend.quel3`.
+
+The controller's print method maps `units`, `ports`, and `instruments` views to
+the corresponding levels. `summary` uses `instrument`; `diagnostics` and `all`
+use `diagnosis`. The formatter's `view=` only controls display of an existing
+snapshot.
+
+`port_ids` requires `port` level or higher; `instrument_aliases` requires
+`instrument` level or higher. A filter cannot silently trigger reads above the
+requested level. Unknown levels, views, and incompatible filters raise
+`ValueError` before resource reads.
+
 ### Rename common kwargs and properties
 
 These changes are not hard breaks in `v1.5.0`, but they should be migrated now:

@@ -1,4 +1,4 @@
-"""Tests for Controller-only QuEL-3 configuration and hardware-state workflows."""
+"""Tests for Controller-only QuEL-3 configuration and resource snapshot workflows."""
 
 from collections.abc import Sequence
 from pathlib import Path
@@ -12,12 +12,12 @@ from qubex.backend.quel3 import (
     InstrumentConfiguration,
     InstrumentSpec,
     Quel3BackendController,
-    Quel3HardwareState,
+    Quel3ResourceSnapshot,
 )
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import Quel3ConfigurationManager
-from qubex.backend.quel3.models import Quel3HardwareStateIssue
+from qubex.backend.quel3.models import Quel3ResourceIssue
 
 
 def _info(resource_id: str = "unit-a:old") -> InstrumentInfoProtocol:
@@ -43,7 +43,7 @@ class _Reader:
     def __init__(self, infos: tuple[InstrumentInfoProtocol, ...]) -> None:
         self.infos = infos
         self.reads = 0
-        self.state = Quel3HardwareState(
+        self.state = Quel3ResourceSnapshot(
             generated_at="2026-09-10T00:00:00Z",
             endpoint="localhost",
             port=50051,
@@ -52,7 +52,7 @@ class _Reader:
             ports=(),
             instruments=(),
             issues=(
-                Quel3HardwareStateIssue(
+                Quel3ResourceIssue(
                     severity="error",
                     code="RESOURCE_FETCH_ERROR",
                     message="Read failed.",
@@ -70,7 +70,7 @@ class _Reader:
         self.reads += 1
         return self.infos
 
-    def collect_state(self, **kwargs: object) -> Quel3HardwareState:
+    def collect_snapshot(self, **kwargs: object) -> Quel3ResourceSnapshot:
         return self.state
 
 
@@ -79,7 +79,7 @@ def test_controller_saves_last_confirmed_configuration_without_reading_hardware(
 ) -> None:
     """Controller get and save should use the last refresh without another hardware read."""
     reader = _Reader((_info(),))
-    controller = Quel3BackendController(hardware_state_reader=cast(Any, reader))
+    controller = Quel3BackendController(resource_reader=cast(Any, reader))
     controller.refresh_instrument_cache()
     configuration = controller.get_instrument_configuration()
     previous_hash = controller.hash
@@ -100,7 +100,7 @@ def test_loading_configuration_does_not_populate_execution_cache(
 ) -> None:
     """Loading a file should return configuration while leaving the execution cache empty."""
     reader = _Reader(())
-    controller = Quel3BackendController(hardware_state_reader=cast(Any, reader))
+    controller = Quel3BackendController(resource_reader=cast(Any, reader))
     configuration = InstrumentConfiguration(
         instruments=(
             InstrumentSpec(
@@ -151,7 +151,7 @@ def test_controller_deploys_loaded_configuration_and_passes_readback_to_executio
 
     controller = Quel3BackendController(
         configuration_manager=manager,
-        hardware_state_reader=cast(Any, reader),
+        resource_reader=cast(Any, reader),
         execution_manager=cast(
             Any,
             SimpleNamespace(
@@ -178,15 +178,15 @@ def test_controller_deploys_loaded_configuration_and_passes_readback_to_executio
     assert controller.hash != old_hash
 
 
-def test_diagnostic_hardware_state_does_not_change_cached_configuration() -> None:
+def test_diagnostic_resource_snapshot_does_not_change_cached_configuration() -> None:
     """A partial diagnostic snapshot should leave confirmed instrument configuration intact."""
     reader = _Reader((_info(),))
-    controller = Quel3BackendController(hardware_state_reader=cast(Any, reader))
+    controller = Quel3BackendController(resource_reader=cast(Any, reader))
     controller.refresh_instrument_cache()
     configuration = controller.get_instrument_configuration()
     previous_hash = controller.hash
 
-    state = controller.get_hardware_state()
+    state = controller.get_resource_snapshot()
 
     assert state is reader.state
     assert state.issues[0].severity == "error"
@@ -197,9 +197,7 @@ def test_diagnostic_hardware_state_does_not_change_cached_configuration() -> Non
 
 def test_disconnect_discards_configuration_from_the_previous_connection() -> None:
     """Disconnect should make previously confirmed instrument configuration unavailable."""
-    controller = Quel3BackendController(
-        hardware_state_reader=cast(Any, _Reader((_info(),)))
-    )
+    controller = Quel3BackendController(resource_reader=cast(Any, _Reader((_info(),))))
     controller.refresh_instrument_cache()
 
     controller.disconnect()

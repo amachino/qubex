@@ -9,11 +9,13 @@ from .quelware_imports import (
 from .quelware_transport_config import (
     Quel3HttpTransportConfig,
 )
+from .resource_reader import Quel3ResourceReader
 from .runtime_config import Quel3RuntimeConfig
 
 __all__ = [
     "Quel3ClientMode",
     "Quel3HttpTransportConfig",
+    "Quel3ResourceReader",
     "Quel3RuntimeConfig",
     "load_quelware_client_factory",
     "normalize_quel3_client_mode",

@@ -429,7 +429,7 @@ def test_quel3_is_synced_preserves_live_instrument_cache(
         config=SimpleNamespace(sampling_period_fs=400_000),
     )
     monkeypatch.setattr(
-        controller.hardware_state_reader, "read_instrument_infos", lambda **_: (info,)
+        controller.resource_reader, "read_instrument_infos", lambda **_: (info,)
     )
     controller.refresh_instrument_cache()
     previous_configuration = controller.get_instrument_configuration()
@@ -450,14 +450,14 @@ def test_quel3_is_synced_preserves_live_instrument_cache(
     fetch_calls: list[tuple[str, ...]] = []
 
     def fetch_settings(
-        *, unit_labels: tuple[str, ...], parallel: bool | None
+        *, experiment_system: object, box_ids: Sequence[str], parallel: bool | None
     ) -> dict[str, dict]:
         del parallel
-        fetch_calls.append(unit_labels)
+        fetch_calls.append(tuple(box_ids))
         return {"unit-a": {"instruments": {"Q00": {"resource_id": "unit-a:new"}}}}
 
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        manager._resolve_system_synchronizer(),  # noqa: SLF001
         "fetch_backend_settings_from_hardware",
         fetch_settings,
     )
@@ -496,7 +496,7 @@ def test_quel3_pull_updates_only_backend_settings_snapshot(
     )
     if populate_cache:
         monkeypatch.setattr(
-            controller.hardware_state_reader,
+            controller.resource_reader,
             "read_instrument_infos",
             lambda **_: (info,),
         )
@@ -521,22 +521,22 @@ def test_quel3_pull_updates_only_backend_settings_snapshot(
     fetch_calls: list[tuple[str, ...]] = []
 
     def fetch_settings(
-        *, unit_labels: tuple[str, ...], parallel: bool | None
+        *, experiment_system: object, box_ids: Sequence[str], parallel: bool | None
     ) -> dict[str, dict]:
         assert parallel is False
-        fetch_calls.append(unit_labels)
+        fetch_calls.append(tuple(box_ids))
         return snapshot
 
     def reject_runtime_read(**_: object) -> None:
         pytest.fail("Snapshot pull must not acquire executable instrument information.")
 
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        manager._resolve_system_synchronizer(),  # noqa: SLF001
         "fetch_backend_settings_from_hardware",
         fetch_settings,
     )
     monkeypatch.setattr(
-        controller.hardware_state_reader, "read_instrument_infos", reject_runtime_read
+        controller.resource_reader, "read_instrument_infos", reject_runtime_read
     )
 
     manager.pull(["unit-a"], parallel=False)
@@ -964,7 +964,7 @@ def test_quel3_canceled_push_does_not_restore_instruments_from_saved_settings(
     )
     if populate_cache:
         monkeypatch.setattr(
-            controller.hardware_state_reader,
+            controller.resource_reader,
             "read_instrument_infos",
             lambda **_: (info,),
         )
@@ -999,10 +999,10 @@ def test_quel3_canceled_push_does_not_restore_instruments_from_saved_settings(
 
     monkeypatch.setattr(controller, "deploy_instruments", reject_hardware_call)
     monkeypatch.setattr(
-        controller.hardware_state_reader, "read_instrument_infos", reject_hardware_call
+        controller.resource_reader, "read_instrument_infos", reject_hardware_call
     )
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        manager._resolve_system_synchronizer(),  # noqa: SLF001
         "fetch_backend_settings_from_hardware",
         reject_hardware_call,
     )

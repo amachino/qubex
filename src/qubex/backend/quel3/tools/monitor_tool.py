@@ -14,7 +14,6 @@ from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
     Quel3ExecutionManager,
-    Quel3HardwareStateReader,
 )
 from qubex.backend.quel3.models import (
     InstrumentSpec,
@@ -31,6 +30,7 @@ if TYPE_CHECKING:
 
     from qxpulse import PulseSchedule
 
+    from qubex.backend.quel3.infra.resource_reader import Quel3ResourceReader
     from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
 
@@ -46,7 +46,7 @@ class Quel3MonitorTool:
         *,
         configuration_manager: Quel3ConfigurationManager,
         execution_manager: Quel3ExecutionManager,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         instrument_cache: InstrumentCache,
     ) -> None:
         """
@@ -58,14 +58,14 @@ class Quel3MonitorTool:
             Manager for instrument deployment and unit configuration.
         execution_manager : Quel3ExecutionManager
             Manager for executing monitor capture payloads.
-        hardware_state_reader : Quel3HardwareStateReader
+        resource_reader : Quel3ResourceReader
             Reader for the original instrument configuration.
         instrument_cache : InstrumentCache
             Shared cache updated by deployment and used for execution.
         """
         self._configuration_manager = configuration_manager
         self._execution_manager = execution_manager
-        self._hardware_state_reader = hardware_state_reader
+        self._resource_reader = resource_reader
         self._instrument_cache = instrument_cache
 
     def run_schedule(
@@ -136,7 +136,7 @@ class Quel3MonitorTool:
             n_iterations=n_iterations,
             shot_interval_ns=shot_interval_ns,
         )
-        live_instruments = self._hardware_state_reader.read_instrument_infos(
+        live_instruments = self._resource_reader.read_instrument_infos(
             parallel=parallel
         )
         unit_label = self._resolve_unit_label(
@@ -227,13 +227,13 @@ class Quel3MonitorTool:
                 self._configuration_manager.deploy_instrument(
                     instrument=spec,
                     instrument_cache=self._instrument_cache,
-                    hardware_state_reader=self._hardware_state_reader,
+                    resource_reader=self._resource_reader,
                     append=False,
                     parallel=parallel,
                 )
                 self._configuration_manager.deploy_instrument(
                     instrument_cache=self._instrument_cache,
-                    hardware_state_reader=self._hardware_state_reader,
+                    resource_reader=self._resource_reader,
                     instrument=InstrumentSpec(
                         port_id=f"{unit_label}:mon",
                         alias=monitor_alias,
@@ -269,7 +269,7 @@ class Quel3MonitorTool:
             self._configuration_manager.deploy_instruments(
                 configuration=original_configuration,
                 instrument_cache=self._instrument_cache,
-                hardware_state_reader=self._hardware_state_reader,
+                resource_reader=self._resource_reader,
                 parallel=parallel,
             )
         return captured

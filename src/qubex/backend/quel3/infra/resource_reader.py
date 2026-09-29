@@ -1,4 +1,4 @@
-"""Hardware-state reader for QuEL-3 runtime inspection."""
+"""Read QuEL-3 resources through quelware APIs."""
 
 from __future__ import annotations
 
@@ -6,9 +6,8 @@ import asyncio
 import inspect
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, cast, get_args
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
@@ -20,12 +19,12 @@ from qubex.backend.quel3.interfaces import (
     UnitControlSpecProtocol,
 )
 from qubex.backend.quel3.models import (
-    Quel3HardwareState,
-    Quel3HardwareStateIssue,
-    Quel3HardwareStateView,
     Quel3InstrumentState,
     Quel3PortDiagnostic,
     Quel3PortState,
+    Quel3ResourceIssue,
+    Quel3ResourceLevel,
+    Quel3ResourceSnapshot,
     Quel3UnitControlState,
     Quel3UnitState,
 )
@@ -34,49 +33,13 @@ from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_br
 T = TypeVar("T")
 
 
-@dataclass(frozen=True)
-class _HardwareStateCollectionPlan:
-    """Describe hardware-state sections required for one collection."""
-
-    collect_unit_configuration: bool
-    collect_ports: bool
-    collect_instruments: bool
-    collect_diagnostics: bool
-
-    @classmethod
-    def build(
-        cls,
-        *,
-        view: Quel3HardwareStateView | None,
-        include_diagnostics: bool,
-    ) -> _HardwareStateCollectionPlan:
-        """Build a collection plan for one optional rendered view."""
-        if view is not None and view not in {
-            "summary",
-            "units",
-            "ports",
-            "instruments",
-            "diagnostics",
-            "all",
-        }:
-            raise ValueError(f"Unsupported QuEL-3 hardware-state view: {view!r}")
-        collect_ports = view in (None, "summary", "ports", "diagnostics", "all")
-        collect_instruments = view in (None, "summary", "instruments", "all")
-        return cls(
-            collect_unit_configuration=view in (None, "units", "all"),
-            collect_ports=collect_ports or include_diagnostics,
-            collect_instruments=collect_instruments,
-            collect_diagnostics=include_diagnostics,
-        )
-
-
 def _run_async(
     factory: Callable[[], Awaitable[T]],
     *,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> T:
     """Run one awaitable factory from synchronous APIs."""
-    bridge = get_shared_async_bridge(key="quel3-hardware-state")
+    bridge = get_shared_async_bridge(key="quel3-resources")
     return bridge.run(factory, timeout=timeout)
 
 
@@ -87,8 +50,8 @@ async def _resolve(value: T | Awaitable[T]) -> T:
     return value
 
 
-class Quel3HardwareStateReader:
-    """Collect read-only QuEL-3 hardware state through quelware APIs."""
+class Quel3ResourceReader:
+    """Read QuEL-3 resources and collect diagnostic snapshots through quelware APIs."""
 
     def __init__(
         self,
@@ -104,12 +67,12 @@ class Quel3HardwareStateReader:
 
     @property
     def quelware_endpoint(self) -> str:
-        """Return quelware endpoint used for hardware state reads."""
+        """Return quelware endpoint used for resource snapshot reads."""
         return self._runtime_config.endpoint
 
     @property
     def quelware_port(self) -> int | None:
-        """Return quelware port used for hardware state reads."""
+        """Return quelware port used for resource snapshot reads."""
         return self._runtime_config.port
 
     @property
@@ -122,19 +85,18 @@ class Quel3HardwareStateReader:
         """Return configured quelware personal access token path."""
         return self._runtime_config.pat_path
 
-    def collect_state(
+    def collect_snapshot(
         self,
         *,
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
-        include_diagnostics: bool = False,
+        level: Quel3ResourceLevel = "instrument",
         parallel: bool = True,
         timeout_seconds: float | None = None,
-        view: Quel3HardwareStateView | None = None,
-    ) -> Quel3HardwareState:
+    ) -> Quel3ResourceSnapshot:
         """
-        Collect one structured QuEL-3 hardware-state snapshot.
+        Collect one structured QuEL-3 resource snapshot.
 
         Filters are applied in order: `unit_labels`, then `port_ids`, then
         `instrument_aliases`. Local port IDs and aliases match every currently
@@ -147,53 +109,49 @@ class Quel3HardwareStateReader:
             Unit labels to inspect. Empty means all discovered units.
         port_ids : Sequence[str], optional
             Full port IDs such as `unit-a:tx_p01` or local IDs such as
-            `tx_p01`.
+            `tx_p01`. Requires `port` level or higher.
         instrument_aliases : Sequence[str], optional
             Unit-qualified aliases such as `unit-a:Q00` or local aliases such
-            as `Q00`.
-        include_diagnostics : bool, optional
-            Whether to collect diagnostic dumps for the final visible ports.
+            as `Q00`. Requires `instrument` level or higher.
+        level : Quel3ResourceLevel, optional
+            Cumulative acquisition depth: `unit` reads unit controls, `port`
+            adds ports, `instrument` adds instruments, and `diagnosis` adds
+            expensive port diagnostic dumps. Defaults to `instrument`.
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
             Timeout for the synchronous collection call.
-        view : Quel3HardwareStateView | None, optional
-            Rendered view whose unused hardware sections may be skipped. `None`
-            collects the complete structured state.
+
+        Returns
+        -------
+        Quel3ResourceSnapshot
+            Observed resources, including partial results and acquisition issues.
+
+        Raises
+        ------
+        ValueError
+            If the level is unsupported or filters require a higher level.
         """
+        if level not in get_args(Quel3ResourceLevel):
+            raise ValueError(f"Unsupported QuEL-3 resource level: {level!r}")
+        if port_ids and level == "unit":
+            raise ValueError("port_ids requires level='port' or higher.")
+        if instrument_aliases and level in ("unit", "port"):
+            raise ValueError(
+                "instrument_aliases requires level='instrument' or higher."
+            )
         timeout = (
             DEFAULT_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
         )
         return _run_async(
-            lambda: self._collect_state(
+            lambda: self._collect_snapshot(
                 unit_labels=tuple(unit_labels),
                 port_ids=tuple(port_ids),
                 instrument_aliases=tuple(instrument_aliases),
-                include_diagnostics=include_diagnostics,
+                level=level,
                 parallel=parallel,
-                view=view,
             ),
             timeout=timeout,
-        )
-
-    def fetch_backend_settings_from_hardware(
-        self,
-        *,
-        unit_labels: Sequence[str],
-        parallel: bool | None = None,
-    ) -> dict[str, dict]:
-        """Fetch QuEL-3 backend settings keyed by selected unit labels."""
-        if len(unit_labels) == 0:
-            return {}
-        state = self.collect_state(
-            unit_labels=tuple(unit_labels),
-            include_diagnostics=False,
-            parallel=True if parallel is None else parallel,
-            view="instruments",
-        )
-        return self.project_backend_settings(
-            state=state,
-            unit_labels=unit_labels,
         )
 
     def read_instrument_infos(
@@ -285,25 +243,19 @@ class Quel3HardwareStateReader:
             and (not selected_ports or info.port_id in selected_ports)
         )
 
-    async def _collect_state(
+    async def _collect_snapshot(
         self,
         *,
         unit_labels: tuple[str, ...],
         port_ids: tuple[str, ...],
         instrument_aliases: tuple[str, ...],
-        include_diagnostics: bool,
+        level: Quel3ResourceLevel,
         parallel: bool,
-        view: Quel3HardwareStateView | None,
-    ) -> Quel3HardwareState:
-        """Collect hardware state from one quelware client context."""
+    ) -> Quel3ResourceSnapshot:
+        """Collect resource snapshot from one quelware client context."""
         generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        collection_plan = _HardwareStateCollectionPlan.build(
-            view=view,
-            include_diagnostics=include_diagnostics,
-        )
-        needs_instrument_lookup = collection_plan.collect_instruments or (
-            collection_plan.collect_ports and bool(instrument_aliases)
-        )
+        collect_ports = level != "unit"
+        collect_instruments = level in ("instrument", "diagnosis")
         client_factory = self._load_quelware_client_factory()
         async with client_factory(
             self._runtime_config.endpoint,
@@ -320,11 +272,10 @@ class Quel3HardwareStateReader:
             units, unit_issues = await self._collect_units(
                 client=client,
                 unit_labels=visible_unit_labels,
-                include_configuration=collection_plan.collect_unit_configuration,
                 parallel=parallel,
             )
             resource_infos: list[object] = []
-            if collection_plan.collect_ports or needs_instrument_lookup:
+            if collect_ports:
                 resource_infos = [
                     resource_info
                     for resource_info in await _resolve(client.list_resource_infos())
@@ -335,8 +286,8 @@ class Quel3HardwareStateReader:
                 ]
 
             resolved_instruments: tuple[Quel3InstrumentState, ...] = ()
-            instrument_issues: tuple[Quel3HardwareStateIssue, ...] = ()
-            if needs_instrument_lookup:
+            instrument_issues: tuple[Quel3ResourceIssue, ...] = ()
+            if collect_instruments:
                 instrument_resource_infos = self._filter_instrument_resource_infos(
                     resource_infos=resource_infos,
                     selected_unit_labels=selected_unit_labels,
@@ -352,20 +303,20 @@ class Quel3HardwareStateReader:
                     selected_unit_labels=selected_unit_labels,
                     parallel=parallel,
                 )
-            visible_instruments = self._filter_visible_instruments(
+            instruments = self._filter_visible_instruments(
                 instruments=resolved_instruments,
                 port_ids=port_ids,
                 instrument_aliases=instrument_aliases,
             )
 
             ports: tuple[Quel3PortState, ...] = ()
-            port_issues: tuple[Quel3HardwareStateIssue, ...] = ()
-            if collection_plan.collect_ports:
+            port_issues: tuple[Quel3ResourceIssue, ...] = ()
+            if collect_ports:
                 port_resource_infos = self._filter_port_resource_infos(
                     resource_infos=resource_infos,
                     port_ids=port_ids,
                     instrument_aliases=instrument_aliases,
-                    visible_instruments=visible_instruments,
+                    visible_instruments=instruments,
                 )
                 ports, port_issues = await self._collect_ports(
                     client=client,
@@ -375,37 +326,36 @@ class Quel3HardwareStateReader:
                 )
                 ports = self._filter_visible_ports(
                     ports=ports,
-                    visible_instruments=visible_instruments,
+                    visible_instruments=instruments,
                     port_ids=port_ids,
                     instrument_aliases=instrument_aliases,
                 )
 
-            instruments = (
-                visible_instruments if collection_plan.collect_instruments else ()
-            )
-            diagnostics, diagnostic_issues = await self._collect_diagnostics(
-                client=client,
-                ports=ports,
-                include_diagnostics=collection_plan.collect_diagnostics,
-                parallel=parallel,
-            )
+            diagnostics: tuple[Quel3PortDiagnostic, ...] = ()
+            diagnostic_issues: tuple[Quel3ResourceIssue, ...] = ()
+            if level == "diagnosis":
+                diagnostics, diagnostic_issues = await self._collect_diagnostics(
+                    client=client,
+                    ports=ports,
+                    parallel=parallel,
+                )
 
         issues = (
             *unit_issues,
             *port_issues,
             *instrument_issues,
             *diagnostic_issues,
-            *self._evaluate_state(
+            *self._evaluate_snapshot(
                 selected_unit_labels=selected_unit_labels,
                 discovered_unit_labels=discovered_unit_labels,
                 units=units,
                 ports=ports,
                 instruments=instruments,
-                evaluate_ports=collection_plan.collect_ports,
-                evaluate_instruments=collection_plan.collect_instruments,
+                evaluate_ports=collect_ports,
+                evaluate_instruments=collect_instruments,
             ),
         )
-        return Quel3HardwareState(
+        return Quel3ResourceSnapshot(
             generated_at=generated_at,
             endpoint=self._runtime_config.endpoint,
             port=self._runtime_config.port,
@@ -431,12 +381,9 @@ class Quel3HardwareStateReader:
         *,
         client: QuelwareClientProtocol,
         unit_labels: tuple[str, ...],
-        include_configuration: bool,
         parallel: bool,
-    ) -> tuple[tuple[Quel3UnitState, ...], tuple[Quel3HardwareStateIssue, ...]]:
+    ) -> tuple[tuple[Quel3UnitState, ...], tuple[Quel3ResourceIssue, ...]]:
         """Collect unit configuration and preserve per-unit failures as issues."""
-        if not include_configuration:
-            return tuple(Quel3UnitState(label=label) for label in unit_labels), ()
 
         async def _fetch(unit_label: str) -> Quel3UnitState:
             configuration = await _resolve(client.get_unit_configuration(unit_label))
@@ -451,7 +398,7 @@ class Quel3HardwareStateReader:
             parallel=parallel,
         )
         units: list[Quel3UnitState] = []
-        issues: list[Quel3HardwareStateIssue] = []
+        issues: list[Quel3ResourceIssue] = []
         for unit_label, result in zip(unit_labels, results, strict=True):
             if isinstance(result, BaseException):
                 issues.append(
@@ -473,7 +420,7 @@ class Quel3HardwareStateReader:
         resource_infos: Sequence[object],
         selected_unit_labels: tuple[str, ...],
         parallel: bool,
-    ) -> tuple[tuple[Quel3PortState, ...], tuple[Quel3HardwareStateIssue, ...]]:
+    ) -> tuple[tuple[Quel3PortState, ...], tuple[Quel3ResourceIssue, ...]]:
         """Collect port states and preserve per-resource failures as issues."""
         all_port_resource_ids = tuple(
             self._resource_id(resource_info)
@@ -507,7 +454,7 @@ class Quel3HardwareStateReader:
             )
             for resource_id in monitor_port_ids
         ]
-        issues: list[Quel3HardwareStateIssue] = []
+        issues: list[Quel3ResourceIssue] = []
         for resource_id, result in zip(port_resource_ids, results, strict=True):
             if isinstance(result, BaseException):
                 issues.append(
@@ -543,7 +490,7 @@ class Quel3HardwareStateReader:
         resource_infos: Sequence[object],
         selected_unit_labels: tuple[str, ...],
         parallel: bool,
-    ) -> tuple[tuple[Quel3InstrumentState, ...], tuple[Quel3HardwareStateIssue, ...]]:
+    ) -> tuple[tuple[Quel3InstrumentState, ...], tuple[Quel3ResourceIssue, ...]]:
         """Collect instrument states and preserve per-resource failures as issues."""
         instrument_resource_ids = tuple(
             self._resource_id(resource_info)
@@ -563,7 +510,7 @@ class Quel3HardwareStateReader:
             parallel=parallel,
         )
         instruments: list[Quel3InstrumentState] = []
-        issues: list[Quel3HardwareStateIssue] = []
+        issues: list[Quel3ResourceIssue] = []
         for resource_id, result in zip(instrument_resource_ids, results, strict=True):
             if isinstance(result, BaseException):
                 issues.append(
@@ -587,12 +534,9 @@ class Quel3HardwareStateReader:
         *,
         client: QuelwareClientProtocol,
         ports: Sequence[Quel3PortState],
-        include_diagnostics: bool,
         parallel: bool,
-    ) -> tuple[tuple[Quel3PortDiagnostic, ...], tuple[Quel3HardwareStateIssue, ...]]:
-        """Collect optional port diagnostic dumps."""
-        if not include_diagnostics:
-            return (), ()
+    ) -> tuple[tuple[Quel3PortDiagnostic, ...], tuple[Quel3ResourceIssue, ...]]:
+        """Collect diagnostic dumps for the selected ports."""
         port_ids = tuple(port.id for port in ports)
 
         async def _fetch(port_id: str) -> Quel3PortDiagnostic:
@@ -610,7 +554,7 @@ class Quel3HardwareStateReader:
             parallel=parallel,
         )
         diagnostics: list[Quel3PortDiagnostic] = []
-        issues: list[Quel3HardwareStateIssue] = []
+        issues: list[Quel3ResourceIssue] = []
         for port_id, result in zip(port_ids, results, strict=True):
             if isinstance(result, BaseException):
                 issues.append(
@@ -713,23 +657,18 @@ class Quel3HardwareStateReader:
         instrument_aliases: tuple[str, ...],
     ) -> tuple[Quel3InstrumentState, ...]:
         """Filter resolved instruments by selected port IDs and aliases."""
-        visible_instruments = tuple(
+        return tuple(
             instrument
             for instrument in instruments
             if cls._matches_port_filters(
                 port_id=instrument.port_id,
                 port_ids=port_ids,
             )
-        )
-        visible_instruments = tuple(
-            instrument
-            for instrument in visible_instruments
-            if cls._matches_alias_filters(
+            and cls._matches_alias_filters(
                 instrument=instrument,
                 instrument_aliases=instrument_aliases,
             )
         )
-        return visible_instruments
 
     @classmethod
     def _filter_visible_ports(
@@ -858,52 +797,7 @@ class Quel3HardwareStateReader:
         return tuple([await _fetch_result(resource_id) for resource_id in resource_ids])
 
     @classmethod
-    def project_backend_settings(
-        cls,
-        *,
-        state: Quel3HardwareState,
-        unit_labels: Sequence[str],
-    ) -> dict[str, dict]:
-        """Project hardware state into backend settings keyed by selected unit labels."""
-        settings: dict[str, dict] = {
-            unit_label: {"instruments": {}} for unit_label in unit_labels
-        }
-
-        for instrument in state.instruments:
-            alias = instrument.normalized_alias or instrument.alias
-            if alias is None:
-                continue
-            if instrument.unit_label in settings:
-                settings[instrument.unit_label]["instruments"][alias] = (
-                    cls._backend_settings_instrument(instrument)
-                )
-        return settings
-
-    @staticmethod
-    def _backend_settings_instrument(instrument: Quel3InstrumentState) -> dict:
-        """Return backend-settings data for one instrument state."""
-        definition: dict[str, object] = {
-            "alias": instrument.alias or instrument.normalized_alias or "",
-            "role": instrument.role,
-        }
-        if instrument.mode is not None:
-            definition["mode"] = instrument.mode
-        profile: dict[str, float] = {}
-        if instrument.frequency_range_min_hz is not None:
-            profile["frequency_range_min"] = instrument.frequency_range_min_hz
-        if instrument.frequency_range_max_hz is not None:
-            profile["frequency_range_max"] = instrument.frequency_range_max_hz
-        if profile:
-            definition["profile"] = profile
-        return {
-            "resource_id": instrument.id,
-            "port_id": instrument.port_id,
-            "role": instrument.role,
-            "definition": definition,
-        }
-
-    @classmethod
-    def _evaluate_state(
+    def _evaluate_snapshot(
         cls,
         *,
         selected_unit_labels: tuple[str, ...],
@@ -913,14 +807,14 @@ class Quel3HardwareStateReader:
         instruments: Sequence[Quel3InstrumentState],
         evaluate_ports: bool,
         evaluate_instruments: bool,
-    ) -> tuple[Quel3HardwareStateIssue, ...]:
-        """Evaluate derived health issues for a hardware-state snapshot."""
-        issues: list[Quel3HardwareStateIssue] = []
+    ) -> tuple[Quel3ResourceIssue, ...]:
+        """Evaluate derived health issues for a resource snapshot."""
+        issues: list[Quel3ResourceIssue] = []
         discovered = set(discovered_unit_labels)
         missing_units = sorted(set(selected_unit_labels) - discovered)
         if missing_units:
             issues.append(
-                Quel3HardwareStateIssue(
+                Quel3ResourceIssue(
                     severity="error",
                     code="UNIT_NOT_FOUND",
                     message="Selected QuEL-3 units were not discovered.",
@@ -929,7 +823,7 @@ class Quel3HardwareStateReader:
             )
         if len(units) == 0:
             issues.append(
-                Quel3HardwareStateIssue(
+                Quel3ResourceIssue(
                     severity="error",
                     code="NO_UNITS",
                     message="No QuEL-3 units were discovered.",
@@ -937,7 +831,7 @@ class Quel3HardwareStateReader:
             )
         if evaluate_ports and len(ports) == 0:
             issues.append(
-                Quel3HardwareStateIssue(
+                Quel3ResourceIssue(
                     severity="warning",
                     code="NO_PORTS",
                     message="No QuEL-3 port resources were found.",
@@ -945,7 +839,7 @@ class Quel3HardwareStateReader:
             )
         if evaluate_instruments and len(instruments) == 0:
             issues.append(
-                Quel3HardwareStateIssue(
+                Quel3ResourceIssue(
                     severity="warning",
                     code="NO_INSTRUMENTS",
                     message="No QuEL-3 instrument resources were found.",
@@ -966,9 +860,9 @@ class Quel3HardwareStateReader:
     @staticmethod
     def _port_dependency_issues(
         ports: Sequence[Quel3PortState],
-    ) -> list[Quel3HardwareStateIssue]:
+    ) -> list[Quel3ResourceIssue]:
         """Return issues for missing port dependency references."""
-        issues: list[Quel3HardwareStateIssue] = []
+        issues: list[Quel3ResourceIssue] = []
         port_ids = {port.id for port in ports}
         for port in ports:
             missing = [
@@ -978,7 +872,7 @@ class Quel3HardwareStateReader:
             ]
             if missing:
                 issues.append(
-                    Quel3HardwareStateIssue(
+                    Quel3ResourceIssue(
                         severity="warning",
                         code="UNKNOWN_PORT_DEPENDENCY",
                         message="Port references resources not listed as ports.",
@@ -995,9 +889,9 @@ class Quel3HardwareStateReader:
         instruments: Sequence[Quel3InstrumentState],
         ports: Sequence[Quel3PortState],
         check_port_references: bool,
-    ) -> list[Quel3HardwareStateIssue]:
+    ) -> list[Quel3ResourceIssue]:
         """Return issues for instrument-port and definition consistency."""
-        issues: list[Quel3HardwareStateIssue] = []
+        issues: list[Quel3ResourceIssue] = []
         port_ids = {port.id for port in ports}
         aliases = Counter(
             (instrument.unit_label, instrument.normalized_alias or instrument.alias)
@@ -1007,7 +901,7 @@ class Quel3HardwareStateReader:
         for (unit_label, alias), count in sorted(aliases.items()):
             if count > 1:
                 issues.append(
-                    Quel3HardwareStateIssue(
+                    Quel3ResourceIssue(
                         severity="warning",
                         code="DUPLICATE_INSTRUMENT_ALIAS",
                         message=(
@@ -1020,7 +914,7 @@ class Quel3HardwareStateReader:
         for instrument in instruments:
             if check_port_references and instrument.port_id not in port_ids:
                 issues.append(
-                    Quel3HardwareStateIssue(
+                    Quel3ResourceIssue(
                         severity="error",
                         code="ORPHAN_INSTRUMENT",
                         message="Instrument points to an unknown port.",
@@ -1030,7 +924,7 @@ class Quel3HardwareStateReader:
                 )
             if not instrument.alias:
                 issues.append(
-                    Quel3HardwareStateIssue(
+                    Quel3ResourceIssue(
                         severity="warning",
                         code="EMPTY_INSTRUMENT_ALIAS",
                         message="Instrument has no alias.",
@@ -1043,13 +937,13 @@ class Quel3HardwareStateReader:
     @staticmethod
     def _frequency_issues(
         instrument: Quel3InstrumentState,
-    ) -> list[Quel3HardwareStateIssue]:
+    ) -> list[Quel3ResourceIssue]:
         """Return frequency-range issues for one instrument."""
         lower = instrument.frequency_range_min_hz
         upper = instrument.frequency_range_max_hz
         if lower is None or upper is None:
             return [
-                Quel3HardwareStateIssue(
+                Quel3ResourceIssue(
                     severity="warning",
                     code="MISSING_FREQUENCY_RANGE",
                     message="Instrument has no complete frequency range.",
@@ -1058,7 +952,7 @@ class Quel3HardwareStateReader:
             ]
         if lower >= upper:
             return [
-                Quel3HardwareStateIssue(
+                Quel3ResourceIssue(
                     severity="error",
                     code="INVALID_FREQUENCY_RANGE",
                     message="Instrument has an invalid frequency range.",
@@ -1153,9 +1047,9 @@ class Quel3HardwareStateReader:
         operation: str,
         resource_id: str,
         exc: BaseException,
-    ) -> Quel3HardwareStateIssue:
+    ) -> Quel3ResourceIssue:
         """Return an issue describing one failed resource fetch."""
-        return Quel3HardwareStateIssue(
+        return Quel3ResourceIssue(
             severity="error",
             code="RESOURCE_FETCH_ERROR",
             message=f"{operation} failed.",

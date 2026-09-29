@@ -73,10 +73,42 @@ into that cache. Connect loads all existing instruments. Explicit refresh
 replaces all or selected units. An empty
 configuration or an explicitly empty refresh selection performs no work.
 
-`Quel3HardwareState` is an independent diagnostic snapshot. It can contain partial
+`Quel3ResourceSnapshot` is an independent diagnostic snapshot. It can contain partial
 data and read issues, and is never used as executable instrument cache input.
-SystemManager pull, hardware-state display, and `is_synced()` leave the
+SystemManager pull, resource snapshot display, and `is_synced()` leave the
 instrument cache unchanged.
+
+`Quel3SystemSynchronizer` converts observed instruments into the system's
+backend-settings format. The reader collects resource information without
+knowing that format. Pulling an empty unit selection performs no reads.
+
+Resource inspection has three owners:
+
+- `infra.Quel3ResourceReader` reads quelware units, ports, instruments, and diagnostics.
+- `models.Quel3ResourceSnapshot` holds immutable observations and `to_dict()` serialization.
+- `formatters.resource_snapshot` renders existing snapshots with Rich through
+  `format_resource_snapshot()` and `print_resource_snapshot()`.
+
+`collect_snapshot()` and the controller's `get_resource_snapshot()` use a
+cumulative `level` to bound acquisition cost:
+
+| Level | Collected information |
+| --- | --- |
+| `unit` | Units and their controls |
+| `port` | Units, controls, and ports |
+| `instrument` (default) | Units, controls, ports, and instruments |
+| `diagnosis` | All of the above plus expensive port diagnostic dumps |
+
+Lower levels never read higher-level information. Port filters require `port`
+or higher; alias filters require `instrument` or higher. Invalid levels and
+incompatible filters fail before resource reads.
+
+The controller's `print_resource_snapshot(view=...)` maps `units`, `ports`, and
+`instruments` to the corresponding levels. `summary` uses `instrument`, while
+`diagnostics` and `all` use `diagnosis`. `Quel3ResourceView` belongs to the
+formatter; reader and model APIs use `Quel3ResourceLevel`. System pull requests
+`instrument` level and projects its instruments into backend settings without
+collecting diagnostic dumps.
 
 ## Decision log
 
@@ -285,7 +317,7 @@ Status legend:
     - port and role derivation from logical target metadata
   - Backend configuration-manager responsibilities:
     - quelware client/session lifecycle for deploy
-    - readback through `Quel3HardwareStateReader` and updates to the supplied
+    - readback through `Quel3ResourceReader` and updates to the supplied
       controller-owned cache
   - Shared-port deployment policy:
     - one port may host multiple instruments

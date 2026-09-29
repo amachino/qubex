@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from .quel3_target_deploy_planner import Quel3TargetDeployPlanner
 
 if TYPE_CHECKING:
+    from qubex.backend.quel3.models import Quel3InstrumentState, Quel3ResourceSnapshot
     from qubex.backend.quel3.quel3_backend_controller import Quel3BackendController
     from qubex.system.control_system import Box
     from qubex.system.experiment_system import ExperimentSystem
@@ -88,10 +89,59 @@ class Quel3SystemSynchronizer:
     ) -> dict[str, dict]:
         """Fetch normalized instrument snapshots from hardware for selected boxes."""
         del experiment_system
-        return self._backend_controller.hardware_state_reader.fetch_backend_settings_from_hardware(
+        if not box_ids:
+            return {}
+        snapshot = self._backend_controller.get_resource_snapshot(
             unit_labels=tuple(box_ids),
-            parallel=parallel,
+            parallel=True if parallel is None else parallel,
+            level="instrument",
         )
+        return self._project_backend_settings(snapshot=snapshot, unit_labels=box_ids)
+
+    @classmethod
+    def _project_backend_settings(
+        cls,
+        *,
+        snapshot: Quel3ResourceSnapshot,
+        unit_labels: Sequence[str],
+    ) -> dict[str, dict]:
+        """Project resource snapshot into backend settings keyed by selected unit labels."""
+        settings: dict[str, dict] = {
+            unit_label: {"instruments": {}} for unit_label in unit_labels
+        }
+
+        for instrument in snapshot.instruments:
+            alias = instrument.normalized_alias or instrument.alias
+            if alias is None:
+                continue
+            if instrument.unit_label in settings:
+                settings[instrument.unit_label]["instruments"][alias] = (
+                    cls._backend_settings_instrument(instrument)
+                )
+        return settings
+
+    @staticmethod
+    def _backend_settings_instrument(instrument: Quel3InstrumentState) -> dict:
+        """Return backend-settings data for one instrument state."""
+        definition: dict[str, object] = {
+            "alias": instrument.alias or instrument.normalized_alias or "",
+            "role": instrument.role,
+        }
+        if instrument.mode is not None:
+            definition["mode"] = instrument.mode
+        profile: dict[str, float] = {}
+        if instrument.frequency_range_min_hz is not None:
+            profile["frequency_range_min"] = instrument.frequency_range_min_hz
+        if instrument.frequency_range_max_hz is not None:
+            profile["frequency_range_max"] = instrument.frequency_range_max_hz
+        if profile:
+            definition["profile"] = profile
+        return {
+            "resource_id": instrument.id,
+            "port_id": instrument.port_id,
+            "role": instrument.role,
+            "definition": definition,
+        }
 
     def sync_backend_settings_to_backend_controller(
         self,
