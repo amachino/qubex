@@ -10,7 +10,11 @@ from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
+
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
+
+pytestmark = pytest.mark.usefixtures("stub_quel1_driver")
 
 
 class _FakeBoxPool:

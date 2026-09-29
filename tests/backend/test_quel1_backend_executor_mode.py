@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -125,8 +127,6 @@ def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
     monkeypatch: Any,
 ) -> None:
     """Given manager sequencer creation, constructor receives driver and sysdb."""
-    import qubex.backend.quel1.compat.sequencer as sequencer_module
-
     created_kwargs: dict[str, Any] = {}
     fake_system = object()
     fake_sysdb = object()
@@ -144,7 +144,11 @@ def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
         def quel1system(self) -> Any:
             return fake_system
 
-    monkeypatch.setattr(sequencer_module, "Quel1Sequencer", _FakeSequencer)
+    monkeypatch.setitem(
+        sys.modules,
+        "qubex.backend.quel1.compat.sequencer",
+        SimpleNamespace(Quel1Sequencer=_FakeSequencer),
+    )
 
     class _ExecutionManager(Quel1ExecutionManager):
         def _execute_sequencer(self, **kwargs: Any) -> str:
