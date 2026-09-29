@@ -19,7 +19,7 @@ from qubex.backend.backend_controller import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.quel3.infra import Quel3ClientMode
+from qubex.backend.quel3.infra import Quel3ClientMode, Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
@@ -28,7 +28,6 @@ from .managers import (
     Quel3ConnectionManager,
     Quel3ExecutionManager,
     Quel3HardwareStateReader,
-    Quel3RuntimeConfig,
     Quel3SessionManager,
 )
 from .models import (

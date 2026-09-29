@@ -11,15 +11,18 @@ from typing import Any, cast
 
 import pytest
 
+from qubex.backend.quel3.infra import (
+    Quel3HttpTransportConfig,
+    Quel3RuntimeConfig,
+    runtime_config as runtime_config_module,
+)
+from qubex.backend.quel3.infra.quelware_imports import QuelwareInstrumentEntities
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
     Quel3HardwareStateReader,
-    Quel3HttpTransportConfig,
-    Quel3RuntimeConfig,
     configuration_manager as configuration_manager_module,
-    runtime_config as runtime_config_module,
     session_workarounds as session_workarounds_module,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
@@ -97,7 +100,7 @@ def _make_instrument_entities(
     role_namespace: Any,
 ) -> Any:
     """Create one fake instrument-entity boundary for configuration tests."""
-    return configuration_manager_module._QuelwareInstrumentEntities(  # noqa: SLF001
+    return QuelwareInstrumentEntities(
         fixed_timeline_profile_factory=profile_factory,
         instrument_definition_factory=definition_factory,
         instrument_mode_namespace=mode_namespace,

@@ -1,13 +1,8 @@
 """QuEL-3 specific backend components."""
 
 from .builders import Quel3SequencerBuilder
-from .infra import Quel3ClientMode
-from .managers import (
-    Quel3ConfigurationManager,
-    Quel3HardwareStateReader,
-    Quel3HttpTransportConfig,
-    Quel3RuntimeConfig,
-)
+from .infra import Quel3ClientMode, Quel3HttpTransportConfig, Quel3RuntimeConfig
+from .managers import Quel3ConfigurationManager, Quel3HardwareStateReader
 from .models import (
     InstrumentConfiguration,
     InstrumentRoleName,
