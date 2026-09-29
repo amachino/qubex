@@ -12,6 +12,7 @@ from qubex.backend.quel3.quel3_backend_constants import READOUT_SAMPLING_PERIOD_
 from .quel3_target_deploy_planner import Quel3TargetDeployPlanner
 
 if TYPE_CHECKING:
+    from qubex.backend.quel3.models import Quel3InstrumentState, Quel3ResourceSnapshot
     from qubex.backend.quel3.quel3_backend_controller import Quel3BackendController
     from qubex.system.control_system import Box
     from qubex.system.experiment_system import ExperimentSystem
@@ -102,7 +103,7 @@ class Quel3SystemSynchronizer:
         box_ids = [box.id for box in boxes]
         if len(box_ids) == 0:
             return
-        requests = self._deploy_planner.build_deploy_requests(
+        configuration = self._deploy_planner.build_configuration(
             experiment_system=experiment_system,
             box_ids=box_ids,
             target_labels=target_labels,
@@ -111,7 +112,7 @@ class Quel3SystemSynchronizer:
         # equivalent of QuEL-1 CNCO/FNCO updates. Execution paths should only
         # resolve and use the instruments that push configured.
         self._backend_controller.deploy_instruments(
-            requests=requests,
+            configuration=configuration,
             parallel=True if parallel is None else parallel,
         )
 
@@ -123,26 +124,68 @@ class Quel3SystemSynchronizer:
         parallel: bool | None = None,
     ) -> dict[str, dict]:
         """Fetch normalized instrument snapshots from hardware for selected boxes."""
-        unit_labels_by_box_id = {
-            box_id: experiment_system.get_box(box_id).name for box_id in box_ids
-        }
-        return self._backend_controller.hardware_state_reader.fetch_backend_settings_from_hardware(
-            unit_labels_by_box_id=unit_labels_by_box_id,
-            parallel=parallel,
+        del experiment_system
+        if not box_ids:
+            return {}
+        snapshot = self._backend_controller.get_resource_snapshot(
+            unit_labels=tuple(box_ids),
+            parallel=True if parallel is None else parallel,
+            level="instrument",
         )
+        return self._project_backend_settings(snapshot=snapshot, unit_labels=box_ids)
+
+    @classmethod
+    def _project_backend_settings(
+        cls,
+        *,
+        snapshot: Quel3ResourceSnapshot,
+        unit_labels: Sequence[str],
+    ) -> dict[str, dict]:
+        """Project resource snapshot into backend settings keyed by selected unit labels."""
+        settings: dict[str, dict] = {
+            unit_label: {"instruments": {}} for unit_label in unit_labels
+        }
+
+        for instrument in snapshot.instruments:
+            alias = instrument.normalized_alias or instrument.alias
+            if alias is None:
+                continue
+            if instrument.unit_label in settings:
+                settings[instrument.unit_label]["instruments"][alias] = (
+                    cls._backend_settings_instrument(instrument)
+                )
+        return settings
+
+    @staticmethod
+    def _backend_settings_instrument(instrument: Quel3InstrumentState) -> dict:
+        """Return backend-settings data for one instrument state."""
+        definition: dict[str, object] = {
+            "alias": instrument.alias or instrument.normalized_alias or "",
+            "role": instrument.role,
+        }
+        if instrument.mode is not None:
+            definition["mode"] = instrument.mode
+        profile: dict[str, float] = {}
+        if instrument.frequency_range_min_hz is not None:
+            profile["frequency_range_min"] = instrument.frequency_range_min_hz
+        if instrument.frequency_range_max_hz is not None:
+            profile["frequency_range_max"] = instrument.frequency_range_max_hz
+        if profile:
+            definition["profile"] = profile
+        return {
+            "resource_id": instrument.id,
+            "port_id": instrument.port_id,
+            "role": instrument.role,
+            "definition": definition,
+        }
 
     def sync_backend_settings_to_backend_controller(
         self,
         *,
         backend_settings: dict[str, dict],
     ) -> None:
-        """Apply hardware snapshot data to QuEL-3 alias caches."""
-        try:
-            self._backend_controller.configuration_manager.sync_backend_settings_to_cache(
-                backend_settings=backend_settings,
-            )
-        finally:
-            self._backend_controller.execution_manager.invalidate_instrument_resolver()
+        """Leave live instrument state unchanged when applying saved settings."""
+        del backend_settings
 
     def sync_backend_settings_to_experiment_system(
         self,

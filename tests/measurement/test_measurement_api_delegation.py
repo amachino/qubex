@@ -1690,7 +1690,6 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
         sampling_period_ns: ClassVar[float] = 0.4
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
-        target_alias_map: ClassVar[dict[tuple[str, str], str]] = {}
 
         async def execute_async(
             self,
@@ -2605,8 +2604,8 @@ def test_classifier_apis_delegate_to_classification_service() -> None:
     assert called["inverse_targets"] == ["Q00"]
 
 
-def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
-    """Given DC-voltage API call, when context is entered, then it delegates to amplification service."""
+def test_apply_optimal_voltages_delegates_to_amplification_service() -> None:
+    """Optimal-voltage context should delegate to the amplification service."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -2617,7 +2616,10 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
 
     class _AmplificationService:
         @contextmanager
-        def apply_dc_voltages(self, targets: str | list[str]):  # type: ignore[no-untyped-def]
+        def apply_optimal_voltages(
+            self,
+            targets: str | list[str],
+        ):  # type: ignore[no-untyped-def]
             called["targets"] = targets
             called["entered"] = True
             try:
@@ -2627,10 +2629,40 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
 
     measurement.__dict__["_amplification_service"] = _AmplificationService()
 
-    with measurement.apply_dc_voltages(["Q00"]):
+    with measurement.apply_optimal_voltages(["Q00"]):
         called["inside"] = True
 
     assert called["targets"] == ["Q00"]
     assert called["entered"] is True
     assert called["inside"] is True
     assert called["exited"] is True
+
+
+def test_apply_dc_voltages_warns_and_uses_optimal_voltage_context() -> None:
+    """The released DC-voltage name should warn and preserve its behavior."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called: dict[str, object] = {}
+
+    class _AmplificationService:
+        @contextmanager
+        def apply_optimal_voltages(
+            self,
+            targets: str | list[str],
+        ):  # type: ignore[no-untyped-def]
+            called["targets"] = targets
+            yield
+
+    measurement.__dict__["_amplification_service"] = _AmplificationService()
+
+    with (
+        pytest.warns(DeprecationWarning, match="apply_optimal_voltages"),
+        measurement.apply_dc_voltages(["Q00"]),
+    ):
+        called["inside"] = True
+
+    assert called == {"targets": ["Q00"], "inside": True}

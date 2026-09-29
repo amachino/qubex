@@ -264,6 +264,63 @@ from qubex.system import ConfigLoader, ControlSystem, ExperimentSystem, SystemMa
 `qubex.backend.quel1`、`qubex.backend.quel3` のような実装 module に
 集中しています。
 
+### QuEL-3 の resource 取得 API を名前更新する
+
+以前の v1.5.0 release candidate にあった取得 API は、quelware の resource を
+扱うことが明確になる名前へ変更しました。旧名と旧 import path は削除しました。
+
+| 旧 API | 新 API |
+| --- | --- |
+| `Quel3HardwareStateReader` | `qubex.backend.quel3.infra` の `Quel3ResourceReader` |
+| `Quel3HardwareState` | `qubex.backend.quel3.models` の `Quel3ResourceSnapshot` |
+| `Quel3HardwareStateIssue` / `Quel3HardwareStateSeverity` | `Quel3ResourceIssue` / `Quel3ResourceSeverity` |
+| `hardware_state_reader=` / `.hardware_state_reader` | `resource_reader=` / `.resource_reader` |
+| `reader.collect_state()` | `reader.collect_snapshot()` |
+| `controller.get_hardware_state()` | `controller.get_resource_snapshot()` |
+| `controller.print_hardware_state()` | `controller.print_resource_snapshot()` |
+
+reader と snapshot は `qubex.backend.quel3` からも import できます。
+snapshot は実行キャッシュから独立しており、`to_dict()` の field 名は変更しません。
+
+表示処理は snapshot model から分離しました。`snapshot.print()` は formatter 関数へ
+置き換えてください。`Quel3ResourceView`（旧 `Quel3HardwareStateView`）も
+`qubex.backend.quel3.formatters` から import します。
+
+```python
+from qubex.backend.quel3.formatters import print_resource_snapshot
+
+snapshot = controller.get_resource_snapshot(level="instrument")
+print_resource_snapshot(snapshot, view="instruments")
+# 取得と表示をまとめる場合:
+controller.print_resource_snapshot(view="instruments")
+```
+
+`format_resource_snapshot(snapshot, view=...)` は独自のレイアウトに組み込める Rich
+renderable を返します。取得済み snapshot の表示では通信しません。
+
+`collect_snapshot()` と `get_resource_snapshot()` の取得範囲は、累積型の
+`level=` 引数で指定します。reader の旧 `view=` と独立した
+`include_diagnostics=` フラグは、この引数へ置き換えてください。
+
+| level | 取得情報 |
+| --- | --- |
+| `unit` | unit とその control |
+| `port` | unit、control、port |
+| `instrument`（既定） | unit、control、port、instrument |
+| `diagnosis` | 上記すべてと port の診断 dump |
+
+従来 `include_diagnostics=True` で指定していた重い診断取得には、
+`level="diagnosis"` を使ってください。低い level では診断を取得しません。
+`Quel3ResourceLevel` は model package と `qubex.backend.quel3` から import できます。
+
+controller の表示メソッドは `units`、`ports`、`instruments` view をそれぞれ対応する
+level に変換します。`summary` は `instrument`、`diagnostics` と `all` は `diagnosis`
+を使います。formatter の `view=` は取得済み snapshot の表示形式だけを指定します。
+
+`port_ids` は `port` 以上、`instrument_aliases` は `instrument` 以上で指定してください。
+フィルタのために指定 level より上の情報を暗黙に取得することはありません。
+不明な level、view、level と合わないフィルタは通信前に `ValueError` になります。
+
 ### よく使う kwargs / property を名前更新する
 
 次は `v1.5.0` でも即 break にはなりませんが、このタイミングで置き換えるべきです。

@@ -107,8 +107,8 @@ BOX1:
   address: 10.0.0.2
   adapter: dummy
 
-QT1:
-  name: "QuEL-3 Unit 1"
+quel3-02-a01:
+  name: quel3-02-a01
   type: quel3
 ```
 
@@ -140,9 +140,9 @@ QT1:
 
 144Q-LF-Q3:
   - mux: 0
-    ctrl: [QT1:4, QT1:2, QT1:11, QT1:9]
-    read_out: QT1:1
-    read_in: QT1:0
+    ctrl: [quel3-02-a01:4, quel3-02-a01:2, quel3-02-a01:11, quel3-02-a01:9]
+    read_out: quel3-02-a01:1
+    read_in: quel3-02-a01:0
 ```
 
 ## Validation rules

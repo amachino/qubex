@@ -2184,6 +2184,8 @@ class CalibrationService:
             if time_range is None:
                 time_range = DEFAULT_CR_TIME_RANGE
             time_range = np.array(time_range, dtype=float)
+            if len(time_range) < 4:
+                raise ValueError("time_range must contain at least 4 time points.")
 
         params_history = [
             {
@@ -2201,6 +2203,12 @@ class CalibrationService:
         for i in range(n_iterations):
             print(f"Iteration {i + 1}/{n_iterations}")
             params = params_history[-1]
+            if len(params["time_range"]) < 4:
+                raise RuntimeError(
+                    f"CR calibration failed for {cr_label} at iteration {i + 1}: "
+                    f"generated time range has only {len(params['time_range'])} time points; "
+                    "at least 4 are required for rotation fitting."
+                )
 
             result = self.update_cr_params(
                 control_qubit=control_qubit,

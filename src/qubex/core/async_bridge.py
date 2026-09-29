@@ -149,6 +149,31 @@ class AsyncBridge:
             bridge_future.cancel()
             raise
 
+    def run_without_timeout(self, factory: Callable[[], Awaitable[T]]) -> T:
+        """Run one awaitable factory without a bridge wait timeout."""
+        self._ensure_not_closed()
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(_await_result(factory()))
+
+        if threading.current_thread() is self._thread:
+            raise RuntimeError(
+                "AsyncBridge.run_without_timeout cannot block from its own "
+                "event-loop thread."
+            )
+
+        bridge_future = self._submit(
+            factory=factory,
+            context=contextvars.copy_context(),
+        )
+        try:
+            return bridge_future.result()
+        except BaseException:
+            bridge_future.cancel()
+            raise
+
     def close(self) -> None:
         """Stop the dedicated bridge loop and close this bridge."""
         self._stop_requested.set()

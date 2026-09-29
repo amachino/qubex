@@ -30,6 +30,14 @@ class _BenchmarkingServiceStub:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
+    def randomized_benchmarking(self, **kwargs: Any) -> str:
+        self.calls.append(("randomized_benchmarking", kwargs))
+        return "randomized_benchmarking_result"
+
+    def interleaved_randomized_benchmarking(self, **kwargs: Any) -> str:
+        self.calls.append(("interleaved_randomized_benchmarking", kwargs))
+        return "interleaved_randomized_benchmarking_result"
+
     def benchmark_1q(self, **kwargs: Any) -> None:
         self.calls.append(("benchmark_1q", kwargs))
 
@@ -145,6 +153,14 @@ class _ExperimentContextStub:
 
     def shutdown_dc_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
         self.calls.append(("shutdown_dc_voltages", kwargs))
+        return {6: self.get_dc_voltage_state(mux=6)}
+
+    def apply_optimal_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
+        self.calls.append(("apply_optimal_voltages", kwargs))
+        return {6: self.get_dc_voltage_state(mux=6)}
+
+    def apply_idle_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
+        self.calls.append(("apply_idle_voltages", kwargs))
         return {6: self.get_dc_voltage_state(mux=6)}
 
     def dc_voltage_control(self, **kwargs: Any):
@@ -321,6 +337,34 @@ def test_benchmark_2q_delegates_to_benchmarking_service() -> None:
             },
         )
     ]
+
+
+def test_randomized_benchmarking_delegates_to_sync_service() -> None:
+    """Randomized benchmarking should delegate to its synchronous service."""
+    exp = object.__new__(Experiment)
+    benchmarking_stub = _BenchmarkingServiceStub()
+    exp.__dict__["_benchmarking_service"] = benchmarking_stub
+
+    result = exp.randomized_benchmarking(targets="Q00", plot=False)
+
+    assert result == "randomized_benchmarking_result"
+    assert benchmarking_stub.calls[0][0] == "randomized_benchmarking"
+
+
+def test_interleaved_randomized_benchmarking_delegates_to_sync_service() -> None:
+    """Interleaved randomized benchmarking should use its synchronous service."""
+    exp = object.__new__(Experiment)
+    benchmarking_stub = _BenchmarkingServiceStub()
+    exp.__dict__["_benchmarking_service"] = benchmarking_stub
+
+    result = exp.interleaved_randomized_benchmarking(
+        targets="Q00",
+        interleaved_clifford="X90",
+        plot=False,
+    )
+
+    assert result == "interleaved_randomized_benchmarking_result"
+    assert benchmarking_stub.calls[0][0] == "interleaved_randomized_benchmarking"
 
 
 def test_characterize_2q_delegates_in_same_mux_to_characterization_service() -> None:
@@ -1231,6 +1275,64 @@ def test_shutdown_dc_voltages_delegates_to_context() -> None:
     assert list(states) == [6]
     assert context_stub.calls[0] == (
         "shutdown_dc_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_apply_optimal_voltages_delegates_to_context() -> None:
+    """Optimal-voltage application should delegate muxes and confirmation."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    states = external_devices.apply_optimal_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_optimal_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_bias_dc_voltages_warns_and_uses_optimal_voltage_api() -> None:
+    """The released bias name should warn and preserve its behavior."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    with pytest.warns(DeprecationWarning, match="apply_optimal_voltages"):
+        states = external_devices.bias_dc_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_optimal_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_apply_idle_voltages_delegates_to_context() -> None:
+    """Idle-voltage application should delegate muxes and confirmation."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    states = external_devices.apply_idle_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_idle_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_idle_dc_voltages_warns_and_uses_idle_voltage_api() -> None:
+    """The released idle name should warn and preserve its behavior."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    with pytest.warns(DeprecationWarning, match="apply_idle_voltages"):
+        states = external_devices.idle_dc_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_idle_voltages",
         {"muxes": [6], "confirm": False},
     )
 

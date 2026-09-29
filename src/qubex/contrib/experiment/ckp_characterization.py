@@ -124,7 +124,7 @@ def ckp_sequence_v2(
 
     resonator_drive_amplitude : float, optional
         Amplitude of the resonator drive pulse.
-        If None, uses the standard readout amplitude.
+        If None, uses half of the standard readout amplitude.
 
     resonator_drive_ramptime : float, optional
         Ramp time of the flat-top resonator drive pulse (ns).
@@ -153,6 +153,8 @@ def ckp_sequence_v2(
 
     if qubit_initial_state is None:
         qubit_initial_state = "0"
+    if qubit_initial_state not in {"0", "1"}:
+        raise ValueError("qubit_initial_state must be '0' or '1'.")
     if qubit_drive_detuning is None:
         qubit_drive_detuning = 0.0
     if qubit_pi_pulse is None:
@@ -174,6 +176,18 @@ def ckp_sequence_v2(
         resonator_drive_ramptime = 32
     if resonator_settle_duration is None:
         resonator_settle_duration = 512
+
+    if qubit_drive_duration <= 0:
+        raise ValueError("qubit_drive_duration must be positive.")
+    if qubit_drive_ramptime < 0 or qubit_drive_ramptime >= qubit_drive_duration:
+        raise ValueError(
+            "qubit_drive_ramptime must satisfy "
+            "0 <= qubit_drive_ramptime < qubit_drive_duration."
+        )
+    if resonator_drive_ramptime < 0:
+        raise ValueError("resonator_drive_ramptime must be nonnegative.")
+    if resonator_settle_duration < 0:
+        raise ValueError("resonator_settle_duration must be nonnegative.")
 
     resonator_drive_duration = (
         resonator_settle_duration + qubit_drive_duration + 2 * resonator_drive_ramptime
@@ -230,6 +244,7 @@ def ckp_measurement_v2(
     resonator_drive_amplitude: float | None = None,
     resonator_settle_duration: float | None = None,
     n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     verbose: bool | None = None,
     save_image: bool | None = None,
@@ -283,9 +298,11 @@ def ckp_measurement_v2(
 
     qubit_drive_scale : float, optional
         Relative pulse-area scale of the CKP qubit drive.
+        If None, defaults to 0.8.
 
     qubit_drive_duration : float, optional
         Duration of the CKP qubit drive pulse (ns).
+        If None, defaults to 128.
 
     resonator_detuning_range : ArrayLike, optional
         Sweep values of resonator drive detuning from the calibrated
@@ -297,7 +314,7 @@ def ckp_measurement_v2(
     resonator_drive_amplitude : float, optional
         Amplitude of the resonator drive pulse.
 
-        If None, the standard readout amplitude is used.
+        If None, half of the standard readout amplitude is used.
 
     resonator_settle_duration : float, optional
         Waiting time used to let the resonator response approach steady
@@ -307,6 +324,11 @@ def ckp_measurement_v2(
         Number of measurement shots used to acquire a single sweep point.
 
         If None, uses DEFAULT_SHOTS.
+
+    shot_interval : float, optional
+        Interval between shots in ns. Passed through to
+        ``measurement_service.execute``. If None, the measurement service
+        selects its default interval.
 
     plot : bool, optional
         If True, display the measured CKP heatmap and extracted Lorentzian
@@ -351,6 +373,11 @@ def ckp_measurement_v2(
         - ``qubit_resonance_frequencies``
         - ``qubit_resonance_frequency_errors``
         - ``qubit_initial_state``
+        - ``qubit_drive_scale``
+        - ``qubit_drive_duration``
+        - ``resonator_drive_amplitude``
+        - ``n_shots``
+        - ``shot_interval``
         - ``heatmap_data``
         - ``fit_results``
 
@@ -360,9 +387,11 @@ def ckp_measurement_v2(
     (typically GHz). Durations are in ns.
     """
     if qubit_initial_state not in {"0", "1"}:
-        qubit_initial_state = "0"
+        raise ValueError("qubit_initial_state must be '0' or '1'.")
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
+    if n_shots <= 0:
+        raise ValueError("n_shots must be positive.")
     if plot is None:
         plot = True
     if verbose is None:
@@ -376,11 +405,19 @@ def ckp_measurement_v2(
         right = np.linspace(0.01, 0.025, 3)
         qubit_detuning_range = np.concatenate([left, medium_left, center, right])
     qubit_detuning_range = np.asarray(qubit_detuning_range, dtype=float)
+    if qubit_detuning_range.size == 0:
+        raise ValueError("qubit_detuning_range must not be empty.")
+    if not np.all(np.isfinite(qubit_detuning_range)):
+        raise ValueError("qubit_detuning_range contains non-finite values.")
     if resonator_detuning_range is None:
         u = np.linspace(-1, 1, 50)
         beta = 0.95
         resonator_detuning_range = 0.12 * np.arctanh(beta * u) / np.arctanh(beta)
     resonator_detuning_range = np.asarray(resonator_detuning_range, dtype=float)
+    if resonator_detuning_range.size == 0:
+        raise ValueError("resonator_detuning_range must not be empty.")
+    if not np.all(np.isfinite(resonator_detuning_range)):
+        raise ValueError("resonator_detuning_range contains non-finite values.")
     if resonator_drive_amplitude is None:
         resonator_drive_amplitude = (
             exp.ctx.params.get_readout_amplitude(exp.ctx.resolve_qubit_label(target))
@@ -390,6 +427,8 @@ def ckp_measurement_v2(
         qubit_drive_scale = 0.8
     if qubit_drive_duration is None:
         qubit_drive_duration = 128
+    if qubit_drive_duration <= 0:
+        raise ValueError("qubit_drive_duration must be positive.")
     if enable_early_stop is None:
         enable_early_stop = False
     if enable_early_stop and f0_lower_qubit_detuning_limit is None:
@@ -437,6 +476,7 @@ def ckp_measurement_v2(
                 ),
                 reset_awg_and_capunits=False,
                 n_shots=n_shots,
+                shot_interval=shot_interval,
             )
             data = result.data[target][-1]
             result1d.append(data.kerneled)
@@ -618,6 +658,11 @@ def ckp_measurement_v2(
             "qubit_resonance_frequencies": qubit_resonance_frequencies,
             "qubit_resonance_frequency_errors": qubit_resonance_frequency_errors,
             "qubit_initial_state": qubit_initial_state,
+            "qubit_drive_scale": qubit_drive_scale,
+            "qubit_drive_duration": qubit_drive_duration,
+            "resonator_drive_amplitude": resonator_drive_amplitude,
+            "n_shots": n_shots,
+            "shot_interval": shot_interval,
             "early_stop_mode": enable_early_stop,
             "f0_lower_frequency_limit": f0_lower_frequency_limit,
             "early_stopped": early_stopped,
@@ -640,6 +685,7 @@ def filtered_ckp_experiment(
     resonator_drive_amplitude: float | None = None,
     resonator_settle_duration: float | None = None,
     n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
     enable_rough_search: bool | None = None,
@@ -699,9 +745,11 @@ def filtered_ckp_experiment(
 
     qubit_drive_scale : float, optional
         Relative pulse-area scale of the CKP qubit drive.
+        If None, defaults to 0.8.
 
     qubit_drive_duration : float, optional
         Duration of the CKP qubit drive pulse (ns).
+        If None, defaults to 128.
 
     resonator_detuning_range : ArrayLike, optional
         Sweep values of resonator drive detuning from the calibrated
@@ -712,7 +760,7 @@ def filtered_ckp_experiment(
     resonator_drive_amplitude : float, optional
         Amplitude of the resonator drive pulse.
 
-        If None, the standard readout amplitude is used.
+        If None, half of the standard readout amplitude is used.
 
     resonator_settle_duration : float, optional
         Waiting time used to let the resonator response approach steady
@@ -722,6 +770,11 @@ def filtered_ckp_experiment(
         Number of measurement shots used for one CKP sweep point.
 
         If None, uses DEFAULT_SHOTS.
+
+    shot_interval : float, optional
+        Interval between shots in ns. Passed through to
+        ``measurement_service.execute`` for every CKP measurement in this
+        workflow. If None, the measurement service selects its default interval.
 
     plot : bool, optional
         If True, display the fitted CKP traces and estimated parameters.
@@ -760,6 +813,8 @@ def filtered_ckp_experiment(
         - ``target``
         - ``resonator_detuning_range``
         - ``resonator_drive_amplitude``
+        - ``n_shots``
+        - ``shot_interval``
 
         Rough-search results
         --------------------
@@ -850,8 +905,8 @@ def filtered_ckp_experiment(
 
     - no valid no-drive Lorentzian fit is obtained
     - CKP fitting fails
-    - estimated χ is too small
-    - estimated |A|² becomes negative
+    - estimated χ is non-finite or too close to zero
+    - estimated |A|² is non-finite or non-positive
 
     When rough search is enabled, a reduced sweep using every fourth
     resonator-frequency point and one-fourth shots is used.
@@ -874,6 +929,8 @@ def filtered_ckp_experiment(
         max_rough_search_increases = 4
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
+    if n_shots <= 0:
+        raise ValueError("n_shots must be positive.")
     if plot is None:
         plot = True
     if save_image is None:
@@ -883,11 +940,23 @@ def filtered_ckp_experiment(
         beta = 0.95
         resonator_detuning_range = 0.12 * np.arctanh(beta * u) / np.arctanh(beta)
     resonator_detuning_range = np.asarray(resonator_detuning_range, dtype=float)
+    if resonator_detuning_range.size == 0:
+        raise ValueError("resonator_detuning_range must not be empty.")
+    if not np.all(np.isfinite(resonator_detuning_range)):
+        raise ValueError("resonator_detuning_range contains non-finite values.")
     if resonator_drive_amplitude is None:
         resonator_drive_amplitude = (
             exp.ctx.params.get_readout_amplitude(exp.ctx.resolve_qubit_label(target))
             / 2
         )
+    if qubit_detuning_range is not None:
+        qubit_detuning_range_arr = np.asarray(qubit_detuning_range, dtype=float)
+        if qubit_detuning_range_arr.size == 0:
+            raise ValueError("qubit_detuning_range must not be empty.")
+        if not np.all(np.isfinite(qubit_detuning_range_arr)):
+            raise ValueError("qubit_detuning_range contains non-finite values.")
+    if qubit_drive_duration is not None and qubit_drive_duration <= 0:
+        raise ValueError("qubit_drive_duration must be positive.")
     verbose = False
 
     rough_search_results = []
@@ -913,6 +982,7 @@ def filtered_ckp_experiment(
                 resonator_drive_amplitude=resonator_drive_amplitude,
                 resonator_settle_duration=resonator_settle_duration,
                 n_shots=n_shots_rough_search,
+                shot_interval=shot_interval,
                 plot=False,
                 verbose=verbose,
                 save_image=False,
@@ -1001,6 +1071,7 @@ def filtered_ckp_experiment(
         resonator_drive_amplitude=0.0,
         resonator_settle_duration=resonator_settle_duration,
         n_shots=n_shots_no_drive,
+        shot_interval=shot_interval,
         plot=plot_no_drive,
         verbose=verbose,
         save_image=save_image_no_drive,
@@ -1017,6 +1088,7 @@ def filtered_ckp_experiment(
         resonator_drive_amplitude=0.0,
         resonator_settle_duration=resonator_settle_duration,
         n_shots=n_shots_no_drive,
+        shot_interval=shot_interval,
         plot=plot_no_drive,
         verbose=verbose,
         save_image=save_image_no_drive,
@@ -1046,6 +1118,7 @@ def filtered_ckp_experiment(
         resonator_drive_amplitude=resonator_drive_amplitude,
         resonator_settle_duration=resonator_settle_duration,
         n_shots=n_shots,
+        shot_interval=shot_interval,
         plot=plot,
         verbose=verbose,
         save_image=save_image,
@@ -1062,6 +1135,7 @@ def filtered_ckp_experiment(
         resonator_drive_amplitude=resonator_drive_amplitude,
         resonator_settle_duration=resonator_settle_duration,
         n_shots=n_shots,
+        shot_interval=shot_interval,
         plot=plot,
         verbose=verbose,
         save_image=save_image,
@@ -1123,6 +1197,10 @@ def filtered_ckp_experiment(
     C = float(fit.C)
     chi = float(fit.chi)
     A2 = float(fit.A2)
+    if not np.isfinite(chi) or np.isclose(chi, 0.0):
+        raise ValueError(f"Estimated chi is invalid or too small: chi={chi}.")
+    if not np.isfinite(A2) or A2 <= 0:
+        raise ValueError(f"Estimated |A|^2 must be positive and finite: A2={A2}.")
     purcell_readout_detuning = omega_p - 0.5 * (omega_r_g + omega_r_e)
 
     x_dense_min = min(np.min(x_g), np.min(x_e), omega_r_g, omega_r_e, omega_p) - 0.01
@@ -1170,10 +1248,7 @@ def filtered_ckp_experiment(
     f_q = 0.5 * (offset_g + offset_e)
     f_r = 0.5 * (omega_r_g + omega_r_e)
     delta_qr = f_q - f_r
-    if np.isclose(chi, 0.0):
-        n_crit = np.nan
-    else:
-        n_crit = abs(delta_qr / (4.0 * chi))
+    n_crit = abs(delta_qr / (4.0 * chi))
 
     fig = None
 
@@ -1275,12 +1350,9 @@ def filtered_ckp_experiment(
     n_limited_A2_at_optimal_frequency = readout_opt_result.data[
         "n_limited_A2_at_optimal_frequency"
     ]
-    if A2 <= 0 or not np.isfinite(A2):
-        n_limited_readout_amplitude = np.nan
-    else:
-        n_limited_readout_amplitude = resonator_drive_amplitude * np.sqrt(
-            n_limited_A2_at_optimal_frequency / A2
-        )
+    n_limited_readout_amplitude = resonator_drive_amplitude * np.sqrt(
+        n_limited_A2_at_optimal_frequency / A2
+    )
 
     figures: dict[str, go.Figure] = {}
     if fig is not None:
@@ -1297,6 +1369,8 @@ def filtered_ckp_experiment(
             "target": target,
             "resonator_detuning_range": resonator_detuning_range,
             "resonator_drive_amplitude": resonator_drive_amplitude,
+            "n_shots": n_shots,
+            "shot_interval": shot_interval,
             "rough_search_results": rough_search_results,
             "rough_search_reduce_trials": n_reduces,
             "rough_search_increase_trials": n_increases,

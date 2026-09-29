@@ -7,7 +7,11 @@ import math
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from qubex.backend.quel3.models import InstrumentDeployRequest, RoleName
+from qubex.backend.quel3.models import (
+    InstrumentConfiguration,
+    InstrumentRoleName,
+    InstrumentSpec,
+)
 from qubex.system.target_type import TargetType
 
 if TYPE_CHECKING:
@@ -20,22 +24,22 @@ logger = logging.getLogger(__name__)
 
 
 class Quel3TargetDeployPlanner:
-    """Build QuEL-3 deploy requests from logical target registry metadata."""
+    """Build QuEL-3 instrument configuration from logical target metadata."""
 
-    def build_deploy_requests(
+    def build_configuration(
         self,
         *,
         experiment_system: ExperimentSystem,
         box_ids: Sequence[str],
         target_labels: Sequence[str] | None = None,
-    ) -> tuple[InstrumentDeployRequest, ...]:
-        """Build deterministic one-target-per-instrument deploy requests."""
+    ) -> InstrumentConfiguration:
+        """Build a deterministic configuration with one instrument per target."""
         selected_box_ids = set(box_ids)
         selected_target_labels = (
             set(target_labels) if target_labels is not None else None
         )
 
-        requests: list[InstrumentDeployRequest] = []
+        instruments: list[InstrumentSpec] = []
         for _label, target in sorted(experiment_system.gen_targets.items()):
             port = target.channel.port
             if port.box_id not in selected_box_ids:
@@ -65,23 +69,16 @@ class Quel3TargetDeployPlanner:
             )
             freq_min = frequency_hz - frequency_margin_hz
             freq_max = frequency_hz + frequency_margin_hz
-            alias = self._build_alias(
-                port_id=port_id,
-                role=role,
-                target_label=target.label,
-            )
-            requests.append(
-                InstrumentDeployRequest(
+            instruments.append(
+                InstrumentSpec(
                     port_id=port_id,
                     role=role,
                     frequency_range_min_hz=freq_min,
                     frequency_range_max_hz=freq_max,
-                    alias=alias,
-                    target_labels=(target.label,),
-                    box_id=port.box_id,
+                    alias=target.label,
                 )
             )
-        return tuple(requests)
+        return InstrumentConfiguration(instruments=tuple(instruments))
 
     def _resolve_port_id(
         self,
@@ -91,10 +88,7 @@ class Quel3TargetDeployPlanner:
     ) -> str:
         """Resolve quelware port ID from one logical generator target."""
         port = target.channel.port
-        unit_label = self._resolve_unit_label(
-            experiment_system=experiment_system,
-            box_id=port.box_id,
-        )
+        unit_label = port.box_id
         port_number = self._resolve_port_number(port=port)
 
         if target.type == TargetType.READ:
@@ -105,15 +99,6 @@ class Quel3TargetDeployPlanner:
             )
             return f"{unit_label}:trx_p{read_in_port_number:02d}p{read_out_port_number:02d}"
         return f"{unit_label}:tx_p{port_number:02d}"
-
-    @staticmethod
-    def _resolve_unit_label(
-        *,
-        experiment_system: ExperimentSystem,
-        box_id: str,
-    ) -> str:
-        """Resolve quelware unit label from one control box."""
-        return experiment_system.get_box(box_id).name
 
     @staticmethod
     def _resolve_port_number(*, port: GenPort) -> int:
@@ -144,7 +129,7 @@ class Quel3TargetDeployPlanner:
         raise ValueError(f"Read-in pair is not found for readout mux `{mux.index}`.")
 
     @staticmethod
-    def _resolve_instrument_role(target_type: TargetType) -> RoleName:
+    def _resolve_instrument_role(target_type: TargetType) -> InstrumentRoleName:
         """Resolve instrument role name from logical target type."""
         if target_type == TargetType.READ:
             return "TRANSCEIVER"
@@ -200,9 +185,3 @@ class Quel3TargetDeployPlanner:
                 f"label={target.label} value={frequency_margin} nyquist_hz={nyquist_hz}"
             )
         return frequency_margin_hz
-
-    @staticmethod
-    def _build_alias(*, port_id: str, role: RoleName, target_label: str) -> str:
-        """Build deterministic instrument alias from port, role, and target label."""
-        del port_id, role
-        return target_label

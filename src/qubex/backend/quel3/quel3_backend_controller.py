@@ -2,31 +2,45 @@
 QuEL-3 backend controller implementing the shared measurement-facing contract.
 
 This module defines the QuEL-3 concrete `BackendController` implementation
-built on quelware-client managers.
+built on quelware-client managers and tools.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
+
+import numpy as np
+import numpy.typing as npt
 
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.quel3.infra import Quel3ClientMode
+from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
+from .formatters import Quel3ResourceView, print_resource_snapshot
+from .infra import Quel3ClientMode, Quel3ResourceReader, Quel3RuntimeConfig
 from .managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
     Quel3ExecutionManager,
-    Quel3HardwareStateReader,
-    Quel3RuntimeConfig,
     Quel3SessionManager,
 )
-from .models import InstrumentDeployRequest, Quel3HardwareState, Quel3HardwareStateView
+from .models import (
+    InstrumentConfiguration,
+    InstrumentSpec,
+    Quel3ResourceLevel,
+    Quel3ResourceSnapshot,
+)
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
+from .tools import Quel3MonitorTool
+
+if TYPE_CHECKING:
+    from qxpulse import PulseSchedule
 
 
 class Quel3BackendController(BackendController):
@@ -34,7 +48,7 @@ class Quel3BackendController(BackendController):
     QuEL-3 backend controller for session lifecycle and execution dispatch.
 
     The controller provides the required shared `BackendController` API for the
-    measurement layer and routes concrete operations to QuEL-3 manager classes.
+    measurement layer and delegates operations to QuEL-3 managers and tools.
     Backend-specific capabilities are intentionally kept outside the shared
     contract.
     """
@@ -62,7 +76,7 @@ class Quel3BackendController(BackendController):
         session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
         execution_manager: Quel3ExecutionManager | None = None,
-        hardware_state_reader: Quel3HardwareStateReader | None = None,
+        resource_reader: Quel3ResourceReader | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -87,8 +101,8 @@ class Quel3BackendController(BackendController):
             Injected configuration manager for testing or customization.
         execution_manager : Quel3ExecutionManager | None, optional
             Injected execution manager for testing or customization.
-        hardware_state_reader : Quel3HardwareStateReader | None, optional
-            Injected hardware-state reader for testing or customization.
+        resource_reader : Quel3ResourceReader | None, optional
+            Injected resource reader for testing or customization.
         """
         if runtime_config is not None and any(
             value is not None
@@ -114,6 +128,7 @@ class Quel3BackendController(BackendController):
             else self.SAMPLING_PERIOD_NS
         )
         self._runtime_config = resolved_runtime_config
+        self._instrument_cache = InstrumentCache()
 
         self._connection_manager = (
             connection_manager
@@ -146,12 +161,19 @@ class Quel3BackendController(BackendController):
                 session_manager=self._session_manager,
             )
         )
-        self._hardware_state_reader = (
-            hardware_state_reader
-            if hardware_state_reader is not None
-            else Quel3HardwareStateReader(
+        self._resource_reader = (
+            resource_reader
+            if resource_reader is not None
+            else Quel3ResourceReader(
                 runtime_config=resolved_runtime_config,
             )
+        )
+
+        self._monitor_tool = Quel3MonitorTool(
+            configuration_manager=self._configuration_manager,
+            execution_manager=self._execution_manager,
+            resource_reader=self._resource_reader,
+            instrument_cache=self._instrument_cache,
         )
 
     @property
@@ -160,12 +182,7 @@ class Quel3BackendController(BackendController):
         return hash(
             (
                 self._connection_manager.hash,
-                tuple(sorted(self._configuration_manager.target_alias_map.items())),
-                tuple(
-                    sorted(
-                        self._configuration_manager.last_deployed_instrument_infos.keys()
-                    )
-                ),
+                self._instrument_cache.hash,
             )
         )
 
@@ -220,21 +237,9 @@ class Quel3BackendController(BackendController):
         return self._execution_manager
 
     @property
-    def hardware_state_reader(self) -> Quel3HardwareStateReader:
-        """Return backend-side QuEL-3 hardware-state reader."""
-        return self._hardware_state_reader
-
-    @property
-    def target_alias_map(self) -> dict[tuple[str, str], str]:
-        """Return deployed box-and-target to runtime-alias mapping."""
-        return self._configuration_manager.target_alias_map
-
-    @property
-    def last_deployed_instrument_infos(
-        self,
-    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
-        """Return deployed instrument infos from backend runtime state."""
-        return self._configuration_manager.last_deployed_instrument_infos
+    def resource_reader(self) -> Quel3ResourceReader:
+        """Return backend-side QuEL-3 resource reader."""
+        return self._resource_reader
 
     def connect(
         self,
@@ -242,45 +247,248 @@ class Quel3BackendController(BackendController):
         *,
         parallel: bool | None = None,
     ) -> None:
-        """Connect backend resources for selected boxes."""
-        self._connection_manager.connect(
-            box_names=box_names,
-            parallel=parallel,
-        )
-        self._configuration_manager.clear_instrument_cache()
-        self._execution_manager.invalidate_instrument_resolver()
+        """
+        Connect to quelware and load existing instruments into the execution cache.
+
+        Notes
+        -----
+        Each call validates the selected unit labels and replaces the cache with
+        instruments from those units. `box_names` contains QuEL-3 unit labels;
+        a string selects one unit, `None` selects all units, and an empty list
+        probes the endpoint without loading instruments. Duplicate normalized
+        aliases emit a warning and keep the last instrument in readback order,
+        without changing hardware. Connection, unit-label
+        validation, or readback failure leaves the controller disconnected with
+        an empty cache and propagates the error.
+        """
+        self._instrument_cache.clear()
+        unit_labels = [box_names] if isinstance(box_names, str) else box_names
+        try:
+            self._connection_manager.connect(
+                unit_labels=unit_labels,
+                parallel=parallel,
+            )
+            if unit_labels is not None and not unit_labels:
+                return
+            instrument_infos = self._resource_reader.read_instrument_infos(
+                unit_labels=() if unit_labels is None else unit_labels,
+                parallel=True if parallel is None else parallel,
+            )
+            self._instrument_cache.replace_all(
+                instrument_infos=instrument_infos,
+                allow_duplicate_aliases=True,
+            )
+        except Exception:
+            self.disconnect()
+            raise
 
     def disconnect(self) -> None:
         """Disconnect backend resources."""
         self._connection_manager.disconnect()
+        self._instrument_cache.clear()
+
+    def clear_instruments(self, *, unit_label: str, parallel: bool = True) -> None:
+        """
+        Delete every instrument on the specified unit and invalidate its cache.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact label of the unit whose instruments should be deleted.
+        parallel : bool, default=True
+            Whether to delete instruments on different ports concurrently.
+
+        Raises
+        ------
+        ValueError
+            The unit label is empty or was not discovered.
+
+        Notes
+        -----
+        Other units and their cached instruments are retained. The selected
+        unit is uncached before writing and stays uncached on failure. Partial
+        deletions are not rolled back. This operation is independent of connect.
+        """
+        self._configuration_manager.clear_instruments(
+            unit_label=unit_label,
+            instrument_cache=self._instrument_cache,
+            parallel=parallel,
+        )
+
+    def configure_monitor_mode(
+        self,
+        *,
+        unit_label: str,
+        mode: Literal["open", "loopback"] = "open",
+        clear_instruments: bool = False,
+    ) -> str:
+        """
+        Set a unit's monitor mode before deploying output and monitor instruments.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact QuEL-3 unit label.
+        mode : {"open", "loopback"}, default="open"
+            Normal external output or monitor loopback mode.
+        clear_instruments : bool, default=False
+            Delete all instruments on this unit before configuring the mode.
+
+        Returns
+        -------
+        str
+            Applied mode reported by quelware.
+
+        Raises
+        ------
+        RuntimeError
+            If this unit has cached instruments and `clear_instruments` is false.
+
+        Notes
+        -----
+        Quelware also rejects a mode change if uncached instruments remain
+        deployed on the unit. With `clear_instruments=True`, every instrument
+        on this unit is deleted and its cache is invalidated. Instruments are
+        not automatically restored. Re-deploy them after changing the mode.
+        """
+        return self._configuration_manager.configure_monitor_mode(
+            unit_label=unit_label,
+            instrument_cache=self._instrument_cache,
+            mode=mode,
+            clear_instruments=clear_instruments,
+        )
+
+    def deploy_instrument(
+        self,
+        *,
+        instrument: InstrumentSpec,
+        append: bool = True,
+        parallel: bool = True,
+    ) -> InstrumentInfoProtocol:
+        """
+        Deploy one instrument and return its complete hardware information.
+
+        Parameters
+        ----------
+        instrument : InstrumentSpec
+            Instrument definition with a unit-qualified port ID.
+        append : bool, default=True
+            Add or replace this alias while preserving the port's other
+            instruments. If false, replace every instrument on the specified
+            port with this one.
+        parallel : bool, default=True
+            Whether hardware reads may run concurrently.
+
+        Raises
+        ------
+        ValueError
+            Hardware readback is invalid.
+
+        Notes
+        -----
+        Alias replacement is handled by quelware without a pre-deployment read.
+        Append does not retry the deployment request. Both modes refresh the
+        entire touched port. Write or readback failure leaves that port absent
+        from the execution cache.
+        """
+        return self._configuration_manager.deploy_instrument(
+            instrument=instrument,
+            instrument_cache=self._instrument_cache,
+            resource_reader=self._resource_reader,
+            append=append,
+            parallel=parallel,
+        )
 
     def deploy_instruments(
         self,
         *,
-        requests: Sequence[InstrumentDeployRequest],
+        configuration: InstrumentConfiguration,
         parallel: bool = True,
-    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
-        """Deploy QuEL-3 instruments for the provided requests."""
-        try:
-            return self._configuration_manager.deploy_instruments(
-                requests=requests,
-                parallel=parallel,
-            )
-        finally:
-            self._execution_manager.invalidate_instrument_resolver()
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """
+        Deploy instruments and read their complete information back from hardware.
 
-    def get_hardware_state(
+        Only the requested ports are replaced. Their old cached identities are
+        discarded before writing and remain absent if deployment or readback fails.
+        An empty configuration leaves hardware and cache unchanged.
+        """
+        return self._configuration_manager.deploy_instruments(
+            configuration=configuration,
+            instrument_cache=self._instrument_cache,
+            resource_reader=self._resource_reader,
+            parallel=parallel,
+        )
+
+    def get_instrument_configuration(self) -> InstrumentConfiguration:
+        """
+        Return deployable settings from the last successful connect, deploy, or refresh.
+
+        This method reads the instrument cache without contacting hardware.
+        """
+        return self._configuration_manager.get_instrument_configuration(
+            instrument_cache=self._instrument_cache,
+        )
+
+    def save_instrument_configuration(self, path: str | Path) -> Path:
+        """
+        Save the last confirmed instrument configuration as YAML.
+
+        The output file is overwritten. Call `refresh_instrument_cache()` first
+        to save the current hardware configuration.
+        """
+        return self._configuration_manager.save_instrument_configuration(
+            path,
+            instrument_cache=self._instrument_cache,
+        )
+
+    def load_instrument_configuration(
+        self, path: str | Path
+    ) -> InstrumentConfiguration:
+        """
+        Load and validate an instrument configuration from YAML.
+
+        Loading does not deploy instruments or change the execution cache.
+        Pass the returned configuration to `deploy_instruments()` to apply it.
+        """
+        return self._configuration_manager.load_instrument_configuration(path)
+
+    def refresh_instrument_cache(
+        self,
+        *,
+        unit_labels: Sequence[str] | None = None,
+        parallel: bool = True,
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """
+        Refresh instrument information from hardware for all or selected units.
+
+        `None` selects all units; an empty sequence performs no reads or updates.
+        The selected scope is replaced only after successful acquisition and
+        validation. Return only the instruments fetched by this call.
+        """
+        return self._configuration_manager.refresh_instrument_cache(
+            instrument_cache=self._instrument_cache,
+            resource_reader=self._resource_reader,
+            unit_labels=unit_labels,
+            parallel=parallel,
+        )
+
+    def get_resource_snapshot(
         self,
         *,
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
-        include_diagnostics: bool = False,
+        level: Quel3ResourceLevel = "instrument",
         parallel: bool = True,
         timeout_seconds: float | None = None,
-    ) -> Quel3HardwareState:
+    ) -> Quel3ResourceSnapshot:
         """
-        Collect one structured QuEL-3 hardware-state snapshot.
+        Collect one structured QuEL-3 resource snapshot.
+
+        Read the current quelware resources without changing the execution cache. The
+        snapshot can contain partial results and acquisition issues. Instrument
+        configuration is obtained separately from the last confirmed cache with
+        `get_instrument_configuration()`.
 
         Parameters
         ----------
@@ -288,77 +496,163 @@ class Quel3BackendController(BackendController):
             Unit labels to inspect. Empty means all discovered units.
         port_ids : Sequence[str], optional
             Full port IDs or local port IDs used to filter ports and
-            instruments.
+            instruments. Requires `port` level or higher.
         instrument_aliases : Sequence[str], optional
             Unit-qualified aliases or local aliases used to filter instruments
-            and their related ports.
-        include_diagnostics : bool, optional
-            Whether to collect diagnostic dumps for the final visible ports.
+            and their related ports. Requires `instrument` level or higher.
+        level : Quel3ResourceLevel, optional
+            Cumulative acquisition depth: `unit` reads unit controls, `port`
+            adds ports, `instrument` adds instruments, and `diagnosis` adds
+            expensive port diagnostic dumps. Defaults to `instrument`.
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
-            Timeout for the synchronous hardware-state collection call.
+            Timeout for the synchronous resource snapshot collection call.
+
+        Returns
+        -------
+        Quel3ResourceSnapshot
+            Observed resources, including partial results and acquisition issues.
+
+        Raises
+        ------
+        ValueError
+            If the level is unsupported or filters require a higher level.
         """
-        return self._hardware_state_reader.collect_state(
+        return self._resource_reader.collect_snapshot(
             unit_labels=tuple(unit_labels),
             port_ids=tuple(port_ids),
             instrument_aliases=tuple(instrument_aliases),
-            include_diagnostics=include_diagnostics,
+            level=level,
             parallel=parallel,
             timeout_seconds=timeout_seconds,
         )
 
-    def print_hardware_state(
+    def print_resource_snapshot(
         self,
         *,
-        view: Quel3HardwareStateView = "summary",
+        view: Quel3ResourceView = "summary",
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
-        include_diagnostics: bool | None = None,
         parallel: bool = True,
         timeout_seconds: float | None = None,
     ) -> None:
         """
-        Print one QuEL-3 hardware-state view with Rich.
+        Print one QuEL-3 resource snapshot view with Rich.
 
         Parameters
         ----------
-        view : Quel3HardwareStateView, optional
-            Rendered view name.
+        view : Quel3ResourceView, optional
+            Rendered view name. `units`, `ports`, and `instruments` select the
+            corresponding cumulative acquisition level. `summary` uses
+            `instrument`; `diagnostics` and `all` use `diagnosis`.
         unit_labels : Sequence[str], optional
             Unit labels to inspect. Empty means all discovered units.
         port_ids : Sequence[str], optional
             Full port IDs or local port IDs used to filter ports and
-            instruments.
+            instruments. Requires `port` level or higher.
         instrument_aliases : Sequence[str], optional
             Unit-qualified aliases or local aliases used to filter instruments
-            and their related ports.
-        include_diagnostics : bool | None, optional
-            Whether to collect diagnostic dumps. `None` includes diagnostics
-            for the `diagnostics` and `all` views.
+            and their related ports. Requires `instrument` level or higher.
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
-            Timeout for the synchronous hardware-state collection call.
+            Timeout for the synchronous resource snapshot collection call.
+
+        Raises
+        ------
+        ValueError
+            If the view is unsupported or filters require a higher level.
+            Validation runs before resource reads.
         """
-        if include_diagnostics is None:
-            include_diagnostics = view in ("diagnostics", "all")
-        state = self._hardware_state_reader.collect_state(
-            unit_labels=tuple(unit_labels),
-            port_ids=tuple(port_ids),
-            instrument_aliases=tuple(instrument_aliases),
-            include_diagnostics=include_diagnostics,
+        level_by_view: dict[Quel3ResourceView, Quel3ResourceLevel] = {
+            "summary": "instrument",
+            "units": "unit",
+            "ports": "port",
+            "instruments": "instrument",
+            "diagnostics": "diagnosis",
+            "all": "diagnosis",
+        }
+        if view not in level_by_view:
+            raise ValueError(f"Unsupported QuEL-3 resource snapshot view: {view!r}")
+        snapshot = self.get_resource_snapshot(
+            unit_labels=unit_labels,
+            port_ids=port_ids,
+            instrument_aliases=instrument_aliases,
+            level=level_by_view[view],
             parallel=parallel,
             timeout_seconds=timeout_seconds,
-            view=view,
         )
-        state.print(view=view)
+        print_resource_snapshot(snapshot, view=view)
 
     @property
     def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
         return self._sampling_period_ns
+
+    def run_monitor_schedule(
+        self,
+        *,
+        pulse_schedule: PulseSchedule,
+        capture_start_ns: float = 0.0,
+        capture_length_ns: float | None = None,
+        n_iterations: int = 1,
+        shot_interval_ns: float = 0.0,
+        parallel: bool = True,
+    ) -> dict[str, npt.NDArray[np.complex128]]:
+        """
+        Run each schedule target on the monitor port and restore the unit state.
+
+        Parameters
+        ----------
+        pulse_schedule : PulseSchedule
+            Valid schedule whose target names uniquely identify live output
+            instrument aliases on a single unit.
+        capture_start_ns : float, default=0.0
+            Capture start time relative to the output trigger, in ns.
+        capture_length_ns : float | None, optional
+            Capture duration in ns. Defaults to the schedule duration.
+        n_iterations : int, default=1
+            Number of unaveraged captures.
+        shot_interval_ns : float, default=0.0
+            Idle interval between iterations, in ns.
+        parallel : bool, default=True
+            Whether to parallelize instrument execution phases.
+
+        Returns
+        -------
+        dict[str, NDArray[np.complex128]]
+            Raw IQ arrays keyed by schedule target, each with shape
+            `(n_iterations, samples)`.
+
+        Raises
+        ------
+        ValueError
+            If a target has no live instrument, its alias is ambiguous, targets
+            span multiple units, or schedule or capture settings are invalid.
+
+        Notes
+        -----
+        The unit is inferred from live instruments matching the schedule's
+        targets. All targets are validated before clearing any instruments.
+        Schedule frequencies are in GHz. A target without a frequency uses the
+        center of its live instrument's frequency range. The same frequency is
+        applied to the output and monitor instruments. The method reads the
+        live instruments, clears the selected unit, enters loopback mode, and
+        executes targets sequentially. It clears temporary instruments and
+        restores the original monitor mode and instrument configuration even
+        if deployment or execution fails. Blanks advance event offsets without
+        allocating zero-filled waveform samples.
+        """
+        return self._monitor_tool.run_schedule(
+            pulse_schedule=pulse_schedule,
+            capture_start_ns=capture_start_ns,
+            capture_length_ns=capture_length_ns,
+            n_iterations=n_iterations,
+            shot_interval_ns=shot_interval_ns,
+            parallel=parallel,
+        )
 
     def execute_sync(
         self,
@@ -372,6 +666,7 @@ class Quel3BackendController(BackendController):
         del execution_mode, clock_health_checks
         return self._execution_manager.execute_sync(
             request=request,
+            instrument_cache=self._instrument_cache,
             parallel=parallel,
         )
 
@@ -387,6 +682,7 @@ class Quel3BackendController(BackendController):
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_async(
             request=request,
+            instrument_cache=self._instrument_cache,
             parallel=parallel,
         )
 
@@ -402,5 +698,6 @@ class Quel3BackendController(BackendController):
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_batch_async(
             requests=tuple(requests),
+            instrument_cache=self._instrument_cache,
             parallel=parallel,
         )

@@ -243,7 +243,7 @@ data:
 ```
 
 このfileには較正値だけを置きます。`optimal_voltage` にdefaultはなく、
-`measurement.apply_dc_voltages()` は較正のない mux を skip するため、この
+`measurement.apply_optimal_voltages()` は較正のない mux を skip するため、この
 fileが無い system では bias 電圧は自動印加されません。ただし、直接の電圧
 contextと reset・idle・shutdown 操作は `external_devices.yaml` の設定だけで
 利用でき、reset は対応機器の出力を ON にします。`idle_voltage` は任意で、

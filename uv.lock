@@ -3204,6 +3204,7 @@ quel1 = [
 ]
 quel3 = [
     { name = "quelware-client" },
+    { name = "quelware-core" },
 ]
 
 [package.dev-dependencies]
@@ -3245,6 +3246,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
     { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.6.1" },
+    { name = "quelware-core", marker = "extra == 'quel3'", specifier = ">=0.7.0" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxdriver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
     { name = "qxdriver-quel1", marker = "extra == 'quel1'", editable = "packages/qxdriver-quel1" },
@@ -3326,7 +3328,7 @@ wheels = [
 
 [[package]]
 name = "quelware-core"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "betterproto2" },
@@ -3336,9 +3338,9 @@ dependencies = [
     { name = "numpy" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/c8/a90328179d1fa5218ccfa259c2b3373829eff96ca02115dc03d63b6797ab/quelware_core-0.6.0.tar.gz", hash = "sha256:972edc70cf11583fd9d8b5fe292481fabb7281e4ccf129c41e70dc6ca1a88d3b", size = 56684, upload-time = "2026-08-10T01:50:52.604Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/5b/98d9473ad89e2255263b784cea17a4c8a597be5ff058b9734b7c9420b688/quelware_core-0.7.0.tar.gz", hash = "sha256:a1260aa149396bf42551d72ce243382f053c3824a7bac8b1b1176dc70b01d1a5", size = 57892, upload-time = "2026-09-14T06:56:56.454Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/65/63/0aa77e22ea0a1308e0b0136dcf4a33beb3ec55c7452a72166d15396e2cc4/quelware_core-0.6.0-py3-none-any.whl", hash = "sha256:e4fed077f67632435ae61c6d09ebab0bfe5c5a1febf418aebd3726c54ac4f9a5", size = 44274, upload-time = "2026-08-10T01:50:49.991Z" },
+    { url = "https://files.pythonhosted.org/packages/07/97/623b1ff7b4362c16d5872392db73d3e244bc1b8f586fbcb5cb28c614f0ec/quelware_core-0.7.0-py3-none-any.whl", hash = "sha256:e1734f8b528f1b7072f40bc2bbcfc4b615bb09d62d2539f9b03c69c7bc3dec39", size = 44884, upload-time = "2026-09-14T06:56:55.083Z" },
 ]
 
 [[package]]
@@ -4036,11 +4038,11 @@ wheels = [
 
 [[package]]
 name = "soupsieve"
-version = "2.8.4"
+version = "2.9"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/47/2c/0a5f6f8ee0d5589e48c7640213ed5175d52cf540a06725b628cc1a45d6ce/soupsieve-2.8.4.tar.gz", hash = "sha256:e121fd02e975c695e4e9e8774a5ee35d74714b59307868dcc5319ad2d9e3328e", size = 121110, upload-time = "2026-05-24T13:55:57.154Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/80/f1/93422647dd7e461f23d254e6b2bfa687a85b53aeb4903fcdbb74474d4584/soupsieve-2.9.tar.gz", hash = "sha256:acee8417325c5653e1377dc31eccad59eb82cbc65942afe6174c53b3aaad63fc", size = 122122, upload-time = "2026-07-19T01:35:18.425Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/f5/0c41cb68dcae6b7de4fac4188a3a9589e21fb31df21ea3a2e888db95e6c9/soupsieve-2.8.4-py3-none-any.whl", hash = "sha256:e7e6b0769c8f51ed59acab6e994b00621096cfb1c640a7509295987388fbaf65", size = 37304, upload-time = "2026-05-24T13:55:55.406Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/d6/3185ab5ad1280319b31986898f3206dd7227cd75e293d4dba2a5e6bf27a0/soupsieve-2.9-py3-none-any.whl", hash = "sha256:a2b2c76d67df2382d245409fd71e321a571717e58463efa32ace87dcadac2c12", size = 37387, upload-time = "2026-07-19T01:35:17.106Z" },
 ]
 
 [[package]]

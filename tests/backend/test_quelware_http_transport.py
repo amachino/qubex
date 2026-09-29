@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from http.client import HTTPMessage, IncompleteRead
+from io import BytesIO
 from threading import Event
 from types import TracebackType
 from typing import Any, cast
+from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request
 
 import pytest
@@ -17,6 +19,78 @@ from grpclib.exceptions import GRPCError, StreamTerminatedError
 from qubex.backend.quel3.infra import quelware_http_transport as transport_module
 from qubex.backend.quel3.infra.quelware_http_transport import ProtobufHttpChannel
 from qubex.backend.quel3.infra.quelware_transport_config import HttpScheme
+from qubex.backend.quel3.managers import session_workarounds
+
+
+@pytest.mark.parametrize("code", [413, 500, 502, 503, 504, 599, 400, 429])
+@pytest.mark.parametrize("kind", ["http", "grpc_headers", "grpc_message"])
+def test_failure_hints_identify_http_status(code, kind):
+    """HTTP status hints should recognize direct HTTP errors and gRPC transport messages."""
+    if kind == "http":
+        error = HTTPError(
+            "https://example.com", code, "request failed", HTTPMessage(), None
+        )
+    else:
+        message = (
+            f"Received :status = '{code}'"
+            if kind == "grpc_headers"
+            else f"HTTP {code}: request failed"
+        )
+        error = GRPCError(Status.UNKNOWN, message)
+
+    summary = session_workarounds.quelware_exception_summary(error)
+
+    if code == 413:
+        assert "65536" in summary
+        assert "payload" in summary
+    elif 500 <= code < 600:
+        assert "server bug" in summary
+    else:
+        assert "possible cause" not in summary
+
+
+@pytest.mark.parametrize("message", ["413 IQ samples", "HTTP 4130", "request failed"])
+def test_failure_hints_do_not_infer_http_status_from_unrelated_numbers(message):
+    """An unrelated number or a generic resource-exhausted error should not imply HTTP 413."""
+    error = GRPCError(Status.RESOURCE_EXHAUSTED, message)
+    assert "possible cause" not in session_workarounds.quelware_exception_summary(error)
+
+
+@pytest.mark.parametrize(("code", "expected"), [(413, "65536"), (503, "server bug")])
+def test_failure_hints_follow_original_http_error_after_rpc_translation(
+    monkeypatch, code, expected
+):
+    """A translated RPC error should retain the hint from its original HTTP status."""
+    body = transport_module.RpcStatus(
+        code=Status.UNKNOWN.value, message="upstream failed"
+    ).SerializeToString()
+    error = HTTPError(
+        "https://example.com", code, "request failed", HTTPMessage(), BytesIO(body)
+    )
+
+    def reject(request, *, timeout):
+        raise error
+
+    _patch_channel_opener(monkeypatch, reject)
+    channel = ProtobufHttpChannel("example.com", 443, scheme="https")
+    with pytest.raises(GRPCError) as failure:
+        _request(channel, {})
+    assert failure.value.message == "upstream failed"
+    wrapper = RuntimeError("execution failed")
+    wrapper.__cause__ = failure.value
+    assert expected in session_workarounds.quelware_exception_summary(wrapper)
+
+
+def test_failure_hints_allow_custom_status_messages(monkeypatch):
+    """An exact custom status hint should override the shared 5xx hint."""
+    monkeypatch.setitem(
+        session_workarounds.QUELWARE_HTTP_STATUS_HINTS, "503", "custom diagnosis"
+    )
+    error = GRPCError(Status.UNAVAILABLE, "Received :status = '503'")
+    assert (
+        "possible cause: custom diagnosis"
+        in session_workarounds.quelware_exception_summary(error)
+    )
 
 
 class _RequestMessage:

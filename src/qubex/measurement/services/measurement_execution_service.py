@@ -1065,8 +1065,9 @@ class MeasurementExecutionService:
                 shift_duration = merged_pulse_schedule.duration + shot_interval
                 merged_pulse_schedule.barrier()
                 merged_pulse_schedule.pad(shift_duration)
-                frame_shifts = merged_pulse_schedule.get_final_frame_shifts()
-                for label, frame_shift in frame_shifts.items():
+                for label in merged_pulse_schedule.labels:
+                    sequence = merged_pulse_schedule.get_sequence(label, copy=False)
+                    frame_shift = sequence.final_frame_shift
                     if frame_shift != 0.0:
                         merged_pulse_schedule.add(label, VirtualZ(frame_shift))
             merged_pulse_schedule.call(schedule.pulse_schedule, copy=True)

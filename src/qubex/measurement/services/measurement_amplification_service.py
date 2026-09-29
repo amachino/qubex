@@ -38,17 +38,19 @@ class MeasurementAmplificationService:
         return self.experiment_system.control_params
 
     @contextmanager
-    def apply_dc_voltages(
+    def apply_optimal_voltages(
         self,
         targets: str | Collection[str],
     ) -> Iterator[None]:
         """
-        Apply amplification-point DC voltages to the specified targets.
+        Apply calibrated optimal voltages to the specified targets.
 
         Parameters
         ----------
         targets : str | Collection[str]
-            Target label or target labels.
+            Qubit label or single-qubit target label, or a collection of them.
+            Each label must resolve to one qubit; mux indices and mux labels are
+            not accepted.
 
         Notes
         -----

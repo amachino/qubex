@@ -33,10 +33,6 @@ from qubex.backend.quel3.interfaces.driver import (
     IqWaveformResultProtocol,
     ResultContainerProtocol,
 )
-from qubex.backend.quel3.interfaces.resolver import (
-    InstrumentResolverFactory,
-    InstrumentResolverProtocol,
-)
 from qubex.backend.quel3.interfaces.sequencer import (
     SequencerFactoryProtocol,
     SequencerProtocol,
@@ -56,8 +52,6 @@ __all__ = [
     "InstrumentInfoProtocol",
     "InstrumentModeNamespaceProtocol",
     "InstrumentModeProtocol",
-    "InstrumentResolverFactory",
-    "InstrumentResolverProtocol",
     "InstrumentRoleNamespaceProtocol",
     "InstrumentRoleProtocol",
     "IqWaveformResultProtocol",

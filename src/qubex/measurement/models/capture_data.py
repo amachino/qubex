@@ -303,6 +303,27 @@ class CaptureData(DataModel):
         return value
 
     @property
+    def kerneled(self) -> NDArray:
+        """
+        Return integrated IQ with the shot axis preserved when available.
+
+        Prefer device-returned IQ to a software sum over waveform samples.
+        Averaged captures yield a scalar; unaveraged captures yield `(n_shots,)`.
+        This derived value is not serialized and does not modify the payload.
+        """
+        if self.config.shot_averaging:
+            if self.averaged_iq is not None:
+                return np.asarray(self.averaged_iq)
+            if self.averaged_waveform is not None:
+                return np.asarray(np.sum(self.averaged_waveform, axis=-1))
+        else:
+            if self.iq_series is not None:
+                return np.asarray(self.iq_series)
+            if self.waveform_series is not None:
+                return np.asarray(np.sum(self.waveform_series, axis=-1))
+        raise ValueError(f"No IQ or waveform payload for target {self.target}.")
+
+    @property
     def waveform_series(self) -> WaveformSeries | None:
         """Return non-averaged waveform payload."""
         return self.payload.waveform_series

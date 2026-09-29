@@ -158,8 +158,97 @@ def _make_payload(
     )
 
 
+@pytest.mark.parametrize("peak", [np.nextafter(1.0, np.inf), 1.0 + 1e-8, 1.0 + 1e-7])
+def test_builder_corrects_roundoff_in_waveform_amplitude(peak: float) -> None:
+    """Tiny amplitude overshoots should preserve shape and satisfy strict limits."""
+    values = peak * np.array([1, -1, 1j, -1j, 0.3 + 0.4j], dtype=np.complex128)
+    original = values.copy()
+    payload = _make_payload(
+        waveform_library={
+            "roundoff": Quel3Waveform(iq_array=values, sampling_period_ns=2)
+        },
+        fixed_timelines={},
+    )
+
+    sequencer = Quel3SequencerBuilder().build(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=2,
+        alias_bindings={},
+    )
+
+    actual = sequencer.registered_waveforms["roundoff"].values
+    assert np.all(np.abs(actual) <= 1.0)
+    np.testing.assert_allclose(actual, np.conj(original), rtol=1e-7, atol=0)
+    np.testing.assert_allclose(
+        actual / actual[0], np.conj(original / original[0]), rtol=1e-15, atol=0
+    )
+    np.testing.assert_array_equal(values, original)
+
+
+@pytest.mark.parametrize("values", [[], [0j], [1, -1, 1j, -1j], [0.3 + 0.4j]])
+def test_builder_preserves_waveforms_within_amplitude_limit(
+    values: list[complex],
+) -> None:
+    """Valid and empty waveforms should be registered without amplitude changes."""
+    iq = np.array(values, dtype=np.complex128)
+    payload = _make_payload(
+        waveform_library={"valid": Quel3Waveform(iq_array=iq, sampling_period_ns=2)},
+        fixed_timelines={},
+    )
+    sequencer = Quel3SequencerBuilder().build(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=2,
+        alias_bindings={},
+    )
+    np.testing.assert_array_equal(
+        sequencer.registered_waveforms["valid"].values, np.conj(iq)
+    )
+
+
+@pytest.mark.parametrize(
+    "value", [np.nextafter(1.0 + 1e-7, np.inf), 1.01, -1.01, 0.8 + 0.8j]
+)
+def test_builder_rejects_amplitude_excess_with_waveform_context(value: complex) -> None:
+    """Excessive complex magnitude should report the waveform name and peak."""
+    payload = _make_payload(
+        waveform_library={
+            "excess": Quel3Waveform(iq_array=np.array([value]), sampling_period_ns=2)
+        },
+        fixed_timelines={},
+    )
+    with pytest.raises(ValueError, match=r"excess.*peak magnitude") as exc_info:
+        Quel3SequencerBuilder().build(
+            payload=payload,
+            sequencer_factory=_RecordingSequencer,
+            default_sampling_period_ns=2,
+            alias_bindings={},
+        )
+    assert f"{float(np.abs(value)):.17g}" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf, complex(0, np.nan)])
+def test_builder_rejects_nonfinite_waveforms(value: complex) -> None:
+    """Nonfinite samples should report the waveform name before registration."""
+    payload = _make_payload(
+        waveform_library={
+            "invalid": Quel3Waveform(iq_array=np.array([value]), sampling_period_ns=2)
+        },
+        fixed_timelines={},
+    )
+    with pytest.raises(ValueError, match=r"invalid.*finite"):
+        Quel3SequencerBuilder().build(
+            payload=payload,
+            sequencer_factory=_RecordingSequencer,
+            default_sampling_period_ns=2,
+            alias_bindings={},
+        )
+
+
 def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
-    """Given complex IQ and phase, builder should conjugate the complete waveform."""
+    """Builder should conjugate the complete waveform and attenuate it by 1 dB."""
+    expected_gain_scale = 10 ** (-1 / 20)
     waveform_name = "wf_shared_0000"
     waveform_values = np.array([1.0 + 0.0j, 0.3 + 0.2j], dtype=np.complex128)
     timeline = Quel3FixedTimeline(
@@ -203,7 +292,7 @@ def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
             instrument_alias="alias-RQ00",
             waveform_name=waveform_name,
             start_offset_ns=12.0,
-            gain=0.5,
+            gain=0.5 * expected_gain_scale,
             phase_offset_deg=-90.0,
         )
     ]
@@ -218,7 +307,7 @@ def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
     )
     np.testing.assert_allclose(
         registered_waveform,
-        np.conj(logical_waveform),
+        np.conj(logical_waveform) * expected_gain_scale,
         rtol=0.0,
         atol=1e-12,
     )

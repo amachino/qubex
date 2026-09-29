@@ -8,6 +8,7 @@ from typing import TypeVar
 
 import numpy as np
 
+from qubex.backend.quel3 import quel3_backend_constants
 from qubex.backend.quel3.interfaces import (
     SequencerFactoryProtocol,
     SequencerProtocol,
@@ -21,6 +22,8 @@ _TRIGGER_GRID_TICKS = 32
 _TRIGGER_GRID_NS = _TRIGGER_GRID_TICKS * (1e9 / _QUEL3_CLOCK_FREQUENCY_HZ)
 _MIN_SHOT_INTERVAL_NS = 1_024.0
 _TIME_GRID_SAMPLE_ATOL = 1e-3
+# Well below one LSB (~3e-5) for normalized signed 16-bit DSP amplitudes.
+_WAVEFORM_AMPLITUDE_ATOL = 1e-7
 
 
 class Quel3SequencerBuilder:
@@ -74,6 +77,18 @@ class Quel3SequencerBuilder:
         -------
         T
             Built sequencer instance.
+
+        Raises
+        ------
+        ValueError
+            If waveform samples are nonfinite or their complex magnitude exceeds
+            `1 + 1e-7`.
+
+        Notes
+        -----
+        Waveforms exceeding unit magnitude by at most `1e-7` are uniformly
+        scaled just below one to accommodate floating-point roundoff. Input
+        waveforms and event gains are not modified.
         """
         iter_blank_ns = (
             self._resolve_effective_shot_interval_ns(payload.shot_interval_ns)
@@ -101,9 +116,24 @@ class Quel3SequencerBuilder:
 
         for waveform_name, waveform_def in payload.waveform_library.items():
             # Convert the registered shape to quelware IQ coordinates.
+            iq_array = np.conj(waveform_def.iq_array)
+            if not np.all(np.isfinite(iq_array)):
+                raise ValueError(
+                    f"Waveform {waveform_name!r} IQ values must be finite."
+                )
+            peak = float(np.max(np.abs(iq_array), initial=0.0))
+            if peak > 1.0 + _WAVEFORM_AMPLITUDE_ATOL:
+                raise ValueError(
+                    f"Waveform {waveform_name!r} peak magnitude {peak:.17g} exceeds "
+                    f"1 + {_WAVEFORM_AMPLITUDE_ATOL:g}."
+                )
+            if peak > 1.0:
+                # Leave room for rounding in complex scaling and abs evaluation.
+                target_peak = 1.0 - 4 * np.finfo(np.float64).eps
+                iq_array *= target_peak / peak
             sequencer.register_waveform(
                 waveform_name,
-                np.conj(waveform_def.iq_array),
+                iq_array,
                 sampling_period_ns=waveform_def.sampling_period_ns,
             )
 
@@ -121,7 +151,7 @@ class Quel3SequencerBuilder:
                         event.start_offset_ns,
                         sampling_period_fs,
                     ),
-                    gain=event.gain,
+                    gain=event.gain * quel3_backend_constants.EVENT_GAIN_SCALE,
                     # Complete the conjugation for the per-event phase.
                     phase_offset_deg=-event.phase_offset_deg,
                 )

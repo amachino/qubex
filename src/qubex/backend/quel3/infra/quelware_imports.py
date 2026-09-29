@@ -4,12 +4,29 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from threading import Lock
 from typing import Final, Literal, cast
 
-from qubex.backend.quel3.interfaces import QuelwareClientFactory
+from qubex.backend.quel3.interfaces import (
+    CaptureModeNamespaceProtocol,
+    CaptureModeProtocol,
+    DirectiveProtocol,
+    FixedTimelineProfileFactory,
+    InstrumentDefinitionFactory,
+    InstrumentDriverFactory,
+    InstrumentModeNamespaceProtocol,
+    InstrumentRoleNamespaceProtocol,
+    InstrumentRoleProtocol,
+    QuelwareClientFactory,
+    SequencerFactoryProtocol,
+    SequencerProtocol,
+    SetCaptureModeFactory,
+    SetFrequencyFactory,
+)
+from qubex.backend.quel3.models import InstrumentRoleName, Quel3CaptureMode
 
 from .quelware_transport_config import (
     Quel3HttpTransportConfig,
@@ -119,3 +136,86 @@ def _load_channel_factory(
 
 def _read_secret(path: str) -> str:
     return Path(path).read_text(encoding="utf-8").rstrip("\r\n")
+
+
+@dataclass(frozen=True)
+class QuelwareInstrumentEntities:
+    """Lazy-loaded quelware instrument entities needed for deployment."""
+
+    fixed_timeline_profile_factory: FixedTimelineProfileFactory
+    instrument_definition_factory: InstrumentDefinitionFactory
+    instrument_mode_namespace: InstrumentModeNamespaceProtocol
+    instrument_role_namespace: InstrumentRoleNamespaceProtocol
+
+    def role_value(self, role: InstrumentRoleName) -> InstrumentRoleProtocol:
+        """Return quelware instrument-role value for one deploy role name."""
+        if role == "TRANSMITTER":
+            return self.instrument_role_namespace.TRANSMITTER
+        if role == "TRANSCEIVER":
+            return self.instrument_role_namespace.TRANSCEIVER
+        if role == "TRANSCEIVER_LOOPBACK":
+            return self.instrument_role_namespace.TRANSCEIVER_LOOPBACK
+        if role == "RECEIVER":
+            return self.instrument_role_namespace.RECEIVER
+        raise ValueError(f"Unsupported QuEL-3 instrument role: {role!r}")
+
+
+@dataclass(frozen=True)
+class QuelwareExecutionApi:
+    """Lazy-loaded quelware API symbols needed for fixed-timeline execution."""
+
+    client_factory: QuelwareClientFactory
+    sequencer_factory: SequencerFactoryProtocol[SequencerProtocol]
+    fixed_timeline_driver_factory: InstrumentDriverFactory
+    set_frequency_directive_factory: SetFrequencyFactory
+    set_capture_mode_directive_factory: SetCaptureModeFactory
+    capture_mode_namespace: CaptureModeNamespaceProtocol
+
+    def build_capture_mode_directive(
+        self,
+        capture_mode: Quel3CaptureMode,
+    ) -> DirectiveProtocol:
+        """Build one capture-mode directive from payload capture mode."""
+        if capture_mode is Quel3CaptureMode.UNSPECIFIED:
+            raise ValueError(f"Unsupported capture mode: {capture_mode}.")
+        try:
+            mode = cast(
+                CaptureModeProtocol,
+                getattr(self.capture_mode_namespace, capture_mode.name),
+            )
+        except AttributeError as exc:
+            raise RuntimeError(
+                "quelware runtime does not expose required "
+                f"`CaptureMode.{capture_mode.name}`."
+            ) from exc
+        return self.set_capture_mode_directive_factory(mode=mode)
+
+
+def load_quelware_execution_api(
+    *, client_factory: QuelwareClientFactory
+) -> QuelwareExecutionApi:
+    """Load quelware execution symbols and bind the configured client factory."""
+    sequencer_module = importlib.import_module(
+        "quelware_client.client.helpers.sequencer"
+    )
+    directive_module = importlib.import_module("quelware_core.entities.directives")
+    driver_module = importlib.import_module("quelware_client.core.instrument_driver")
+    return QuelwareExecutionApi(
+        client_factory=client_factory,
+        sequencer_factory=sequencer_module.Sequencer,
+        fixed_timeline_driver_factory=driver_module.create_instrument_driver_fixed_timeline,
+        capture_mode_namespace=directive_module.CaptureMode,
+        set_frequency_directive_factory=directive_module.SetFrequency,
+        set_capture_mode_directive_factory=directive_module.SetCaptureMode,
+    )
+
+
+def load_quelware_instrument_entities() -> QuelwareInstrumentEntities:
+    """Load instrument entity factories from the optional quelware core package."""
+    instrument_module = importlib.import_module("quelware_core.entities.instrument")
+    return QuelwareInstrumentEntities(
+        fixed_timeline_profile_factory=instrument_module.FixedTimelineProfile,
+        instrument_definition_factory=instrument_module.InstrumentDefinition,
+        instrument_mode_namespace=instrument_module.InstrumentMode,
+        instrument_role_namespace=instrument_module.InstrumentRole,
+    )
