@@ -17,7 +17,6 @@ from .resource_snapshot import (
     Quel3ResourceIssue,
     Quel3ResourceSeverity,
     Quel3ResourceSnapshot,
-    Quel3ResourceView,
     Quel3UnitControlState,
     Quel3UnitState,
 )
@@ -38,7 +37,6 @@ __all__ = [
     "Quel3ResourceIssue",
     "Quel3ResourceSeverity",
     "Quel3ResourceSnapshot",
-    "Quel3ResourceView",
     "Quel3UnitControlState",
     "Quel3UnitState",
     "Quel3Waveform",

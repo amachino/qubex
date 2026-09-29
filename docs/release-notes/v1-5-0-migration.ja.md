@@ -282,6 +282,22 @@ from qubex.system import ConfigLoader, ControlSystem, ExperimentSystem, SystemMa
 reader と snapshot は `qubex.backend.quel3` からも import できます。
 snapshot は実行キャッシュから独立しており、`to_dict()` の field 名は変更しません。
 
+表示処理は snapshot model から分離しました。`snapshot.print()` は formatter 関数へ
+置き換えてください。`Quel3ResourceView`（旧 `Quel3HardwareStateView`）も
+`qubex.backend.quel3.formatters` から import します。
+
+```python
+from qubex.backend.quel3.formatters import print_resource_snapshot
+
+snapshot = controller.get_resource_snapshot()
+print_resource_snapshot(snapshot, view="instruments")
+# 取得と表示をまとめる場合:
+controller.print_resource_snapshot(view="instruments")
+```
+
+`format_resource_snapshot(snapshot, view=...)` は独自のレイアウトに組み込める Rich
+renderable を返します。取得済み snapshot の表示では通信しません。
+
 ### よく使う kwargs / property を名前更新する
 
 次は `v1.5.0` でも即 break にはなりませんが、このタイミングで置き換えるべきです。

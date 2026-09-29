@@ -23,6 +23,7 @@ from qubex.backend.quel3.infra import Quel3ClientMode, Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
+from .formatters import Quel3ResourceView, print_resource_snapshot
 from .infra import Quel3ResourceReader
 from .managers import (
     Quel3ConfigurationManager,
@@ -34,7 +35,6 @@ from .models import (
     InstrumentConfiguration,
     InstrumentSpec,
     Quel3ResourceSnapshot,
-    Quel3ResourceView,
 )
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
 from .tools import Quel3MonitorTool
@@ -561,7 +561,7 @@ class Quel3BackendController(BackendController):
             timeout_seconds=timeout_seconds,
             view=view,
         )
-        state.print(view=view)
+        print_resource_snapshot(state, view=view)
 
     @property
     def sampling_period_ns(self) -> float:

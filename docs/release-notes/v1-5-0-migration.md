@@ -289,6 +289,22 @@ The reader and snapshot are also exported from `qubex.backend.quel3`.
 Snapshots remain independent of the execution cache, and their `to_dict()`
 field names are unchanged.
 
+Rendering no longer belongs to the snapshot model. Replace `snapshot.print()`
+with the formatter function, and import `Quel3ResourceView` (formerly
+`Quel3HardwareStateView`) from `qubex.backend.quel3.formatters`.
+
+```python
+from qubex.backend.quel3.formatters import print_resource_snapshot
+
+snapshot = controller.get_resource_snapshot()
+print_resource_snapshot(snapshot, view="instruments")
+# Or collect and print in one call:
+controller.print_resource_snapshot(view="instruments")
+```
+
+`format_resource_snapshot(snapshot, view=...)` returns a Rich renderable for
+custom layouts. Formatting an existing snapshot makes no resource reads.
+
 ### Rename common kwargs and properties
 
 These changes are not hard breaks in `v1.5.0`, but they should be migrated now:

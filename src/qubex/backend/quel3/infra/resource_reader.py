@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, TypeVar, cast
 
+from qubex.backend.quel3.formatters import Quel3ResourceView
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.interfaces import (
@@ -25,7 +26,6 @@ from qubex.backend.quel3.models import (
     Quel3PortState,
     Quel3ResourceIssue,
     Quel3ResourceSnapshot,
-    Quel3ResourceView,
     Quel3UnitControlState,
     Quel3UnitState,
 )

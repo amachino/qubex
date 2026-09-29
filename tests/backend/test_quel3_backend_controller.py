@@ -27,12 +27,9 @@ from qubex.backend.quel3 import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
-    Quel3PortDiagnostic,
     Quel3ResourceReader,
     Quel3ResourceSnapshot,
     Quel3RuntimeConfig,
-    Quel3UnitControlState,
-    Quel3UnitState,
     Quel3Waveform,
     Quel3WaveformEvent,
 )
@@ -228,7 +225,7 @@ def test_get_resource_snapshot_rejects_old_filter_kwargs() -> None:
         )
 
 
-def test_print_resource_snapshot_collects_view_and_delegates_to_state(
+def test_print_resource_snapshot_collects_view_and_delegates_to_formatter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given resource snapshot, controller should print a Rich resource snapshot view."""
@@ -247,96 +244,14 @@ def test_print_resource_snapshot_collects_view_and_delegates_to_state(
     controller = Quel3BackendController(resource_reader=cast(Any, resource_reader))
     printed_views: list[str] = []
     monkeypatch.setattr(
-        Quel3ResourceSnapshot,
-        "print",
-        lambda self, *, view: printed_views.append(view),
+        "qubex.backend.quel3.quel3_backend_controller.print_resource_snapshot",
+        lambda snapshot, *, view: printed_views.append(view),
     )
 
     controller.print_resource_snapshot(view="summary")
 
     assert resource_reader.last_collect_kwargs["view"] == "summary"
     assert printed_views == ["summary"]
-
-
-def test_resource_snapshot_print_omits_absent_endpoint_port() -> None:
-    """An absent endpoint port should not render as a literal None suffix."""
-    state = Quel3ResourceSnapshot(
-        generated_at="2026-07-07T00:00:00+00:00",
-        endpoint="api.example.com",
-        port=None,
-        selected_unit_labels=(),
-        units=(),
-        ports=(),
-        instruments=(),
-    )
-    output = StringIO()
-    console = Console(file=output, force_terminal=False, width=120)
-
-    state.print(console=console)
-
-    assert "api.example.com" in output.getvalue()
-    assert "api.example.com:None" not in output.getvalue()
-
-
-def test_resource_snapshot_prints_diagnostics_as_raw_yaml() -> None:
-    """Diagnostic view should print YAML without Rich panels or syntax framing."""
-    diagnostic_yaml = "port:\n  id: unit-a:tx_p01\n  state: ready\n"
-    state = Quel3ResourceSnapshot(
-        generated_at="2026-07-07T00:00:00+00:00",
-        endpoint="localhost",
-        port=50051,
-        selected_unit_labels=("unit-a",),
-        units=(),
-        ports=(),
-        instruments=(),
-        diagnostics=(
-            Quel3PortDiagnostic(
-                port_id="unit-a:tx_p01",
-                unit_label="unit-a",
-                text=diagnostic_yaml,
-            ),
-        ),
-    )
-    output = StringIO()
-    console = Console(file=output, force_terminal=False, width=120)
-
-    state.print(view="diagnostics", console=console)
-
-    assert output.getvalue() == diagnostic_yaml
-
-
-def test_resource_snapshot_prints_unit_configuration_controls() -> None:
-    """Units view should print each control's current and allowed values."""
-    state = Quel3ResourceSnapshot(
-        generated_at="2026-07-07T00:00:00+00:00",
-        endpoint="localhost",
-        port=50051,
-        selected_unit_labels=("unit-a",),
-        units=(
-            Quel3UnitState(
-                label="unit-a",
-                controls=(
-                    Quel3UnitControlState(
-                        key="quel3.monitor.mode",
-                        allowed_values=("disabled", "loopback"),
-                        current_value="loopback",
-                    ),
-                ),
-            ),
-        ),
-        ports=(),
-        instruments=(),
-    )
-    output = StringIO()
-    console = Console(file=output, force_terminal=False, width=120)
-
-    state.print(view="units", console=console)
-
-    rendered = output.getvalue()
-    assert "unit-a" in rendered
-    assert "quel3.monitor.mode" in rendered
-    assert "loopback" in rendered
-    assert "disabled, loopback" in rendered
 
 
 def test_print_resource_snapshot_rejects_console_kwarg() -> None:
