@@ -7,13 +7,20 @@ from types import MappingProxyType
 from typing import Any, cast
 
 import numpy as np
+
+from tests._backend_dependencies import require_quel1_backend
+
+# Optional dependency checks must precede the driver imports below.
+# ruff: noqa: E402
+driver_package = require_quel1_backend()
+
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
-try:
+if driver_package == "qxdriver_quel1":
     _e7compat = importlib.import_module("qxdriver_quel1.e7awg.compat")
     _compat = importlib.import_module("qxdriver_quel1.compat")
     _single = importlib.import_module(_compat.SingleAction.__module__)
-except ModuleNotFoundError:
+else:
     _e7compat = importlib.import_module("qubecalib.e7compat")
     _single = importlib.import_module("qubecalib.instrument.quel.quel1.driver.single")
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from importlib import import_module
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -18,6 +19,7 @@ from qubex.backend.quel3.models import (
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
 )
+from tests._backend_dependencies import require_distributions
 
 
 @pytest.mark.parametrize("batched", [False, True])
@@ -173,8 +175,9 @@ def test_capture_names_are_scoped_to_instrument_aliases() -> None:
 
 def test_cached_hardware_info_retains_actual_quelware_driver_configuration() -> None:
     """Cached hardware info should construct a real driver with its original config."""
-    entities = pytest.importorskip("quelware_core.entities.instrument")
-    drivers = pytest.importorskip("quelware_client.core.instrument_driver")
+    require_distributions("quelware-core", "quelware-client")
+    entities = import_module("quelware_core.entities.instrument")
+    drivers = import_module("quelware_client.core.instrument_driver")
     config = entities.FixedTimelineConfig(
         sampling_period_fs=400_000,
         bitdepth=16,
