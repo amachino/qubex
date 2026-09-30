@@ -282,7 +282,10 @@ def estimate_qubit_frequency_from_chevron_adaptive(
     is small, additional chevron data are measured on both detuning-side
     bands, then the combined raw IQ data are projected once before
     re-analysis. The final measurement uses the regular chevron grid with
-    amplitude rescaled from the coarse-search Rabi estimate.
+    amplitude rescaled from the coarse-search Rabi estimate. It uses
+    `Experiment.chevron_pattern`, including per-frequency Rabi fits and the
+    detuned Rabi fit. The reported resonance comes from that fit; the final
+    Rabi frequency and amplitude recommendation use the matched transform.
 
     Parameters
     ----------
@@ -370,13 +373,13 @@ def estimate_qubit_frequency_from_chevron_adaptive(
             {
                 "results": {
                     target: {
-                        "omega_q": final estimated qubit frequency (GHz),
+                        "omega_q": detuned Rabi resonance frequency (GHz),
                         "omega_rabi": final estimated Rabi frequency (GHz),
                         "peak_background_rms_ratio":
                             final peak-to-background-RMS ratio,
                         "frequency_used": final drive frequency used (GHz),
                         "amplitude_used": final drive amplitude used,
-                        "chevron_data": final projected chevron data,
+                        "chevron_data": final standard chevron data,
                         "transform": final matched-transform map,
                     }
                 },
@@ -638,16 +641,26 @@ def estimate_qubit_frequency_from_chevron_adaptive(
 
         print("[final measurement]")
 
-        measurement_result, analysis_result = _measure_and_analyze_chevron(
-            exp,
-            target,
+        measurement_result = exp.chevron_pattern(
+            targets=[target],
             detuning_range=final_detuning_range,
             time_range=final_time_range,
-            frequency=freq,
-            amplitude=amp,
-            omega_rabi_range=omega_rabi_range,
+            frequencies={target: freq},
+            amplitudes={target: amp},
             n_shots=n_shots,
             shot_interval=shot_interval,
+            plot=plot,
+            save_image=save_image,
+        )
+        analysis_result = analyze_chevron_matched_transform(
+            measurement_result,
+            target,
+            omega_q_range=np.linspace(
+                freq + 2 * np.min(final_detuning_range),
+                freq + 2 * np.max(final_detuning_range),
+                1024,
+            ),
+            omega_rabi_range=omega_rabi_range,
             refine_peak_quadratic=True,
             quadratic_window=final_quadratic_window,
             background_radius=background_radius,
@@ -656,7 +669,7 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         )
         analysis = analysis_result.data
 
-        omega_q_final = analysis["omega_q"]
+        omega_q_final = measurement_result.data["resonant_frequencies"][target]
         omega_rabi_final = analysis["omega_rabi"]
         peak_background_rms_ratio_final = analysis["peak_background_rms_ratio"]
 
@@ -685,14 +698,14 @@ def estimate_qubit_frequency_from_chevron_adaptive(
             "peak_background_rms_ratio": peak_background_rms_ratio_final,
             "frequency_used": freq,
             "amplitude_used": amp,
-            "chevron_data": measurement_result.data["chevron_data"],
+            "chevron_data": measurement_result.data["chevron_data"][target],
             "transform": analysis["transform"],
         }
 
         resonant_frequencies[target] = omega_q_final
         target_amplitudes[target] = target_amplitude
         peak_background_rms_ratios[target] = peak_background_rms_ratio_final
-        figures[f"{target}_measurement"] = measurement_result.figure
+        figures[f"{target}_measurement"] = measurement_result.get_figure(target)
         figures[f"{target}_transform"] = analysis_result.figure
 
     return Result(
