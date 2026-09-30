@@ -14,7 +14,6 @@ import qubex as qx
 from qubex.analysis import FitStatus, fitting
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
-    DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
     PI_RAMPTIME,
 )
@@ -26,6 +25,8 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.system import MixingUtil
+
+from ._measurement_defaults import resolve_shot_interval
 
 # Public API exported from this module (contrib-style utilities)
 __all__ = [
@@ -104,8 +105,7 @@ def calibrate_cr_pi_pulse(
         plot = True
     if shots is None:
         shots = CALIBRATION_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    interval = resolve_shot_interval(ex, interval)
 
     amplitude_range = np.asarray(amplitude_range, dtype=np.float64)
 
@@ -388,7 +388,6 @@ def _ef_rabi_experiment(
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
     )
     if plot is None:

@@ -1803,7 +1803,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to `DEFAULT_SHOTS`.
         shot_interval : float, optional
-            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+            Interval between shots in ns. Defaults to configured `execution.shot_interval_ns`.
         store_params : bool, optional
             Whether to store the Rabi parameters. Defaults to False.
         rabi_level : Literal["ge", "ef"], optional
@@ -2651,7 +2651,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to `DEFAULT_SHOTS`.
         shot_interval : float, optional
-            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+            Interval between shots in ns. Defaults to configured `execution.shot_interval_ns`.
         reset_awg_and_capunits : bool, optional
             Whether to reset the AWG and capture units before the experiment. Defaults to True.
         method : Literal["measure", "execute"], optional
@@ -2708,7 +2708,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to `DEFAULT_SHOTS`.
         shot_interval : float, optional
-            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+            Interval between shots in ns. Defaults to configured `execution.shot_interval_ns`.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -2756,7 +2756,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to `DEFAULT_SHOTS`.
         shot_interval : float, optional
-            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+            Interval between shots in ns. Defaults to configured `execution.shot_interval_ns`.
         method : Literal["measure", "execute"], optional
             Measurement method. Defaults to "measure".
         plot : bool, optional
@@ -2801,7 +2801,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to `DEFAULT_SHOTS`.
         shot_interval : float, optional
-            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+            Interval between shots in ns. Defaults to configured `execution.shot_interval_ns`.
 
         Returns
         -------
@@ -2854,7 +2854,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to `DEFAULT_SHOTS`.
         shot_interval : float, optional
-            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+            Interval between shots in ns. Defaults to configured `execution.shot_interval_ns`.
 
         Returns
         -------
@@ -3401,7 +3401,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         shot_interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots. Defaults to configured `execution.shot_interval_ns`.
 
         Returns
         -------
@@ -3474,7 +3474,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         shot_interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots. Defaults to configured `execution.shot_interval_ns`.
 
         Returns
         -------
@@ -3545,7 +3545,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         shot_interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots. Defaults to configured `execution.shot_interval_ns`.
 
         Returns
         -------
@@ -3619,7 +3619,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         shot_interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots. Defaults to configured `execution.shot_interval_ns`.
 
         Returns
         -------
@@ -3691,7 +3691,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         shot_interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots. Defaults to configured `execution.shot_interval_ns`.
 
         Returns
         -------
@@ -3762,7 +3762,7 @@ class Experiment:
         n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         shot_interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots. Defaults to configured `execution.shot_interval_ns`.
 
         Returns
         -------

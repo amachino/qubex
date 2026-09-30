@@ -2,7 +2,27 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import math
+from numbers import Real
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def validate_shot_interval_ns(value: object, *, name: str) -> float:
+    """
+    Return a finite, nonnegative shot interval in nanoseconds.
+
+    Boolean values are deliberately excluded even though ``bool`` is an
+    ``int`` subclass. This validator is shared by configuration loading and
+    runtime measurement configuration so both entry points have the same
+    contract.
+    """
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(f"{name} must be a real number.")
+    resolved = float(value)
+    if not math.isfinite(resolved) or resolved < 0:
+        raise ValueError(f"{name} must be finite and nonnegative.")
+    return resolved
 
 
 class MeasurementExecutionDefaults(BaseModel):
@@ -13,13 +33,18 @@ class MeasurementExecutionDefaults(BaseModel):
     n_shots: int | None = None
     shot_interval_ns: float | None = None
 
+    @field_validator("shot_interval_ns", mode="before")
+    @classmethod
+    def _validate_shot_interval_ns(cls, value: object | None) -> float | None:
+        if value is None:
+            return None
+        return validate_shot_interval_ns(value, name="execution.shot_interval_ns")
+
     @model_validator(mode="after")
-    def _validate_positive_values(self) -> MeasurementExecutionDefaults:
-        """Validate that configured execution defaults are positive."""
+    def _validate_n_shots(self) -> MeasurementExecutionDefaults:
+        """Validate the configured shot count."""
         if self.n_shots is not None and self.n_shots <= 0:
             raise ValueError("execution.n_shots must be positive.")
-        if self.shot_interval_ns is not None and self.shot_interval_ns <= 0:
-            raise ValueError("execution.shot_interval_ns must be positive.")
         return self
 
 

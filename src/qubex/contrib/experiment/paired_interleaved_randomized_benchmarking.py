@@ -30,7 +30,6 @@ from qubex.clifford.clifford import Clifford
 from qubex.core.async_bridge import get_shared_async_bridge
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
-    DEFAULT_INTERVAL,
     DEFAULT_MAX_N_CLIFFORDS_1Q,
     DEFAULT_MAX_N_CLIFFORDS_2Q,
     DEFAULT_RB_N_TRIALS,
@@ -39,6 +38,8 @@ from qubex.experiment.experiment_constants import (
 from qubex.experiment.models import Result
 from qubex.measurement import MeasurementResult, MeasurementResultConverter
 from qubex.typing import TargetMap
+
+from ._measurement_defaults import resolve_shot_interval
 
 _Protocol = Literal["reference", "interleaved"]
 _ErrorBar = Literal["sem", "std"] | None
@@ -1182,10 +1183,7 @@ def _resolve_target_acquisition(
             name="mitigate_readout",
         ),
         n_shots=_validate_positive_integer(n_shots, name="n_shots"),
-        shot_interval=_validate_positive_real(
-            shot_interval,
-            name="shot_interval",
-        ),
+        shot_interval=resolve_shot_interval(exp, shot_interval),
         time_integration=_validate_boolean(
             time_integration,
             name="time_integration",
@@ -1826,7 +1824,7 @@ def measure_paired_irb(
     n_shots : int | None, optional
         Shots per sweep point. Defaults to the experiment constant.
     shot_interval : float | None, optional
-        Shot interval in ns. Defaults to the experiment constant.
+        Shot interval in ns. Defaults to configured `execution.shot_interval_ns`.
     time_integration : bool, optional
         Integrate readout data over time. Defaults to `True`.
     sweep_timeout : float, optional
@@ -1881,7 +1879,7 @@ def measure_paired_irb(
         zx90=zx90,
         mitigate_readout=mitigate_readout,
         n_shots=DEFAULT_SHOTS if n_shots is None else n_shots,
-        shot_interval=DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        shot_interval=shot_interval,
         time_integration=time_integration,
         sweep_timeout=sweep_timeout,
     )
@@ -4198,7 +4196,7 @@ def _run_parallel_workflow(
         zx90=zx90,
         mitigate_readout=mitigate_readout,
         n_shots=DEFAULT_SHOTS if n_shots is None else n_shots,
-        shot_interval=DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        shot_interval=shot_interval,
         time_integration=time_integration,
         sweep_timeout=sweep_timeout,
     )
@@ -4349,7 +4347,7 @@ def _run_serial_workflow(
         zx90=zx90,
         mitigate_readout=mitigate_readout,
         n_shots=DEFAULT_SHOTS if n_shots is None else n_shots,
-        shot_interval=DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        shot_interval=shot_interval,
         time_integration=time_integration,
         sweep_timeout=sweep_timeout,
     )
@@ -4600,7 +4598,7 @@ def paired_interleaved_randomized_benchmarking(
     n_shots : int | None, optional
         Shots per sweep point. Defaults to the experiment constant.
     shot_interval : float | None, optional
-        Shot interval in ns. Defaults to the experiment constant.
+        Shot interval in ns. Defaults to configured `execution.shot_interval_ns`.
     time_integration : bool, optional
         Integrate readout data over time. Defaults to `True`.
     sweep_timeout : float, optional
