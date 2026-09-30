@@ -778,9 +778,11 @@ def filtered_ckp_experiment(
 
     plot : bool, optional
         If True, display the fitted CKP traces and estimated parameters.
+        Figures are always returned regardless of this setting.
 
     save_image : bool, optional
-        If True, save the generated fit figure.
+        If True, save the generated fit figure. Figures are always returned
+        regardless of this setting.
 
     enable_rough_search : bool, optional
         If True, perform a coarse pre-scan to automatically adjust
@@ -1250,88 +1252,85 @@ def filtered_ckp_experiment(
     delta_qr = f_q - f_r
     n_crit = abs(delta_qr / (4.0 * chi))
 
-    fig = None
+    fig = viz.make_figure()
 
-    if plot or save_image:
-        fig = viz.make_figure()
+    fig.add_scatter(
+        x=x_g,
+        y=delta_g,
+        mode="markers",
+        name="g-series data",
+        error_y=dict(
+            type="data",
+            array=1.0 / weights_g,
+            visible=True,
+        ),
+    )
+    fig.add_scatter(
+        x=x_dense,
+        y=fit_g,
+        mode="lines",
+        name="g-series fit",
+    )
 
-        fig.add_scatter(
-            x=x_g,
-            y=delta_g,
-            mode="markers",
-            name="g-series data",
-            error_y=dict(
-                type="data",
-                array=1.0 / weights_g,
-                visible=True,
-            ),
-        )
-        fig.add_scatter(
-            x=x_dense,
-            y=fit_g,
-            mode="lines",
-            name="g-series fit",
-        )
+    fig.add_scatter(
+        x=x_e,
+        y=delta_e,
+        mode="markers",
+        name="e-series data",
+        error_y=dict(
+            type="data",
+            array=1.0 / weights_e,
+            visible=True,
+        ),
+    )
+    fig.add_scatter(
+        x=x_dense,
+        y=fit_e,
+        mode="lines",
+        name="e-series fit",
+    )
 
-        fig.add_scatter(
-            x=x_e,
-            y=delta_e,
-            mode="markers",
-            name="e-series data",
-            error_y=dict(
-                type="data",
-                array=1.0 / weights_e,
-                visible=True,
-            ),
-        )
-        fig.add_scatter(
-            x=x_dense,
-            y=fit_e,
-            mode="lines",
-            name="e-series fit",
-        )
+    fig.update_layout(
+        title=dict(
+            text=f"Filtered CKP fit : {target}",
+        ),
+        xaxis_title="Resonator drive frequency (GHz)",
+        yaxis_title="ac Stark shift (GHz)",
+        width=1000,
+        height=500,
+        margin=dict(l=85, r=230, t=60, b=70),
+        legend=dict(
+            x=1.12,
+            y=1.0,
+            xanchor="left",
+            yanchor="top",
+        ),
+        title_x=0.43,
+    )
 
-        fig.update_layout(
-            title=dict(
-                text=f"Filtered CKP fit : {target}",
-            ),
-            xaxis_title="Resonator drive frequency (GHz)",
-            yaxis_title="ac Stark shift (GHz)",
+    if plot:
+        fig.show()
+        print(f"=== Estimated Readout Parameters : {target} ===")
+        print(f"ωr^g    = {omega_r_g:.6f} ± {fit.omega_r_g_error:.6f} GHz")
+        print(f"ωr^e    = {omega_r_e:.6f} ± {fit.omega_r_e_error:.6f} GHz")
+        print(f"ωp      = {omega_p:.6f} ± {fit.omega_p_error:.6f} GHz")
+        print(f"J       = {1000 * J:.3f} ± {1000 * fit.J_error:.3f} MHz")
+        print(f"κ       = {1000 * kappa:.3f} ± {1000 * fit.kappa_error:.3f} MHz")
+        print(f"χ       = {1000 * chi:.3f} ± {1000 * fit.chi_error:.3f} MHz")
+        print(f"|A|²    = {1000 * A2:.3f} ± {1000 * fit.A2_error:.3f} MHz")
+        print(f"χ²_red  = {fit.reduced_chi2:.3g}")
+        print(f"R²      = {fit.r2:.3g}")
+        print(f"n_g,max = {ng_max:.3f} @ {x_ng_max:.6f} GHz")
+        print(f"n_e,max = {ne_max:.3f} @ {x_ne_max:.6f} GHz")
+        print(f"n_c     ≈ {n_crit:.3f}")
+
+    if save_image:
+        viz.save_figure(
+            fig,
+            name=f"filtered_ckp_fit_{target}",
             width=1000,
             height=500,
-            margin=dict(l=85, r=230, t=60, b=70),
-            legend=dict(
-                x=1.12,
-                y=1.0,
-                xanchor="left",
-                yanchor="top",
-            ),
-            title_x=0.43,
         )
-
-        if plot:
-            fig.show()
-            print(f"=== Estimated Readout Parameters : {target} ===")
-            print(f"ωr^g    = {omega_r_g:.6f} ± {fit.omega_r_g_error:.6f} GHz")
-            print(f"ωr^e    = {omega_r_e:.6f} ± {fit.omega_r_e_error:.6f} GHz")
-            print(f"ωp      = {omega_p:.6f} ± {fit.omega_p_error:.6f} GHz")
-            print(f"J       = {1000 * J:.3f} ± {1000 * fit.J_error:.3f} MHz")
-            print(f"κ       = {1000 * kappa:.3f} ± {1000 * fit.kappa_error:.3f} MHz")
-            print(f"χ       = {1000 * chi:.3f} ± {1000 * fit.chi_error:.3f} MHz")
-            print(f"|A|²    = {1000 * A2:.3f} ± {1000 * fit.A2_error:.3f} MHz")
-            print(f"χ²_red  = {fit.reduced_chi2:.3g}")
-            print(f"R²      = {fit.r2:.3g}")
-            print(f"n_g,max = {ng_max:.3f} @ {x_ng_max:.6f} GHz")
-            print(f"n_e,max = {ne_max:.3f} @ {x_ne_max:.6f} GHz")
-            print(f"n_c     ≈ {n_crit:.3f}")
-
-        if save_image:
-            viz.save_figure(
-                fig,
-                name=f"filtered_ckp_fit_{target}",
-                width=1000,
-                height=500,
-            )
 
     readout_opt_result = estimate_optimal_readout_frequency_from_ckp(
         frequency_range=[x_dense_min, x_dense_max],
@@ -1355,8 +1354,7 @@ def filtered_ckp_experiment(
     )
 
     figures: dict[str, go.Figure] = {}
-    if fig is not None:
-        figures["ckp_fit"] = fig
+    figures["ckp_fit"] = fig
     if result_0.figure is not None:
         figures["ckp_heatmap_g"] = result_0.figure
     if result_1.figure is not None:
