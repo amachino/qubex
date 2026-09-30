@@ -109,6 +109,28 @@ def test_entire_schedule_keeps_relaxed_backend_timing() -> None:
     assert result.capture_schedule.captures[0].duration == 100
 
 
+@pytest.mark.parametrize(
+    ("duration", "total"), [(100, 256), (128, 256), (160, 256), (768, 896)]
+)
+def test_pulse_aligned_preserves_released_timing(duration: int, total: int) -> None:
+    """Default QuEL-1 measurement retains the released 40 ns prefix and pulse-aligned capture."""
+    builder = _make_builder(profile=MeasurementConstraintProfile.quel1())
+    with PulseSchedule(["RQ00"]) as schedule:
+        schedule.add("RQ00", Rect(duration=duration, amplitude=0.1))
+    original = schedule.get_sampled_sequences()["RQ00"].copy()
+
+    result = builder.build(schedule=schedule)
+
+    dummy, main = result.capture_schedule.captures
+    assert dummy.start_time == 0
+    assert dummy.duration == 32
+    assert main.start_time == 40
+    assert main.duration == duration
+    assert result.pulse_schedule.duration == total
+    samples = result.pulse_schedule.get_sampled_sequences()["RQ00"]
+    np.testing.assert_array_equal(samples[20 : 20 + len(original)], original)
+
+
 @pytest.mark.parametrize("shot_interval", [0, 2, 8, 32, 128, 200_000])
 def test_entire_schedule_compiles_with_post_blanks_without_shot_margin(
     shot_interval: int,
@@ -160,8 +182,9 @@ def test_entire_schedule_compiles_with_post_blanks_without_shot_margin(
     assert param.sum_section_list[1][1] >= 4
 
 
-def test_entire_schedule_pump_preserves_trailing_blank() -> None:
-    """Generated readout amplification stops before the full-span trailing blank."""
+@pytest.mark.parametrize("entire", [False, True])
+def test_pump_reserves_trailing_blank_only_for_entire_schedule(entire: bool) -> None:
+    """Only full-span generation shortens the pump to reserve a trailing post blank."""
     builder = MeasurementScheduleBuilder(
         control_params=cast(
             ControlParameters,
@@ -188,12 +211,15 @@ def test_entire_schedule_pump_preserves_trailing_blank() -> None:
 
     result = builder.build(
         schedule=schedule,
-        capture_placement="entire_schedule",
+        capture_placement="entire_schedule" if entire else "pulse_aligned",
         readout_amplification=True,
     )
 
-    for samples in result.pulse_schedule.get_sampled_sequences().values():
+    samples = result.pulse_schedule.get_sampled_sequences()["MUX00"]
+    if entire:
         np.testing.assert_array_equal(samples[-16:], np.zeros(16))
+    else:
+        np.testing.assert_allclose(samples[-16:], np.full(16, 0.2), rtol=0, atol=1e-15)
 
 
 def test_quel1_profile_defaults_final_readout_guard_to_one_block() -> None:
