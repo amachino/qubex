@@ -788,16 +788,33 @@ class Quel1MeasurementBackendAdapter:
             if len(captures) != 2:
                 return False
             first_capture, second_capture = captures
-            capture_start = profile.extra_capture_duration_ns
-            capture_duration = max(0.0, schedule_duration - capture_start)
+            capture_start = profile.entire_schedule_capture_start_ns
+            capture_duration = max(
+                0.0,
+                schedule_duration
+                - capture_start
+                - profile.entire_schedule_post_blank_duration_ns,
+            )
+            # Continue accepting schedules built by released versions with a
+            # 40 ns prefix and no reserved trailing blank.
+            legacy_start = profile.extra_capture_duration_ns
+            legacy_duration = max(0.0, schedule_duration - legacy_start)
             return bool(
                 np.isclose(first_capture.start_time, 0.0)
                 and np.isclose(
                     first_capture.duration,
                     profile.workaround_capture_duration_ns,
                 )
-                and np.isclose(second_capture.start_time, capture_start)
-                and np.isclose(second_capture.duration, capture_duration)
+                and (
+                    (
+                        np.isclose(second_capture.start_time, capture_start)
+                        and np.isclose(second_capture.duration, capture_duration)
+                    )
+                    or (
+                        np.isclose(second_capture.start_time, legacy_start)
+                        and np.isclose(second_capture.duration, legacy_duration)
+                    )
+                )
             )
         if len(captures) != 1:
             return False

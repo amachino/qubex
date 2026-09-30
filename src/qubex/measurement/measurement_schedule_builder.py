@@ -215,12 +215,27 @@ class MeasurementScheduleBuilder:
                 "No capture targets specified for entire-schedule capture placement."
             )
 
+        entire_schedule = capture_placement == "entire_schedule"
+        entire_post_blank = (
+            self.constraint_profile.entire_schedule_post_blank_duration_ns
+            if entire_schedule
+            else 0.0
+        )
         if self.constraint_profile.require_workaround_capture:
+            leading_padding = (
+                self.constraint_profile.entire_schedule_capture_start_ns
+                if entire_schedule
+                else self.constraint_profile.extra_capture_duration_ns
+            )
             schedule.pad(
-                total_duration=schedule.duration
-                + self.constraint_profile.extra_capture_duration_ns,
+                total_duration=schedule.duration + leading_padding,
                 pad_side="left",
             )
+
+        # Reserve the mandatory post blank before block rounding so none of the
+        # requested waveform is sacrificed, including at a block boundary.
+        if entire_post_blank:
+            schedule.pad(total_duration=schedule.duration + entire_post_blank)
 
         block_duration = self.constraint_profile.block_duration_ns
         if (
@@ -251,7 +266,7 @@ class MeasurementScheduleBuilder:
                         mux.label,
                         self._pulse_factory.pump_pulse(
                             mux_index=mux.index,
-                            duration=schedule.duration,
+                            duration=schedule.duration - entire_post_blank,
                             amplitude=pump_amplitude,
                             ramp_time=readout_ramp_time,
                             ramp_type=readout_ramp_type,
@@ -295,8 +310,15 @@ class MeasurementScheduleBuilder:
             full_capture_start = 0.0
             full_capture_duration = schedule.duration
             if self.constraint_profile.require_workaround_capture:
-                full_capture_start = self.constraint_profile.extra_capture_duration_ns
-                full_capture_duration = max(0.0, schedule.duration - full_capture_start)
+                full_capture_start = (
+                    self.constraint_profile.entire_schedule_capture_start_ns
+                )
+                full_capture_duration = max(
+                    0.0,
+                    schedule.duration
+                    - full_capture_start
+                    - self.constraint_profile.entire_schedule_post_blank_duration_ns,
+                )
             for target in capture_targets:
                 if self.constraint_profile.require_workaround_capture:
                     captures.append(
