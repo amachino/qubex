@@ -247,8 +247,8 @@ def test_builder_rejects_nonfinite_waveforms(value: complex) -> None:
 
 
 def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
-    """Builder should conjugate the complete waveform and attenuate it by 1 dB."""
-    expected_gain_scale = 10 ** (-1 / 20)
+    """Builder should conjugate the complete waveform and attenuate it by 3 dB."""
+    expected_gain_scale = 10 ** (-3 / 20)
     waveform_name = "wf_shared_0000"
     waveform_values = np.array([1.0 + 0.0j, 0.3 + 0.2j], dtype=np.complex128)
     timeline = Quel3FixedTimeline(
