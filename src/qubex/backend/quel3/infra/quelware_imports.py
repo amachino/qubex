@@ -83,7 +83,7 @@ def load_quelware_client_factory(
 
     pat_provider: Callable[[], str] | None = None
     if pat_path is not None:
-        path = Path(pat_path)
+        path = Path(pat_path).expanduser()
         pat_provider = lambda: path.read_text(encoding="utf-8").rstrip("\r\n")
 
     def _create_client(endpoint: str, port: int | None):
@@ -135,7 +135,7 @@ def _load_channel_factory(
 
 
 def _read_secret(path: str) -> str:
-    return Path(path).read_text(encoding="utf-8").rstrip("\r\n")
+    return Path(path).expanduser().read_text(encoding="utf-8").rstrip("\r\n")
 
 
 @dataclass(frozen=True)
