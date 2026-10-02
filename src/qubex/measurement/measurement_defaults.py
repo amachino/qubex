@@ -8,7 +8,10 @@ from typing import Any, Final
 
 from qxpulse import RampType
 
-from qubex.system.measurement_defaults import MeasurementDefaults
+from qubex.system.measurement_defaults import (
+    MeasurementDefaults,
+    validate_shot_interval_ns,
+)
 
 DEFAULT_N_SHOTS: Final[int] = 1024
 DEFAULT_SHOT_INTERVAL: Final[float] = 150.0 * 1024.0  # ns
@@ -109,6 +112,20 @@ def resolve_measurement_defaults(
     )
 
 
+def resolve_shot_interval_ns(
+    payload: Mapping[str, Any] | MeasurementDefaults | None,
+    shot_interval: object | None,
+) -> float:
+    """
+    Resolve an override, configured default, or common fallback in that order.
+
+    The result is always a finite, nonnegative interval in nanoseconds.
+    """
+    if shot_interval is None:
+        shot_interval = resolve_measurement_defaults(payload).execution.shot_interval_ns
+    return validate_shot_interval_ns(shot_interval, name="shot_interval")
+
+
 __all__ = [
     "DEFAULT_INTERVAL",
     "DEFAULT_N_SHOTS",
@@ -127,4 +144,5 @@ __all__ = [
     "ResolvedMeasurementExecutionDefaults",
     "ResolvedReadoutDefaults",
     "resolve_measurement_defaults",
+    "resolve_shot_interval_ns",
 ]

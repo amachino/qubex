@@ -14,9 +14,10 @@ from qxpulse import (
     Waveform,
 )
 
-from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.experiment.experiment_constants import DEFAULT_SHOTS
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.calibration_note import CrossResonanceParam
+from qubex.measurement.measurement_defaults import resolve_shot_interval_ns
 from qubex.typing import TargetMap
 
 from .benchmarking_service import BenchmarkingService
@@ -394,8 +395,14 @@ class OptimizationService:
             update_cr_param = True
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if opt_params is None:
             opt_params = [

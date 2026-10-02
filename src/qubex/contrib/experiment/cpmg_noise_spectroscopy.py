@@ -32,13 +32,14 @@ from tqdm.auto import tqdm
 import qubex.visualization as viz
 from qubex.analysis import FitStatus, fitting
 from qubex.experiment import Experiment
-from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.experiment.experiment_constants import DEFAULT_SHOTS
 from qubex.experiment.experiment_util import ExperimentUtil
 from qubex.experiment.models.experiment_result import T2Data
 from qubex.experiment.models.result import Result
 from qubex.pulse import Blank, PulseSchedule, Waveform
 
 from ._deprecated_options import resolve_shot_options
+from ._measurement_defaults import resolve_shot_interval
 
 __all__ = [
     "CPMGResultPayload",
@@ -889,8 +890,7 @@ def cpmg_noise_spectroscopy(
         n_repeats = 1
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if save_image is None:

@@ -27,7 +27,6 @@ from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_CR_RAMPTIME,
     DEFAULT_CR_TIME_RANGE,
-    DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
     DRAG_COEFF,
     DRAG_HPI_DURATION,
@@ -41,6 +40,7 @@ from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.experiment_util import ExperimentUtil
 from qubex.experiment.models.experiment_result import AmplCalibData, ExperimentResult
 from qubex.experiment.models.result import Result
+from qubex.measurement.measurement_defaults import resolve_shot_interval_ns
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService
@@ -312,8 +312,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -452,8 +458,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         """Calibrate a ZX90 gate for a qubit pair."""
 
         return self.calibrate_default_pulse(
@@ -493,8 +505,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         return self.calibrate_default_pulse(
             targets=targets,
@@ -534,8 +552,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -686,8 +710,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         return self.calibrate_ef_pulse(
             targets=targets,
@@ -725,8 +755,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         return self.calibrate_ef_pulse(
             targets=targets,
@@ -775,8 +811,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -941,8 +983,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -1130,8 +1178,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -1256,8 +1310,14 @@ class CalibrationService:
             plot = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -1366,8 +1426,14 @@ class CalibrationService:
             ramp_type = "RaisedCosine"
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if plot is None:
@@ -1591,8 +1657,14 @@ class CalibrationService:
         """Run CR Hamiltonian tomography for a qubit pair."""
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if plot is None:
@@ -1980,8 +2052,14 @@ class CalibrationService:
             update_cancel_pulse = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if plot is None:
@@ -2132,8 +2210,14 @@ class CalibrationService:
             max_time_range = 4096.0
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if plot is None:
@@ -2344,8 +2428,14 @@ class CalibrationService:
             store_params = True
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
 
@@ -2686,8 +2776,14 @@ class CalibrationService:
         """Run one-qubit calibration workflow."""
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if coarse is None:
@@ -2775,8 +2871,14 @@ class CalibrationService:
         """Run two-qubit calibration workflow."""
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if targets is None:
@@ -2857,8 +2959,14 @@ class CalibrationService:
         """Run one-qubit EF calibration workflow."""
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if targets is None:
@@ -2956,8 +3064,14 @@ class CalibrationService:
             ramp_type = "RaisedCosine"
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if plot is None:
@@ -3178,8 +3292,14 @@ class CalibrationService:
             ramp_type = "RaisedCosine"
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if plot is None:

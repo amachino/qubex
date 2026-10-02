@@ -17,7 +17,6 @@ from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.core.async_bridge import get_shared_async_bridge
 from qubex.experiment.experiment_constants import (
-    DEFAULT_INTERVAL,
     DEFAULT_MAX_N_CLIFFORDS_1Q,
     DEFAULT_MAX_N_CLIFFORDS_2Q,
     DEFAULT_RB_N_TRIALS,
@@ -30,6 +29,7 @@ from qubex.measurement._analysis import (
     get_mitigated_probabilities,
     get_probabilities,
 )
+from qubex.measurement.measurement_defaults import resolve_shot_interval_ns
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService
@@ -431,8 +431,14 @@ class BenchmarkingService:
         if shots is None:
             shots = DEFAULT_SHOTS
 
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if time_integration is None:
             time_integration = True
@@ -722,14 +728,14 @@ class BenchmarkingService:
         if shots is None:
             shots = DEFAULT_SHOTS
 
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-
-        if shots is None:
-            shots = DEFAULT_SHOTS
-
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
 
         if xaxis_type is None:
             xaxis_type = "linear"
