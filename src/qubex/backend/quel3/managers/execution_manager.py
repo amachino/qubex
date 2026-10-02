@@ -417,23 +417,10 @@ class Quel3ExecutionManager:
             instrument_ids=instrument_resource_ids,
             wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,
         )
-        if parallel:
-            results = await asyncio.gather(
-                *(
-                    session_state.alias_to_driver[alias].wait_for_result()
-                    for alias in aliases
-                )
-            )
-            alias_results = dict(zip(aliases, results, strict=True))
-        else:
-            alias_results: dict[str, ResultContainerProtocol] = {}
-            for alias in aliases:
-                alias_results[alias] = await session_state.alias_to_driver[
-                    alias
-                ].wait_for_result()
+        results = await session_state.session.wait_for_results(instrument_resource_ids)
 
         for alias, timeline in payload.fixed_timelines.items():
-            result = alias_results[alias]
+            result = results[session_state.alias_to_resource_id[alias]]
             for window in timeline.capture_windows:
                 window_key = window.name
                 capture_samples = self._extract_capture_samples(
