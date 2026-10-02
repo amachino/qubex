@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping
 from contextlib import AbstractAsyncContextManager
-from typing import Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol, TypeAlias
+
+if TYPE_CHECKING:
+    from qubex.backend.quel3.interfaces.driver import ResultContainerProtocol
 
 ResourceIdProtocol: TypeAlias = str
 UnitLabelProtocol: TypeAlias = str
@@ -280,6 +283,14 @@ class SessionProtocol(Protocol):
         wait_ms: int | None = None,
     ) -> int:
         """Trigger one fixed-timeline session run."""
+        ...
+
+    async def wait_for_results(
+        self,
+        instrument_ids: Collection[ResourceIdProtocol],
+        timeout_sec: float | None = None,
+    ) -> dict[ResourceIdProtocol, ResultContainerProtocol]:
+        """Wait for all instrument results and raise on instrument failures."""
         ...
 
 

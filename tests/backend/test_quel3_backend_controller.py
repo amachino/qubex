@@ -1211,6 +1211,7 @@ class _FakeSession:
         self.token = session_id
         self.trigger_calls: list[list[str]] = []
         self.lifecycle_calls: list[str] = []
+        self.drivers: dict[str, Any] = {}
 
     async def __aenter__(self) -> _FakeSession:
         return self
@@ -1237,6 +1238,12 @@ class _FakeSession:
         assert new_ttl_ms == 30_000
         self.lifecycle_calls.append("extend")
         return True
+
+    async def wait_for_results(self, instrument_ids: list[str]) -> dict[str, object]:
+        results = await asyncio.gather(
+            *(self.drivers[rid].wait_for_result() for rid in instrument_ids)
+        )
+        return dict(zip(instrument_ids, results, strict=True))
 
 
 class _FakeClient:
@@ -1274,10 +1281,16 @@ def _make_fake_execution_api(
     sequencer_factory: Any = _FakeSequencer,
 ) -> Any:
     """Create one fake quelware API boundary for execution-manager tests."""
+
+    def _create_driver(session: Any, instrument_info: Any) -> Any:
+        driver = fixed_timeline_driver_factory(session, instrument_info)
+        session.drivers[instrument_info.id] = driver
+        return driver
+
     return QuelwareExecutionApi(
         client_factory=client_factory,
         sequencer_factory=sequencer_factory,
-        fixed_timeline_driver_factory=fixed_timeline_driver_factory,
+        fixed_timeline_driver_factory=_create_driver,
         capture_mode_namespace=capture_mode_namespace,
         set_frequency_directive_factory=lambda *, hz: ("frequency", hz),
         set_capture_mode_directive_factory=lambda *, mode: ("capture_mode", mode),
@@ -2153,7 +2166,7 @@ def test_execute_serializes_driver_phases_when_parallel_disabled(
 
     assert initialize_probe.max_active == 1
     assert apply_probe.max_active == 1
-    assert fetch_probe.max_active == 1
+    assert fetch_probe.max_active == 2
     assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
     assert np.array_equal(
         result.data["alias-rq00"][0],
