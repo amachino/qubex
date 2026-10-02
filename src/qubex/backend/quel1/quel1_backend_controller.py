@@ -509,6 +509,33 @@ class Quel1BackendController(BackendController):
             ndelay_or_nwait=ndelay_or_nwait,
         )
 
+    def set_capture_ndelay(
+        self, *, port_name: str, channel_number: int, ndelay: int
+    ) -> int:
+        """
+        Update a capture channel's coarse delay and return its previous value.
+
+        Parameters
+        ----------
+        port_name : str
+            Registered capture port name.
+        channel_number : int
+            Registered capture channel number.
+        ndelay : int
+            Non-negative coarse capture delay in 128 ns steps.
+            This method does not update the separate capture word offset.
+
+        Returns
+        -------
+        int
+            Previous delay in `ndelay` units, suitable for restoration.
+        """
+        return self._configuration_manager.set_capture_ndelay(
+            port_name=port_name,
+            channel_number=channel_number,
+            ndelay=ndelay,
+        )
+
     def add_channel_target_relation(self, channel_name: str, target_name: str) -> None:
         """
         Add a channel-target relation if it does not already exist.
