@@ -608,8 +608,6 @@ class MeasurementService:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -649,10 +647,6 @@ class MeasurementService:
             Whether to insert readout amplification pulses.
         final_measurement
             Whether to append final measurement windows.
-        classification_line_param0
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1
-            Optional QuEL-1 classification line parameter 1.
         reset_awg_and_capunits
             Whether to reset AWGs/capture units before execution.
         plot
@@ -695,8 +689,6 @@ class MeasurementService:
                 readout_ramp_type=readout_ramp_type,
                 readout_amplification=readout_amplification,
                 final_measurement=final_measurement,
-                classification_line_param0=classification_line_param0,
-                classification_line_param1=classification_line_param1,
                 plot=plot,
                 **deprecated_options,
             )
@@ -736,8 +728,6 @@ class MeasurementService:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -777,10 +767,6 @@ class MeasurementService:
             Ramp type for readout pulses.
         readout_amplification
             Whether to insert readout amplification pulses.
-        classification_line_param0
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1
-            Optional QuEL-1 classification line parameter 1.
         reset_awg_and_capunits
             Whether to reset AWGs/capture units before measurement.
         plot
@@ -870,8 +856,6 @@ class MeasurementService:
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
                 readout_amplification=readout_amplification,
-                classification_line_param0=classification_line_param0,
-                classification_line_param1=classification_line_param1,
                 **deprecated_options,
             )
         if plot:

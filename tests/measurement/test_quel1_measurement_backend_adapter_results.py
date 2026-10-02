@@ -10,10 +10,11 @@ from numpy.testing import assert_allclose
 
 from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.adapters.backend_adapter import Quel1MeasurementBackendAdapter
+from qubex.measurement.classifiers import StateClassifierLinear
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
-from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_config import MeasurementConfig, ReturnItem
 from qubex.typing import MeasurementMode
 
 
@@ -213,3 +214,49 @@ def test_build_measurement_result_normalizes_time_integrated_single_mode_to_1d()
         result.data["Q00"][0].data,
         np.array([8.0 + 4.0j, 12.0 + 6.0j], dtype=np.complex128) * norm_factor,
     )
+
+
+def test_build_measurement_result_maps_dsp_decisions_to_state_series() -> None:
+    """DSP decisions should be mapped by the registered linear classifier."""
+    backend_result = Quel1BackendExecutionResult(
+        status={},
+        data={"RQ00": [np.array([0, 1, 2, 3], dtype=np.uint8)]},
+        config={},
+    )
+    adapter = Quel1MeasurementBackendAdapter(
+        backend_controller=cast(Any, object()),
+        experiment_system=cast(
+            Any,
+            _ExperimentSystemStub(sideband_by_target={"RQ00": "U"}),
+        ),
+        constraint_profile=replace(
+            MeasurementConstraintProfile.quel1(),
+            require_workaround_capture=False,
+        ),
+        classifiers={
+            "Q00": StateClassifierLinear(
+                lines=((1.0, 0.0, 0.0), (1.0, 0.0, -1.0)),
+                state_map={(False, False): 0, (True, True): 1},
+            )
+        },
+    )
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        backend_kind="quel1",
+    )
+
+    result = adapter.build_measurement_result(
+        backend_result=backend_result,
+        measurement_config=config,
+        device_config={"kind": "quel1"},
+        sampling_period=2.0,
+    )
+
+    capture = result.data["Q00"][0]
+    assert result.measurement_config.primary_return_item == ReturnItem.STATE_SERIES
+    assert capture.state_series is not None
+    assert capture.data.tolist() == [0, -1, -1, 1]

@@ -115,6 +115,21 @@ def test_measure_data_threshold_classification(dummy_classifier):
     assert labels.tolist() == [-1, 1]
 
 
+def test_measure_data_returns_preclassified_state_labels() -> None:
+    """MeasureData should return preclassified labels without a classifier."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=np.array([0, -1, 1, 1], dtype=np.int64),
+        classifier=None,
+        preclassified=True,
+    )
+
+    assert data.n_states == 2
+    assert data.classified.tolist() == [0, -1, 1, 1]
+    assert data.counts == {"0": 1, "1": 2}
+
+
 def test_measure_result_memory_and_counts(measure_result: MeasureResult):
     """MeasureResult should expose memory and counts."""
     memory = measure_result.get_memory()

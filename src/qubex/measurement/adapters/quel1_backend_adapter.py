@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -15,18 +16,22 @@ from qubex.backend.quel1 import (
     Quel1BackendExecutionResult,
     Quel1ExecutionPayload,
 )
+from qubex.measurement.classifiers import StateClassifier, StateClassifierLinear
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
 from qubex.measurement.models.capture_data import CaptureData
 from qubex.measurement.models.measure_result import MeasureMode
-from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_config import MeasurementConfig, ReturnItem
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 from qubex.system import ExperimentSystem, TargetRegistry
 
 from ._capture_shape import normalize_shot_averaged_capture_array
+
+_DSP_NORM_EXPONENT = 32
+_DSP_DEMODULATION_EXPONENT_OFFSET = 14
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -44,6 +49,21 @@ def _as_read_only_array(data: object) -> np.ndarray:
     return array
 
 
+def _scale_line_const(
+    line: tuple[float, float, float],
+    scale: float,
+) -> tuple[float, float, float]:
+    """Scale only the constant term when moving a line to backend I/Q units."""
+    a, b, c = line
+    return (a, b, c * scale)
+
+
+def _classification_line_scale(*, dsp_demodulation: bool) -> float:
+    """Return c-term scale from normalized Qubex I/Q to e7awghal line units."""
+    exponent_offset = _DSP_DEMODULATION_EXPONENT_OFFSET if dsp_demodulation else 0
+    return 2.0 ** (_DSP_NORM_EXPONENT - exponent_offset)
+
+
 class Quel1MeasurementBackendAdapter:
     """QuEL-1 specific adapter from measurement models to backend request."""
 
@@ -53,12 +73,122 @@ class Quel1MeasurementBackendAdapter:
         backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
         constraint_profile: MeasurementConstraintProfile | None = None,
+        classifiers: Mapping[str, StateClassifier] | None = None,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
         if constraint_profile is None:
             constraint_profile = MeasurementConstraintProfile.quel1()
         self._constraint_profile = constraint_profile
+        self._classifiers = {} if classifiers is None else classifiers
+
+    def _resolve_output_target(self, target: str) -> str:
+        """Resolve the public measurement target for a capture target."""
+        target_registry = getattr(self._experiment_system, "target_registry", None)
+        if target_registry is not None and hasattr(
+            target_registry,
+            "measurement_output_label",
+        ):
+            return str(target_registry.measurement_output_label(target))
+        if target.startswith("R"):
+            return target[1:]
+        return target
+
+    def _resolve_linear_classifier(self, target: str) -> StateClassifierLinear:
+        """Resolve and validate the classifier registered for one capture target."""
+        output_target = self._resolve_output_target(target)
+        classifier = self._classifiers.get(output_target)
+        if classifier is None:
+            classifier = self._classifiers.get(target)
+        if classifier is None:
+            raise ValueError(
+                "DSP classification requires a StateClassifierLinear registered "
+                f"for target `{output_target}`."
+            )
+        if not isinstance(classifier, StateClassifierLinear):
+            raise TypeError(
+                "DSP classification requires StateClassifierLinear for target "
+                f"`{output_target}`; got {type(classifier).__name__}."
+            )
+        if len(classifier.lines) != 2:
+            raise ValueError(
+                "The QuEL-1 backend requires exactly two classification lines "
+                f"for target `{output_target}`."
+            )
+        return classifier
+
+    def _convert_classification_line_to_backend_iq(
+        self,
+        *,
+        target: str,
+        line: tuple[float, float, float],
+        scale: float,
+    ) -> tuple[float, float, float]:
+        """Convert one Qubex I/Q line to QuEL-1 DSP coordinates."""
+        a, b, c = _scale_line_const(line, scale)
+        try:
+            sideband = self._experiment_system.get_target(target).sideband
+        except KeyError:
+            sideband = "U"
+        if sideband == "L":
+            b = -b
+        return (a, b, c)
+
+    def _build_classification_lines(
+        self,
+        *,
+        capture_targets: list[str],
+        dsp_demodulation: bool,
+    ) -> dict[str, Any]:
+        """Convert registered linear classifiers to qxdriver line sets."""
+        try:
+            from qxdriver_quel1.classification import ClassificationLineSet
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "DSP classification requires qxdriver_quel1 classification support."
+            ) from exc
+
+        scale = _classification_line_scale(dsp_demodulation=dsp_demodulation)
+        classification_lines: dict[str, Any] = {}
+        for target in capture_targets:
+            classifier = self._resolve_linear_classifier(target)
+            line0, line1 = classifier.lines
+            classification_lines[target] = ClassificationLineSet(
+                line0=self._convert_classification_line_to_backend_iq(
+                    target=target,
+                    line=line0,
+                    scale=scale,
+                ),
+                line1=self._convert_classification_line_to_backend_iq(
+                    target=target,
+                    line=line1,
+                    scale=scale,
+                ),
+            )
+        return classification_lines
+
+    def _decode_classification_states(
+        self,
+        *,
+        target: str,
+        data: object,
+    ) -> np.ndarray:
+        """Map packed QuEL-1 line decisions to Qubex logical states."""
+        raw = np.asarray(data)
+        if not np.issubdtype(raw.dtype, np.integer):
+            raise TypeError("QuEL-1 DSP classification result must be integer data.")
+        packed = raw.astype(np.int64, copy=False).reshape(-1)
+        if np.any((packed < 0) | (packed > 3)):
+            raise ValueError(
+                "QuEL-1 DSP classification result must contain packed two-bit values."
+            )
+        decisions = np.column_stack(
+            (
+                (packed & 0b01) != 0,
+                (packed & 0b10) != 0,
+            )
+        )
+        return self._resolve_linear_classifier(target).classify_decisions(decisions)
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate QuEL-1 specific pulse/capture constraints."""
@@ -235,6 +365,17 @@ class Quel1MeasurementBackendAdapter:
         gen_sampled_sequence, cap_sampled_sequence = self._create_sampled_sequences(
             schedule=schedule
         )
+        dsp_demodulation = (
+            True
+            if quel1_options is None or quel1_options.demodulation is None
+            else quel1_options.demodulation
+        )
+        classification_lines = None
+        if config.state_classification:
+            classification_lines = self._build_classification_lines(
+                capture_targets=list(cap_sampled_sequence),
+                dsp_demodulation=dsp_demodulation,
+            )
         targets = list(
             dict.fromkeys([*gen_sampled_sequence.keys(), *cap_sampled_sequence.keys()])
         )
@@ -251,12 +392,6 @@ class Quel1MeasurementBackendAdapter:
             target: resource_map_by_lookup_target[lookup_target]
             for target, lookup_target in resource_lookup_target_by_target.items()
         }
-        dsp_demodulation = (
-            True
-            if quel1_options is None or quel1_options.demodulation is None
-            else quel1_options.demodulation
-        )
-
         payload = Quel1ExecutionPayload(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
@@ -267,16 +402,7 @@ class Quel1MeasurementBackendAdapter:
             dsp_demodulation=dsp_demodulation,
             enable_sum=config.time_integration,
             enable_classification=config.state_classification,
-            line_param0=(
-                None
-                if quel1_options is None
-                else quel1_options.classification_line_param0
-            ),
-            line_param1=(
-                None
-                if quel1_options is None
-                else quel1_options.classification_line_param1
-            ),
+            classification_lines=classification_lines,
         )
         return BackendExecutionRequest(
             payload=payload,
@@ -299,7 +425,34 @@ class Quel1MeasurementBackendAdapter:
         shot_averaging = measurement_config.shot_averaging
         skip_extra_capture = self._constraint_profile.require_workaround_capture
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-        target_registry = getattr(self._experiment_system, "target_registry", None)
+
+        if measurement_config.primary_return_item == ReturnItem.STATE_SERIES:
+            measure_data: dict[str, list[CaptureData]] = {}
+            for target, states in sorted(backend_result.data.items()):
+                qubit = self._resolve_output_target(target)
+                values: list[CaptureData] = []
+                for index, state in enumerate(states):
+                    if skip_extra_capture and index == 0:
+                        continue
+                    values.append(
+                        CaptureData.from_primary_data(
+                            target=qubit,
+                            data=_as_read_only_array(
+                                self._decode_classification_states(
+                                    target=target,
+                                    data=state,
+                                )
+                            ),
+                            config=measurement_config,
+                            sampling_period=sampling_period,
+                        )
+                    )
+                measure_data[qubit] = values
+            return MeasurementResult(
+                data=measure_data,
+                device_config=device_config,
+                measurement_config=measurement_config,
+            )
 
         iq_data: dict[str, list[npt.ArrayLike]] = {}
         for target, iqs in sorted(backend_result.data.items()):
@@ -318,19 +471,10 @@ class Quel1MeasurementBackendAdapter:
         measure_data: dict[str, list[CaptureData]] = {}
         if not shot_averaging:
             for target, iqs in iq_data.items():
-                if target_registry is not None and hasattr(
-                    target_registry,
-                    "measurement_output_label",
-                ):
-                    qubit = str(target_registry.measurement_output_label(target))
-                elif target.startswith("R"):
-                    qubit = target[1:]
-                else:
-                    qubit = target
+                qubit = self._resolve_output_target(target)
                 values: list[CaptureData] = []
                 for index, iq in enumerate(iqs):
                     if skip_extra_capture and index == 0:
-                        # skip the first extra capture
                         continue
                     values.append(
                         CaptureData.from_primary_data(
@@ -345,19 +489,10 @@ class Quel1MeasurementBackendAdapter:
                 measure_data[qubit] = values
         else:
             for target, iqs in iq_data.items():
-                if target_registry is not None and hasattr(
-                    target_registry,
-                    "measurement_output_label",
-                ):
-                    qubit = str(target_registry.measurement_output_label(target))
-                elif target.startswith("R"):
-                    qubit = target[1:]
-                else:
-                    qubit = target
+                qubit = self._resolve_output_target(target)
                 values: list[CaptureData] = []
                 for index, iq in enumerate(iqs):
                     if skip_extra_capture and index == 0:
-                        # skip the first extra capture
                         continue
                     values.append(
                         CaptureData.from_primary_data(

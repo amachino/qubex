@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from logging import Logger
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 from qubex.backend.quel1.compat.qubecalib_protocols import (
     ActionProtocol,
@@ -38,6 +38,24 @@ AwgSettingFactory: TypeAlias = Callable[..., AwgSettingProtocol]
 AwgIdFactory: TypeAlias = Callable[..., AwgIdProtocol]
 
 
+def _default_classification_lines(targets: Collection[str]) -> dict[str, Any]:
+    """Build the legacy default classification-line pair for each target."""
+    try:
+        from qxdriver_quel1.classification import ClassificationLineSet
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Default DSP classification lines require qxdriver_quel1 "
+            "classification support."
+        ) from exc
+    return {
+        target: ClassificationLineSet(
+            line0=(1.0, 0.0, 0.0),
+            line1=(0.0, 1.0, 0.0),
+        )
+        for target in targets
+    }
+
+
 class SequencerExecutionEngine:
     """
     Run QuEL-1 sequencers through typed helper steps.
@@ -57,8 +75,6 @@ class SequencerExecutionEngine:
     ...     software_demodulation=False,
     ...     enable_sum=False,
     ...     enable_classification=False,
-    ...     line_param0=None,
-    ...     line_param1=None,
     ... )
     """
 
@@ -72,8 +88,7 @@ class SequencerExecutionEngine:
         software_demodulation: bool,
         enable_sum: bool,
         enable_classification: bool,
-        line_param0: tuple[float, float, float] | None,
-        line_param1: tuple[float, float, float] | None,
+        classification_lines: Any | None = None,
     ) -> None:
         """
         Configure sequencer measurement options with stable defaults.
@@ -94,10 +109,10 @@ class SequencerExecutionEngine:
             Whether to enable DSP summation.
         enable_classification : bool
             Whether to enable DSP classification.
-        line_param0 : tuple[float, float, float] | None
-            Classifier line parameter 0. If `None`, `(1, 0, 0)` is used.
-        line_param1 : tuple[float, float, float] | None
-            Classifier line parameter 1. If `None`, `(0, 1, 0)` is used.
+        classification_lines : Any | None
+            Per-target classification-line pairs. When classification is enabled
+            and this is omitted, the legacy default pair is used for each capture
+            target.
 
         Examples
         --------
@@ -109,25 +124,24 @@ class SequencerExecutionEngine:
         ...     software_demodulation=False,
         ...     enable_sum=False,
         ...     enable_classification=False,
-        ...     line_param0=(1.0, 0.0, 0.0),
-        ...     line_param1=(0.0, 1.0, 0.0),
         ... )
         """
-        if line_param0 is None:
-            line_param0 = (1, 0, 0)
-        if line_param1 is None:
-            line_param1 = (0, 1, 0)
-        sequencer.set_measurement_option(
-            repeats=repeats,
-            interval=sequencer.interval,
-            integral_mode=integral_mode,
-            dsp_demodulation=dsp_demodulation,
-            software_demodulation=software_demodulation,
-            enable_sum=enable_sum,
-            enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-        )
+        if enable_classification and classification_lines is None:
+            classification_lines = _default_classification_lines(
+                sequencer.cap_sampled_sequence.keys()
+            )
+        measurement_options: dict[str, Any] = {
+            "repeats": repeats,
+            "interval": sequencer.interval,
+            "integral_mode": integral_mode,
+            "dsp_demodulation": dsp_demodulation,
+            "software_demodulation": software_demodulation,
+            "enable_sum": enable_sum,
+            "enable_classification": enable_classification,
+        }
+        if enable_classification and classification_lines is not None:
+            measurement_options["classification_lines"] = classification_lines
+        sequencer.set_measurement_option(**measurement_options)
 
     @staticmethod
     def create_direct_settings(

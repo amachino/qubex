@@ -23,6 +23,7 @@ from .adapters import (
     Quel1MeasurementBackendAdapter,
     Quel3MeasurementBackendAdapter,
 )
+from .classifiers.state_classifier import StateClassifier
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult
@@ -42,6 +43,7 @@ class MeasurementScheduleRunner:
         constraint_profile: MeasurementConstraintProfile | None = None,
         execution_mode: ExecutionMode | None = None,
         clock_health_checks: bool | None = None,
+        classifiers: Mapping[str, StateClassifier] | None = None,
     ) -> None:
         if measurement_backend_adapter is None:
             if experiment_system is None:
@@ -66,6 +68,7 @@ class MeasurementScheduleRunner:
                     backend_controller=backend_controller,
                     experiment_system=experiment_system,
                     constraint_profile=constraint_profile,
+                    classifiers=classifiers,
                 )
             else:
                 raise TypeError(
