@@ -232,7 +232,7 @@ class Quel1ConnectionManager:
             parallel = _DEFAULT_PARALLEL_MODE
         resolved_box_names = self._resolve_box_names(box_names)
         if self.is_connected:
-            connected_box_names = self._connected_box_names()
+            connected_box_names = self.connected_box_names()
             requested_box_names = set(resolved_box_names)
             if requested_box_names.issubset(connected_box_names):
                 logger.info("Already connected. Skipping backend reconnect.")
@@ -262,7 +262,7 @@ class Quel1ConnectionManager:
         if not self.is_connected:
             return False
         resolved_box_names = self._resolve_box_names(box_names)
-        connected_box_names = self._connected_box_names()
+        connected_box_names = self.connected_box_names()
         requested_box_names = set(resolved_box_names)
         return not requested_box_names.issubset(connected_box_names)
 
@@ -494,7 +494,7 @@ class Quel1ConnectionManager:
             return [box_names]
         return list(box_names)
 
-    def _connected_box_names(self) -> set[str]:
+    def connected_box_names(self) -> set[str]:
         """Return currently connected box names from the active boxpool."""
         if not self.is_connected:
             return set()

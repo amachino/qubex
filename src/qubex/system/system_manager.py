@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
@@ -34,6 +34,7 @@ from qubex.external_devices import (
 from qubex.typing import ConfigurationMode
 
 from .config_loader import ConfigLoader
+from .configure_preview import ConfigurePreview, ConfigurePreviewSynchronizer
 from .control_system import Box
 from .experiment_system import ExperimentSystem
 from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
@@ -512,6 +513,86 @@ class SystemManager:
             raise
         self._update_cached_state()
 
+    def preview_configure(
+        self,
+        *,
+        chip_id: str | None = None,
+        system_id: str | None = None,
+        config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
+        targets_to_exclude: list[str] | None = None,
+        configuration_mode: ConfigurationMode | None = None,
+        box_ids: Sequence[str] | None,
+        parallel: bool | None = None,
+        target_labels: Sequence[str] | None = None,
+        qubit_labels: Sequence[str] | None = None,
+    ) -> ConfigurePreview:
+        """
+        Preview device state changes that `configure()` would apply.
+
+        Parameters
+        ----------
+        chip_id : str | None, optional
+            Deprecated chip identifier compatibility input.
+        system_id : str | None, optional
+            Canonical system identifier.
+        config_dir : Path | str | None, optional
+            Directory containing configuration files.
+        params_dir : Path | str | None, optional
+            Directory containing parameter files.
+        targets_to_exclude : list[str] | None, optional
+            Target labels to exclude from the previewed model.
+        configuration_mode : ConfigurationMode | None, optional
+            Configuration mode to preview.
+        box_ids : Sequence[str] | None
+            Box IDs to compare against current hardware settings. If `None`,
+            resolves boxes from the previewed system.
+        parallel : bool | None, optional
+            Whether to fetch per-box hardware settings in parallel.
+        target_labels : Sequence[str] | None, optional
+            Logical target labels to include in the previewed hardware plan.
+        qubit_labels : Sequence[str] | None, optional
+            Active qubit labels used to resolve default boxes.
+
+        Returns
+        -------
+        ConfigurePreview
+            Structured summary of field-level changes.
+
+        Raises
+        ------
+        NotImplementedError
+            If the preview backend does not support configure previews.
+
+        Notes
+        -----
+        This method fetches hardware state but does not mutate manager,
+        backend-controller, or hardware configuration state.
+        """
+        preview_experiment_system, backend_kind = self._load_preview_experiment_system(
+            chip_id=chip_id,
+            system_id=system_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            targets_to_exclude=targets_to_exclude,
+            configuration_mode=configuration_mode,
+        )
+        if box_ids is None:
+            boxes = (
+                preview_experiment_system.boxes
+                if qubit_labels is None
+                else preview_experiment_system.get_boxes_for_qubits(qubit_labels)
+            )
+            box_ids = [box.id for box in boxes]
+        system_synchronizer = self._resolve_preview_system_synchronizer(backend_kind)
+        return system_synchronizer.preview_configure(
+            experiment_system=preview_experiment_system,
+            box_ids=box_ids,
+            mode=configuration_mode,
+            parallel=parallel,
+            target_labels=target_labels,
+        )
+
     def push(
         self,
         box_ids: Sequence[str],
@@ -764,6 +845,52 @@ This operation will overwrite the existing backend settings. Do you want to cont
             parallel=parallel,
         )
         return BackendSettings(fetched)
+
+    def _load_preview_experiment_system(
+        self,
+        *,
+        chip_id: str | None,
+        system_id: str | None,
+        config_dir: Path | str | None,
+        params_dir: Path | str | None,
+        targets_to_exclude: list[str] | None,
+        configuration_mode: ConfigurationMode | None,
+    ) -> tuple[ExperimentSystem, BackendKind]:
+        """Load the would-be experiment system without mutating manager state."""
+        config_loader = ConfigLoader(
+            chip_id=chip_id,
+            system_id=system_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
+        config_loader.load(
+            targets_to_exclude=targets_to_exclude,
+            configuration_mode=configuration_mode,
+        )
+        return config_loader.get_experiment_system(), config_loader.backend_kind
+
+    def _resolve_preview_system_synchronizer(
+        self,
+        backend_kind: BackendKind,
+    ) -> ConfigurePreviewSynchronizer:
+        """Return active synchronizer when it matches the preview backend kind."""
+        active_backend_kind = self.backend_kind
+        if backend_kind != active_backend_kind:
+            raise RuntimeError(
+                "Configure preview backend kind does not match the active session "
+                f"(preview={backend_kind!r}, active={active_backend_kind!r})."
+            )
+        if backend_kind != BACKEND_KIND_QUEL1:
+            raise NotImplementedError(
+                f"Configure preview is not implemented for backend kind: {backend_kind}."
+            )
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
+            raise NotImplementedError(
+                f"Configure preview is not implemented for backend kind: {backend_kind}."
+            )
+        return cast(ConfigurePreviewSynchronizer, system_synchronizer)
 
     def _sync_backend_settings_to_backend_controller(
         self,
