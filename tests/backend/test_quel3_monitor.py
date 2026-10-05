@@ -791,7 +791,7 @@ def test_run_monitor_schedule_normalizes_readout_waveforms(
     role: InstrumentRoleName,
 ) -> None:
     """Readout instruments should use the same normalized samples in monitor runs."""
-    controller, manager, _ = monitor_schedule_runtime
+    controller, manager, actions = monitor_schedule_runtime
     original = _instrument_info("readout", "rx_p00", role=role)
     monkeypatch.setattr(
         controller.resource_reader,
@@ -811,6 +811,10 @@ def test_run_monitor_schedule_normalizes_readout_waveforms(
     ]
     assert waveform.sampling_period_ns == pytest.approx(0.8)
     np.testing.assert_allclose(waveform.iq_array, [0.2, 0.5], rtol=1e-12, atol=1e-12)
+    assert (
+        next(action for action in actions if action[:2] == ("deploy", "readout"))[3]
+        == "TRANSMITTER"
+    )
     assert controller.get_instrument_configuration().instruments[0].role == role
 
 

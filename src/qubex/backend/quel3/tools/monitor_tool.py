@@ -225,7 +225,7 @@ class Quel3MonitorTool:
                 spec = original_specs[label]
                 timeline, waveform_library = prepared[label]
                 self._configuration_manager.deploy_instrument(
-                    instrument=spec,
+                    instrument=spec.model_copy(update={"role": "TRANSMITTER"}),
                     instrument_cache=self._instrument_cache,
                     resource_reader=self._resource_reader,
                     append=False,
