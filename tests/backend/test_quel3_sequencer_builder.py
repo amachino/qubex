@@ -54,17 +54,16 @@ class _RecordingSequencer:
         self,
         default_sampling_period_ns: float,
         enforce_sample_grid: bool = True,
-        iter_blank_ns: float = 2_000,
     ) -> None:
         self.default_sampling_period_ns = default_sampling_period_ns
         self.enforce_sample_grid = enforce_sample_grid
-        self.iter_blank_ns = iter_blank_ns
         self.registered_waveforms: dict[str, _RegisteredWaveform] = {}
         self.events: list[_Event] = []
         self.capture_windows: list[_CaptureWindow] = []
         self.bindings: list[_Binding] = []
         self.iterations: int = 1
         self.extended_by_ns: float = 0.0
+        self.extensions: list[tuple[float, int, int]] = []
 
     def bind(
         self,
@@ -130,6 +129,9 @@ class _RecordingSequencer:
 
     def extend_length_ns(self, additional_ns: float) -> None:
         self.extended_by_ns += additional_ns
+        self.extensions.append(
+            (additional_ns, len(self.events), len(self.capture_windows))
+        )
 
     def get_aligned_length_fs(self, post_blank_fs: int = 0) -> int:
         return post_blank_fs
@@ -323,7 +325,6 @@ def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
         _Binding(alias="alias-RQ00", sampling_period_fs=400_000, step_samples=64)
     ]
     assert sequencer.extended_by_ns == pytest.approx(0.0)
-    assert sequencer.iter_blank_ns == pytest.approx(0.0)
     assert sequencer.iterations == 16
 
 
@@ -527,8 +528,11 @@ def test_builder_rejects_missing_alias_binding() -> None:
         )
 
 
-def test_builder_passes_shot_interval_as_iteration_blank() -> None:
-    """Given a shot interval, builder passes its aligned value as the iteration blank."""
+@pytest.mark.parametrize("shot_interval_ns", [0.0, 1.0, 2048.0, 2050.0])
+def test_builder_appends_shot_interval_after_all_timeline_items(
+    shot_interval_ns: float,
+) -> None:
+    """The shot interval extends the completed sequence once without a minimum or rounding."""
     payload = _make_payload(
         waveform_library={
             "wf_known": Quel3Waveform(
@@ -537,18 +541,25 @@ def test_builder_passes_shot_interval_as_iteration_blank() -> None:
             )
         },
         fixed_timelines={
-            "alias-RQ00": Quel3FixedTimeline(
+            alias: Quel3FixedTimeline(
                 events=(
                     Quel3WaveformEvent(
                         waveform_name="wf_known",
                         start_offset_ns=0.0,
                     ),
                 ),
-                capture_windows=(),
+                capture_windows=(
+                    Quel3CaptureWindow(
+                        name="capture_0",
+                        start_offset_ns=0.0,
+                        length_ns=8.0,
+                    ),
+                ),
                 length_ns=10.0,
             )
+            for alias in ("alias-RQ00", "alias-RQ01")
         },
-        shot_interval_ns=2048.0,
+        shot_interval_ns=shot_interval_ns,
     )
 
     builder = Quel3SequencerBuilder()
@@ -556,44 +567,16 @@ def test_builder_passes_shot_interval_as_iteration_blank() -> None:
         payload=payload,
         sequencer_factory=_RecordingSequencer,
         default_sampling_period_ns=0.4,
-        alias_bindings={"alias-RQ00": (400_000, 64)},
-    )
-
-    assert sequencer.iter_blank_ns == pytest.approx(2048.0)
-    assert sequencer.extended_by_ns == pytest.approx(0.0)
-
-
-def test_builder_applies_minimum_iteration_blank_floor() -> None:
-    """Given a tiny shot interval, builder passes the aligned minimum iteration blank."""
-    payload = _make_payload(
-        waveform_library={
-            "wf_known": Quel3Waveform(
-                iq_array=np.array([1.0 + 0.0j], dtype=np.complex128),
-                sampling_period_ns=0.4,
-            )
+        alias_bindings={
+            "alias-RQ00": (400_000, 64),
+            "alias-RQ01": (400_000, 64),
         },
-        fixed_timelines={
-            "alias-RQ00": Quel3FixedTimeline(
-                events=(
-                    Quel3WaveformEvent(
-                        waveform_name="wf_known",
-                        start_offset_ns=0.0,
-                    ),
-                ),
-                capture_windows=(),
-                length_ns=10.0,
-            )
-        },
-        shot_interval_ns=1.0,
     )
 
-    builder = Quel3SequencerBuilder()
-    sequencer = builder.build(
-        payload=payload,
-        sequencer_factory=_RecordingSequencer,
-        default_sampling_period_ns=0.4,
-        alias_bindings={"alias-RQ00": (400_000, 64)},
+    assert sequencer.iterations == 16
+    assert sequencer.extended_by_ns == pytest.approx(
+        shot_interval_ns, rel=0.0, abs=1e-9
     )
-
-    assert sequencer.iter_blank_ns == pytest.approx(1024.0)
-    assert sequencer.extended_by_ns == pytest.approx(0.0)
+    assert sequencer.extensions == (
+        [(shot_interval_ns, 2, 2)] if shot_interval_ns > 0 else []
+    )
