@@ -17,10 +17,6 @@ from qubex.backend.quel3.models import Quel3ExecutionPayload
 
 T = TypeVar("T", bound=SequencerProtocol)
 
-_QUEL3_CLOCK_FREQUENCY_HZ = 312_500_000
-_TRIGGER_GRID_TICKS = 32
-_TRIGGER_GRID_NS = _TRIGGER_GRID_TICKS * (1e9 / _QUEL3_CLOCK_FREQUENCY_HZ)
-_MIN_SHOT_INTERVAL_NS = 1_024.0
 _TIME_GRID_SAMPLE_ATOL = 1e-3
 # Well below one LSB (~3e-5) for normalized signed 16-bit DSP amplitudes.
 _WAVEFORM_AMPLITUDE_ATOL = 1e-7
@@ -28,13 +24,6 @@ _WAVEFORM_AMPLITUDE_ATOL = 1e-7
 
 class Quel3SequencerBuilder:
     """Build sequencer events and waveforms from `Quel3ExecutionPayload`."""
-
-    @staticmethod
-    def _resolve_effective_shot_interval_ns(shot_interval_ns: float) -> float:
-        effective_shot_interval_ns = max(shot_interval_ns, _MIN_SHOT_INTERVAL_NS)
-        return (
-            math.ceil(effective_shot_interval_ns / _TRIGGER_GRID_NS) * _TRIGGER_GRID_NS
-        )
 
     @staticmethod
     def _ceil_to_sampling_grid_ns(time_ns: float, sampling_period_fs: int) -> float:
@@ -90,14 +79,8 @@ class Quel3SequencerBuilder:
         scaled just below one to accommodate floating-point roundoff. Input
         waveforms and event gains are not modified.
         """
-        iter_blank_ns = (
-            self._resolve_effective_shot_interval_ns(payload.shot_interval_ns)
-            if payload.shot_interval_ns > 0
-            else 0.0
-        )
         sequencer = sequencer_factory(
             default_sampling_period_ns=default_sampling_period_ns,
-            iter_blank_ns=iter_blank_ns,
         )
         sequencer.set_iterations(payload.n_iterations)
 
@@ -169,5 +152,8 @@ class Quel3SequencerBuilder:
                         sampling_period_fs,
                     ),
                 )
+
+        if payload.shot_interval_ns > 0:
+            sequencer.extend_length_ns(payload.shot_interval_ns)
 
         return sequencer

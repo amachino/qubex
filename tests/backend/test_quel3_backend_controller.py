@@ -1053,11 +1053,9 @@ class _FakeSequencer:
         self,
         default_sampling_period_ns: float,
         enforce_sample_grid: bool = True,
-        iter_blank_ns: float = 2_000,
     ) -> None:
         self.default_sampling_period_ns = default_sampling_period_ns
         self.enforce_sample_grid = enforce_sample_grid
-        self.iter_blank_ns = iter_blank_ns
 
     def bind(
         self,
