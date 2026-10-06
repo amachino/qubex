@@ -379,11 +379,12 @@ class Quel3ExecutionManager:
                 directives.append(
                     quelware_api.set_frequency_directive_factory(hz=frequency_hz)
                 )
-            capture_mode_directive = quelware_api.build_capture_mode_directive(
-                payload.capture_mode
-            )
-            if capture_mode_directive is not None:
-                directives.append(capture_mode_directive)
+            if payload.fixed_timelines[alias].capture_windows:
+                capture_mode_directive = quelware_api.build_capture_mode_directive(
+                    payload.capture_mode
+                )
+                if capture_mode_directive is not None:
+                    directives.append(capture_mode_directive)
             directives.append(sequencer.export_set_fixed_timeline_directive(alias))
             alias_to_directives[alias] = directives
 

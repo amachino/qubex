@@ -1798,6 +1798,62 @@ def test_execute_batches_capture_mode_with_timeline_directive(
     )
 
 
+@pytest.mark.parametrize("parallel", [False, True])
+def test_execute_sets_capture_mode_only_on_capture_instruments(
+    monkeypatch: pytest.MonkeyPatch,
+    parallel: bool,
+) -> None:
+    """Output-only instruments should receive no capture mode while receivers do."""
+    payload = _make_payload(frequency_hz=6.25e9)
+    output = replace(payload.fixed_timelines["alias-rq00"], capture_windows=())
+    receiver = replace(payload.fixed_timelines["alias-rq00"], events=())
+    payload = replace(payload, fixed_timelines={"output": output, "monitor": receiver})
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
+    instrument_cache = _make_instrument_cache(
+        alias_to_info={
+            "output": _FakeInstrumentInfo(
+                port_id="unit-a:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSMITTER"),
+            ),
+            "monitor": _FakeInstrumentInfo(
+                port_id="unit-a:mon",
+                definition=_FakeInstrumentDefinition(role="RECEIVER"),
+            ),
+        }
+    )
+    drivers = {alias: _FakeInstrumentDriver() for alias in payload.fixed_timelines}
+    session = _FakeSession()
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: _FakeClient(session),
+            fixed_timeline_driver_factory=lambda _session, info: drivers[info.id],
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(
+            request=BackendExecutionRequest(payload=payload),
+            instrument_cache=instrument_cache,
+            parallel=parallel,
+        )
+    )
+
+    assert drivers["output"].apply_calls == [
+        [("frequency", 6.25e9), ("timeline", "output")]
+    ]
+    assert drivers["monitor"].apply_calls == [
+        [
+            ("frequency", 6.25e9),
+            ("capture_mode", _FakeCaptureMode.AVERAGED_VALUE),
+            ("timeline", "monitor"),
+        ]
+    ]
+    assert set(result.data) == {"monitor"}
+    assert session.trigger_calls == [["monitor", "output"]]
+
+
 def test_execute_batches_frequency_capture_mode_with_timeline_directive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

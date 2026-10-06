@@ -190,7 +190,7 @@ class Quel3MonitorTool:
                 )
             waveform_library: dict[str, Quel3Waveform] = {}
             events, _ = Quel3PulseEventBuilder.build(
-                target_is_read=spec.role in ("TRANSCEIVER", "TRANSCEIVER_LOOPBACK"),
+                target_is_read=spec.port_id.partition(":")[2].startswith("trx_"),
                 sequence=pulse_schedule.get_sequence(label, copy=False),
                 waveform_name_by_shape_key={},
                 waveform_library=waveform_library,
@@ -225,7 +225,7 @@ class Quel3MonitorTool:
                 spec = original_specs[label]
                 timeline, waveform_library = prepared[label]
                 self._configuration_manager.deploy_instrument(
-                    instrument=spec,
+                    instrument=spec.model_copy(update={"role": "TRANSMITTER"}),
                     instrument_cache=self._instrument_cache,
                     resource_reader=self._resource_reader,
                     append=False,
