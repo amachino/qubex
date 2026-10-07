@@ -163,7 +163,7 @@ def test_filtered_ckp_experiment_returns_all_figures_without_display_or_save(
         "ckp_heatmap_e": heatmap_e,
         "readout_optimization": optimization_figure,
     }
-    assert result.data["qubit_frequency"] == 5.0
+    assert result.data["control_frequency"] == 5.0
     assert result.data["readout_frequency"] == 6.0
     assert result.data["readout_amplitude"] == 0.4
 
@@ -171,7 +171,7 @@ def test_filtered_ckp_experiment_returns_all_figures_without_display_or_save(
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("qubit_frequency", 0.0),
+        ("control_frequency", 0.0),
         ("readout_frequency", float("inf")),
         ("readout_amplitude", float("nan")),
     ],
@@ -223,7 +223,7 @@ def test_filtered_ckp_scopes_frequency_overrides_and_restores_them(
     actual = filtered_ckp_experiment(
         exp=cast(Experiment, exp),
         target="Q00",
-        qubit_frequency=5.1,
+        control_frequency=5.1,
         readout_frequency=6.2,
         readout_amplitude=0.3,
     )
@@ -264,7 +264,7 @@ def test_filtered_ckp_restores_frequency_overrides_after_failure(
         filtered_ckp_experiment(
             exp=cast(Experiment, exp),
             target="Q00",
-            qubit_frequency=5.1,
+            control_frequency=5.1,
         )
 
     assert active_frequencies == {}

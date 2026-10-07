@@ -730,7 +730,7 @@ def filtered_ckp_experiment(
     exp: Experiment,
     *,
     target: str,
-    qubit_frequency: float | None = None,
+    control_frequency: float | None = None,
     readout_frequency: float | None = None,
     readout_amplitude: float | None = None,
     qubit_detuning_range: ArrayLike | None = None,
@@ -759,15 +759,16 @@ def filtered_ckp_experiment(
         and measurement backend.
     target : str
         Target qubit name or label.
-    qubit_frequency : float, optional
-        Temporary center frequency for the qubit-detuning sweep in GHz.
+    control_frequency : float, optional
+        Temporary GE control-target frequency at the center of the
+        qubit-detuning sweep in GHz.
     readout_frequency : float, optional
         Temporary center frequency for the resonator-detuning sweep in GHz.
     readout_amplitude : float, optional
         Amplitude of the final standard readout pulse. If omitted, the
         configured readout amplitude is used.
     qubit_detuning_range : ArrayLike, optional
-        Qubit-drive detunings from `qubit_frequency` in GHz.
+        Qubit-drive detunings from `control_frequency` in GHz.
     qubit_pi_pulse : Waveform, optional
         Pulse used for excited-state preparation.
     qubit_drive_scale : float, optional
@@ -804,7 +805,7 @@ def filtered_ckp_experiment(
     Result
         CKP measurements, fitted resonator parameters, readout optimization,
         figures, and effective measurement settings. `data` records
-        `qubit_frequency`, `readout_frequency`, `readout_amplitude`, and
+        `control_frequency`, `readout_frequency`, `readout_amplitude`, and
         `resonator_drive_amplitude` used for the run.
 
     Raises
@@ -822,14 +823,17 @@ def filtered_ckp_experiment(
     It does not call `modified_backend_settings`, so it does not retune
     LO/CNCO/FNCO mixer settings.
     """
-    qubit_frequency = _positive_finite_or_none(qubit_frequency, "qubit_frequency")
+    control_frequency = _positive_finite_or_none(
+        control_frequency,
+        "control_frequency",
+    )
     readout_frequency = _positive_finite_or_none(readout_frequency, "readout_frequency")
     readout_amplitude = _positive_finite_or_none(readout_amplitude, "readout_amplitude")
 
     frequency_overrides: dict[str, float] = {}
-    if qubit_frequency is not None:
+    if control_frequency is not None:
         qubit_label = exp.ctx.resolve_qubit_label(target)
-        frequency_overrides[qubit_label] = qubit_frequency
+        frequency_overrides[qubit_label] = control_frequency
     if readout_frequency is not None:
         read_label = exp.ctx.resolve_read_label(target)
         frequency_overrides[read_label] = readout_frequency
@@ -1148,7 +1152,7 @@ def _run_filtered_ckp_experiment(
     )
     qubit_label = exp.ctx.resolve_qubit_label(target)
     readout_label = exp.ctx.resolve_read_label(target)
-    qubit_frequency = exp.ctx.targets[qubit_label].frequency
+    control_frequency = exp.ctx.targets[qubit_label].frequency
     readout_frequency = exp.ctx.targets[readout_label].frequency
     if qubit_detuning_range is not None:
         qubit_detuning_range_arr = np.asarray(qubit_detuning_range, dtype=float)
@@ -1569,7 +1573,7 @@ def _run_filtered_ckp_experiment(
     return Result(
         data={
             "target": target,
-            "qubit_frequency": qubit_frequency,
+            "control_frequency": control_frequency,
             "readout_frequency": readout_frequency,
             "readout_amplitude": readout_amplitude,
             "resonator_detuning_range": resonator_detuning_range,
