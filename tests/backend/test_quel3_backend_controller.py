@@ -2525,9 +2525,10 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
             )
 
     payload = replace(
-        _make_payload(n_iterations=5, frequency_hz=6e9),
+        _make_payload(n_iterations=2, frequency_hz=6e9),
         capture_mode=Quel3CaptureMode.RAW_WAVEFORMS,
     )
+    oversized = replace(payload, n_iterations=5)
     other = replace(
         payload,
         fixed_timelines={
@@ -2560,34 +2561,38 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
         manager.execute_batch_async(
             requests=[
                 BackendExecutionRequest(payload=job)
-                for job in (payload, payload, other, payload)
+                for job in (payload, payload, oversized, other, payload)
             ],
             instrument_cache=cache,
             execution_options=Quel3ExecutionOptions(max_capture_samples=4),
         )
     )
-    assert applied_frequencies == [6e9, 6e9, 6e9, 6.1e9, 6.1e9, 6e9, 6e9]
-    assert len(session.trigger_calls) == 7
-    for result, expected in zip(results, (6, 7, 6.1, 6), strict=True):
-        assert result.data["alias-rq00"][0].shape == (5, 1)
+    assert applied_frequencies == [6e9, 6e9, 6e9, 6.1e9, 6e9]
+    assert len(session.trigger_calls) == 5
+    for result, expected, shots in zip(
+        results, (6, 7, 6, 6.1, 6), (2, 2, 5, 2, 2), strict=True
+    ):
+        assert result.data["alias-rq00"][0].shape == (shots, 1)
         np.testing.assert_allclose(
             result.data["alias-rq00"][0], expected, rtol=0, atol=1e-12
         )
     messages = [
         record.message for record in caplog.records if record.levelno == logging.INFO
     ]
-    assert any("jobs=4 executions=7" in message for message in messages)
+    assert any("jobs=5 executions=5" in message for message in messages)
     assert any(
         "execution=0 sources=(job=0 shots=[0,2), job=1 shots=[0,2))" in message
         for message in messages
     )
     assert any(
-        "execution=2 sources=(job=0 shots=[4,5), job=1 shots=[4,5))" in message
-        for message in messages
+        "execution=1 sources=(job=2 shots=[0,4))" in message for message in messages
+    )
+    assert any(
+        "execution=2 sources=(job=2 shots=[4,5))" in message for message in messages
     )
     assert (
         len(
             [message for message in messages if "completed elapsed_seconds=" in message]
         )
-        == 7
+        == 5
     )

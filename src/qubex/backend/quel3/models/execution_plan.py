@@ -14,7 +14,8 @@ class Quel3ExecutionOptions(BaseModel):
     Sample limits count complex IQ samples, before averaging or decimation.
     Duration limits apply to each physical execution, using repeated timeline
     duration, not to the complete logical job. Compatible adjacent jobs are
-    packed up to one-shot limits, then their shots are split to fit each run.
+    packed only when all requested shots fit in one run. Shots are split only
+    for individual jobs that cannot execute all requested shots in one run.
     Waveforms from different jobs are counted separately, even for equal IQ.
     Passing options to an execution replaces the controller's complete options.
     """

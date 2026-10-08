@@ -29,7 +29,7 @@ class _PayloadGroup:
 
 
 class Quel3ExecutionPlanner:
-    """Group compatible neighbors, then split shots within each resource budget."""
+    """Pack whole adjacent jobs and split only oversized individual jobs."""
 
     def plan(
         self,
@@ -68,7 +68,11 @@ class Quel3ExecutionPlanner:
             candidate = (*indices, index)
             if indices and options.merge_jobs and self._compatible(payloads, candidate):
                 merged = self._make_group(payloads, candidate)
-                if not self._one_shot_violations(merged, options):
+                if (
+                    not self._one_shot_violations(merged, options)
+                    and self._max_shots_per_execution(merged, options)
+                    == merged.conditions.n_iterations
+                ):
                     current = merged
                     continue
             if current is not None:
@@ -159,9 +163,9 @@ class Quel3ExecutionPlanner:
         return violations
 
     @staticmethod
-    def _split_shots(
+    def _max_shots_per_execution(
         group: _PayloadGroup, options: Quel3ExecutionOptions
-    ) -> list[Quel3PlannedExecution]:
+    ) -> int:
         requirements = group.requirements
         capture_limits = [
             options.max_capture_samples // count
@@ -175,7 +179,13 @@ class Quel3ExecutionPlanner:
             if math.isclose(duration_limit, rounded_limit, rel_tol=0, abs_tol=1e-9)
             else math.floor(duration_limit)
         )
-        shot_limit = min(group.conditions.n_iterations, duration_shots, *capture_limits)
+        return min(group.conditions.n_iterations, duration_shots, *capture_limits)
+
+    def _split_shots(
+        self, group: _PayloadGroup, options: Quel3ExecutionOptions
+    ) -> list[Quel3PlannedExecution]:
+        requirements = group.requirements
+        shot_limit = self._max_shots_per_execution(group, options)
         executions = []
         for start in range(0, group.conditions.n_iterations, shot_limit):
             stop = min(start + shot_limit, group.conditions.n_iterations)

@@ -138,7 +138,7 @@ def test_analysis_extracts_planning_metadata_and_normalizes_timelines() -> None:
     assert payload.fixed_timelines["R0"] == timeline
 
 
-def test_planning_uses_resource_metadata_to_place_payloads_and_split_shots() -> None:
+def test_planning_uses_resource_metadata_to_place_whole_payloads() -> None:
     """Planning should determine offsets and shot ranges without waveform buffers."""
     from qubex.backend.quel3.execution.resources import (
         ExecutionConditions,
@@ -153,13 +153,11 @@ def test_planning_uses_resource_metadata_to_place_payloads_and_split_shots() -> 
         ),
     )
     plan = Quel3ExecutionPlanner().plan(
-        (info, info), options=Quel3ExecutionOptions(max_capture_samples=16)
+        (info, info), options=Quel3ExecutionOptions(max_capture_samples=40)
     )
     assert plan.payload_count == 2
     assert [(run.shot_start, run.shot_stop) for run in plan.executions] == [
-        (0, 2),
-        (2, 4),
-        (4, 5),
+        (0, 5),
     ]
     assert [
         (p.job_index, p.start_offset_ns) for p in plan.executions[0].placements
@@ -331,16 +329,65 @@ def test_merging_keeps_job_waveforms_and_preserves_events() -> None:
     )
 
 
-def test_packing_does_not_compare_execution_costs() -> None:
-    """Adjacent compatible jobs should pack even when splitting adds executions."""
-    plan = plan_jobs(
-        make_payload(shots=3), make_payload(shots=3), max_capture_samples=12
-    )
-    assert [run.payload.n_iterations for run in plan.executions] == [1, 1, 1]
-    assert all(
-        tuple(fragment.job_index for fragment in run.result_mapping.fragments) == (0, 1)
+@pytest.mark.parametrize(
+    "mode", [mode for mode in Quel3CaptureMode if mode != Quel3CaptureMode.UNSPECIFIED]
+)
+@pytest.mark.parametrize(
+    ("options", "groups"),
+    [
+        ({"max_capture_samples": 40}, [(0, 1), (2,)]),
+        ({"max_capture_samples": 39}, [(0,), (1,), (2,)]),
+        ({"max_execution_duration_ns": 37.5}, [(0, 1), (2,)]),
+        ({"max_execution_duration_ns": 37.49}, [(0,), (1,), (2,)]),
+    ],
+)
+def test_packing_preserves_all_shots_at_capture_and_duration_limits(
+    mode, options, groups
+) -> None:
+    """Packing should start a new group when all shots would exceed a resource limit."""
+    payload = replace(make_payload(mode=mode), shot_interval_ns=0.3)
+    plan = plan_jobs(payload, payload, payload, **options)
+    assert [
+        tuple(fragment.job_index for fragment in run.result_mapping.fragments)
         for run in plan.executions
+    ] == groups
+    assert [run.payload.n_iterations for run in plan.executions] == [5] * len(groups)
+    assert all(
+        (fragment.shot_start, fragment.shot_stop) == (0, 5)
+        for run in plan.executions
+        for fragment in run.result_mapping.fragments
     )
+
+
+@pytest.mark.parametrize(
+    "options", [{"max_capture_samples": 20}, {"max_execution_duration_ns": 16}]
+)
+def test_only_oversized_single_jobs_are_split_between_whole_groups(options) -> None:
+    """An oversized job should split alone while neighboring small jobs pack whole."""
+    small = make_payload(samples=1)
+    plan = plan_jobs(small, small, make_payload(samples=8), small, small, **options)
+    assert [
+        tuple(fragment.job_index for fragment in run.result_mapping.fragments)
+        for run in plan.executions
+    ] == [(0, 1), (2,), (2,), (2,), (3, 4)]
+    assert [run.payload.n_iterations for run in plan.executions] == [5, 2, 2, 1, 5]
+    assert [
+        (
+            run.result_mapping.fragments[0].shot_start,
+            run.result_mapping.fragments[0].shot_stop,
+        )
+        for run in plan.executions
+    ] == [(0, 5), (0, 2), (2, 4), (4, 5), (0, 5)]
+
+
+def test_adjacent_oversized_jobs_are_split_independently() -> None:
+    """Two oversized neighbors should finish their own shots in input order."""
+    plan = plan_jobs(make_payload(), make_payload(), max_capture_samples=16)
+    assert [
+        (fragment.job_index, fragment.shot_start, fragment.shot_stop)
+        for run in plan.executions
+        for fragment in run.result_mapping.fragments
+    ] == [(0, 0, 4), (0, 4, 5), (1, 0, 4), (1, 4, 5)]
 
 
 def test_packing_starts_new_execution_at_waveform_limit() -> None:
@@ -465,8 +512,8 @@ def test_result_assembly_preserves_shots_and_weights_unequal_chunks(mode) -> Non
 @pytest.mark.parametrize(
     "mode", [mode for mode in Quel3CaptureMode if mode != Quel3CaptureMode.UNSPECIFIED]
 )
-def test_packed_split_results_restore_each_jobs_capture_sequence(mode) -> None:
-    """Packed shot chunks should restore every job's captures in timeline order."""
+def test_split_and_whole_jobs_restore_each_capture_sequence(mode) -> None:
+    """Split and whole jobs should restore every capture in timeline order."""
     first = make_payload(mode=mode)
     timeline = first.fixed_timelines["R0"]
     first = replace(
@@ -482,7 +529,7 @@ def test_packed_split_results_restore_each_jobs_capture_sequence(mode) -> None:
         },
     )
     plan = plan_jobs(first, make_payload(mode=mode), max_capture_samples=24)
-    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+    assert [run.payload.n_iterations for run in plan.executions] == [3, 2, 5]
     assembler = Quel3ResultAssembler(plan.jobs)
     waveform = mode in (
         Quel3CaptureMode.RAW_WAVEFORMS,
@@ -493,12 +540,11 @@ def test_packed_split_results_restore_each_jobs_capture_sequence(mode) -> None:
         Quel3CaptureMode.AVERAGED_VALUE,
     )
     for run in plan.executions:
-        start, stop = (
-            run.result_mapping.fragments[0].shot_start,
-            run.result_mapping.fragments[0].shot_stop,
-        )
+        fragment = run.result_mapping.fragments[0]
+        start, stop = fragment.shot_start, fragment.shot_stop
         captures = []
-        for offset in (0, 10, 20):
+        for capture in fragment.captures:
+            offset = fragment.job_index * 20 + capture.original_index * 10
             values = np.arange(start, stop, dtype=np.complex128) + offset
             if waveform:
                 values = np.repeat(values[:, None], 4, axis=1)
