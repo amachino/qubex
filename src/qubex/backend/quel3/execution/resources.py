@@ -39,7 +39,7 @@ class ExecutionConditions:
     capture_mode: Quel3CaptureMode
     shot_interval_ns: float
     cable_delay_ns: dict[str, dict[str, float]] | None
-    frequencies_hz: dict[str, float | None]
+    frequencies_hz: dict[str, float]
     capture_sampling_period_fs: int | None
 
 
@@ -149,8 +149,8 @@ class Quel3PayloadAnalyzer:
             ),
         )
 
-    @staticmethod
     def _planning_info(
+        self,
         payload: Quel3ExecutionPayload,
         instruments: dict[str, InstrumentInfoProtocol],
     ) -> PayloadPlanningInfo:
@@ -190,11 +190,34 @@ class Quel3PayloadAnalyzer:
             shot_interval_ns=payload.shot_interval_ns,
             cable_delay_ns=payload.cable_delay_ns,
             frequencies_hz={
-                alias: t.frequency_hz for alias, t in payload.fixed_timelines.items()
+                alias: self._effective_frequency_hz(alias, timeline, instruments[alias])
+                for alias, timeline in payload.fixed_timelines.items()
             },
             capture_sampling_period_fs=next(iter(capture_periods), None),
         )
         return PayloadPlanningInfo(requirements, conditions)
+
+    @staticmethod
+    def _effective_frequency_hz(
+        alias: str, timeline: Quel3FixedTimeline, instrument: InstrumentInfoProtocol
+    ) -> float:
+        """Resolve an omitted frequency to the cached instrument's range center."""
+        if timeline.frequency_hz is not None:
+            return timeline.frequency_hz
+        profile = instrument.definition.profile
+        if profile is None:
+            raise ValueError(f"Instrument {alias!r} has no frequency range.")
+        lower = profile.frequency_range_min
+        upper = profile.frequency_range_max
+        if (
+            lower is None
+            or upper is None
+            or not math.isfinite(lower)
+            or not math.isfinite(upper)
+            or lower > upper
+        ):
+            raise ValueError(f"Instrument {alias!r} has an invalid frequency range.")
+        return lower / 2 + upper / 2
 
     @staticmethod
     def _validate_execution_settings(payload: Quel3ExecutionPayload) -> None:

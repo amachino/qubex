@@ -58,6 +58,11 @@ class _FakeCaptureMode(Enum):
 class _FakeInstrumentDefinition:
     role: str
     alias: str = ""
+    profile: Any = field(
+        default_factory=lambda: SimpleNamespace(
+            frequency_range_min=5e9, frequency_range_max=7e9
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -1742,6 +1747,7 @@ def test_execute_batch_retries_only_failed_payload_after_transient_request_failu
     results = asyncio.run(
         manager.execute_batch_async(
             instrument_cache=instrument_cache,
+            execution_options=Quel3ExecutionOptions(merge_jobs=False),
             requests=(
                 BackendExecutionRequest(payload=payload),
                 BackendExecutionRequest(payload=payload),
@@ -2094,6 +2100,7 @@ def test_execute_batch_async_reopens_session_per_payload(
     results = asyncio.run(
         manager.execute_batch_async(
             instrument_cache=instrument_cache,
+            execution_options=Quel3ExecutionOptions(merge_jobs=False),
             requests=[
                 BackendExecutionRequest(payload=payload_a),
                 BackendExecutionRequest(payload=payload_b),
@@ -2429,6 +2436,7 @@ def test_timing_batch_snapshot_and_shared_port_offsets(
     )
     asyncio.run(
         manager.execute_batch_async(
+            execution_options=Quel3ExecutionOptions(merge_jobs=False),
             requests=(
                 BackendExecutionRequest(payload=payload),
                 BackendExecutionRequest(payload=replace(payload, cable_delay_ns=None)),

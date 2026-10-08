@@ -44,7 +44,12 @@ def make_cache(
                 SimpleNamespace(
                     id=f"unit:{alias}",
                     port_id=port,
-                    definition=SimpleNamespace(alias=alias),
+                    definition=SimpleNamespace(
+                        alias=alias,
+                        profile=SimpleNamespace(
+                            frequency_range_min=5e9, frequency_range_max=7e9
+                        ),
+                    ),
                     config=SimpleNamespace(
                         sampling_period_fs=(periods or {}).get(alias, 800_000),
                         timeline_step_samples=4,
@@ -275,18 +280,73 @@ def test_frequency_changes_preserve_input_order() -> None:
     ] == [6e9, 6.1e9, 6e9]
 
 
-def test_unspecified_frequency_keeps_jobs_separate() -> None:
-    """An inherited hardware frequency should execute in its own run."""
-    plan = plan_jobs(
-        make_payload(),
-        make_payload(frequency=None),
-        make_payload(),
+@pytest.mark.parametrize(
+    ("frequencies", "groups"),
+    [
+        ((None, None), [(0, 1)]),
+        ((None, 6e9), [(0, 1)]),
+        ((6e9, None), [(0, 1)]),
+        ((6e9, None, 6e9), [(0, 1, 2)]),
+        ((6.1e9, None, 6.1e9), [(0,), (1,), (2,)]),
+        ((None, 6.1e9, None), [(0,), (1,), (2,)]),
+    ],
+)
+def test_unspecified_frequency_packs_using_instrument_center(
+    frequencies, groups
+) -> None:
+    """Unspecified frequencies should pack only with their instrument's center frequency."""
+    plan = plan_jobs(*(make_payload(frequency=value) for value in frequencies))
+    assert [
+        tuple(fragment.job_index for fragment in run.result_mapping.fragments)
+        for run in plan.executions
+    ] == groups
+
+
+def test_analysis_resolves_each_instruments_center_without_changing_payloads() -> None:
+    """Planning frequencies should use each instrument's profile and preserve payload data."""
+    cache = make_cache({"R0": "unit:trx_p00p01", "R1": "unit:trx_p02p03"})
+    profile = cast(Any, cache.get("R1").definition.profile)
+    profile.frequency_range_min = 3e9
+    profile.frequency_range_max = 5e9
+    payloads = (make_payload(frequency=None), make_payload(alias="R1", frequency=None))
+    analyses = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4).analyze_all(
+        payloads, cache
     )
-    assert [run.result_mapping.fragments[0].job_index for run in plan.executions] == [
-        0,
-        1,
-        2,
+    assert [analysis.planning.conditions.frequencies_hz for analysis in analyses] == [
+        {"R0": 6e9},
+        {"R1": 4e9},
     ]
+    assert [
+        analysis.payload.fixed_timelines[alias].frequency_hz
+        for analysis, alias in zip(analyses, ("R0", "R1"), strict=True)
+    ] == [None, None]
+    assert (
+        len(
+            plan_jobs(
+                *payloads, make_payload(alias="R1", frequency=4e9), cache=cache
+            ).executions
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        None,
+        SimpleNamespace(frequency_range_min=None, frequency_range_max=7e9),
+        SimpleNamespace(frequency_range_min=5e9, frequency_range_max=None),
+        SimpleNamespace(frequency_range_min=float("nan"), frequency_range_max=7e9),
+        SimpleNamespace(frequency_range_min=5e9, frequency_range_max=float("inf")),
+        SimpleNamespace(frequency_range_min=7e9, frequency_range_max=5e9),
+    ],
+)
+def test_unspecified_frequency_requires_a_valid_instrument_range(profile) -> None:
+    """An unavailable or invalid center frequency should fail before hardware execution."""
+    cache = make_cache()
+    cast(Any, cache.get("R0").definition).profile = profile
+    with pytest.raises(ValueError, match=r"R0.*frequency range"):
+        plan_jobs(make_payload(frequency=None), cache=cache)
 
 
 def test_packing_checks_frequencies_only_against_current_run() -> None:

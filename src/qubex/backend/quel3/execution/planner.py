@@ -106,9 +106,7 @@ class Quel3ExecutionPlanner:
             if conditions.capture_sampling_period_fs is not None:
                 capture_periods.add(conditions.capture_sampling_period_fs)
             for alias, frequency in conditions.frequencies_hz.items():
-                if frequency is None or (
-                    alias in frequencies and frequencies[alias] != frequency
-                ):
+                if alias in frequencies and frequencies[alias] != frequency:
                     return False
                 frequencies[alias] = frequency
         return len(capture_periods) <= 1

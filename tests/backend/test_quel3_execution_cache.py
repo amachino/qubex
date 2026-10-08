@@ -150,7 +150,12 @@ def test_capture_names_are_scoped_to_instrument_aliases() -> None:
                 SimpleNamespace(
                     id=f"unit-a:instrument-{index}",
                     port_id=f"unit-a:trx_p0{index}",
-                    definition=SimpleNamespace(alias=alias),
+                    definition=SimpleNamespace(
+                        alias=alias,
+                        profile=SimpleNamespace(
+                            frequency_range_min=5e9, frequency_range_max=7e9
+                        ),
+                    ),
                     config=SimpleNamespace(
                         sampling_period_fs=400_000, timeline_step_samples=64
                     ),
