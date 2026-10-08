@@ -7,7 +7,10 @@ from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 if TYPE_CHECKING:
-    from qubex.backend.quel3.interfaces.driver import ResultContainerProtocol
+    from qubex.backend.quel3.interfaces.driver import (
+        InstrumentConfigProtocol,
+        ResultContainerProtocol,
+    )
 
 ResourceIdProtocol: TypeAlias = str
 UnitLabelProtocol: TypeAlias = str
@@ -140,6 +143,11 @@ class InstrumentInfoProtocol(Protocol):
     @property
     def definition(self) -> InstrumentDefinitionProtocol:
         """Return instrument definition."""
+        ...
+
+    @property
+    def config(self) -> InstrumentConfigProtocol:
+        """Return cached fixed-timeline sampling and alignment configuration."""
         ...
 
 

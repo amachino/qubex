@@ -55,7 +55,6 @@ class Quel3MeasurementBackendAdapter:
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
-        self._output_target_labels_by_target: dict[str, str] = {}
         if constraint_profile is None:
             constraint_profile = MeasurementConstraintProfile.quel3(
                 sampling_period_ns=backend_controller.sampling_period_ns
@@ -94,8 +93,6 @@ class Quel3MeasurementBackendAdapter:
         waveform_name_by_shape_key: dict[tuple[str, int], str] = {}
         waveform_index = 0
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
-        output_target_labels_by_target: dict[str, str] = {}
-        target_registry = self._experiment_system.target_registry
 
         for target in pulse_schedule.labels:
             target_info = self._experiment_system.get_target(target)
@@ -150,16 +147,6 @@ class Quel3MeasurementBackendAdapter:
                     pulse_schedule=pulse_schedule,
                 ),
             )
-            try:
-                output_target_labels_by_target[target] = str(
-                    self._experiment_system.resolve_qubit_label(target)
-                )
-            except ValueError:
-                output_target_labels_by_target[target] = str(
-                    target_registry.measurement_output_label(target)
-                )
-
-        self._output_target_labels_by_target = output_target_labels_by_target
         capture_mode = self._resolve_capture_mode(config)
         n_iterations = self._resolve_n_iterations(
             capture_mode=capture_mode,
@@ -197,7 +184,7 @@ class Quel3MeasurementBackendAdapter:
             )
         converted_data: dict[str, list[CaptureData]] = {}
         for target, values in backend_result.data.items():
-            output_target = self._output_target_labels_by_target.get(target, target)
+            output_target = self._resolve_output_target(target)
             converted_data.setdefault(output_target, []).extend(
                 CaptureData.from_primary_data(
                     target=output_target,
@@ -216,6 +203,15 @@ class Quel3MeasurementBackendAdapter:
             device_config={},
             measurement_config=measurement_config,
         )
+
+    def _resolve_output_target(self, target: str) -> str:
+        """Resolve output labels independently for every result in a batch."""
+        try:
+            return str(self._experiment_system.resolve_qubit_label(target))
+        except ValueError:
+            return str(
+                self._experiment_system.target_registry.measurement_output_label(target)
+            )
 
     @staticmethod
     def _resolve_capture_mode(config: MeasurementConfig) -> Quel3CaptureMode:

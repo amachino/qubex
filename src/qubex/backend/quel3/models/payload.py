@@ -38,7 +38,11 @@ class Quel3Waveform:
 
 @dataclass(frozen=True)
 class Quel3FixedTimeline:
-    """Fixed-timeline definition for one target in QuEL-3 execution."""
+    """
+    Fixed-timeline definition for one target in QuEL-3 execution.
+
+    An omitted frequency uses the instrument's frequency range center.
+    """
 
     events: tuple[Quel3WaveformEvent, ...]
     capture_windows: tuple[Quel3CaptureWindow, ...]
