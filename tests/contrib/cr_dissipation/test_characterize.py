@@ -9,10 +9,10 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-import qubex.contrib.experiment.cr_dissipation as health
-from qubex.contrib.experiment._cr_dissipation_pulses import ZX90Descriptor
+import qubex.contrib.experiment._cr_dissipation.experiment as health
+from qubex.contrib.experiment._cr_dissipation.pulses import ZX90Descriptor
 from qubex.experiment import Experiment
-from qubex.pulse import FlatTop
+from qubex.pulse import Blank, FlatTop, PulseSchedule
 
 
 class _Context:
@@ -76,7 +76,10 @@ def test_ambiguous_reference_calibration_options_are_rejected() -> None:
         )
 
 
-@pytest.mark.parametrize("name", ["n_shots", "gef_calibration_n_shots"])
+@pytest.mark.parametrize(
+    "name",
+    ["n_shots", "gef_measurement_n_shots", "gef_calibration_n_shots"],
+)
 def test_shot_counts_require_at_least_two(name: str) -> None:
     """Shot validation happens before pulse resolution or acquisition."""
     options: dict[str, Any] = {name: 1}
@@ -229,3 +232,354 @@ def test_reference_calibration_uses_canonical_shot_options(
     assert calls[0]["enable_tqdm"] is True
     assert "shots" not in calls[0]
     assert "interval" not in calls[0]
+
+
+@pytest.mark.parametrize("r_squared", [float("nan"), float("inf"), float("-inf"), 0.49])
+def test_reference_calibration_rejects_nonfinite_or_low_fit_quality(
+    monkeypatch: pytest.MonkeyPatch,
+    r_squared: float,
+) -> None:
+    """IX45 calibration accepts only finite fit quality above threshold."""
+    cr_envelope = FlatTop(duration=64.0, amplitude=0.23, tau=7.0)
+    hpi = FlatTop(duration=32.0, amplitude=0.2, tau=4.0)
+    exp = SimpleNamespace(
+        pulse=SimpleNamespace(get_hpi_pulse=lambda _target: hpi),
+        measurement_service=SimpleNamespace(
+            sweep_parameter=lambda **_kwargs: SimpleNamespace(
+                data={"Q1": SimpleNamespace(normalized=np.linspace(0.0, 1.0, 21))}
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        health.fitting,
+        "fit_ampl_calib_data",
+        lambda **_kwargs: {"amplitude": 0.12, "r2": r_squared},
+    )
+
+    with pytest.raises(RuntimeError, match="quality validation"):
+        health._calibrate_reference_ix45(
+            cast(Experiment, exp),
+            "Q1",
+            cr_envelope,
+            n_shots=100,
+            shot_interval=1234.0,
+            plot=False,
+            enable_tqdm=False,
+        )
+
+
+def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A/B calibrate jointly while C/D reuse calibration without bootstrap."""
+    protocols = (
+        health.PROTOCOL_A,
+        health.PROTOCOL_B,
+        health.PROTOCOL_C,
+        health.PROTOCOL_D,
+    )
+    schedules = SimpleNamespace(
+        actual={protocol: (PulseSchedule(),) for protocol in protocols},
+        timing={},
+    )
+    descriptor = SimpleNamespace(
+        warnings=(),
+        total_duration_ns=100.0,
+        cr_active_duration_ns=40.0,
+        cr_lobe_duration_ns=20.0,
+        echo_slot_duration_ns=30.0,
+        full_un_echoed=SimpleNamespace(duration=100.0),
+        rotary_integrated_angle_rad=None,
+    )
+    calibration = {"Q0": object(), "Q1": object()}
+    calls: list[dict[str, Any]] = []
+
+    def measure_gef(*_args: Any, **kwargs: Any) -> Any:
+        calls.append(kwargs)
+        return health.Result(
+            data={
+                "calibration": calibration,
+                "raw_iq": {},
+                "fits": {},
+                "moment_summaries": {},
+                "bootstrap": {},
+            }
+        )
+
+    monkeypatch.setattr(health, "_load_idle_noise", lambda *_args: (object(), object()))
+    monkeypatch.setattr(health, "resolve_zx90_descriptor", lambda *_args: descriptor)
+    monkeypatch.setattr(health, "build_protocol_schedules", lambda *_args: schedules)
+    monkeypatch.setattr(health, "measure_gef_populations", measure_gef)
+    monkeypatch.setattr(
+        health, "_build_measurements", lambda *_args, **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        health, "analyze_cr_dissipation", lambda *_args, **_kwargs: object()
+    )
+
+    result = health.characterize_cr_dissipation(
+        _fake_experiment(),
+        "Q0",
+        "Q1",
+        repetition_counts=(0, 1, 2, 3, 4),
+        n_shots=222,
+        gef_measurement_n_shots=444,
+        gef_calibration_n_shots=888,
+        gef_bootstrap_n_resamples=12,
+        idle_t1={"Q0": 1.0, "Q1": 1.0},
+        idle_t2_echo={"Q0": 1.0, "Q1": 1.0},
+        plot=False,
+    )
+
+    assert len(calls) == 3
+    assert calls[0]["targets"] == ["Q0", "Q1"]
+    assert calls[0]["n_shots"] == 444
+    assert calls[0]["calibration_n_shots"] == 888
+    assert calls[0]["n_bootstrap"] == 12
+    assert calls[1]["targets"] == ["Q0"]
+    assert calls[1]["calibration"] == {"Q0": calibration["Q0"]}
+    assert calls[1]["n_shots"] == 444
+    assert calls[1]["n_bootstrap"] == 0
+    assert calls[2]["targets"] == ["Q1"]
+    assert calls[2]["calibration"] == {"Q1": calibration["Q1"]}
+    assert calls[2]["n_shots"] == 444
+    assert calls[2]["n_bootstrap"] == 0
+    assert result.data["measurement_options"]["n_shots"] == 222
+    assert result.data["measurement_options"]["gef_measurement_n_shots"] == 444
+
+
+def test_all_orthogonal_diagnostics_use_pauli_readout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A/B/C/D orthogonal data use one Pauli acquisition."""
+    base = {
+        protocol: (PulseSchedule(), PulseSchedule())
+        for protocol in (
+            health.PROTOCOL_A,
+            health.PROTOCOL_B,
+            health.PROTOCOL_C,
+            health.PROTOCOL_D,
+        )
+    }
+    schedules = SimpleNamespace(base=base)
+    pauli_calls: list[dict[str, Any]] = []
+
+    def measure_pauli(*_args: Any, **kwargs: Any) -> Any:
+        pauli_calls.append(kwargs)
+        values = np.linspace(-1.2, -0.8, kwargs["n_shots"]).astype(complex)
+        return [{"Q0": values, "Q1": values} for _ in _args[1]]
+
+    pulse = SimpleNamespace(
+        x90=lambda _qubit: Blank(4.0),
+        y90m=lambda _qubit: Blank(4.0),
+        rabi_params={
+            "Q0": SimpleNamespace(normalize=lambda values: np.real(values)),
+            "Q1": SimpleNamespace(normalize=lambda values: np.real(values)),
+        },
+    )
+    exp = cast(Experiment, SimpleNamespace(pulse=pulse))
+    monkeypatch.setattr(health, "measure_single_shot_batch", measure_pauli)
+
+    processed, pauli_raw = health._orthogonal_acquisition(
+        exp,
+        cast(health.ProtocolSchedules, schedules),
+        "Q0",
+        "Q1",
+        n_shots=2048,
+        shot_interval=1000.0,
+        enable_tqdm=False,
+    )
+
+    assert pauli_calls[0]["n_shots"] == 2048
+    assert set(processed) == set(base)
+    assert len(pauli_raw) == 24
+    assert set(processed[health.PROTOCOL_A].expectations) == {
+        "Q0:X",
+        "Q0:Y",
+        "Q1:Y",
+        "Q1:Z",
+    }
+    assert set(processed[health.PROTOCOL_B].expectations) == {
+        "Q0:X",
+        "Q0:Y",
+        "Q1:Y",
+        "Q1:Z",
+    }
+    assert processed[health.PROTOCOL_A].component_roles == {
+        "Q0:X": "control",
+        "Q0:Y": "control",
+        "Q1:Y": "target",
+        "Q1:Z": "target",
+    }
+    assert set(processed[health.PROTOCOL_C].component_roles.values()) == {"control"}
+    assert set(processed[health.PROTOCOL_D].component_roles.values()) == {"target"}
+    assert np.all(processed[health.PROTOCOL_A].expectations["Q0:X"] < 0.0)
+    assert processed[health.PROTOCOL_C].standard_errors
+    assert processed[health.PROTOCOL_D].standard_errors
+
+
+@pytest.mark.parametrize(
+    "normalized",
+    [np.ones(1), np.array([0.0, 0.0, float("nan"), 0.0])],
+)
+def test_orthogonal_acquisition_rejects_invalid_normalized_shots(
+    monkeypatch: pytest.MonkeyPatch,
+    normalized: np.ndarray[Any, Any],
+) -> None:
+    """Pauli normalization must return one finite value per acquired shot."""
+    base = {
+        protocol: (PulseSchedule(),)
+        for protocol in (
+            health.PROTOCOL_A,
+            health.PROTOCOL_B,
+            health.PROTOCOL_C,
+            health.PROTOCOL_D,
+        )
+    }
+    schedules = SimpleNamespace(base=base)
+    pulse = SimpleNamespace(
+        x90=lambda _qubit: Blank(4.0),
+        y90m=lambda _qubit: Blank(4.0),
+        rabi_params={
+            "Q0": SimpleNamespace(normalize=lambda _values: normalized),
+            "Q1": SimpleNamespace(normalize=lambda _values: normalized),
+        },
+    )
+    exp = cast(Experiment, SimpleNamespace(pulse=pulse))
+    monkeypatch.setattr(
+        health,
+        "measure_single_shot_batch",
+        lambda *_args, **_kwargs: [
+            {"Q0": np.ones(4), "Q1": np.ones(4)} for _ in range(12)
+        ],
+    )
+
+    with pytest.raises(ValueError, match="normalization must return 4 finite shots"):
+        health._orthogonal_acquisition(
+            exp,
+            cast(health.ProtocolSchedules, schedules),
+            "Q0",
+            "Q1",
+            n_shots=4,
+            shot_interval=1000.0,
+            enable_tqdm=False,
+        )
+
+
+def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
+    """Figures use common ranges and preserve state colors across trace roles."""
+    counts = np.arange(5, dtype=np.int64)
+    population = np.column_stack((1.0 - 0.1 * counts, 0.08 * counts, 0.02 * counts))
+    covariance = np.tile(np.eye(3)[None, :, :] * 1e-4, (counts.size, 1, 1))
+    series = health.GefPopulationSeries(
+        population,
+        covariance,
+        np.sqrt(np.diagonal(covariance, axis1=1, axis2=2)),
+        population,
+    )
+    ab_data = health.CrDissipationProtocolData(
+        control_gef=series,
+        target_gef=series,
+        target_x_comp=np.linspace(1.0, 0.4, counts.size),
+        target_x_comp_standard_error=np.full(counts.size, 0.02),
+    )
+    cd_data = health.CrDissipationProtocolData(
+        primary_expectation=np.linspace(1.0, 0.3, counts.size),
+        primary_standard_error=np.full(counts.size, 0.02),
+    )
+
+    orthogonal = health.CrDissipationPauliData(
+        expectations={
+            "Q0:Y": np.linspace(0.0, 0.4, counts.size),
+            "Q1:Z": np.linspace(0.2, 0.6, counts.size),
+        },
+        standard_errors={
+            "Q0:Y": np.full(counts.size, 0.02),
+            "Q1:Z": np.full(counts.size, 0.02),
+        },
+        component_roles={"Q0:Y": "control", "Q1:Z": "target"},
+    )
+
+    def measured(data: Any, duration: float, *, with_orthogonal: bool = False) -> Any:
+        elapsed = counts.astype(float) * duration
+        return health.CrDissipationProtocolMeasurements(
+            elapsed,
+            elapsed * 0.5,
+            data,
+            None,
+            orthogonal if with_orthogonal else None,
+        )
+
+    measurements = health.CrDissipationMeasurements(
+        counts,
+        4 * counts,
+        measured(ab_data, 100.0, with_orthogonal=True),
+        measured(ab_data, 100.0),
+        measured(cd_data, 200.0),
+        measured(cd_data, 300.0),
+    )
+    fitted_decay = SimpleNamespace(fitted_values=np.linspace(1.0, 0.45, counts.size))
+    fitted_leakage = SimpleNamespace(fitted_values=np.linspace(0.0, 0.08, counts.size))
+    fitted_cd = SimpleNamespace(fitted_values=np.linspace(1.0, 0.35, counts.size))
+    fits = SimpleNamespace(
+        control_population_ab=SimpleNamespace(
+            fitted_populations={
+                health.PROTOCOL_A: population,
+                health.PROTOCOL_B: population,
+            }
+        ),
+        target_a_t1rho=fitted_decay,
+        target_b_t1rho=fitted_decay,
+        target_a_leakage=fitted_leakage,
+        target_b_leakage=fitted_leakage,
+        control_pure_dephasing_c=fitted_cd,
+        target_rotating_frame_pure_dephasing_d=fitted_cd,
+    )
+    idle_predictions = {
+        health.PROTOCOL_A: SimpleNamespace(
+            observables={
+                "control_population": population,
+                "target_x_comp": np.linspace(1.0, 0.5, counts.size),
+                "target_pf": np.linspace(0.0, 0.05, counts.size),
+            }
+        ),
+        health.PROTOCOL_B: SimpleNamespace(
+            observables={
+                "control_population": population,
+                "target_x_comp": np.linspace(1.0, 0.5, counts.size),
+                "target_pf": np.linspace(0.0, 0.05, counts.size),
+            }
+        ),
+        health.PROTOCOL_C: SimpleNamespace(
+            observables={"primary_expectation": np.linspace(1.0, 0.4, counts.size)}
+        ),
+        health.PROTOCOL_D: SimpleNamespace(
+            observables={"primary_expectation": np.linspace(1.0, 0.4, counts.size)}
+        ),
+    }
+    analysis = cast(
+        health.CrDissipationAnalysis,
+        SimpleNamespace(fits=fits, idle_predictions=idle_predictions),
+    )
+
+    figures = health._plot_cr_dissipation(measurements, analysis)
+
+    a_traces: dict[str, Any] = {}
+    for trace in figures[health.PROTOCOL_A].data:
+        typed_trace = cast(Any, trace)
+        a_traces[typed_trace.name] = typed_trace
+    assert len(a_traces["fit Pg"].x) == 400
+    assert a_traces["actual Pg"].marker.color == a_traces["fit Pg"].line.color
+    assert a_traces["fit Pg"].line.color == a_traces["idle-only Pg"].line.color
+    assert a_traces["Q0:Y"].yaxis == "y2"
+    assert a_traces["actual Xcomp"].yaxis == "y3"
+    assert a_traces["actual target Pf"].yaxis == "y4"
+    assert a_traces["Q1:Z"].yaxis == "y5"
+    assert tuple(figures[health.PROTOCOL_A].layout.yaxis.range) == (0.0, 1.0)
+    assert tuple(figures[health.PROTOCOL_A].layout.yaxis2.range) == (-1.0, 1.0)
+    assert tuple(figures[health.PROTOCOL_A].layout.yaxis3.range) == (-1.0, 1.0)
+    assert figures[health.PROTOCOL_A].layout.yaxis4.range is None
+    assert tuple(figures[health.PROTOCOL_A].layout.yaxis5.range) == (-1.0, 1.0)
+    expected_x_range = (0.0, 1.2)
+    for figure in figures.values():
+        assert tuple(figure.layout.xaxis.range) == pytest.approx(expected_x_range)

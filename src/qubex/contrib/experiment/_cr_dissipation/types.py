@@ -1,4 +1,9 @@
-"""Internal data models for CR dissipation characterization."""
+"""
+Define data records exchanged by CR dissipation implementation layers.
+
+The models are grouped as measurement inputs, intermediate fit results, and
+user-facing analysis outputs. Arrays use ns and 1/ns unless noted otherwise.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,8 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
+
+# Measurement inputs and processed observables
 
 
 class CrDissipationRateStatus(str, Enum):
@@ -74,7 +81,7 @@ class GefPopulationSeries:
 
 @dataclass(frozen=True)
 class CrDissipationProtocolData:
-    """Store one actual, reference, or diagnostic protocol data series."""
+    """Store one primary or reference GEF protocol data series."""
 
     control_gef: GefPopulationSeries | None = None
     target_gef: GefPopulationSeries | None = None
@@ -82,10 +89,15 @@ class CrDissipationProtocolData:
     target_x_comp_standard_error: NDArray[np.float64] | None = None
     primary_expectation: NDArray[np.float64] | None = None
     primary_standard_error: NDArray[np.float64] | None = None
-    components: dict[str, NDArray[np.float64]] = field(default_factory=dict)
-    component_standard_errors: dict[str, NDArray[np.float64]] = field(
-        default_factory=dict
-    )
+
+
+@dataclass(frozen=True)
+class CrDissipationPauliData:
+    """Store Pauli diagnostics, analytic errors, and measured-qubit roles."""
+
+    expectations: dict[str, NDArray[np.float64]] = field(default_factory=dict)
+    standard_errors: dict[str, NDArray[np.float64]] = field(default_factory=dict)
+    component_roles: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -96,7 +108,7 @@ class CrDissipationProtocolMeasurements:
     cr_active_time_ns: NDArray[np.float64]
     actual: CrDissipationProtocolData
     reference: CrDissipationProtocolData | None
-    orthogonal: CrDissipationProtocolData | None
+    orthogonal: CrDissipationPauliData | None
 
 
 @dataclass(frozen=True)
@@ -109,6 +121,9 @@ class CrDissipationMeasurements:
     control_excited_cr_population: CrDissipationProtocolMeasurements
     control_cr_transverse_echo: CrDissipationProtocolMeasurements
     target_cr_rotating_frame_echo: CrDissipationProtocolMeasurements
+
+
+# Intermediate fit results
 
 
 @dataclass(frozen=True)
@@ -208,6 +223,9 @@ class CrDissipationFits:
     target_b_leakage: ExchangeRateFit
     control_pure_dephasing_c: PhysicalForwardDephasingFit
     target_rotating_frame_pure_dephasing_d: PhysicalForwardDephasingFit
+
+
+# User-facing rates, fidelity limits, predictions, and diagnostics
 
 
 @dataclass(frozen=True)

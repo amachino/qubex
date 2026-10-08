@@ -7,13 +7,13 @@ from collections.abc import Mapping
 import numpy as np
 from numpy.typing import NDArray
 
-from qubex.contrib.experiment._cr_dissipation_pulses import (
+from qubex.contrib.experiment._cr_dissipation.pulses import (
     PROTOCOL_A,
     PROTOCOL_B,
     PROTOCOL_C,
     PROTOCOL_D,
 )
-from qubex.contrib.experiment._cr_dissipation_types import (
+from qubex.contrib.experiment._cr_dissipation.types import (
     CrDissipationMeasurements,
     CrDissipationProtocolData,
     CrDissipationProtocolMeasurements,

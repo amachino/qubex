@@ -1,4 +1,10 @@
-"""Semantic two-qutrit simulation for CR dissipation characterization."""
+"""
+Simulate semantic two-qutrit CR evolution and fidelity limits.
+
+The module defines the qutrit operator basis, constructs piecewise Lindblad
+channels, evaluates repeated protocol observables, and propagates fitted-rate
+uncertainty into leakage-aware average fidelity.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +16,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.linalg import expm
 
-from ._cr_dissipation_types import IdleNoiseParameters
+from .types import IdleNoiseParameters
 
 _COMPLEX = np.complex128
 _DIMENSION = 9
@@ -18,6 +24,7 @@ _SUPER_DIMENSION = _DIMENSION**2
 
 
 def _basis(index: int) -> NDArray[np.complex128]:
+    """Return one vector from the local three-level computational basis."""
     vector = np.zeros(3, dtype=_COMPLEX)
     vector[index] = 1.0
     return vector
@@ -46,8 +53,10 @@ X_TARGET = tensor(I3, X_GE)
 Y_TARGET = tensor(I3, Y_GE)
 Z_TARGET = tensor(I3, Z_GE)
 ZX = tensor(Z_GE, X_GE)
-ZY = tensor(Z_GE, Y_GE)
 IDENTITY = np.eye(_DIMENSION, dtype=_COMPLEX)
+
+
+# Semantic operations and dissipative-rate inputs
 
 
 @dataclass(frozen=True)
@@ -119,16 +128,6 @@ def rotation_hamiltonian(
     return np.asarray(float(angle_rad) * operator / (2.0 * duration_ns), dtype=_COMPLEX)
 
 
-def phased_target_x(phase_rad: float) -> NDArray[np.complex128]:
-    """Return the target equatorial axis at one logical frame phase."""
-    return np.cos(phase_rad) * X_TARGET + np.sin(phase_rad) * Y_TARGET
-
-
-def phased_zx(phase_rad: float) -> NDArray[np.complex128]:
-    """Return the ZX/ZY axis at one CR target-side frame phase."""
-    return np.cos(phase_rad) * ZX + np.sin(phase_rad) * ZY
-
-
 def simultaneous_rotation_segments(
     rotations: Sequence[tuple[NDArray[np.complex128], float, float, str]],
     *,
@@ -197,6 +196,7 @@ def unitary_superoperator(unitary: NDArray[np.complex128]) -> NDArray[np.complex
 def _transition(
     destination: NDArray[np.complex128], source: NDArray[np.complex128]
 ) -> NDArray[np.complex128]:
+    """Return a local transition operator from source to destination."""
     return np.outer(destination, source.conj())
 
 
@@ -205,6 +205,7 @@ def _embedded_transition(
     destination: NDArray[np.complex128],
     source: NDArray[np.complex128],
 ) -> NDArray[np.complex128]:
+    """Embed one local transition on the selected qutrit."""
     local = _transition(destination, source)
     return tensor(local, I3) if role == "control" else tensor(I3, local)
 
@@ -213,6 +214,7 @@ def _idle_dissipators(
     control_idle: IdleNoiseParameters,
     target_idle: IdleNoiseParameters,
 ) -> tuple[tuple[float, NDArray[np.complex128]], ...]:
+    """Return fixed idle dissipators for both qutrits."""
     return (
         (
             control_idle.relaxation_rate_per_ns,
@@ -234,6 +236,7 @@ def _cr_dissipators(
     signed_control_pure_dephasing: float | None = None,
     signed_target_pure_dephasing: float | None = None,
 ) -> tuple[tuple[float, NDArray[np.complex128]], ...]:
+    """Return CR-active dissipators for the selected physical model."""
     plus_x = (G + E) / np.sqrt(2.0)
     minus_x = (G - E) / np.sqrt(2.0)
     control_phi = (

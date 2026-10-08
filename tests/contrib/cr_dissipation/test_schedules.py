@@ -7,7 +7,7 @@ from collections.abc import Mapping
 import numpy as np
 import pytest
 
-from qubex.contrib.experiment._cr_dissipation_simulation import (
+from qubex.contrib.experiment._cr_dissipation.simulation import (
     X_TARGET,
     ZX,
     CrNoiseRates,
@@ -20,7 +20,7 @@ from qubex.contrib.experiment._cr_dissipation_simulation import (
     simultaneous_rotation_segments,
     tensor,
 )
-from qubex.contrib.experiment._cr_dissipation_types import IdleNoiseParameters
+from qubex.contrib.experiment._cr_dissipation.types import IdleNoiseParameters
 
 
 def test_qutrit_embedding_stops_zx_but_not_unconditional_ix_after_control_leakage() -> (

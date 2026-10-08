@@ -1,4 +1,10 @@
-"""Pulse construction and semantic timing for CR dissipation protocols."""
+"""
+Build hardware schedules and matching semantic CR protocol descriptions.
+
+Actual schedules preserve calibrated waveforms. Semantic operations retain the
+same segment timing for physical forward simulation without interpreting raw
+waveform samples as an exact Hamiltonian.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +17,7 @@ import numpy as np
 
 from qubex.pulse import Blank, PulseSchedule, Waveform
 
-from ._cr_dissipation_simulation import (
+from .simulation import (
     X_CONTROL,
     X_TARGET,
     Y_CONTROL,
@@ -25,13 +31,16 @@ from ._cr_dissipation_simulation import (
     rotation_unitary,
     simultaneous_rotation_segments,
 )
-from ._cr_dissipation_types import CrDissipationWarning
+from .types import CrDissipationWarning
 
 PROTOCOL_A = "control_ground_cr_population"
 PROTOCOL_B = "control_excited_cr_population"
 PROTOCOL_C = "control_cr_transverse_echo"
 PROTOCOL_D = "target_cr_rotating_frame_echo"
 PROTOCOLS = (PROTOCOL_A, PROTOCOL_B, PROTOCOL_C, PROTOCOL_D)
+
+
+# Protocol identifiers and resolved calibrated-gate metadata
 
 
 @dataclass(frozen=True)
@@ -71,6 +80,7 @@ class ProtocolSchedules:
 
 
 def _positive_duration(value: Any, name: str) -> float:
+    """Validate one required positive duration from calibrated gate metadata."""
     if isinstance(value, bool) or not isinstance(value, Real):
         raise ValueError(  # noqa: TRY004 - public override contract requires ValueError
             f"zx90_echo must expose numeric `{name}` metadata."
@@ -82,6 +92,7 @@ def _positive_duration(value: Any, name: str) -> float:
 
 
 def _frequencies(schedule: PulseSchedule) -> Mapping[str, float | None]:
+    """Return validated frequency metadata from a pulse schedule."""
     getter = getattr(schedule, "get_frequencies", None)
     if getter is None:
         raise ValueError("zx90_echo must expose frequency metadata.")
@@ -98,6 +109,7 @@ def _blank_schedule(
     duration_ns: float,
     frequencies: Mapping[str, float | None],
 ) -> PulseSchedule:
+    """Build a frequency-preserving blank schedule of the requested duration."""
     with PulseSchedule(list(labels)) as blank:
         blank.add(labels[0], Blank(duration=duration_ns))
     blank.set_frequencies(frequencies)
@@ -215,6 +227,9 @@ def resolve_zx90_descriptor(
     )
 
 
+# Semantic operations used by the forward model
+
+
 def semantic_cr_lobe(
     descriptor: ZX90Descriptor,
     *,
@@ -239,6 +254,7 @@ def semantic_cr_lobe(
 
 
 def _idle_segment(duration_ns: float, label: str) -> tuple[SemanticSegment, ...]:
+    """Return one zero-Hamiltonian semantic segment when duration is positive."""
     if duration_ns <= 0.0:
         return ()
     return (
@@ -344,6 +360,9 @@ def semantic_protocol_blocks(
     }
 
 
+# Hardware schedules for primary and diagnostic acquisitions
+
+
 def _state_preparation(
     exp: Any,
     control: str,
@@ -351,6 +370,7 @@ def _state_preparation(
     control_state: Literal["0", "1", "+"],
     target_state: Literal["0", "+", "+y"],
 ) -> PulseSchedule:
+    """Build one protocol input-state preparation schedule."""
     with PulseSchedule([control, target]) as schedule:
         schedule.add(control, exp.pulse.get_pulse_for_state(control, control_state))
         if target_state == "+y":
@@ -366,6 +386,7 @@ def append_analyzer(
     target: str,
     analyzer: Waveform,
 ) -> PulseSchedule:
+    """Append an analyzer while preserving schedule frequency metadata."""
     measured = schedule.copy()
     with measured:
         measured.barrier()
@@ -380,6 +401,7 @@ def _actual_protocol_block(
     descriptor: ZX90Descriptor,
     protocol: str,
 ) -> PulseSchedule:
+    """Build the calibrated repeated block for protocol C or D."""
     if protocol in (PROTOCOL_A, PROTOCOL_B):
         return descriptor.full_un_echoed.repeated(4)
     if protocol == PROTOCOL_C:
@@ -541,6 +563,7 @@ def _ix_lobe(
     target: str,
     pulse: Waveform | None,
 ) -> PulseSchedule:
+    """Build one un-echoed IX lobe with the calibrated CR envelope."""
     labels = (control, f"{control}-{target}", target)
     with PulseSchedule(list(labels)) as lobe:
         if pulse is None:

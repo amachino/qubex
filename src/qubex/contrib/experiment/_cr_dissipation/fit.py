@@ -1,4 +1,10 @@
-"""Ordinary-GLS fitting utilities for CR dissipation analysis."""
+"""
+Provide reusable ordinary-GLS primitives for CR dissipation fits.
+
+The module builds whitened residual blocks, performs robust initialization
+followed by ordinary GLS, selects nested candidates by AICc, and reports local
+covariance estimates.
+"""
 
 from __future__ import annotations
 
@@ -9,9 +15,12 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import OptimizeResult, least_squares
 
-from ._cr_dissipation_types import CandidateFit
+from .types import CandidateFit
 
 _EPS = float(np.finfo(np.float64).eps)
+
+
+# Residual construction and covariance whitening
 
 
 @dataclass(frozen=True)
@@ -106,6 +115,7 @@ def _run_least_squares(
     loss: str,
     max_nfev: int,
 ) -> OptimizeResult | None:
+    """Run least squares and convert numerical failures to an unavailable fit."""
     try:
         return least_squares(
             residual,
@@ -292,6 +302,7 @@ def _failed_candidate(
     n_observations: int,
     message: str,
 ) -> CandidateFit:
+    """Build a consistently shaped failed candidate result."""
     n_parameters = len(parameter_names)
     return CandidateFit(
         name=name,
@@ -341,18 +352,4 @@ def select_aicc_candidate(
             float(candidate.aicc) if candidate.aicc is not None else float("inf"),
             candidate.name,
         ),
-    )
-
-
-def covariance_standard_errors(
-    covariance: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Return finite covariance diagonal errors and preserve unavailable entries."""
-    if covariance.ndim != 2 or covariance.shape[0] != covariance.shape[1]:
-        raise ValueError("covariance must be square.")
-    diagonal = np.diag(covariance)
-    return np.where(
-        np.isfinite(diagonal) & (diagonal >= 0.0),
-        np.sqrt(np.maximum(diagonal, 0.0)),
-        np.nan,
     )

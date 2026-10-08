@@ -10,10 +10,14 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-import qubex.contrib.experiment._cr_dissipation_analysis as analysis_module
-from qubex.contrib.experiment._cr_dissipation_analysis import (
+import qubex.contrib.experiment._cr_dissipation.analysis as analysis_module
+from qubex.contrib.experiment._cr_dissipation.analysis import (
     _aggregate_value_error,
+    _change_detected,
     _fidelity_limits,
+    _fit_idle_control_rates,
+    _fit_idle_target_exchange,
+    _fit_idle_target_t1rho,
     _pure_dephasing_component,
     _select_significant_nested_candidate,
     _simplex_boundary_override,
@@ -27,7 +31,7 @@ from qubex.contrib.experiment._cr_dissipation_analysis import (
     target_exchange_trajectory,
     target_t1rho_trajectory,
 )
-from qubex.contrib.experiment._cr_dissipation_pulses import (
+from qubex.contrib.experiment._cr_dissipation.pulses import (
     PROTOCOL_A,
     PROTOCOL_B,
     PROTOCOL_C,
@@ -35,13 +39,13 @@ from qubex.contrib.experiment._cr_dissipation_pulses import (
     ProtocolSchedules,
     ZX90Descriptor,
 )
-from qubex.contrib.experiment._cr_dissipation_simulation import (
+from qubex.contrib.experiment._cr_dissipation.simulation import (
     X_CONTROL,
     CrNoiseRates,
     SemanticSegment,
     state_density,
 )
-from qubex.contrib.experiment._cr_dissipation_types import (
+from qubex.contrib.experiment._cr_dissipation.types import (
     CandidateFit,
     CrDissipationMeasurements,
     CrDissipationProtocolData,
@@ -126,6 +130,21 @@ def test_boundary_fraction_is_only_an_auxiliary_flat_boundary_override() -> None
         replace(base, bootstrap=(initial, stable, stable)),
         2,
         minimum_change=0.003,
+    )
+
+
+def test_change_detection_uses_independent_material_and_significance_maxima() -> None:
+    """Material and significance maxima may occur at different points."""
+    values = np.array([0.0, 0.02, 0.001])
+    reference = np.zeros(3)
+    errors = np.array([0.001, 0.1, 0.0001])
+
+    assert _change_detected(
+        values,
+        errors,
+        reference,
+        minimum_change=0.01,
+        include_initial_error=False,
     )
 
 
@@ -350,7 +369,7 @@ def test_control_simplification_updates_status_and_covariance(
         return _candidate(name, names, values, errors, aicc)
 
     monkeypatch.setattr(
-        "qubex.contrib.experiment._cr_dissipation_analysis.fit_gls_candidate",
+        "qubex.contrib.experiment._cr_dissipation.analysis.fit_gls_candidate",
         fake_fit,
     )
     fitted = fit_control_populations(
@@ -397,7 +416,7 @@ def test_exchange_simplification_marks_insignificant_seepage_zero(
         return _candidate(name, names, values, errors, aicc)
 
     monkeypatch.setattr(
-        "qubex.contrib.experiment._cr_dissipation_analysis.fit_gls_candidate",
+        "qubex.contrib.experiment._cr_dissipation.analysis.fit_gls_candidate",
         fake_fit,
     )
     fitted = fit_target_exchange(
@@ -409,6 +428,153 @@ def test_exchange_simplification_marks_insignificant_seepage_zero(
     assert fitted.seepage_status == CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
     assert fitted.seepage_standard_error_per_ns is None
     np.testing.assert_array_equal(fitted.covariance[1], 0.0)
+
+
+def test_clear_target_dynamics_fail_when_only_null_candidate_is_identifiable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Clear leakage dynamics cannot fall back to an identifiable null fit."""
+    counts = np.array([0, 1, 2, 3, 5], dtype=np.int64)
+    target_values = np.column_stack(
+        (
+            0.5 - np.array([0.0, 0.01, 0.02, 0.03, 0.04]),
+            np.full(counts.size, 0.5),
+            np.array([0.0, 0.01, 0.02, 0.03, 0.04]),
+        )
+    )
+    control = population_series(np.tile([0.9, 0.1, 0.0], (counts.size, 1)))
+    ab = CrDissipationProtocolData(
+        control_gef=control,
+        target_gef=population_series(target_values, error=1e-4),
+    )
+    cd = CrDissipationProtocolData(
+        primary_expectation=np.ones(counts.size),
+        primary_standard_error=np.full(counts.size, 1e-4),
+    )
+    measurements = measurements_from_protocol_data(
+        counts,
+        {PROTOCOL_A: ab, PROTOCOL_B: ab, PROTOCOL_C: cd, PROTOCOL_D: cd},
+    )
+
+    def fake_fit(**kwargs: Any) -> CandidateFit:
+        name = str(kwargs["name"])
+        names = tuple(cast(tuple[str, ...], kwargs["parameter_names"]))
+        candidate = _candidate(
+            name,
+            names,
+            tuple(1e-5 for _ in names),
+            tuple(1e-6 for _ in names),
+            0.0,
+        )
+        return candidate if not names else replace(candidate, success=False, aicc=None)
+
+    monkeypatch.setattr(analysis_module, "fit_gls_candidate", fake_fit)
+
+    fitted = fit_target_exchange(measurements, PROTOCOL_A, descriptor())
+
+    assert not fitted.success
+    assert fitted.selected_model == "fit_failed"
+    assert fitted.leakage_status == CrDissipationRateStatus.FIT_FAILED
+    assert fitted.seepage_status == CrDissipationRateStatus.FIT_FAILED
+
+
+def test_clear_control_dynamics_fail_when_only_null_candidate_is_identifiable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Clear control dynamics cannot fall back to an identifiable null fit."""
+    counts = np.array([0, 1, 2, 3, 5], dtype=np.int64)
+    pe = np.array([0.1, 0.13, 0.16, 0.19, 0.22])
+    control = population_series(
+        np.column_stack((1.0 - pe, pe, np.zeros(counts.size))), error=1e-4
+    )
+    target = population_series(np.tile([0.5, 0.5, 0.0], (counts.size, 1)))
+    ab = CrDissipationProtocolData(control_gef=control, target_gef=target)
+    cd = CrDissipationProtocolData(
+        primary_expectation=np.ones(counts.size),
+        primary_standard_error=np.full(counts.size, 1e-4),
+    )
+    measurements = measurements_from_protocol_data(
+        counts,
+        {PROTOCOL_A: ab, PROTOCOL_B: ab, PROTOCOL_C: cd, PROTOCOL_D: cd},
+    )
+
+    def fake_fit(**kwargs: Any) -> CandidateFit:
+        name = str(kwargs["name"])
+        names = tuple(cast(tuple[str, ...], kwargs["parameter_names"]))
+        candidate = _candidate(
+            name,
+            names,
+            tuple(1e-5 for _ in names),
+            tuple(1e-6 for _ in names),
+            0.0,
+        )
+        return candidate if not names else replace(candidate, success=False, aicc=None)
+
+    monkeypatch.setattr(analysis_module, "fit_gls_candidate", fake_fit)
+
+    fitted = fit_control_populations(
+        measurements,
+        descriptor(),
+        IdleNoiseParameters(50_000.0, 40_000.0),
+        covariance_rcond=1e-12,
+    )
+
+    assert not fitted.success
+    assert fitted.selected_model == "fit_failed"
+    assert set(fitted.statuses.values()) == {CrDissipationRateStatus.FIT_FAILED}
+
+
+def test_idle_baseline_fits_return_nan_without_usable_observations() -> None:
+    """Empty idle-fit datasets are unavailable rather than exact boundaries."""
+    counts = np.array([0, 1, 2, 3, 5], dtype=np.int64)
+    values = np.tile([0.9, 0.1, 0.0], (counts.size, 1))
+    unavailable = GefPopulationSeries(
+        values,
+        np.full((counts.size, 3, 3), np.nan),
+        np.full(values.shape, np.nan),
+        values.copy(),
+    )
+    target = population_series(np.tile([0.5, 0.5, 0.0], (counts.size, 1)))
+    ab = CrDissipationProtocolData(control_gef=unavailable, target_gef=target)
+    cd = CrDissipationProtocolData(
+        primary_expectation=np.ones(counts.size),
+        primary_standard_error=np.full(counts.size, 1e-4),
+    )
+    measurements = measurements_from_protocol_data(
+        counts,
+        {PROTOCOL_A: ab, PROTOCOL_B: ab, PROTOCOL_C: cd, PROTOCOL_D: cd},
+    )
+    idle = IdleNoiseParameters(50_000.0, 40_000.0)
+    synthetic = {PROTOCOL_A: values, PROTOCOL_B: values}
+    active_time = counts.astype(float) * 400.0
+
+    control_rates = _fit_idle_control_rates(
+        measurements,
+        descriptor(),
+        idle,
+        synthetic,
+        covariance_rcond=1e-12,
+    )
+    t1rho = _fit_idle_target_t1rho(
+        np.ones(counts.size),
+        np.full(counts.size, np.nan),
+        counts,
+        descriptor(),
+        idle,
+        active_time,
+    )
+    leakage, seepage = _fit_idle_target_exchange(
+        np.zeros(counts.size),
+        np.full(counts.size, np.nan),
+        counts,
+        descriptor(),
+        active_time,
+    )
+
+    assert all(np.isnan(value) for value in control_rates.values())
+    assert np.isnan(t1rho)
+    assert np.isnan(leakage)
+    assert np.isnan(seepage)
 
 
 def descriptor() -> ZX90Descriptor:
