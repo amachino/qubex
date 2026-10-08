@@ -2884,23 +2884,21 @@ def test_quel3_example_deploy_uses_unit_labels_as_box_ids() -> None:
 
 
 @pytest.mark.parametrize("file_present", [False, True])
-def test_port_timing_file_is_automatically_loaded_for_quel3(
+def test_cable_delay_file_is_automatically_loaded_for_quel3(
     tmp_path: Path,
     file_present: bool,
 ) -> None:
-    """Optional port timing files should configure a controller through runtime settings."""
+    """Optional cable delay files should configure a controller through runtime settings."""
     from qubex.backend.quel3 import Quel3BackendController
 
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(config_dir / "box.yaml", {"BOX1": {"name": "BOX1", "type": "quel3"}})
     timing = {
-        "ports": {
-            "unit-a": {"cable_delay_ns": {"tx_p04": 20.0, "trx_p00p01": 80.0}},
-            "unit-b": {"cable_delay_ns": {"tx_p04": 40.0}},
-        }
+        "unit-a": {"tx_p04": 20.0, "trx_p00p01": 80.0},
+        "unit-b": {"tx_p04": 40.0},
     }
     if file_present:
-        _write_yaml(config_dir / "port_timing.yaml", timing)
+        _write_yaml(config_dir / "cable_delay.yaml", timing)
     loader = ConfigLoader(
         system_id=chip_id, config_dir=config_dir, params_dir=params_dir, autoload=False
     )
@@ -2918,17 +2916,17 @@ def test_port_timing_file_is_automatically_loaded_for_quel3(
         assert controller.cable_delay_ns == {}
 
 
-def test_port_timing_file_overrides_inline_settings_and_reloads(tmp_path: Path) -> None:
+def test_cable_delay_file_overrides_inline_settings_and_reloads(tmp_path: Path) -> None:
     """File settings should replace inline settings and be refreshed only on load."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(config_dir / "box.yaml", {"BOX1": {"name": "BOX1", "type": "quel3"}})
     inline = {"unit": {"tx": 10.0}}
-    file_settings = {"ports": {"unit": {"cable_delay_ns": {"tx": 20.0}}}}
+    file_settings = {"unit": {"tx": 20.0}}
     _write_yaml(
         config_dir / "system.yaml",
         {chip_id: {"chip_id": chip_id, "quel3": {"cable_delay_ns": inline}}},
     )
-    path = config_dir / "port_timing.yaml"
+    path = config_dir / "cable_delay.yaml"
     _write_yaml(path, file_settings)
     loader = ConfigLoader(
         system_id=chip_id, config_dir=config_dir, params_dir=params_dir, autoload=False
@@ -2943,10 +2941,10 @@ def test_port_timing_file_overrides_inline_settings_and_reloads(tmp_path: Path) 
     assert loader.backend_runtime_config["cable_delay_ns"] == inline
 
 
-def test_quel1_does_not_load_quel3_port_timing_file(tmp_path: Path) -> None:
+def test_quel1_does_not_load_quel3_cable_delay_file(tmp_path: Path) -> None:
     """Other backends should retain their existing configuration-loading behavior."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
-    (config_dir / "port_timing.yaml").write_text("ports: [", encoding="utf-8")
+    (config_dir / "cable_delay.yaml").write_text("unit: [", encoding="utf-8")
     loader = ConfigLoader(
         system_id=chip_id, config_dir=config_dir, params_dir=params_dir
     )

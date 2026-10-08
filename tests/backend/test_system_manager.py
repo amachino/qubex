@@ -2199,7 +2199,7 @@ def test_load_preserves_state_when_dc_controller_validation_fails(
     )
 
 
-def test_load_applies_port_timing_to_quel3_controller(
+def test_load_applies_cable_delay_to_quel3_controller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Loaded cable delays should reach an explicitly supplied controller."""

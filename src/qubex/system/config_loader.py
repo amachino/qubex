@@ -20,11 +20,11 @@ from qubex.backend.backend_controller import (
 )
 from qubex.constants import (
     BOX_FILE,
+    CABLE_DELAY_FILE,
     CHIP_FILE,
     EXTERNAL_DEVICES_FILE,
     MEASUREMENT_DEFAULTS_FILE,
     PARAMS_FILE,
-    PORT_TIMING_FILE,
     PROPS_FILE,
     SYSTEM_FILE,
     WIRING_FILE,
@@ -376,7 +376,7 @@ class ConfigLoader:
             self._backend_kind = self._resolve_loaded_backend_kind(
                 backend_kind=backend_kind
             )
-            self._cable_delay_ns = self._load_port_timing_config()
+            self._cable_delay_ns = self._load_cable_delay_config()
             self._resolved_wiring_file = self._resolve_wiring_file()
             self._wiring_dict = self._load_config_file(self._resolved_wiring_file)
             self._wiring_rows = self._load_wiring_rows()
@@ -423,10 +423,11 @@ class ConfigLoader:
     @property
     def backend_runtime_config(self) -> dict[str, Any]:
         """
-        Return backend runtime settings, including optional port timing settings.
+        Return backend runtime settings, including optional cable delays.
 
-        For QuEL-3, `config/port_timing.yaml` replaces any inline `cable_delay_ns`
-        setting from `system.yaml`. Files are read during `load()`, not on
+        For QuEL-3, `config/cable_delay.yaml` maps unit names to local port IDs
+        and cable delays in ns, replacing any inline `cable_delay_ns` setting
+        from `system.yaml`. Files are read during `load()`, not on
         property access. Missing files preserve the inline setting or the
         backend default; other backends do not load this file.
         """
@@ -441,17 +442,13 @@ class ConfigLoader:
             runtime_config["cable_delay_ns"] = deepcopy(self._cable_delay_ns)
         return runtime_config
 
-    def _load_port_timing_config(self) -> dict[str, dict[str, float]] | None:
+    def _load_cable_delay_config(self) -> dict[str, dict[str, float]] | None:
         """Read optional QuEL-3 cable delays keyed by unit and port."""
         if self._backend_kind != BACKEND_KIND_QUEL3:
             return None
-        if not (Path(self._config_dir) / PORT_TIMING_FILE).exists():
+        if not (Path(self._config_dir) / CABLE_DELAY_FILE).exists():
             return None
-        settings = self._load_optional_config_file(PORT_TIMING_FILE)
-        return {
-            unit: unit_settings["cable_delay_ns"]
-            for unit, unit_settings in settings.get("ports", {}).items()
-        }
+        return self._load_optional_config_file(CABLE_DELAY_FILE)
 
     def _resolve_backend_config_section(self) -> dict[str, Any]:
         """Return selected backend config section as a mapping."""
