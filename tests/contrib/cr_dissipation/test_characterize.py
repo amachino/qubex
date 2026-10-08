@@ -122,6 +122,30 @@ def test_missing_idle_coherence_fails_before_pulse_resolution() -> None:
         )
 
 
+def test_explicit_idle_value_errors_are_not_masked_by_other_stored_inputs() -> None:
+    """An invalid explicit T1 should retain its precise validation error."""
+    loader = SimpleNamespace(
+        load_param_data=lambda name: {"Q0": 20_000.0, "Q1": 20_000.0}
+    )
+    exp = cast(
+        Experiment,
+        SimpleNamespace(
+            ctx=SimpleNamespace(
+                system_manager=SimpleNamespace(config_loader=loader),
+            )
+        ),
+    )
+
+    with pytest.raises(ValueError, match="t1_ns must be positive"):
+        health._load_idle_noise(
+            exp,
+            "Q0",
+            "Q1",
+            {"Q0": -1.0, "Q1": 30_000.0},
+            None,
+        )
+
+
 def test_reference_ix45_copies_complete_flat_top_geometry() -> None:
     """The reference pulse preserves duration, ramp, beta, type, and sampling."""
     source = FlatTop(
@@ -293,6 +317,7 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     )
     calibration = {"Q0": object(), "Q1": object()}
     calls: list[dict[str, Any]] = []
+    bootstrap_calls: list[dict[str, Any]] = []
 
     def measure_gef(*_args: Any, **kwargs: Any) -> Any:
         calls.append(kwargs)
@@ -310,12 +335,28 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     monkeypatch.setattr(health, "resolve_zx90_descriptor", lambda *_args: descriptor)
     monkeypatch.setattr(health, "build_protocol_schedules", lambda *_args: schedules)
     monkeypatch.setattr(health, "measure_gef_populations", measure_gef)
+
+    def run_selective_bootstrap(
+        *args: Any, **kwargs: Any
+    ) -> dict[str, tuple[str, ...]]:
+        bootstrap_calls.append(kwargs)
+        names_by_protocol = cast(dict[str, tuple[str, ...]], args[1])
+        return {"Q1": names_by_protocol[health.PROTOCOL_A]}
+
+    monkeypatch.setattr(health, "_run_selective_ab_bootstrap", run_selective_bootstrap)
     monkeypatch.setattr(
         health, "_build_measurements", lambda *_args, **_kwargs: object()
     )
     monkeypatch.setattr(
         health, "analyze_cr_dissipation", lambda *_args, **_kwargs: object()
     )
+    shown: list[str] = []
+    figures = {
+        protocol: SimpleNamespace(show=lambda name=protocol: shown.append(name))
+        for protocol in protocols
+    }
+    monkeypatch.setattr(health, "_plot_cr_dissipation", lambda *_args: figures)
+    monkeypatch.setattr(health, "_print_summary", lambda *_args: None)
 
     result = health.characterize_cr_dissipation(
         _fake_experiment(),
@@ -328,14 +369,15 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
         gef_bootstrap_n_resamples=12,
         idle_t1={"Q0": 1.0, "Q1": 1.0},
         idle_t2_echo={"Q0": 1.0, "Q1": 1.0},
-        plot=False,
+        plot=True,
     )
 
     assert len(calls) == 3
     assert calls[0]["targets"] == ["Q0", "Q1"]
     assert calls[0]["n_shots"] == 444
     assert calls[0]["calibration_n_shots"] == 888
-    assert calls[0]["n_bootstrap"] == 12
+    assert calls[0]["n_bootstrap"] == 0
+    assert calls[0]["progress_label"] == "A/B primary"
     assert calls[1]["targets"] == ["Q0"]
     assert calls[1]["calibration"] == {"Q0": calibration["Q0"]}
     assert calls[1]["n_shots"] == 444
@@ -344,8 +386,134 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     assert calls[2]["calibration"] == {"Q1": calibration["Q1"]}
     assert calls[2]["n_shots"] == 444
     assert calls[2]["n_bootstrap"] == 0
+    assert calls[1]["progress_label"].startswith(health.PROTOCOL_C)
+    assert calls[2]["progress_label"].startswith(health.PROTOCOL_D)
+    assert shown == list(protocols)
     assert result.data["measurement_options"]["n_shots"] == 222
     assert result.data["measurement_options"]["gef_measurement_n_shots"] == 444
+    assert result.data["measurement_options"]["primary_bootstrap"] == {
+        health.PROTOCOL_A: {"Q0": 0, "Q1": 12},
+        health.PROTOCOL_B: {"Q0": 0, "Q1": 0},
+        health.PROTOCOL_C: {"Q0": 0},
+        health.PROTOCOL_D: {"Q1": 0},
+    }
+    assert bootstrap_calls == [
+        {
+            "n_resamples": 12,
+            "seed": 0,
+            "confidence_level": 0.95,
+            "covariance_rcond": 1e-12,
+        }
+    ]
+
+
+def test_boundary_bootstrap_reuses_only_selected_ab_raw_iq(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Boundary diagnostics resample only the selected target's A/B sequences."""
+    names = {
+        health.PROTOCOL_A: ("a0", "a1"),
+        health.PROTOCOL_B: ("b0", "b1"),
+    }
+    calibration = {"Q0": object(), "Q1": object()}
+    raw_iq = {
+        name: {
+            configuration: {"Q0": np.ones(2), "Q1": np.ones(2)}
+            for configuration in ("s1", "s4", "s5")
+        }
+        for name in (*names[health.PROTOCOL_A], *names[health.PROTOCOL_B])
+    }
+    bootstrap = {
+        name: {"Q0": "disabled-control", "Q1": "disabled-target"} for name in raw_iq
+    }
+    result = health.Result(
+        data={
+            "calibration": calibration,
+            "raw_iq": raw_iq,
+            "bootstrap": bootstrap,
+        }
+    )
+    calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
+
+    monkeypatch.setattr(
+        health,
+        "_select_boundary_bootstrap_sequence_names",
+        lambda *_args: {"Q1": ("a0", "a1")},
+    )
+
+    def bootstrap_selected(
+        selected_calibration: dict[str, Any],
+        selected_raw_iq: dict[str, Any],
+        **_kwargs: Any,
+    ) -> dict[str, dict[str, str]]:
+        calls.append((selected_calibration, selected_raw_iq))
+        return {name: {"Q1": f"bootstrap-{name}"} for name in selected_raw_iq}
+
+    monkeypatch.setattr(health, "bootstrap_gef_populations", bootstrap_selected)
+
+    selected = health._run_selective_ab_bootstrap(
+        result,
+        names,
+        "Q0",
+        "Q1",
+        n_resamples=12,
+        seed=0,
+        confidence_level=0.95,
+        covariance_rcond=1e-12,
+    )
+
+    assert selected == {"Q1": ("a0", "a1")}
+    assert calls == [
+        (
+            {"Q1": calibration["Q1"]},
+            {"a0": raw_iq["a0"], "a1": raw_iq["a1"]},
+        )
+    ]
+    assert bootstrap["a0"]["Q1"] == "bootstrap-a0"
+    assert bootstrap["a1"]["Q1"] == "bootstrap-a1"
+    assert bootstrap["b0"]["Q1"] == "disabled-target"
+
+
+def test_boundary_bootstrap_selects_only_protocols_with_flat_boundary_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the boundary-ambiguous A/B target series are selected for bootstrap."""
+    names = {
+        health.PROTOCOL_A: ("a0", "a1"),
+        health.PROTOCOL_B: ("b0", "b1"),
+    }
+    flat_boundary = health.GefPopulationSeries(
+        population=np.array([[0.5, 0.5, 0.0], [0.5, 0.5, 0.0]]),
+        covariance=np.tile(np.eye(3), (2, 1, 1)),
+        standard_error=np.full((2, 3), 0.01),
+        population_unconstrained=np.array([[0.5, 0.5, 0.0], [0.5, 0.5, 0.001]]),
+    )
+    resolved_boundary = health.GefPopulationSeries(
+        population=np.array([[0.5, 0.5, 0.0], [0.5, 0.5, 0.0]]),
+        covariance=np.tile(np.eye(3), (2, 1, 1)),
+        standard_error=np.full((2, 3), 0.01),
+        population_unconstrained=np.array([[0.5, 0.5, 0.0], [0.5, 0.5, 0.004]]),
+    )
+    data = {
+        health.PROTOCOL_A: health.CrDissipationProtocolData(target_gef=flat_boundary),
+        health.PROTOCOL_B: health.CrDissipationProtocolData(
+            target_gef=resolved_boundary
+        ),
+    }
+    monkeypatch.setattr(
+        health,
+        "_protocol_data",
+        lambda _result, _names, _control, _target, protocol: data[protocol],
+    )
+
+    selected = health._select_boundary_bootstrap_sequence_names(
+        health.Result(data={}),
+        names,
+        "Q0",
+        "Q1",
+    )
+
+    assert selected == {"Q1": ("a0", "a1")}
 
 
 def test_all_orthogonal_diagnostics_use_pauli_readout(
@@ -578,8 +746,34 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     assert tuple(figures[health.PROTOCOL_A].layout.yaxis.range) == (0.0, 1.0)
     assert tuple(figures[health.PROTOCOL_A].layout.yaxis2.range) == (-1.0, 1.0)
     assert tuple(figures[health.PROTOCOL_A].layout.yaxis3.range) == (-1.0, 1.0)
-    assert figures[health.PROTOCOL_A].layout.yaxis4.range is None
+    assert tuple(figures[health.PROTOCOL_A].layout.yaxis4.range) == (0.0, 0.08)
     assert tuple(figures[health.PROTOCOL_A].layout.yaxis5.range) == (-1.0, 1.0)
     expected_x_range = (0.0, 1.2)
     for figure in figures.values():
         assert tuple(figure.layout.xaxis.range) == pytest.approx(expected_x_range)
+        assert figure.layout.legend.x == pytest.approx(1.02)
+
+    a_layout = figures[health.PROTOCOL_A].layout
+    for row in range(1, 6):
+        suffix = "" if row == 1 else str(row)
+        bottom_axis = getattr(a_layout, f"xaxis{suffix}")
+        top_axis = getattr(a_layout, f"xaxis{5 + row}")
+        assert bottom_axis.showticklabels
+        assert top_axis.side == "top"
+        assert top_axis.overlaying == f"x{suffix}"
+        assert tuple(top_axis.ticktext) == tuple(str(value) for value in 4 * counts)
+    assert len(a_layout.shapes) == 5
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([np.array([0.01, 0.02])], (0.0, 0.05)),
+        ([np.array([-0.01, 0.08])], (-0.01, 0.08)),
+    ],
+)
+def test_pf_axis_range_is_zero_anchored_with_minimum_span(
+    values: list[np.ndarray[Any, Any]], expected: tuple[float, float]
+) -> None:
+    """Pf plots include zero and expand to a span of at least 0.05."""
+    assert tuple(health._pf_axis_range(values)) == pytest.approx(expected)

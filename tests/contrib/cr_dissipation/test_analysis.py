@@ -28,6 +28,7 @@ from qubex.contrib.experiment._cr_dissipation.analysis import (
     fit_target_exchange,
     fit_target_t1rho,
     nonnormalized_ge_expectation,
+    simplex_boundary_bootstrap_required,
     target_exchange_trajectory,
     target_t1rho_trajectory,
 )
@@ -130,6 +131,41 @@ def test_boundary_fraction_is_only_an_auxiliary_flat_boundary_override() -> None
         replace(base, bootstrap=(initial, stable, stable)),
         2,
         minimum_change=0.003,
+    )
+
+
+@pytest.mark.parametrize(
+    ("constrained", "unconstrained", "expected"),
+    [
+        ([0.0, 0.0, 0.0], [0.0, 0.001, 0.002], True),
+        ([0.0, 0.0, 0.0], [0.0, 0.004, 0.0], False),
+        ([0.01, 0.0, 0.0], [0.01, 0.001, 0.002], False),
+    ],
+)
+def test_simplex_boundary_bootstrap_is_requested_only_when_unconstrained_data_are_flat(
+    constrained: list[float],
+    unconstrained: list[float],
+    expected: bool,
+) -> None:
+    """Bootstrap is reserved for an unresolved simplex-boundary diagnostic."""
+    values = np.column_stack(
+        (
+            np.full(3, 0.5),
+            np.full(3, 0.5),
+            constrained,
+        )
+    )
+    unconstrained_values = values.copy()
+    unconstrained_values[:, 2] = unconstrained
+    series = population_series(values)
+
+    assert (
+        simplex_boundary_bootstrap_required(
+            replace(series, population_unconstrained=unconstrained_values),
+            2,
+            minimum_change=0.003,
+        )
+        is expected
     )
 
 
@@ -430,6 +466,46 @@ def test_exchange_simplification_marks_insignificant_seepage_zero(
     np.testing.assert_array_equal(fitted.covariance[1], 0.0)
 
 
+def test_exchange_fit_keeps_initial_rates_inside_long_duration_bounds() -> None:
+    """Long CR lobes should not make otherwise identifiable fits fail at startup."""
+    counts = np.array([0, 1, 2, 3, 5, 8], dtype=np.int64)
+    cr_lobe_duration_ns = 100_000_000.0
+    leakage_rate = 1e-9
+    pf = target_exchange_trajectory(
+        counts,
+        0.0,
+        leakage_rate,
+        0.0,
+        cr_lobe_duration_ns=cr_lobe_duration_ns,
+    )
+    target = population_series(
+        np.column_stack((0.5 * (1.0 - pf), 0.5 * (1.0 - pf), pf)),
+        error=1e-4,
+    )
+    control = population_series(np.tile([0.9, 0.1, 0.0], (counts.size, 1)))
+    ab = CrDissipationProtocolData(control_gef=control, target_gef=target)
+    cd = CrDissipationProtocolData(
+        primary_expectation=np.ones(counts.size),
+        primary_standard_error=np.full(counts.size, 1e-4),
+    )
+    measurements = measurements_from_protocol_data(
+        counts,
+        {PROTOCOL_A: ab, PROTOCOL_B: ab, PROTOCOL_C: cd, PROTOCOL_D: cd},
+        cr_active_duration_ns=8.0 * cr_lobe_duration_ns,
+    )
+    long_descriptor = replace(descriptor(), cr_lobe_duration_ns=cr_lobe_duration_ns)
+
+    fitted = fit_target_exchange(
+        measurements,
+        PROTOCOL_A,
+        long_descriptor,
+        force_all_candidates=True,
+    )
+
+    assert fitted.success
+    assert fitted.leakage_rate_per_ns == pytest.approx(leakage_rate, rel=0.05)
+
+
 def test_clear_target_dynamics_fail_when_only_null_candidate_is_identifiable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -582,7 +658,6 @@ def descriptor() -> ZX90Descriptor:
     schedule = PulseSchedule()
     pi = FlatTop(duration=40.0, amplitude=0.2, tau=4.0)
     return ZX90Descriptor(
-        cast(PulseSchedule, schedule),
         cast(PulseSchedule, schedule),
         cast(PulseSchedule, schedule),
         50.0,

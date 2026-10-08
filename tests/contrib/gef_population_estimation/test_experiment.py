@@ -144,9 +144,9 @@ class _DummyExperiment:
         self.measurement_service = _DummyMeasurementService(iq_queue)
 
 
-def test_measure_gef_populations_calibrates_first_and_measures_each_permutation() -> (
-    None
-):
+def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """The workflow should run six calibrations then three analyses per input sequence."""
     samples = _state_samples()
     calibration_iq = [
@@ -177,6 +177,7 @@ def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
         bootstrap_seed=11,
         bootstrap_confidence_level=0.90,
         enable_tqdm=True,
+        progress_label="A/B primary",
     )
 
     assert exp.measurement_service.batch_calls == [6, 3]
@@ -231,6 +232,12 @@ def test_measure_gef_populations_calibrates_first_and_measures_each_permutation(
     assert bootstrap.seed == 11
     assert result.data["measurement_options"]["n_bootstrap"] == 20
     assert result.data["measurement_options"]["bootstrap_seed"] == 11
+    output = capsys.readouterr().out
+    calibration_heading = "Measuring: A/B primary — GEF calibration"
+    population_heading = "Measuring: A/B primary — GEF populations"
+    assert calibration_heading in output
+    assert population_heading in output
+    assert output.index(calibration_heading) < output.index(population_heading)
 
 
 def test_measure_gef_populations_uses_gef_specific_shot_defaults() -> None:
@@ -433,6 +440,26 @@ def test_measure_gef_populations_rejects_invalid_bootstrap_before_measurement() 
             targets="Q0",
             sequences=[preparation],
             bootstrap_seed=True,
+        )
+
+    assert not exp.measurement_service.calls
+
+
+@pytest.mark.parametrize("progress_label", ["", "   ", 123])
+def test_measure_gef_populations_rejects_invalid_progress_labels(
+    progress_label: object,
+) -> None:
+    """An optional progress label must be a nonempty human-readable string."""
+    exp = _DummyExperiment([])
+    with PulseSchedule(["Q0"]) as preparation:
+        preparation.add("Q0", Blank(duration=2.0))
+
+    with pytest.raises((TypeError, ValueError), match="progress_label"):
+        measure_gef_populations(
+            exp,  # type: ignore[arg-type]
+            targets="Q0",
+            sequences=[preparation],
+            progress_label=progress_label,  # type: ignore[arg-type]
         )
 
     assert not exp.measurement_service.calls

@@ -48,7 +48,6 @@ class ZX90Descriptor:
     """Store the actual echoed gate and reconstructable semantic metadata."""
 
     echoed: PulseSchedule
-    positive_lobe: PulseSchedule
     full_un_echoed: PulseSchedule
     cr_lobe_duration_ns: float
     echo_slot_duration_ns: float
@@ -72,7 +71,6 @@ class ProtocolSchedules:
 
     actual: dict[str, tuple[PulseSchedule, ...]]
     base: dict[str, tuple[PulseSchedule, ...]]
-    blocks: dict[str, PulseSchedule]
     semantic_blocks: dict[str, tuple[SemanticOperation, ...]]
     elapsed_time_ns: dict[str, np.ndarray]
     cr_active_time_ns: dict[str, np.ndarray]
@@ -213,7 +211,6 @@ def resolve_zx90_descriptor(
 
     return ZX90Descriptor(
         echoed=echoed,
-        positive_lobe=lobe,
         full_un_echoed=full_un_echoed,
         cr_lobe_duration_ns=cr_duration,
         echo_slot_duration_ns=slot_duration,
@@ -401,7 +398,7 @@ def _actual_protocol_block(
     descriptor: ZX90Descriptor,
     protocol: str,
 ) -> PulseSchedule:
-    """Build the calibrated repeated block for protocol C or D."""
+    """Build one calibrated repeated block for protocol A, B, C, or D."""
     if protocol in (PROTOCOL_A, PROTOCOL_B):
         return descriptor.full_un_echoed.repeated(4)
     if protocol == PROTOCOL_C:
@@ -437,6 +434,34 @@ def _actual_protocol_block(
     raise ValueError(f"Unknown protocol {protocol!r}.")
 
 
+def _protocol_preparations(
+    exp: Any,
+    control: str,
+    target: str,
+) -> dict[str, PulseSchedule]:
+    """Build the common input-state preparations for all four protocols."""
+    return {
+        PROTOCOL_A: _state_preparation(exp, control, target, "0", "+"),
+        PROTOCOL_B: _state_preparation(exp, control, target, "1", "+"),
+        PROTOCOL_C: _state_preparation(exp, control, target, "+", "+"),
+        PROTOCOL_D: _state_preparation(exp, control, target, "0", "+y"),
+    }
+
+
+def _primary_analyzers(
+    exp: Any,
+    control: str,
+    target: str,
+) -> dict[str, tuple[str, Waveform]]:
+    """Build the common primary analyzers for all four protocols."""
+    return {
+        PROTOCOL_A: (target, exp.pulse.y90(target)),
+        PROTOCOL_B: (target, exp.pulse.y90(target)),
+        PROTOCOL_C: (control, exp.pulse.y90(control)),
+        PROTOCOL_D: (target, exp.pulse.x90(target)),
+    }
+
+
 def build_protocol_schedules(
     exp: Any,
     control: str,
@@ -456,18 +481,8 @@ def build_protocol_schedules(
         "iy180": float(exp.pulse.y180(target).duration),
     }
     semantic = semantic_protocol_blocks(descriptor, external_durations_ns=external)
-    preparations = {
-        PROTOCOL_A: _state_preparation(exp, control, target, "0", "+"),
-        PROTOCOL_B: _state_preparation(exp, control, target, "1", "+"),
-        PROTOCOL_C: _state_preparation(exp, control, target, "+", "+"),
-        PROTOCOL_D: _state_preparation(exp, control, target, "0", "+y"),
-    }
-    primary_analyzers = {
-        PROTOCOL_A: (target, exp.pulse.y90(target)),
-        PROTOCOL_B: (target, exp.pulse.y90(target)),
-        PROTOCOL_C: (control, exp.pulse.y90(control)),
-        PROTOCOL_D: (target, exp.pulse.x90(target)),
-    }
+    preparations = _protocol_preparations(exp, control, target)
+    primary_analyzers = _primary_analyzers(exp, control, target)
     actual: dict[str, tuple[PulseSchedule, ...]] = {}
     base_schedules: dict[str, tuple[PulseSchedule, ...]] = {}
     elapsed: dict[str, np.ndarray] = {}
@@ -525,7 +540,6 @@ def build_protocol_schedules(
     return ProtocolSchedules(
         actual,
         base_schedules,
-        blocks,
         semantic,
         elapsed,
         cr_active,
@@ -621,18 +635,8 @@ def build_reference_schedules(
         PROTOCOL_C: c_block,
         PROTOCOL_D: d_block,
     }
-    preparations = {
-        PROTOCOL_A: _state_preparation(exp, control, target, "0", "+"),
-        PROTOCOL_B: _state_preparation(exp, control, target, "1", "+"),
-        PROTOCOL_C: _state_preparation(exp, control, target, "+", "+"),
-        PROTOCOL_D: _state_preparation(exp, control, target, "0", "+y"),
-    }
-    analyzers = {
-        PROTOCOL_A: (target, exp.pulse.y90(target)),
-        PROTOCOL_B: (target, exp.pulse.y90(target)),
-        PROTOCOL_C: (control, exp.pulse.y90(control)),
-        PROTOCOL_D: (target, exp.pulse.x90(target)),
-    }
+    preparations = _protocol_preparations(exp, control, target)
+    analyzers = _primary_analyzers(exp, control, target)
     result: dict[str, tuple[PulseSchedule, ...]] = {}
     for protocol in PROTOCOLS:
         sequences = []

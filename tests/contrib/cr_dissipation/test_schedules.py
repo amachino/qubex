@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import SimpleNamespace
+from typing import cast
 
 import numpy as np
 import pytest
 
+from qubex.contrib.experiment._cr_dissipation.pulses import (
+    PROTOCOLS,
+    build_protocol_schedules,
+    build_reference_schedules,
+    resolve_zx90_descriptor,
+    semantic_un_echoed_zx90,
+    semantic_zx90,
+)
 from qubex.contrib.experiment._cr_dissipation.simulation import (
     X_TARGET,
     ZX,
@@ -21,6 +31,115 @@ from qubex.contrib.experiment._cr_dissipation.simulation import (
     tensor,
 )
 from qubex.contrib.experiment._cr_dissipation.types import IdleNoiseParameters
+from qubex.experiment import Experiment
+from qubex.pulse import CrossResonance, FlatTop, VirtualZ
+
+
+def _pulse(duration: float = 20.0) -> FlatTop:
+    """Build a lightweight calibrated waveform for schedule tests."""
+    return FlatTop(duration=duration, amplitude=0.2, tau=4.0)
+
+
+def _echoed_zx90() -> CrossResonance:
+    """Build an echoed CR gate with a nonzero internal-pulse margin."""
+    return CrossResonance(
+        "Q0",
+        "Q1",
+        cr_amplitude=0.1,
+        cr_duration=40.0,
+        cr_ramptime=8.0,
+        cancel_amplitude=0.03,
+        echo=True,
+        pi_pulse=_pulse(),
+        pi_margin=4.0,
+    )
+
+
+def _schedule_experiment(echoed: CrossResonance) -> Experiment:
+    """Build the pulse-service subset used by protocol schedule builders."""
+    pulse = SimpleNamespace(
+        zx90=lambda *_args, **_kwargs: echoed,
+        get_pulse_for_state=lambda *_args: _pulse(),
+        x90=lambda _target: _pulse(),
+        x90m=lambda _target: _pulse(),
+        y90=lambda _target: _pulse(),
+        x180=lambda _target: _pulse(32.0),
+        y180=lambda _target: _pulse(40.0),
+        z180=lambda: VirtualZ(np.pi),
+    )
+    return cast(Experiment, SimpleNamespace(pulse=pulse))
+
+
+def test_un_echoed_ab_gate_preserves_positive_calibrated_cr_lobes() -> None:
+    """A/B use two same-sign calibrated lobes and duration-matched blank slots."""
+    echoed = _echoed_zx90()
+    descriptor = resolve_zx90_descriptor(_schedule_experiment(echoed), "Q0", "Q1", None)
+
+    assert descriptor.full_un_echoed.duration == pytest.approx(echoed.duration)
+    assert descriptor.echo_slot_duration_ns == pytest.approx(28.0)
+    np.testing.assert_allclose(
+        descriptor.full_un_echoed.values["Q0-Q1"][: echoed.cr_waveform.length],
+        echoed.cr_waveform.values,
+    )
+    np.testing.assert_allclose(
+        descriptor.full_un_echoed.values["Q1"][: echoed.cancel_waveform.length],
+        echoed.cancel_waveform.values,
+    )
+    assert [operation.label for operation in semantic_un_echoed_zx90(descriptor)] == [
+        "ZX45(+1)",
+        "echo-slot-blank",
+        "ZX45(+1)",
+        "echo-slot-blank",
+    ]
+    assert [operation.label for operation in semantic_zx90(descriptor)] == [
+        "ZX45(+1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "ZX45(-1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+    ]
+
+
+def test_reference_protocols_preserve_actual_schedule_durations() -> None:
+    """Every diagnostic reference remains duration-matched to its actual protocol."""
+    echoed = _echoed_zx90()
+    exp = _schedule_experiment(echoed)
+    descriptor = resolve_zx90_descriptor(exp, "Q0", "Q1", None)
+    counts = (0, 1, 2)
+    actual = build_protocol_schedules(exp, "Q0", "Q1", descriptor, counts)
+    reference = build_reference_schedules(
+        exp,
+        "Q0",
+        "Q1",
+        descriptor,
+        counts,
+        FlatTop(duration=40.0, amplitude=0.08, tau=8.0),
+    )
+
+    for protocol in PROTOCOLS:
+        assert [schedule.duration for schedule in reference[protocol]] == pytest.approx(
+            [schedule.duration for schedule in actual.actual[protocol]]
+        )
+
+
+def test_semantic_rotary_metadata_does_not_modify_actual_waveforms() -> None:
+    """Semantic rotary metadata augments the model without changing measured pulses."""
+    echoed = _echoed_zx90()
+    echoed.rotary_integrated_angle_rad = 0.2
+    echoed.rotary_phase_rad = 0.3
+    descriptor = resolve_zx90_descriptor(_schedule_experiment(echoed), "Q0", "Q1", None)
+    actual_before = descriptor.full_un_echoed.values
+
+    positive = semantic_un_echoed_zx90(descriptor)[0]
+    negative = semantic_zx90(descriptor)[4]
+
+    np.testing.assert_allclose(negative.hamiltonian, -positive.hamiltonian)
+    for label, waveform in actual_before.items():
+        np.testing.assert_allclose(descriptor.full_un_echoed.values[label], waveform)
+    assert not descriptor.warnings
 
 
 def test_qutrit_embedding_stops_zx_but_not_unconditional_ix_after_control_leakage() -> (

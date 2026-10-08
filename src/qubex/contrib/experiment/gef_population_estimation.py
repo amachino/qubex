@@ -702,6 +702,7 @@ def measure_gef_populations(
     bootstrap_seed: int | None = 0,
     bootstrap_confidence_level: float = _DEFAULT_BOOTSTRAP_CONFIDENCE_LEVEL,
     enable_tqdm: bool = False,
+    progress_label: str | None = None,
 ) -> Result:
     """
     Calibrate and estimate GEF populations after arbitrary pulse schedules.
@@ -741,6 +742,10 @@ def measure_gef_populations(
         Defaults to 0.95.
     enable_tqdm
         Whether to show acquisition progress.
+    progress_label
+        Optional label printed before each acquisition progress bar. It is useful
+        for a composed experiment that submits several GEF batches. When given,
+        it must contain at least one non-whitespace character.
 
     Returns
     -------
@@ -762,6 +767,7 @@ def measure_gef_populations(
     """
     target_list = _normalize_targets(exp, targets)
     named_sequences = _normalize_sequences(sequences)
+    resolved_progress_label = _validate_progress_label(progress_label)
     resolved_n_shots = _resolve_shot_count(
         n_shots,
         name="n_shots",
@@ -789,6 +795,11 @@ def measure_gef_populations(
             name="calibration_n_shots",
             default=_DEFAULT_CALIBRATION_N_SHOTS,
         )
+        if enable_tqdm and resolved_progress_label is not None:
+            print(
+                f"\nMeasuring: {resolved_progress_label} — GEF calibration",
+                flush=True,
+            )
         calibration_by_target = calibrate_gef_population(
             exp,
             target_list,
@@ -815,6 +826,11 @@ def measure_gef_populations(
         for sequence_name, preparation in named_sequences.items()
         for configuration, analyzer in analyzers.items()
     }
+    if enable_tqdm and resolved_progress_label is not None:
+        print(
+            f"\nMeasuring: {resolved_progress_label} — GEF populations",
+            flush=True,
+        )
     batch_iq, batch_summaries = _measure_configurations(
         exp,
         target_list,
@@ -884,6 +900,7 @@ def measure_gef_populations(
                 "bootstrap_seed": resolved_bootstrap_seed,
                 "bootstrap_confidence_level": resolved_bootstrap_confidence_level,
                 "enable_tqdm": enable_tqdm,
+                "progress_label": resolved_progress_label,
             },
         }
     )
@@ -992,6 +1009,18 @@ def _normalize_sequences(
             raise TypeError(f"Sequence `{name}` must be a PulseSchedule.")
         if not sequence.is_valid():
             raise ValueError(f"Sequence `{name}` is not a valid PulseSchedule.")
+    return normalized
+
+
+def _validate_progress_label(value: object) -> str | None:
+    """Validate and normalize an optional acquisition progress label."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("progress_label must be a string or None.")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("progress_label must contain a non-whitespace character.")
     return normalized
 
 

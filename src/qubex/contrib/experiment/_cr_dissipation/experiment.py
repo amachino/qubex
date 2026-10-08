@@ -1,9 +1,11 @@
 """
-Orchestrate CR dissipation validation, acquisition, reporting, and results.
+Orchestrate CR dissipation acquisition and user-facing output.
 
-Acquisition uses calibrated waveforms unchanged. Physical forward and fidelity
-models use intended rotations with the actual segment timing. The public
-facade is `qubex.contrib.experiment.cr_dissipation`.
+This module owns public-call validation, diagnostic IX45 calibration, hardware
+acquisition, conversion to the records in `types`, plotting/reporting, and final
+`Result` assembly. Pulse construction and numerical inference remain in
+`pulses` and `analysis`, respectively. The stable facade is
+`qubex.contrib.experiment.cr_dissipation`.
 """
 
 from __future__ import annotations
@@ -24,7 +26,10 @@ from scipy.interpolate import PchipInterpolator
 from qubex import visualization as viz
 from qubex.analysis import fitting
 from qubex.contrib.experiment._single_shot_batch import measure_single_shot_batch
-from qubex.contrib.experiment.gef_population_estimation import measure_gef_populations
+from qubex.contrib.experiment.gef_population_estimation import (
+    bootstrap_gef_populations,
+    measure_gef_populations,
+)
 from qubex.experiment import Experiment
 from qubex.experiment.models.result import Result
 from qubex.measurement.measurement_defaults import resolve_measurement_defaults
@@ -41,6 +46,7 @@ from .analysis import (
     analyze_cr_dissipation,
     computational_polarization,
     nonnormalized_ge_expectation,
+    simplex_boundary_bootstrap_required,
 )
 from .pulses import (
     PROTOCOL_A,
@@ -163,17 +169,27 @@ def _load_idle_noise(
     idle_t2_echo: Mapping[str, float] | None,
 ) -> tuple[IdleNoiseParameters, IdleNoiseParameters]:
     """Resolve fixed control and target idle-noise inputs before acquisition."""
+
+    def load_stored(name: str) -> Mapping[str, float]:
+        try:
+            values = exp.ctx.system_manager.config_loader.load_param_data(name)
+        except (
+            AttributeError,
+            FileNotFoundError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise ValueError(
+                f"Stored idle `{name}` values could not be resolved before acquisition."
+            ) from exc
+        if not isinstance(values, Mapping):
+            raise TypeError(f"Stored idle `{name}` data must be a mapping.")
+        return values
+
+    t1 = load_stored("t1") if idle_t1 is None else idle_t1
+    t2 = load_stored("t2_echo") if idle_t2_echo is None else idle_t2_echo
     try:
-        t1 = (
-            exp.ctx.system_manager.config_loader.load_param_data("t1")
-            if idle_t1 is None
-            else idle_t1
-        )
-        t2 = (
-            exp.ctx.system_manager.config_loader.load_param_data("t2_echo")
-            if idle_t2_echo is None
-            else idle_t2_echo
-        )
         return (
             IdleNoiseParameters(t1[control], t2[control]),
             IdleNoiseParameters(t1[target], t2[target]),
@@ -182,18 +198,6 @@ def _load_idle_noise(
         raise ValueError(
             f"Idle coherence data missing for qubit {exc.args[0]}."
         ) from exc
-    except (
-        AttributeError,
-        FileNotFoundError,
-        RuntimeError,
-        TypeError,
-        ValueError,
-    ) as exc:
-        if idle_t1 is None or idle_t2_echo is None:
-            raise ValueError(
-                "Stored idle T1/T2_echo values could not be resolved before acquisition."
-            ) from exc
-        raise
 
 
 # CR-envelope IX45 reference calibration
@@ -257,6 +261,10 @@ def _calibrate_reference_ix45(
     enable_tqdm: bool,
 ) -> _ReferenceIx45Calibration:
     """Calibrate an IX45 amplitude using two repeated CR-shaped pulses."""
+    _announce_acquisition(
+        "Reference IX45 calibration (CR-shaped IX45 pair amplitude sweep)",
+        enable_tqdm=enable_tqdm,
+    )
     hpi = exp.pulse.get_hpi_pulse(target)
     if not isinstance(hpi, FlatTop):
         raise TypeError("The calibrated target hpi pulse must be a FlatTop pulse.")
@@ -463,6 +471,76 @@ def _protocol_data(
     )
 
 
+def _select_boundary_bootstrap_sequence_names(
+    result: Result,
+    names_by_protocol: Mapping[str, Sequence[str]],
+    control: str,
+    target: str,
+) -> dict[str, tuple[str, ...]]:
+    """Select A/B raw-IQ series requiring a boundary bootstrap diagnostic."""
+    selected: dict[str, list[str]] = {control: [], target: []}
+    for protocol in (PROTOCOL_A, PROTOCOL_B):
+        data = _protocol_data(
+            result,
+            names_by_protocol[protocol],
+            control,
+            target,
+            protocol,
+        )
+        for qubit, series in (
+            (control, data.control_gef),
+            (target, data.target_gef),
+        ):
+            if series is not None and simplex_boundary_bootstrap_required(
+                series,
+                2,
+                minimum_change=LEAKAGE_MINIMUM_CHANGE,
+            ):
+                selected[qubit].extend(names_by_protocol[protocol])
+    return {
+        qubit: tuple(sequence_names)
+        for qubit, sequence_names in selected.items()
+        if sequence_names
+    }
+
+
+def _run_selective_ab_bootstrap(
+    result: Result,
+    names_by_protocol: Mapping[str, Sequence[str]],
+    control: str,
+    target: str,
+    *,
+    n_resamples: int,
+    seed: int | None,
+    confidence_level: float,
+    covariance_rcond: float,
+) -> dict[str, tuple[str, ...]]:
+    """Bootstrap only A/B GEF series whose boundary diagnostics need it."""
+    if n_resamples == 0:
+        return {}
+    selected = _select_boundary_bootstrap_sequence_names(
+        result,
+        names_by_protocol,
+        control,
+        target,
+    )
+    calibration = result.data["calibration"]
+    raw_iq = result.data["raw_iq"]
+    bootstrap = result.data["bootstrap"]
+    for qubit, sequence_names in selected.items():
+        selected_bootstrap = bootstrap_gef_populations(
+            {qubit: calibration[qubit]},
+            {name: raw_iq[name] for name in sequence_names},
+            n_resamples=n_resamples,
+            seed=seed,
+            confidence_level=confidence_level,
+            covariance_rcond=covariance_rcond,
+        )
+        for name, values in selected_bootstrap.items():
+            bootstrap[name].update(values)
+    return selected
+
+
 def _named_sequences(
     schedules: Mapping[str, Sequence[PulseSchedule]],
     prefix: str,
@@ -520,6 +598,10 @@ def _orthogonal_acquisition(
                 name = f"orthogonal:{protocol}:{qubit}:{basis}:{index}"
                 named[name] = diagnostic_schedule(base, qubit, basis)
                 keys.append((protocol, qubit, basis))
+    _announce_acquisition(
+        "A/B/C/D orthogonal Pauli diagnostics",
+        enable_tqdm=enable_tqdm,
+    )
     results = measure_single_shot_batch(
         exp,
         tuple(named.values()),
@@ -681,6 +763,90 @@ def _line_trace(
     )
 
 
+def _announce_acquisition(description: str, *, enable_tqdm: bool) -> None:
+    """Print an acquisition heading immediately before its progress bar."""
+    if enable_tqdm:
+        print(f"\nMeasuring: {description}", flush=True)
+
+
+def _pf_axis_range(values: Sequence[NDArray[np.float64] | None]) -> list[float]:
+    """Return a zero-anchored Pf range with a span of at least 0.05."""
+    finite_values = [
+        np.asarray(value, dtype=np.float64)[np.isfinite(value)]
+        for value in values
+        if value is not None
+    ]
+    finite_values = [value for value in finite_values if value.size]
+    if not finite_values:
+        return [0.0, 0.05]
+    combined = np.concatenate(finite_values)
+    lower = min(0.0, float(np.min(combined)))
+    upper = max(0.0, float(np.max(combined)))
+    if upper - lower < 0.05:
+        upper = lower + 0.05
+    return [lower, upper]
+
+
+def _add_zero_line(figure: go.Figure, row: int) -> None:
+    """Add a subtle zero baseline to one subplot."""
+    # Plotly's type stub accepts axis IDs only, while the runtime also accepts
+    # integer subplot coordinates.
+    plotly_figure: Any = figure
+    plotly_figure.add_hline(
+        y=0.0,
+        line={"color": "rgba(80, 80, 80, 0.45)", "width": 1},
+        row=row,
+        col=1,
+    )
+
+
+def _configure_protocol_xaxes(
+    figure: go.Figure,
+    *,
+    rows: int,
+    maximum_time_us: float,
+    time_us: NDArray[np.float64],
+    cr_gate_counts: Sequence[int],
+) -> None:
+    """Show elapsed time below and CR-gate counts above every subplot."""
+    ticktext = [str(value) for value in cr_gate_counts]
+    for row in range(1, rows + 1):
+        suffix = "" if row == 1 else str(row)
+        base_axis = f"x{suffix}"
+        y_axis = f"y{suffix}"
+        top_layout_key = f"xaxis{rows + row}"
+        figure.update_xaxes(
+            range=[0.0, maximum_time_us],
+            tickvals=time_us,
+            showticklabels=True,
+            title_text="Elapsed sequence time [us]" if row == rows else None,
+            row=row,
+            col=1,
+        )
+        figure.update_layout(
+            {
+                top_layout_key: {
+                    "overlaying": base_axis,
+                    "anchor": y_axis,
+                    "side": "top",
+                    "range": [0.0, maximum_time_us],
+                    "tickvals": time_us,
+                    "ticktext": ticktext,
+                    "showticklabels": True,
+                    "showgrid": False,
+                    "title": "CR gates (4n)" if row == 1 else None,
+                }
+            }
+        )
+
+
+def _shift_subplot_titles(figure: go.Figure, count: int) -> None:
+    """Move only subplot-title annotations below their upper tick labels."""
+    annotations: Any = figure.layout.annotations
+    for annotation in annotations[:count]:
+        annotation.update(yshift=-16)
+
+
 def _marker_trace(
     x: NDArray[np.float64],
     y: NDArray[np.float64] | None,
@@ -721,6 +887,7 @@ def _plot_cr_dissipation(
         time_us = np.asarray(measured.elapsed_time_ns / 1000.0, dtype=np.float64)
         has_orthogonal = measured.orthogonal is not None
         if protocol in (PROTOCOL_A, PROTOCOL_B):
+            pf_values: list[NDArray[np.float64] | None] = []
             if has_orthogonal:
                 titles = [
                     "Control GEF population",
@@ -744,6 +911,7 @@ def _plot_cr_dissipation(
                 cols=1,
                 shared_xaxes=True,
                 subplot_titles=titles,
+                vertical_spacing=0.06,
             )
             control = measured.actual.control_gef
             fitted = analysis.fits.control_population_ab.fitted_populations.get(
@@ -802,6 +970,7 @@ def _plot_cr_dissipation(
                 )
             target = measured.actual.target_gef
             if target is not None:
+                pf_values.append(target.population[:, 2])
                 figure.add_trace(
                     _marker_trace(
                         time_us,
@@ -849,6 +1018,8 @@ def _plot_cr_dissipation(
                     _PF_COLOR,
                 ),
             ):
+                if row == target_pf_row:
+                    pf_values.append(values)
                 figure.add_trace(
                     _line_trace(
                         time_us,
@@ -889,6 +1060,7 @@ def _plot_cr_dissipation(
                     )
                 reference_target = measured.reference.target_gef
                 if reference_target is not None:
+                    pf_values.append(reference_target.population[:, 2])
                     figure.add_trace(
                         _marker_trace(
                             time_us,
@@ -902,7 +1074,15 @@ def _plot_cr_dissipation(
                     )
             figure.update_yaxes(range=[0.0, 1.0], row=1, col=1)
             figure.update_yaxes(range=[-1.0, 1.0], row=target_x_row, col=1)
+            figure.update_yaxes(
+                range=_pf_axis_range(pf_values), row=target_pf_row, col=1
+            )
+            _add_zero_line(figure, 1)
+            _add_zero_line(figure, target_x_row)
+            _add_zero_line(figure, target_pf_row)
             if has_orthogonal and measured.orthogonal is not None:
+                if control_orthogonal_row is None or target_orthogonal_row is None:
+                    raise ValueError("Missing A/B orthogonal plot rows.")
                 for index, (name, component) in enumerate(
                     measured.orthogonal.expectations.items()
                 ):
@@ -934,6 +1114,8 @@ def _plot_cr_dissipation(
                     range=[-1.0, 1.0], row=control_orthogonal_row, col=1
                 )
                 figure.update_yaxes(range=[-1.0, 1.0], row=target_orthogonal_row, col=1)
+                _add_zero_line(figure, control_orthogonal_row)
+                _add_zero_line(figure, target_orthogonal_row)
         else:
             titles = ["Control Xge" if protocol == PROTOCOL_C else "Target Yge"]
             if has_orthogonal:
@@ -943,6 +1125,7 @@ def _plot_cr_dissipation(
                 cols=1,
                 shared_xaxes=True,
                 subplot_titles=titles,
+                vertical_spacing=0.06,
             )
             values = measured.actual.primary_expectation
             errors = measured.actual.primary_standard_error
@@ -1001,6 +1184,7 @@ def _plot_cr_dissipation(
                     col=1,
                 )
             figure.update_yaxes(range=[-1.0, 1.0], row=1, col=1)
+            _add_zero_line(figure, 1)
             if has_orthogonal and measured.orthogonal is not None:
                 for index, (name, component) in enumerate(
                     measured.orthogonal.expectations.items()
@@ -1017,6 +1201,7 @@ def _plot_cr_dissipation(
                         col=1,
                     )
                 figure.update_yaxes(range=[-1.0, 1.0], row=2, col=1)
+                _add_zero_line(figure, 2)
             if protocol == PROTOCOL_C and measured.reference is not None:
                 figure.add_annotation(
                     text=(
@@ -1031,24 +1216,18 @@ def _plot_cr_dissipation(
                 )
         figure.update_layout(
             template=viz.DEFAULT_TEMPLATE,
-            title=protocol,
-            height=300 * len(titles),
-            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+            title={"text": protocol, "x": 0.5, "xanchor": "center", "y": 0.995},
+            height=245 * len(titles) + 80,
+            margin={"t": 95, "r": 210, "b": 75, "l": 75},
+            legend={"x": 1.02, "xanchor": "left", "y": 1.0, "yanchor": "top"},
         )
-        figure.update_xaxes(range=[0.0, maximum_time_us])
-        figure.update_xaxes(
-            title_text="Elapsed sequence time [us]",
-            row=len(titles),
-            col=1,
-        )
-        figure.update_xaxes(
-            title_text="CR gates (4n)",
-            tickvals=time_us,
-            ticktext=[str(value) for value in measurements.cr_gate_counts],
-            side="top",
-            showticklabels=True,
-            row=1,
-            col=1,
+        _shift_subplot_titles(figure, len(titles))
+        _configure_protocol_xaxes(
+            figure,
+            rows=len(titles),
+            maximum_time_us=maximum_time_us,
+            time_us=time_us,
+            cr_gate_counts=tuple(int(value) for value in measurements.cr_gate_counts),
         )
         figures[protocol] = figure
     return figures
@@ -1210,9 +1389,11 @@ def characterize_cr_dissipation(
         Shots per GEF calibration configuration. Must be at least two for the
         IQ moment covariance and defaults to 8192.
     gef_bootstrap_n_resamples : int, optional
-        Nonnegative number of raw-shot bootstrap resamples for A/B primary GEF
-        data. C/D primary and all reference data use analytic covariance only.
-        Zero disables bootstrap uncertainty everywhere.
+        Maximum number of raw-shot bootstrap resamples for A/B primary GEF
+        boundary diagnostics. Bootstrap runs only for series whose simplex
+        boundary ambiguity is unresolved by unconstrained populations. C/D
+        primary and all reference data use analytic covariance only. Zero
+        disables bootstrap uncertainty everywhere.
     gef_bootstrap_seed : int | None, optional
         Nonnegative bootstrap seed, or `None` for nondeterministic sampling.
     gef_bootstrap_confidence_level : float, optional
@@ -1229,7 +1410,8 @@ def characterize_cr_dissipation(
     enable_tqdm : bool, optional
         Whether acquisition services display progress bars.
     plot : bool, optional
-        Whether to build protocol figures and print the user-facing summary.
+        Whether to build and display protocol figures and print the user-facing
+        summary.
 
     Returns
     -------
@@ -1360,15 +1542,35 @@ def characterize_cr_dissipation(
         calibration_n_shots=calibration_shots,
         shot_interval=interval,
         covariance_rcond=covariance_rcond,
-        n_bootstrap=bootstrap_resamples,
+        n_bootstrap=0,
         bootstrap_seed=bootstrap_seed,
         bootstrap_confidence_level=confidence,
         enable_tqdm=enable_tqdm,
+        progress_label="A/B primary",
     )
     calibration = ab_result.data["calibration"]
     for protocol in (PROTOCOL_A, PROTOCOL_B):
         actual_results[protocol] = ab_result
         actual_names[protocol] = ab_names[protocol]
+    selected_ab_bootstrap = _run_selective_ab_bootstrap(
+        ab_result,
+        ab_names,
+        control,
+        target,
+        n_resamples=bootstrap_resamples,
+        seed=bootstrap_seed,
+        confidence_level=confidence,
+        covariance_rcond=covariance_rcond,
+    )
+
+    def selected_bootstrap_resamples(protocol: str, qubit: str) -> int:
+        """Return the actual bootstrap count for one A/B protocol and qubit."""
+        selected_names = set(selected_ab_bootstrap.get(qubit, ()))
+        return (
+            bootstrap_resamples
+            if any(name in selected_names for name in ab_names[protocol])
+            else 0
+        )
 
     for protocol, measured_target in (
         (PROTOCOL_C, control),
@@ -1391,6 +1593,7 @@ def characterize_cr_dissipation(
             bootstrap_seed=bootstrap_seed,
             bootstrap_confidence_level=confidence,
             enable_tqdm=enable_tqdm,
+            progress_label=f"{protocol} primary ({measured_target})",
         )
         actual_results[protocol] = result
         actual_names[protocol] = names[protocol]
@@ -1417,6 +1620,7 @@ def characterize_cr_dissipation(
             bootstrap_seed=bootstrap_seed,
             bootstrap_confidence_level=confidence,
             enable_tqdm=enable_tqdm,
+            progress_label="A/B diagnostic reference",
         )
         for protocol in (PROTOCOL_A, PROTOCOL_B):
             reference_results[protocol] = ab_reference_result
@@ -1442,6 +1646,7 @@ def characterize_cr_dissipation(
                 bootstrap_seed=bootstrap_seed,
                 bootstrap_confidence_level=confidence,
                 enable_tqdm=enable_tqdm,
+                progress_label=f"{protocol} diagnostic reference ({measured_target})",
             )
             reference_results[protocol] = result
             reference_names[protocol] = names[protocol]
@@ -1481,6 +1686,8 @@ def characterize_cr_dissipation(
     figures = _plot_cr_dissipation(measurements, analysis) if plot else {}
     if plot:
         _print_summary(analysis, control_idle, target_idle)
+        for figure in figures.values():
+            figure.show()
 
     pulse_timing = {
         "zx90_echo": {
@@ -1504,6 +1711,8 @@ def characterize_cr_dissipation(
                 "beta": reference_calibration.beta,
                 "ramp_type": reference_calibration.ramp_type,
                 "sampling_period_ns": reference_calibration.sampling_period,
+                "r_squared": reference_calibration.r_squared,
+                "timestamp": reference_calibration.timestamp,
                 "calibrated": reference_calibrated,
             }
         ),
@@ -1520,6 +1729,8 @@ def characterize_cr_dissipation(
         "gef_bootstrap_n_resamples": bootstrap_resamples,
         "gef_bootstrap_seed": bootstrap_seed,
         "gef_bootstrap_confidence_level": confidence,
+        "ab_bootstrap_strategy": "simplex_boundary_selective",
+        "ab_bootstrap_selected_sequence_names": selected_ab_bootstrap,
         "gef_covariance_rcond": covariance_rcond,
         "primary_readout": {
             PROTOCOL_A: "gef_control_and_target",
@@ -1528,10 +1739,16 @@ def characterize_cr_dissipation(
             PROTOCOL_D: "gef_target_only",
         },
         "primary_bootstrap": {
-            PROTOCOL_A: bootstrap_resamples,
-            PROTOCOL_B: bootstrap_resamples,
-            PROTOCOL_C: 0,
-            PROTOCOL_D: 0,
+            PROTOCOL_A: {
+                control: selected_bootstrap_resamples(PROTOCOL_A, control),
+                target: selected_bootstrap_resamples(PROTOCOL_A, target),
+            },
+            PROTOCOL_B: {
+                control: selected_bootstrap_resamples(PROTOCOL_B, control),
+                target: selected_bootstrap_resamples(PROTOCOL_B, target),
+            },
+            PROTOCOL_C: {control: 0},
+            PROTOCOL_D: {target: 0},
         },
         "orthogonal_readout": "pauli",
         "reference_readout": "gef",

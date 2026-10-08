@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -38,6 +38,7 @@ from .simulation import (
     X_CONTROL,
     Y_TARGET,
     CrNoiseRates,
+    SemanticOperation,
     compose_channel,
     leakage_aware_average_fidelity,
     noiseless_channel,
@@ -289,6 +290,14 @@ def _rate_upper_bound(active_time_ns: NDArray[np.float64]) -> float:
     return 1.0 if positive.size == 0 else max(1e-8, 50.0 / float(np.min(positive)))
 
 
+def _bounded_rate_initial(upper: float, preferred: float = 1e-5) -> float:
+    """Choose a positive optimizer initial value strictly within its rate bound."""
+    if not np.isfinite(upper) or upper <= 0.0:
+        raise ValueError("Rate upper bound must be positive and finite.")
+    candidate = preferred if np.isfinite(preferred) and preferred > 0.0 else 1e-5
+    return min(float(candidate), 0.5 * upper)
+
+
 def _control_observations(
     measurements: CrDissipationMeasurements,
     *,
@@ -422,6 +431,28 @@ def _simplex_boundary_override(
     return False
 
 
+def simplex_boundary_bootstrap_required(
+    series: GefPopulationSeries,
+    component: int,
+    *,
+    minimum_change: float,
+) -> bool:
+    """Return whether bootstrap is needed to resolve a simplex-boundary trace."""
+    constrained = np.asarray(series.population[:, component], dtype=np.float64)
+    if not np.any(np.isclose(constrained, 0.0, atol=1e-10)):
+        return False
+    unconstrained = np.asarray(
+        series.population_unconstrained[:, component],
+        dtype=np.float64,
+    )
+    return not (
+        unconstrained.size > 1
+        and np.all(np.isfinite(unconstrained))
+        and float(np.max(np.abs(unconstrained[1:] - unconstrained[0])))
+        >= minimum_change
+    )
+
+
 # A/B rate fits and model selection
 
 
@@ -501,7 +532,10 @@ def fit_control_populations(
     }
     retained_g = tuple(g_models) if ge_dynamic else ("G0",)
     retained_f = tuple(f_models) if ef_dynamic else ("F0",)
-    upper = _rate_upper_bound(getattr(measurements, PROTOCOL_A).cr_active_time_ns)
+    upper = max(
+        _rate_upper_bound(getattr(measurements, PROTOCOL_A).cr_active_time_ns),
+        2.0 * idle_rate,
+    )
     candidates: dict[str, CandidateFit] = {}
     candidate_rates: dict[str, dict[str, float]] = {}
     candidate_predictions: dict[str, dict[str, NDArray[np.float64]]] = {}
@@ -558,7 +592,11 @@ def fit_control_populations(
                     else np.empty(0)
                 )
 
-            initial = np.full(len(free_names), max(idle_rate, 1e-5), dtype=np.float64)
+            initial = np.full(
+                len(free_names),
+                _bounded_rate_initial(upper, max(idle_rate, 1e-5)),
+                dtype=np.float64,
+            )
             candidate = fit_gls_candidate(
                 name=name,
                 parameter_names=free_names,
@@ -688,7 +726,10 @@ def fit_target_t1rho(
     n_observations = sum(block.rank for block in blocks)
     initial_value = float(data.target_x_comp[0])
     active = getattr(measurements, protocol).cr_active_time_ns
-    upper = _rate_upper_bound(active)
+    upper = max(
+        _rate_upper_bound(active),
+        2.0 * idle_equivalent_rate_per_ns,
+    )
 
     def trajectory(rate: float, x_infinity: float) -> NDArray[np.float64]:
         return target_t1rho_trajectory(
@@ -723,7 +764,7 @@ def fit_target_t1rho(
             parameter_names=names,
             initial=np.array([0.0])
             if fixed_rate is not None
-            else np.array([max(fixed_rate or 0.0, 1e-5), 0.0]),
+            else np.array([_bounded_rate_initial(upper), 0.0]),
             bounds=(
                 np.array([-1.5]) if fixed_rate is not None else np.array([0.0, -1.5]),
                 np.array([1.5]) if fixed_rate is not None else np.array([upper, 1.5]),
@@ -867,7 +908,7 @@ def fit_target_exchange(
         candidate = fit_gls_candidate(
             name=name,
             parameter_names=parameter_names,
-            initial=np.full(len(parameter_names), 1e-5),
+            initial=np.full(len(parameter_names), _bounded_rate_initial(upper)),
             bounds=(
                 np.zeros(len(parameter_names)),
                 np.full(len(parameter_names), upper),
@@ -973,14 +1014,14 @@ def fit_physical_dephasing(
     values: NDArray[np.float64],
     standard_errors: NDArray[np.float64],
     repetition_counts: NDArray[np.int64],
-    block_operations: Sequence[Any],
+    block_operations: Sequence[SemanticOperation],
     *,
     initial_density: NDArray[np.complex128],
     observable: NDArray[np.complex128],
     control_idle: IdleNoiseParameters,
     target_idle: IdleNoiseParameters,
     fixed_rates: CrNoiseRates,
-    fitted_role: str,
+    fitted_role: Literal["control", "target"],
     force_free: bool = False,
 ) -> PhysicalForwardDephasingFit:
     """Fit C/D additional pure dephasing with affine SPAM nuisance terms."""
@@ -1403,7 +1444,10 @@ def _fit_idle_control_rates(
             for item in observations
         ]
 
-    upper = _rate_upper_bound(getattr(measurements, PROTOCOL_A).cr_active_time_ns)
+    upper = max(
+        _rate_upper_bound(getattr(measurements, PROTOCOL_A).cr_active_time_ns),
+        2.0 * control_idle.relaxation_rate_per_ns,
+    )
     initial = np.array(
         [control_idle.relaxation_rate_per_ns, 0.0, 0.0, 0.0], dtype=np.float64
     )
@@ -1465,13 +1509,25 @@ def _fit_idle_target_t1rho(
             idle_transverse_rate_per_ns=target_idle.transverse_rate_per_ns,
         )
 
+    upper = max(
+        _rate_upper_bound(active_time_ns),
+        2.0 * target_idle.transverse_rate_per_ns,
+    )
     candidate = fit_gls_candidate(
         name="idle_free_t1rho",
         parameter_names=("rate_per_ns", "x_infinity"),
-        initial=np.array([target_idle.transverse_rate_per_ns, 0.0]),
+        initial=np.array(
+            [
+                _bounded_rate_initial(
+                    upper,
+                    target_idle.transverse_rate_per_ns,
+                ),
+                0.0,
+            ]
+        ),
         bounds=(
             np.array([0.0, -1.5]),
-            np.array([_rate_upper_bound(active_time_ns), 1.5]),
+            np.array([upper, 1.5]),
         ),
         residual=lambda parameters: whiten_predictions(
             [np.array([curve(parameters)[index]]) for index in retained], blocks
@@ -1481,11 +1537,11 @@ def _fit_idle_target_t1rho(
     )
     if candidate.success:
         return float(candidate.parameters[0])
-    initial = np.array([target_idle.transverse_rate_per_ns, 0.0])
+    expected = np.array([target_idle.transverse_rate_per_ns, 0.0])
     residual = whiten_predictions(
-        [np.array([curve(initial)[index]]) for index in retained], blocks
+        [np.array([curve(expected)[index]]) for index in retained], blocks
     )
-    return float(initial[0]) if np.linalg.norm(residual) <= 1e-10 else float("nan")
+    return float(expected[0]) if np.linalg.norm(residual) <= 1e-10 else float("nan")
 
 
 def _fit_idle_target_exchange(
@@ -1520,7 +1576,7 @@ def _fit_idle_target_exchange(
     candidate = fit_gls_candidate(
         name="idle_free_exchange",
         parameter_names=("leakage_rate_per_ns", "seepage_rate_per_ns"),
-        initial=np.full(2, 1e-12),
+        initial=np.full(2, _bounded_rate_initial(_rate_upper_bound(active_time_ns))),
         bounds=(np.zeros(2), np.full(2, _rate_upper_bound(active_time_ns))),
         residual=lambda parameters: whiten_predictions(
             [np.array([curve(parameters)[index]]) for index in retained], blocks
