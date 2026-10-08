@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from qubex.backend.quel3 import (
+    Quel3BackendExecutionResult,
     Quel3CaptureMode,
     Quel3CaptureWindow,
     Quel3ExecutionOptions,
@@ -24,6 +25,7 @@ from qubex.backend.quel3.execution.payload_builder import (
 )
 from qubex.backend.quel3.execution.planner import Quel3ExecutionPlanner
 from qubex.backend.quel3.execution.resources import Quel3PayloadAnalyzer
+from qubex.backend.quel3.execution.results import Quel3ResultAssembler
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 
 
@@ -417,6 +419,158 @@ def test_time_limit_splits_even_when_merging_is_disabled() -> None:
     """Disabling job merging should retain automatic duration-based splitting."""
     plan = plan_jobs(make_payload(), merge_jobs=False, max_execution_duration_ns=6.4)
     assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+
+
+@pytest.mark.parametrize(
+    "mode", [mode for mode in Quel3CaptureMode if mode != Quel3CaptureMode.UNSPECIFIED]
+)
+def test_result_assembly_preserves_shots_and_weights_unequal_chunks(mode) -> None:
+    """Reconstruction should concatenate shots or weight chunk averages by shots."""
+    plan = plan_jobs(make_payload(mode=mode), max_capture_samples=8)
+    assembler = Quel3ResultAssembler(plan.jobs)
+    is_waveform = mode in (
+        Quel3CaptureMode.RAW_WAVEFORMS,
+        Quel3CaptureMode.AVERAGED_WAVEFORM,
+    )
+    is_average = mode in (
+        Quel3CaptureMode.AVERAGED_VALUE,
+        Quel3CaptureMode.AVERAGED_WAVEFORM,
+    )
+    for run in plan.executions:
+        fragment = run.result_mapping.fragments[0]
+        values = np.arange(fragment.shot_start, fragment.shot_stop, dtype=np.complex128)
+        if is_waveform:
+            values = np.repeat(values[:, None], 4, axis=1)
+        if is_average:
+            values = np.atleast_1d(values.mean(axis=0))
+        assembler.add(
+            run.result_mapping,
+            Quel3BackendExecutionResult(
+                {}, {"R0": [values]}, {"sampling_period_ns": 0.8}
+            ),
+        )
+    result = assembler.finish()[0]
+    if is_average:
+        np.testing.assert_allclose(result.data["R0"][0], 2, rtol=0, atol=1e-12)
+    else:
+        assert result.data["R0"][0].shape == ((5, 4) if is_waveform else (5,))
+        np.testing.assert_allclose(
+            result.data["R0"][0].reshape(5, -1)[:, 0], np.arange(5), rtol=0, atol=0
+        )
+
+
+@pytest.mark.parametrize(
+    "mode", [mode for mode in Quel3CaptureMode if mode != Quel3CaptureMode.UNSPECIFIED]
+)
+def test_packed_split_results_restore_each_jobs_capture_sequence(mode) -> None:
+    """Packed shot chunks should restore every job's captures in timeline order."""
+    first = make_payload(mode=mode)
+    timeline = first.fixed_timelines["R0"]
+    first = replace(
+        first,
+        fixed_timelines={
+            "R0": replace(
+                timeline,
+                capture_windows=(
+                    Quel3CaptureWindow("late", 3.2, 3.2),
+                    *timeline.capture_windows,
+                ),
+            )
+        },
+    )
+    plan = plan_jobs(first, make_payload(mode=mode), max_capture_samples=24)
+    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+    assembler = Quel3ResultAssembler(plan.jobs)
+    waveform = mode in (
+        Quel3CaptureMode.RAW_WAVEFORMS,
+        Quel3CaptureMode.AVERAGED_WAVEFORM,
+    )
+    averaged = mode in (
+        Quel3CaptureMode.AVERAGED_WAVEFORM,
+        Quel3CaptureMode.AVERAGED_VALUE,
+    )
+    for run in plan.executions:
+        start, stop = (
+            run.result_mapping.fragments[0].shot_start,
+            run.result_mapping.fragments[0].shot_stop,
+        )
+        captures = []
+        for offset in (0, 10, 20):
+            values = np.arange(start, stop, dtype=np.complex128) + offset
+            if waveform:
+                values = np.repeat(values[:, None], 4, axis=1)
+            if averaged:
+                values = np.atleast_1d(values.mean(axis=0))
+            captures.append(values)
+        assembler.add(
+            run.result_mapping,
+            Quel3BackendExecutionResult(
+                {}, {"R0": captures}, {"sampling_period_ns": 0.8}
+            ),
+        )
+    results = assembler.finish()
+    assert [len(result.data["R0"]) for result in results] == [2, 1]
+    for capture, offset in zip(
+        [*results[0].data["R0"], *results[1].data["R0"]], (0, 10, 20), strict=True
+    ):
+        if averaged:
+            np.testing.assert_allclose(capture, offset + 2, rtol=0, atol=1e-12)
+        else:
+            np.testing.assert_allclose(
+                capture.reshape(5, -1)[:, 0], np.arange(5) + offset, rtol=0, atol=0
+            )
+
+
+def test_result_assembly_rejects_missing_shots() -> None:
+    """Incomplete physical results should never produce a successful logical job."""
+    plan = plan_jobs(make_payload())
+    with pytest.raises(ValueError, match="shot"):
+        Quel3ResultAssembler(plan.jobs).add(
+            plan.executions[0].result_mapping,
+            Quel3BackendExecutionResult(
+                {}, {"R0": [np.zeros((4, 4))]}, {"sampling_period_ns": 0.8}
+            ),
+        )
+
+
+@pytest.mark.parametrize("failure", ["duplicate", "metadata", "incomplete"])
+def test_result_assembly_rejects_invalid_chunk_sequences(failure: str) -> None:
+    """Restoration should reject repeated shots, changing metadata, and incomplete coverage."""
+    prepared = plan_jobs(make_payload(), max_capture_samples=8)
+    assembler = Quel3ResultAssembler(prepared.jobs)
+    result = Quel3BackendExecutionResult(
+        {}, {"R0": [np.zeros((2, 4))]}, {"sampling_period_ns": 0.8}
+    )
+    assembler.add(prepared.executions[0].result_mapping, result)
+
+    if failure == "duplicate":
+        with pytest.raises(ValueError, match="duplicate"):
+            assembler.add(prepared.executions[0].result_mapping, result)
+    elif failure == "metadata":
+        changed = replace(result, config={"sampling_period_ns": 0.4})
+        with pytest.raises(ValueError, match="metadata"):
+            assembler.add(prepared.executions[1].result_mapping, changed)
+    else:
+        with pytest.raises(ValueError, match="Incomplete"):
+            assembler.finish()
+
+
+def test_split_results_preserve_data_when_driver_buffers_are_reused() -> None:
+    """Collected shot chunks should preserve their values after driver buffer reuse."""
+    plan = plan_jobs(make_payload(), max_capture_samples=8)
+    assembler = Quel3ResultAssembler(plan.jobs)
+    for index, run in enumerate(plan.executions):
+        buffer = np.full((run.payload.n_iterations, 4), index + 1, dtype=np.complex128)
+        assembler.add(
+            run.result_mapping,
+            Quel3BackendExecutionResult(
+                {}, {"R0": [buffer]}, {"sampling_period_ns": 0.8}
+            ),
+        )
+        buffer.fill(-1)
+    np.testing.assert_array_equal(
+        assembler.finish()[0].data["R0"][0][:, 0], [1, 1, 2, 2, 3]
+    )
 
 
 def test_time_limit_handles_decimal_boundary() -> None:
