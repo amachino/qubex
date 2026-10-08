@@ -156,6 +156,7 @@ def test_controller_deploys_loaded_configuration_and_passes_readback_to_executio
             Any,
             SimpleNamespace(
                 sampling_period_ns=0.4,
+                cable_delay_ns={},
                 execute_sync=execute_sync,
             ),
         ),

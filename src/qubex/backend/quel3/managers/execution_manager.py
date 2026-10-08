@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import TypeGuard, TypeVar
@@ -96,6 +97,7 @@ class Quel3ExecutionManager:
         self._runtime_config = runtime_config or Quel3RuntimeConfig()
         self._sampling_period_ns = sampling_period_ns
         self._capture_decimation_factor = capture_decimation_factor
+        self._cable_delay_ns: dict[str, dict[str, float]] | None = None
         self._sequencer_builder = Quel3SequencerBuilder()
         self._session_manager = (
             session_manager
@@ -104,6 +106,18 @@ class Quel3ExecutionManager:
                 runtime_config=self._runtime_config,
             )
         )
+
+    @property
+    def cable_delay_ns(self) -> dict[str, dict[str, float]]:
+        """Return a copy of per-port cable delays in ns."""
+        return {
+            unit: dict(ports) for unit, ports in (self._cable_delay_ns or {}).items()
+        }
+
+    @cable_delay_ns.setter
+    def cable_delay_ns(self, delays: Mapping[str, Mapping[str, float]]) -> None:
+        """Copy default delays; effective settings are validated before execution."""
+        self._cable_delay_ns = {unit: dict(ports) for unit, ports in delays.items()}
 
     @property
     def runtime_config(self) -> Quel3RuntimeConfig:
@@ -180,12 +194,27 @@ class Quel3ExecutionManager:
         if len(payloads) == 0:
             return []
 
-        payload_plans = [
-            self._prepare_payload_execution_plan(
-                payload=payload, instrument_cache=instrument_cache
+        payload_plans = []
+        for payload in payloads:
+            delays = (
+                payload.cable_delay_ns
+                if payload.cable_delay_ns is not None
+                else self._cable_delay_ns
             )
-            for payload in payloads
-        ]
+            if delays is not None:
+                delays = {unit: dict(ports) for unit, ports in delays.items()}
+                for unit, ports in delays.items():
+                    for port, delay in ports.items():
+                        if not math.isfinite(delay) or delay < 0:
+                            raise ValueError(
+                                f"Cable delay for {unit}:{port} must be finite and nonnegative."
+                            )
+            payload_plans.append(
+                self._prepare_payload_execution_plan(
+                    payload=replace(payload, cable_delay_ns=delays),
+                    instrument_cache=instrument_cache,
+                )
+            )
 
         try:
             quelware_api = self._load_quelware_api()
@@ -272,6 +301,10 @@ class Quel3ExecutionManager:
             quelware_api=quelware_api,
         )
         return await self._execute_payload(
+            alias_to_port={
+                alias: str(info.port_id)
+                for alias, info in payload_plan.alias_to_instrument_info.items()
+            },
             payload=payload_plan.payload,
             session_state=session_state,
             quelware_api=quelware_api,
@@ -349,8 +382,10 @@ class Quel3ExecutionManager:
         session_state: _PayloadExecutionSession,
         quelware_api: QuelwareExecutionApi,
         parallel: bool,
+        alias_to_port: dict[str, str],
     ) -> Quel3BackendExecutionResult:
         """Execute one payload using an already-open payload session."""
+        cable_delay_ns = payload.cable_delay_ns
         aliases = sorted(payload.fixed_timelines.keys())
         alias_bindings: dict[str, tuple[int, int]] = {}
         instrument_resource_ids: list[ResourceIdProtocol] = []
@@ -371,9 +406,35 @@ class Quel3ExecutionManager:
             alias_bindings=alias_bindings,
         )
 
+        reference_delay_ns = max(
+            (
+                delay
+                for ports in (cable_delay_ns or {}).values()
+                for delay in ports.values()
+            ),
+            default=0.0,
+        )
         alias_to_directives: dict[str, list[DirectiveProtocol]] = {}
         for alias in aliases:
             directives: list[DirectiveProtocol] = []
+            if cable_delay_ns is not None:
+                unit, _, port = alias_to_port[alias].partition(":")
+                offset_ns = reference_delay_ns - cable_delay_ns.get(unit, {}).get(
+                    port, 0.0
+                )
+                samples = offset_ns / (alias_bindings[alias][0] / 1e6)
+                if not math.isfinite(samples) or not math.isclose(
+                    samples, round(samples), rel_tol=0.0, abs_tol=1e-6
+                ):
+                    raise ValueError(
+                        f"Timing offset for {alias!r} ({offset_ns} ns) must match the instrument sampling grid."
+                    )
+                factory = quelware_api.set_timing_offset_directive_factory
+                if factory is None:
+                    raise RuntimeError(
+                        "quelware runtime does not expose required SetTimingOffset."
+                    )
+                directives.append(factory(offset_samples=round(samples)))
             frequency_hz = payload.fixed_timelines[alias].frequency_hz
             if frequency_hz is not None:
                 directives.append(

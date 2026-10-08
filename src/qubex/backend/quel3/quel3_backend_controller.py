@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -62,7 +62,13 @@ class Quel3BackendController(BackendController):
         value: Mapping[str, object] | None,
     ) -> Quel3BackendController:
         """Create a controller from one QuEL-3 system configuration."""
-        return cls(runtime_config=Quel3RuntimeConfig.from_mapping(value))
+        return cls(
+            runtime_config=Quel3RuntimeConfig.from_mapping(value),
+            cable_delay_ns=cast(
+                Mapping[str, Mapping[str, float]] | None,
+                (value or {}).get("cable_delay_ns"),
+            ),
+        )
 
     def __init__(
         self,
@@ -72,6 +78,7 @@ class Quel3BackendController(BackendController):
         client_mode: str | None = None,
         quelware_pat_path: str | None = None,
         runtime_config: Quel3RuntimeConfig | None = None,
+        cable_delay_ns: Mapping[str, Mapping[str, float]] | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
         session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
@@ -93,6 +100,12 @@ class Quel3BackendController(BackendController):
             Path to a quelware personal access token file.
         runtime_config : Quel3RuntimeConfig | None, optional
             Prebuilt runtime settings. Cannot be combined with quelware options.
+        cable_delay_ns : Mapping[str, Mapping[str, float]] | None, optional
+            Cable delays in ns keyed by unit, then local quelware port ID. All
+            configured ports determine the reference, including unused ports.
+            Unspecified ports have zero cable delay. None preserves legacy
+            execution without timing directives. Empty settings explicitly
+            apply zero offsets. Capture delay and payload timing are unchanged.
         connection_manager : Quel3ConnectionManager | None, optional
             Injected connection manager for testing or customization.
         session_manager : Quel3SessionManager | None, optional
@@ -161,6 +174,8 @@ class Quel3BackendController(BackendController):
                 session_manager=self._session_manager,
             )
         )
+        if cable_delay_ns is not None:
+            self.cable_delay_ns = cable_delay_ns
         self._resource_reader = (
             resource_reader
             if resource_reader is not None
@@ -177,12 +192,47 @@ class Quel3BackendController(BackendController):
         )
 
     @property
+    def cable_delay_ns(self) -> dict[str, dict[str, float]]:
+        """Return copied cable delays in ns keyed by unit, then local port ID."""
+        return self._execution_manager.cable_delay_ns
+
+    @cable_delay_ns.setter
+    def cable_delay_ns(self, delays: Mapping[str, Mapping[str, float]]) -> None:
+        """
+        Replace default per-port cable delays for subsequent execution batches.
+
+        A payload's `cable_delay_ns` overrides these defaults without merging.
+        Effective delays are validated before execution.
+
+        All configured ports determine the maximum delay, including unused
+        ports. Each instrument receives the maximum minus its port's delay;
+        missing ports have zero cable delay. A transceiver's offset applies
+        to both transmission and capture, preserving capture delay. Offsets
+        must match the instrument sampling grid. An empty dictionary resets
+        offsets to zero. Input and returned dictionaries are copied; assign
+        the complete dictionary to update settings. No hardware IO occurs.
+
+        Examples
+        --------
+        >>> controller.cable_delay_ns = {
+        ...     "unit-a": {"tx_p04": 20.0, "trx_p00p01": 80.0}
+        ... }
+        """
+        self._execution_manager.cable_delay_ns = delays
+
+    @property
     def hash(self) -> int:
         """Return stable hash from runtime state."""
         return hash(
             (
                 self._connection_manager.hash,
                 self._instrument_cache.hash,
+                tuple(
+                    sorted(
+                        (unit, tuple(sorted(ports.items())))
+                        for unit, ports in self.cable_delay_ns.items()
+                    )
+                ),
             )
         )
 

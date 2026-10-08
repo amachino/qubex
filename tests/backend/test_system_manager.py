@@ -2197,3 +2197,34 @@ def test_load_preserves_state_when_dc_controller_validation_fails(
     assert (
         manager.__dict__["_external_devices_controller"] is previous_external_controller
     )
+
+
+def test_load_applies_port_timing_to_quel3_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Loaded cable delays should reach an explicitly supplied controller."""
+
+    class TimingLoader:
+        backend_kind = BACKEND_KIND_QUEL3
+
+        @property
+        def backend_runtime_config(self) -> dict[str, object]:
+            return {"cable_delay_ns": {"unit": {"tx": 20.0}}}
+
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=1)
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", TimingLoader)
+    controller = Quel3BackendController()
+    manager = SystemManager.shared()
+    manager.load(system_id="TEST", mock_mode=True, backend_controller=controller)
+    loaded_controller = manager.backend_controller
+    assert isinstance(loaded_controller, Quel3BackendController)
+    assert loaded_controller is controller
+    assert dict(loaded_controller.cable_delay_ns) == {"unit": {"tx": 20.0}}

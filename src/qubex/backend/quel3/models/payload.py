@@ -58,10 +58,19 @@ class Quel3CaptureMode(str, Enum):
 
 @dataclass(frozen=True)
 class Quel3ExecutionPayload:
-    """Execution payload with fixed timelines keyed by target/instrument alias."""
+    """
+    Execution payload with fixed timelines keyed by target/instrument alias.
+
+    `cable_delay_ns` maps unit names to local port IDs and cable delays in ns.
+    When provided, it replaces the execution manager's defaults without merging.
+    None uses those defaults; an empty dictionary explicitly applies zero offsets.
+    Effective delays must be finite and nonnegative and are copied and validated
+    when execution starts.
+    """
 
     waveform_library: dict[str, Quel3Waveform]
     fixed_timelines: dict[str, Quel3FixedTimeline]
     n_iterations: int
     shot_interval_ns: float
     capture_mode: Quel3CaptureMode
+    cable_delay_ns: dict[str, dict[str, float]] | None = None
