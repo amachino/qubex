@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from io import StringIO
 from types import SimpleNamespace
@@ -25,6 +25,7 @@ from qubex.backend.quel3 import (
     Quel3BackendExecutionResult,
     Quel3CaptureMode,
     Quel3CaptureWindow,
+    Quel3ExecutionOptions,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
     Quel3ResourceReader,
@@ -33,6 +34,7 @@ from qubex.backend.quel3 import (
     Quel3Waveform,
     Quel3WaveformEvent,
 )
+from qubex.backend.quel3.execution.resources import Quel3PayloadAnalyzer
 from qubex.backend.quel3.formatters import Quel3ResourceView
 from qubex.backend.quel3.infra.quelware_imports import QuelwareExecutionApi
 from qubex.backend.quel3.instrument_cache import InstrumentCache
@@ -64,6 +66,11 @@ class _FakeInstrumentInfo:
     definition: _FakeInstrumentDefinition
     id: str = ""
     alias: str | None = None
+    config: Any = field(
+        default_factory=lambda: SimpleNamespace(
+            sampling_period_fs=400_000, timeline_step_samples=64
+        )
+    )
 
 
 def _make_instrument_cache(
@@ -879,14 +886,16 @@ def test_prepare_execution_drops_empty_aliases_without_changing_payload() -> Non
             )
         }
     )
-    plan = Quel3ExecutionManager._prepare_payload_execution_plan(
-        payload=payload, instrument_cache=cache
-    )
+    analysis = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4).analyze_all(
+        (payload,), cache
+    )[0]
 
-    assert set(plan.payload.fixed_timelines) == {"alias-rq00"}
-    assert plan.aliases == ("alias-rq00",)
+    assert set(analysis.payload.fixed_timelines) == {"alias-rq00"}
     assert set(payload.fixed_timelines) == {"alias-empty", "alias-rq00"}
-    assert plan.payload.waveform_library is payload.waveform_library
+    assert (
+        analysis.payload.waveform_library["wf0"].iq_array
+        is payload.waveform_library["wf0"].iq_array
+    )
 
 
 def test_prepare_execution_rejects_all_empty_timelines() -> None:
@@ -903,9 +912,11 @@ def test_prepare_execution_rejects_all_empty_timelines() -> None:
         },
     )
 
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
     with pytest.raises(ValueError, match="no waveform events or capture windows"):
-        Quel3ExecutionManager._prepare_payload_execution_plan(
-            payload=payload, instrument_cache=InstrumentCache()
+        manager.plan_execution(
+            requests=[BackendExecutionRequest(payload=payload)],
+            instrument_cache=InstrumentCache(),
         )
 
 
@@ -995,11 +1006,11 @@ def test_prepare_execution_stably_orders_events_and_named_captures() -> None:
         }
     )
 
-    plan = Quel3ExecutionManager._prepare_payload_execution_plan(
-        payload=payload, instrument_cache=instrument_cache
-    )
+    analysis = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4).analyze_all(
+        (payload,), instrument_cache
+    )[0]
 
-    timeline = plan.payload.fixed_timelines["alias-rq00"]
+    timeline = analysis.payload.fixed_timelines["alias-rq00"]
     assert timeline.events == (events[1], events[2], events[0])
     assert timeline.capture_windows == (
         captures[2],
@@ -2237,11 +2248,16 @@ def test_execute_sync_forwards_parallel_flag_to_execution_manager() -> None:
     captured: dict[str, object] = {}
 
     def _execute_sync(
-        *, request: object, instrument_cache: InstrumentCache, parallel: bool
+        *,
+        request: object,
+        instrument_cache: InstrumentCache,
+        parallel: bool,
+        execution_options: object,
     ) -> object:
         captured["request"] = request
         captured["instrument_cache"] = instrument_cache
         captured["parallel"] = parallel
+        captured["execution_options"] = execution_options
         return "ok"
 
     controller = Quel3BackendController(
@@ -2264,6 +2280,7 @@ def test_execute_sync_forwards_parallel_flag_to_execution_manager() -> None:
     assert result == "ok"
     assert captured["request"] is request
     assert captured["parallel"] is False
+    assert captured["execution_options"] is None
     assert isinstance(captured["instrument_cache"], InstrumentCache)
 
 
@@ -2404,7 +2421,10 @@ def test_timing_batch_snapshot_and_shared_port_offsets(
         payload,
         cable_delay_ns=override,
         fixed_timelines={
-            alias: next(iter(payload.fixed_timelines.values())) for alias in ("a", "b")
+            alias: replace(
+                next(iter(payload.fixed_timelines.values())), capture_windows=()
+            )
+            for alias in ("a", "b")
         },
     )
     asyncio.run(
@@ -2451,3 +2471,123 @@ def test_invalid_cable_delays_fail_before_opening_session(
             )
         )
     load_api.assert_not_called()
+
+
+def test_execution_packs_splits_and_logs_original_shot_ranges(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A mixed-frequency batch should restore input order and log every shot range."""
+
+    class Sequencer(_FakeSequencer):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.windows = []
+            self.iterations = 1
+
+        def set_iterations(self, iterations):
+            self.iterations = iterations
+
+        def add_capture_window(
+            self, instrument_alias, window_name, start_offset_ns, length_ns
+        ):
+            self.windows.append(window_name)
+
+        def export_set_fixed_timeline_directive(self, instrument_alias):
+            return ("timeline", self.iterations, self.windows)
+
+    applied_frequencies = []
+
+    class Driver(_FakeInstrumentDriver):
+        async def apply(self, directives):
+            self.frequency = next(d[1] for d in directives if d[0] == "frequency")
+            applied_frequencies.append(self.frequency)
+            _, self.shots, self.windows = next(
+                d for d in directives if d[0] == "timeline"
+            )
+            return True
+
+        async def wait_for_result(self):
+            return SimpleNamespace(
+                iq_waveform_result={
+                    name: [
+                        SimpleNamespace(
+                            iq_array=np.array(
+                                [self.frequency / 1e9 + index], dtype=np.complex128
+                            )
+                        )
+                        for _ in range(self.shots)
+                    ]
+                    for index, name in enumerate(self.windows)
+                },
+                iq_point_result={},
+                integer_result={},
+            )
+
+    payload = replace(
+        _make_payload(n_iterations=5, frequency_hz=6e9),
+        capture_mode=Quel3CaptureMode.RAW_WAVEFORMS,
+    )
+    other = replace(
+        payload,
+        fixed_timelines={
+            alias: replace(timeline, frequency_hz=6.1e9)
+            for alias, timeline in payload.fixed_timelines.items()
+        },
+    )
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00p01", _FakeInstrumentDefinition("TRANSCEIVER")
+            )
+        }
+    )
+    session = _FakeSession()
+    api = _make_fake_execution_api(
+        client_factory=lambda endpoint, port: _FakeClient(session),
+        fixed_timeline_driver_factory=lambda session, info: Driver(),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: replace(api, sequencer_factory=cast(Any, Sequencer)),
+    )
+    caplog.set_level(
+        logging.INFO, logger="qubex.backend.quel3.managers.execution_manager"
+    )
+    results = asyncio.run(
+        manager.execute_batch_async(
+            requests=[
+                BackendExecutionRequest(payload=job)
+                for job in (payload, payload, other, payload)
+            ],
+            instrument_cache=cache,
+            execution_options=Quel3ExecutionOptions(max_capture_samples=4),
+        )
+    )
+    assert applied_frequencies == [6e9, 6e9, 6e9, 6.1e9, 6.1e9, 6e9, 6e9]
+    assert len(session.trigger_calls) == 7
+    for result, expected in zip(results, (6, 7, 6.1, 6), strict=True):
+        assert result.data["alias-rq00"][0].shape == (5, 1)
+        np.testing.assert_allclose(
+            result.data["alias-rq00"][0], expected, rtol=0, atol=1e-12
+        )
+    messages = [
+        record.message for record in caplog.records if record.levelno == logging.INFO
+    ]
+    assert any("jobs=4 executions=7" in message for message in messages)
+    assert any(
+        "execution=0 sources=(job=0 shots=[0,2), job=1 shots=[0,2))" in message
+        for message in messages
+    )
+    assert any(
+        "execution=2 sources=(job=0 shots=[4,5), job=1 shots=[4,5))" in message
+        for message in messages
+    )
+    assert (
+        len(
+            [message for message in messages if "completed elapsed_seconds=" in message]
+        )
+        == 7
+    )

@@ -145,6 +145,7 @@ def test_controller_deploys_loaded_configuration_and_passes_readback_to_executio
         request: object,
         instrument_cache: InstrumentCache,
         parallel: bool,
+        execution_options: object,
     ) -> object:
         observed.append(instrument_cache.get("Q00"))
         return "executed"

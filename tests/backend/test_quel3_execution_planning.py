@@ -9,7 +9,9 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from qubex.backend import BackendExecutionRequest
 from qubex.backend.quel3 import (
+    Quel3BackendController,
     Quel3BackendExecutionResult,
     Quel3CaptureMode,
     Quel3CaptureWindow,
@@ -27,6 +29,7 @@ from qubex.backend.quel3.execution.planner import Quel3ExecutionPlanner
 from qubex.backend.quel3.execution.resources import Quel3PayloadAnalyzer
 from qubex.backend.quel3.execution.results import Quel3ResultAssembler
 from qubex.backend.quel3.instrument_cache import InstrumentCache
+from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 
 
 def make_cache(
@@ -707,6 +710,95 @@ def test_options_reject_invalid_limits_and_types(field, value) -> None:
     """Execution options should reject invalid types and nonfinite resource limits."""
     with pytest.raises(ValueError, match=field):
         Quel3ExecutionOptions(**{field: value})
+
+
+@pytest.mark.parametrize("config", [None, {}, {"quelware_endpoint": "worker-host"}])
+def test_controller_config_without_execution_options_uses_defaults(config) -> None:
+    """Omitted execution settings should preserve controller and runtime defaults."""
+    controller = Quel3BackendController.from_config_mapping(config)
+    assert controller.execution_options == Quel3ExecutionOptions()
+    assert controller.quelware_endpoint == ("worker-host" if config else "localhost")
+
+
+def test_controller_planning_uses_configured_limits_and_per_call_options(
+    monkeypatch,
+) -> None:
+    """Controller plans should honor backend defaults and complete call overrides."""
+    controller = Quel3BackendController.from_config_mapping(
+        {"execution": {"max_capture_samples": 8}}
+    )
+    cached = list(make_cache().snapshot().values())
+    monkeypatch.setattr(
+        controller.resource_reader,
+        "read_instrument_infos",
+        lambda **kwargs: cached,
+    )
+    controller.refresh_instrument_cache()
+
+    def fail_load():
+        pytest.fail("Planning must not load the execution runtime.")
+
+    monkeypatch.setattr(controller.execution_manager, "_load_quelware_api", fail_load)
+    requests = [BackendExecutionRequest(payload=make_payload())]
+    assert len(controller.plan_execution(requests).executions) == 3
+    assert (
+        len(
+            controller.plan_execution(
+                requests, execution_options=Quel3ExecutionOptions()
+            ).executions
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize("override", [None, Quel3ExecutionOptions()])
+def test_controller_and_injected_manager_share_execution_defaults(
+    monkeypatch, override
+) -> None:
+    """Controller and manager should use one default configuration and call overrides."""
+    manager = Quel3ExecutionManager(
+        sampling_period_ns=0.4,
+        capture_decimation_factor=1,
+        execution_options=Quel3ExecutionOptions(max_capture_samples=8),
+    )
+    controller = Quel3BackendController(
+        execution_manager=manager, execution_options=override
+    )
+    cached = list(make_cache().snapshot().values())
+    monkeypatch.setattr(
+        controller.resource_reader, "read_instrument_infos", lambda **kwargs: cached
+    )
+    controller.refresh_instrument_cache()
+    requests = [BackendExecutionRequest(payload=make_payload())]
+    expected_runs = 3 if override is None else 1
+    assert len(controller.plan_execution(requests).executions) == expected_runs
+    assert (
+        len(
+            manager.plan_execution(
+                requests=requests, instrument_cache=make_cache()
+            ).executions
+        )
+        == expected_runs
+    )
+    assert (
+        len(
+            controller.plan_execution(
+                requests, execution_options=Quel3ExecutionOptions()
+            ).executions
+        )
+        == 1
+    )
+    assert len(controller.plan_execution(requests).executions) == expected_runs
+    controller.execution_options = Quel3ExecutionOptions(max_capture_samples=12)
+    assert len(controller.plan_execution(requests).executions) == 2
+    assert (
+        len(
+            manager.plan_execution(
+                requests=requests, instrument_cache=make_cache()
+            ).executions
+        )
+        == 2
+    )
 
 
 @pytest.mark.parametrize("delays", [None, {}, {"unit": {"trx_p00p01": 20}}])

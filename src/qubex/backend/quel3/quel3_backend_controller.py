@@ -33,6 +33,8 @@ from .managers import (
 from .models import (
     InstrumentConfiguration,
     InstrumentSpec,
+    Quel3ExecutionOptions,
+    Quel3ExecutionPlan,
     Quel3ResourceLevel,
     Quel3ResourceSnapshot,
 )
@@ -62,11 +64,18 @@ class Quel3BackendController(BackendController):
         value: Mapping[str, object] | None,
     ) -> Quel3BackendController:
         """Create a controller from one QuEL-3 system configuration."""
+        if value is None:
+            return cls()
         return cls(
             runtime_config=Quel3RuntimeConfig.from_mapping(value),
+            execution_options=(
+                Quel3ExecutionOptions.model_validate(value["execution"])
+                if "execution" in value
+                else None
+            ),
             cable_delay_ns=cast(
                 Mapping[str, Mapping[str, float]] | None,
-                (value or {}).get("cable_delay_ns"),
+                value.get("cable_delay_ns"),
             ),
         )
 
@@ -84,6 +93,7 @@ class Quel3BackendController(BackendController):
         configuration_manager: Quel3ConfigurationManager | None = None,
         execution_manager: Quel3ExecutionManager | None = None,
         resource_reader: Quel3ResourceReader | None = None,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -116,6 +126,8 @@ class Quel3BackendController(BackendController):
             Injected execution manager for testing or customization.
         resource_reader : Quel3ResourceReader | None, optional
             Injected resource reader for testing or customization.
+        execution_options : Quel3ExecutionOptions | None, optional
+            Default resource limits and adjacent-job packing settings.
         """
         if runtime_config is not None and any(
             value is not None
@@ -172,8 +184,11 @@ class Quel3BackendController(BackendController):
                 sampling_period_ns=self._sampling_period_ns,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 session_manager=self._session_manager,
+                execution_options=execution_options,
             )
         )
+        if execution_manager is not None and execution_options is not None:
+            self.execution_options = execution_options
         if cable_delay_ns is not None:
             self.cable_delay_ns = cable_delay_ns
         self._resource_reader = (
@@ -704,6 +719,36 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
 
+    @property
+    def execution_options(self) -> Quel3ExecutionOptions:
+        """Return execution defaults owned by the execution manager."""
+        return self._execution_manager.execution_options
+
+    @execution_options.setter
+    def execution_options(self, options: Quel3ExecutionOptions) -> None:
+        """Replace execution defaults in the execution manager."""
+        self._execution_manager.execution_options = options
+
+    def plan_execution(
+        self,
+        requests: Sequence[BackendExecutionRequest],
+        *,
+        execution_options: Quel3ExecutionOptions | None = None,
+    ) -> Quel3ExecutionPlan:
+        """
+        Inspect execution resources and shot ranges without hardware IO.
+
+        Use cached instrument information from connect, deployment, or refresh.
+        Input indices and half-open shot ranges in the returned plan are
+        zero-based. Passing options replaces the complete controller defaults.
+        Jobs are packed and executed in input order.
+        """
+        return self._execution_manager.plan_execution(
+            requests=requests,
+            instrument_cache=self._instrument_cache,
+            execution_options=execution_options,
+        )
+
     def execute_sync(
         self,
         *,
@@ -711,6 +756,7 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request synchronously using QuEL-3 defaults."""
         del execution_mode, clock_health_checks
@@ -718,6 +764,7 @@ class Quel3BackendController(BackendController):
             request=request,
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )
 
     async def execute_async(
@@ -727,6 +774,7 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request asynchronously using QuEL-3 defaults."""
         del execution_mode, clock_health_checks
@@ -734,6 +782,7 @@ class Quel3BackendController(BackendController):
             request=request,
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )
 
     async def execute_batch_async(
@@ -743,6 +792,7 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> list[BackendExecutionResult]:
         """Execute multiple backend requests as one resolved QuEL-3 batch."""
         del execution_mode, clock_health_checks
@@ -750,4 +800,5 @@ class Quel3BackendController(BackendController):
             requests=tuple(requests),
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )
