@@ -2265,3 +2265,189 @@ def test_execute_sync_forwards_parallel_flag_to_execution_manager() -> None:
     assert captured["request"] is request
     assert captured["parallel"] is False
     assert isinstance(captured["instrument_cache"], InstrumentCache)
+
+
+def test_cable_delay_applies_instrument_offset_and_resets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Port offsets should preserve pulse/capture timing and support a zero reset."""
+    from unittest.mock import Mock
+
+    port_id = "unit:trx_p00p01"
+    sequencer = Mock(wraps=_FakeSequencer(default_sampling_period_ns=0.4))
+
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
+    manager.cable_delay_ns = {
+        "unit": {port_id.split(":")[1]: 20},
+        "other-unit": {"unused": 80},
+    }
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id=port_id,
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            ),
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    api = replace(
+        _make_fake_execution_api(
+            client_factory=lambda endpoint, port: _FakeClient(session),
+            fixed_timeline_driver_factory=lambda _session, _info: driver,
+            sequencer_factory=lambda **_kwargs: sequencer,
+        ),
+        set_timing_offset_directive_factory=lambda *, offset_samples: (
+            "timing",
+            offset_samples,
+        ),
+    )
+    monkeypatch.setattr(manager, "_load_quelware_api", lambda: api)
+    payload = _make_payload()
+    request = BackendExecutionRequest(payload=payload)
+    asyncio.run(manager.execute_async(request=request, instrument_cache=cache))
+    assert ("timing", 150) in cast(list[object], driver.apply_calls[0])
+    manager.cable_delay_ns = {}
+    asyncio.run(manager.execute_async(request=request, instrument_cache=cache))
+    assert ("timing", 0) in cast(list[object], driver.apply_calls[1])
+    assert (
+        sequencer.add_event.call_args_list[0] == sequencer.add_event.call_args_list[1]
+    )
+    assert (
+        sequencer.add_capture_window.call_args_list[0]
+        == sequencer.add_capture_window.call_args_list[1]
+    )
+
+
+def test_cable_delay_rejects_fractional_samples_before_initializing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unrepresentable offsets should fail before drivers mutate hardware."""
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
+    manager.cable_delay_ns = {"unit": {"unused": 0.1}}
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="unit:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            ),
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: _FakeClient(_FakeSession()),
+            fixed_timeline_driver_factory=lambda _session, _info: driver,
+        ),
+    )
+    monkeypatch.setattr(
+        "qubex.backend.quel3.managers.session_workarounds.QUEL3_SESSION_REQUEST_MAX_ATTEMPTS",
+        1,
+    )
+    with pytest.raises(QuelwareSessionError, match="sampling"):
+        asyncio.run(
+            manager.execute_async(
+                request=BackendExecutionRequest(payload=_make_payload()),
+                instrument_cache=cache,
+            )
+        )
+    assert not driver.initialized
+    assert driver.apply_calls == []
+
+
+@pytest.mark.parametrize(
+    ("override", "expected_samples"),
+    [(None, 150), ({}, 0), ({"other-unit": {"unused": 40}}, 100)],
+)
+def test_timing_batch_snapshot_and_shared_port_offsets(
+    monkeypatch: pytest.MonkeyPatch,
+    override: dict[str, dict[str, float]] | None,
+    expected_samples: int,
+) -> None:
+    """Payload settings should override defaults and stay fixed throughout a batch."""
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
+    manager.cable_delay_ns = {"unit": {"tx": 20}, "other-unit": {"unused": 80}}
+    cache = _make_instrument_cache(
+        alias_to_info={
+            alias: _FakeInstrumentInfo(
+                port_id="unit:tx",
+                definition=_FakeInstrumentDefinition(role="TRANSMITTER"),
+            )
+            for alias in ("a", "b")
+        }
+    )
+    drivers: list[_FakeInstrumentDriver] = []
+
+    def create_driver(_session: Any, _info: Any) -> _FakeInstrumentDriver:
+        manager.cable_delay_ns = {}
+        if override is not None:
+            override.clear()
+        driver = _FakeInstrumentDriver()
+        drivers.append(driver)
+        return driver
+
+    api = replace(
+        _make_fake_execution_api(
+            client_factory=lambda endpoint, port: _FakeClient(_FakeSession()),
+            fixed_timeline_driver_factory=create_driver,
+        ),
+        set_timing_offset_directive_factory=lambda *, offset_samples: (
+            "timing",
+            offset_samples,
+        ),
+    )
+    monkeypatch.setattr(manager, "_load_quelware_api", lambda: api)
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        cable_delay_ns=override,
+        fixed_timelines={
+            alias: next(iter(payload.fixed_timelines.values())) for alias in ("a", "b")
+        },
+    )
+    asyncio.run(
+        manager.execute_batch_async(
+            requests=(
+                BackendExecutionRequest(payload=payload),
+                BackendExecutionRequest(payload=replace(payload, cable_delay_ns=None)),
+                BackendExecutionRequest(payload=payload),
+            ),
+            instrument_cache=cache,
+        )
+    )
+    assert len(drivers) == 6
+    for driver, samples in zip(
+        drivers,
+        [expected_samples] * 2 + [150] * 2 + [expected_samples] * 2,
+        strict=True,
+    ):
+        assert ("timing", samples) in cast(list[object], driver.apply_calls[0])
+
+
+@pytest.mark.parametrize("from_payload", [False, True])
+@pytest.mark.parametrize("delay", [-1.0, float("nan")])
+def test_invalid_cable_delays_fail_before_opening_session(
+    monkeypatch: pytest.MonkeyPatch, from_payload: bool, delay: float
+) -> None:
+    """Invalid effective delays should fail before any session or retry is started."""
+    from unittest.mock import Mock
+
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
+    delays = {"unit": {"tx": delay}}
+    payload = _make_payload()
+    if from_payload:
+        payload = replace(payload, cable_delay_ns=delays)
+    else:
+        manager.cable_delay_ns = delays
+    load_api = Mock(side_effect=AssertionError("Execution must not start"))
+    monkeypatch.setattr(manager, "_load_quelware_api", load_api)
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        asyncio.run(
+            manager.execute_async(
+                request=BackendExecutionRequest(payload=payload),
+                instrument_cache=_make_instrument_cache(alias_to_info={}),
+            )
+        )
+    load_api.assert_not_called()

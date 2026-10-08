@@ -26,6 +26,7 @@ from qubex.backend.quel3.interfaces import (
     SetCaptureModeFactory,
     SetFrequencyFactory,
 )
+from qubex.backend.quel3.interfaces.directives import SetTimingOffsetFactory
 from qubex.backend.quel3.models import InstrumentRoleName, Quel3CaptureMode
 
 from .quelware_transport_config import (
@@ -170,6 +171,7 @@ class QuelwareExecutionApi:
     set_frequency_directive_factory: SetFrequencyFactory
     set_capture_mode_directive_factory: SetCaptureModeFactory
     capture_mode_namespace: CaptureModeNamespaceProtocol
+    set_timing_offset_directive_factory: SetTimingOffsetFactory | None = None
 
     def build_capture_mode_directive(
         self,
@@ -205,6 +207,9 @@ def load_quelware_execution_api(
         sequencer_factory=sequencer_module.Sequencer,
         fixed_timeline_driver_factory=driver_module.create_instrument_driver_fixed_timeline,
         capture_mode_namespace=directive_module.CaptureMode,
+        set_timing_offset_directive_factory=getattr(
+            directive_module, "SetTimingOffset", None
+        ),
         set_frequency_directive_factory=directive_module.SetFrequency,
         set_capture_mode_directive_factory=directive_module.SetCaptureMode,
     )

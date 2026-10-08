@@ -411,6 +411,10 @@ class SystemManager:
                 backend_controller=backend_controller,
                 backend_kind=resolved_backend_kind,
             )
+            if isinstance(backend_controller, Quel3BackendController):
+                timing_settings = backend_runtime_config.get("cable_delay_ns")
+                if timing_settings is not None:
+                    backend_controller.cable_delay_ns = timing_settings
             self._backend_controller = backend_controller
             self._system_synchronizer = self._create_system_synchronizer(
                 backend_controller,
