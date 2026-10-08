@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, cast
@@ -448,6 +449,66 @@ def test_adjacent_oversized_jobs_are_split_independently() -> None:
         for run in plan.executions
         for fragment in run.result_mapping.fragments
     ] == [(0, 0, 4), (0, 4, 5), (1, 0, 4), (1, 4, 5)]
+
+
+@pytest.mark.parametrize(
+    ("options", "changes", "reason"),
+    [
+        ({"merge_jobs": False}, {}, "merge_jobs=False"),
+        ({"max_waveform_samples": 4}, {}, "waveform R0: required=8 limit=4"),
+        ({"max_capture_samples": 39}, {}, "capture unit:rx_p00: required=40 limit=39"),
+        (
+            {"max_execution_duration_ns": 31.9},
+            {},
+            "duration: required=32.0 limit=31.9 ns",
+        ),
+        ({}, {"n_iterations": 3}, "n_iterations:"),
+        ({}, {"shot_interval_ns": 0.8}, "shot_interval_ns:"),
+        ({}, {"capture_mode": Quel3CaptureMode.AVERAGED_VALUE}, "capture_mode:"),
+        ({}, {"cable_delay_ns": {}}, "cable_delay_ns:"),
+    ],
+)
+def test_packing_logs_group_boundary_reasons(caplog, options, changes, reason) -> None:
+    """DEBUG diagnostics should explain the constraint that starts each new group."""
+    caplog.set_level(logging.DEBUG, logger="qubex.backend.quel3.execution.planner")
+    payload = make_payload()
+    plan = plan_jobs(payload, replace(payload, **changes), **options)
+    assert len(plan.executions) == 2
+    messages = [record.message for record in caplog.records]
+    assert any(
+        "boundary before_job=1 group_jobs=(0,)" in message and reason in message
+        for message in messages
+    )
+    assert all(record.levelno == logging.DEBUG for record in caplog.records)
+
+
+def test_packing_logs_frequency_and_capture_period_conflicts(caplog) -> None:
+    """Packing should explain frequency conflicts and different capture sampling periods."""
+    caplog.set_level(logging.DEBUG, logger="qubex.backend.quel3.execution.planner")
+    plan_jobs(make_payload(frequency=None), make_payload(frequency=6.1e9))
+    assert (
+        "frequency R0: job=1 value=6100000000.0 current=6000000000.0 Hz" in caplog.text
+    )
+    caplog.clear()
+    cache = make_cache(
+        {"R0": "unit:trx_p00p01", "R1": "unit:trx_p02p03"}, {"R1": 400_000}
+    )
+    plan_jobs(make_payload(), make_payload(alias="R1"), cache=cache)
+    assert "capture_sampling_period_fs:" in caplog.text
+
+
+@pytest.mark.parametrize("level", [logging.INFO, logging.DEBUG])
+def test_planning_diagnostics_are_debug_only(caplog, level) -> None:
+    """Planning should log oversized shot splits at DEBUG and stay quiet at INFO."""
+    caplog.set_level(level, logger="qubex.backend.quel3.execution.planner")
+    plan = plan_jobs(make_payload(), make_payload(), max_capture_samples=8)
+    assert len(plan.executions) == 6
+    if level == logging.DEBUG:
+        assert len(caplog.records) == 3
+        assert "shot split jobs=(0,) shots=5 max_shots_per_execution=2" in caplog.text
+        assert "capture unit:rx_p00: required=20 limit=8" in caplog.text
+    else:
+        assert not caplog.records
 
 
 def test_packing_starts_new_execution_at_waveform_limit() -> None:

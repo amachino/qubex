@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 
@@ -15,6 +16,8 @@ from qubex.backend.quel3.models.execution_plan import (
 
 from .resources import ExecutionConditions, PayloadPlanningInfo, ResourceRequirements
 from .timing import ceil_to_grid
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -55,7 +58,7 @@ class Quel3ExecutionPlanner:
         current: _PayloadGroup | None = None
         for index in range(len(payloads)):
             single = self._make_group(payloads, (index,))
-            violations = self._one_shot_violations(single, options)
+            violations = self._resource_violations(single, options)
             if violations:
                 raise ValueError(
                     f"QuEL-3 job {index} exceeds a one-shot resource limit: {'; '.join(violations)}"
@@ -66,15 +69,32 @@ class Quel3ExecutionPlanner:
                 else ()
             )
             candidate = (*indices, index)
-            if indices and options.merge_jobs and self._compatible(payloads, candidate):
-                merged = self._make_group(payloads, candidate)
-                if (
-                    not self._one_shot_violations(merged, options)
-                    and self._max_shots_per_execution(merged, options)
-                    == merged.conditions.n_iterations
-                ):
-                    current = merged
-                    continue
+            if indices:
+                reason = (
+                    self._incompatibility_reason(payloads, candidate)
+                    if options.merge_jobs
+                    else "merge_jobs=False"
+                )
+                if reason is None:
+                    merged = self._make_group(payloads, candidate)
+                    if (
+                        not self._resource_violations(merged, options)
+                        and self._max_shots_per_execution(merged, options)
+                        == merged.conditions.n_iterations
+                    ):
+                        current = merged
+                        continue
+                    reason = "; ".join(
+                        self._resource_violations(
+                            merged, options, shots=merged.conditions.n_iterations
+                        )
+                    )
+                logger.debug(
+                    "QuEL-3 packing boundary before_job=%d group_jobs=%s reason=%s",
+                    index,
+                    indices,
+                    reason,
+                )
             if current is not None:
                 groups.append(current)
             current = single
@@ -83,33 +103,35 @@ class Quel3ExecutionPlanner:
         return groups
 
     @staticmethod
-    def _compatible(
+    def _incompatibility_reason(
         payloads: tuple[PayloadPlanningInfo, ...], indices: tuple[int, ...]
-    ) -> bool:
+    ) -> str | None:
         first = payloads[indices[0]].conditions
         frequencies: dict[str, float] = {}
         capture_periods: set[int] = set()
         for index in indices:
             conditions = payloads[index].conditions
-            if (
-                conditions.n_iterations,
-                conditions.capture_mode,
-                conditions.shot_interval_ns,
-                conditions.cable_delay_ns,
-            ) != (
-                first.n_iterations,
-                first.capture_mode,
-                first.shot_interval_ns,
-                first.cable_delay_ns,
+            for setting, value, reference in (
+                ("n_iterations", conditions.n_iterations, first.n_iterations),
+                ("capture_mode", conditions.capture_mode, first.capture_mode),
+                (
+                    "shot_interval_ns",
+                    conditions.shot_interval_ns,
+                    first.shot_interval_ns,
+                ),
+                ("cable_delay_ns", conditions.cable_delay_ns, first.cable_delay_ns),
             ):
-                return False
+                if value != reference:
+                    return f"{setting}: job={index} value={value} current={reference}"
             if conditions.capture_sampling_period_fs is not None:
                 capture_periods.add(conditions.capture_sampling_period_fs)
             for alias, frequency in conditions.frequencies_hz.items():
                 if alias in frequencies and frequencies[alias] != frequency:
-                    return False
+                    return f"frequency {alias}: job={index} value={frequency} current={frequencies[alias]} Hz"
                 frequencies[alias] = frequency
-        return len(capture_periods) <= 1
+        if len(capture_periods) > 1:
+            return f"capture_sampling_period_fs: values={sorted(capture_periods)}"
+        return None
 
     @staticmethod
     def _make_group(
@@ -140,8 +162,8 @@ class Quel3ExecutionPlanner:
         )
 
     @staticmethod
-    def _one_shot_violations(
-        group: _PayloadGroup, options: Quel3ExecutionOptions
+    def _resource_violations(
+        group: _PayloadGroup, options: Quel3ExecutionOptions, *, shots: int = 1
     ) -> list[str]:
         requirements = group.requirements
         violations = [
@@ -150,13 +172,14 @@ class Quel3ExecutionPlanner:
             if count > options.max_waveform_samples
         ]
         violations.extend(
-            f"capture {receiver}: required={count} limit={options.max_capture_samples}"
+            f"capture {receiver}: required={count * shots} limit={options.max_capture_samples}"
             for receiver, count in requirements.capture_samples_per_shot.items()
-            if count > options.max_capture_samples
+            if count * shots > options.max_capture_samples
         )
-        if group.shot_duration_ns > options.max_execution_duration_ns:
+        duration_ns = group.shot_duration_ns * shots
+        if duration_ns > options.max_execution_duration_ns:
             violations.append(
-                f"duration: required={group.shot_duration_ns} limit={options.max_execution_duration_ns} ns"
+                f"duration: required={duration_ns} limit={options.max_execution_duration_ns} ns"
             )
         return violations
 
@@ -184,6 +207,18 @@ class Quel3ExecutionPlanner:
     ) -> list[Quel3PlannedExecution]:
         requirements = group.requirements
         shot_limit = self._max_shots_per_execution(group, options)
+        if shot_limit < group.conditions.n_iterations:
+            logger.debug(
+                "QuEL-3 shot split jobs=%s shots=%d max_shots_per_execution=%d reason=%s",
+                tuple(placement.job_index for placement in group.placements),
+                group.conditions.n_iterations,
+                shot_limit,
+                "; ".join(
+                    self._resource_violations(
+                        group, options, shots=group.conditions.n_iterations
+                    )
+                ),
+            )
         executions = []
         for start in range(0, group.conditions.n_iterations, shot_limit):
             stop = min(start + shot_limit, group.conditions.n_iterations)
