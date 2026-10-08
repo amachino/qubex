@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable, Collection
 from contextlib import AbstractAsyncContextManager, suppress
 from typing import TYPE_CHECKING, TypeVar
@@ -90,6 +91,7 @@ async def run_with_session_request_retry(
     for attempt in range(max_attempts):
         attempt_number = attempt + 1
         try:
+            started = time.monotonic()
             if not manager.is_open:
                 await manager.open(client_factory=client_factory)
             session_token = manager.session_token or "<unavailable>"
@@ -108,10 +110,11 @@ async def run_with_session_request_retry(
                     "QuEL-3 session reopen did not return an execution session."
                 )
             logger.debug(
-                "QuEL-3 quelware session opened; session_token=%s; attempt=%d/%d",
+                "QuEL-3 phase=session opened; session_token=%s; attempt=%d/%d; elapsed_seconds=%.6f",
                 manager.session_token or "<unavailable>",
                 attempt_number,
                 max_attempts,
+                time.monotonic() - started,
             )
             return await operation(session)
         except Exception as exc:

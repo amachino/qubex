@@ -7,7 +7,8 @@ import logging
 import math
 import time
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import TypeVar
@@ -62,6 +63,21 @@ T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
 QUEL3_SESSION_TRIGGER_WAIT_MS: int | None = None
+
+
+@contextmanager
+def _log_phase_duration(phase: str) -> Iterator[None]:
+    """Measure an execution phase only when DEBUG diagnostics are enabled."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        yield
+        return
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        logger.debug(
+            "QuEL-3 phase=%s elapsed_seconds=%.6f", phase, time.monotonic() - started
+        )
 
 
 def _run_async(factory: Callable[[], Awaitable[T]]) -> T:
@@ -302,7 +318,7 @@ class Quel3ExecutionManager:
         parallel: bool,
     ) -> list[Quel3BackendExecutionResult]:
         """Execute physical runs and restore complete logical jobs in input order."""
-        logger.info(
+        logger.debug(
             "QuEL-3 jobs=%d executions=%d",
             len(analyses),
             len(executions),
@@ -312,16 +328,17 @@ class Quel3ExecutionManager:
         )
         try:
             for index, run in enumerate(executions):
-                sources = ", ".join(
-                    f"job={f.job_index} shots=[{f.shot_start},{f.shot_stop})"
-                    for f in run.result_mapping.fragments
-                )
-                logger.info(
-                    "QuEL-3 execution=%d sources=(%s) iterations=%d",
-                    index,
-                    sources,
-                    run.payload.n_iterations,
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    sources = ", ".join(
+                        f"job={f.job_index} shots=[{f.shot_start},{f.shot_stop})"
+                        for f in run.result_mapping.fragments
+                    )
+                    logger.debug(
+                        "QuEL-3 execution=%d sources=(%s) iterations=%d",
+                        index,
+                        sources,
+                        run.payload.n_iterations,
+                    )
                 alias_to_instrument_info = {
                     alias: instruments[alias]
                     for alias in sorted(run.payload.fixed_timelines)
@@ -341,15 +358,18 @@ class Quel3ExecutionManager:
                         parallel=parallel,
                     ),
                 )
-                assembler.add(run.result_mapping, result)
-                logger.info(
+                with _log_phase_duration("restore_results"):
+                    assembler.add(run.result_mapping, result)
+                logger.debug(
                     "QuEL-3 execution=%d completed elapsed_seconds=%.6f",
                     index,
                     time.monotonic() - started,
                 )
-            return assembler.finish()
+            with _log_phase_duration("finish_results"):
+                return assembler.finish()
         finally:
-            await self._session_manager.close_safely()
+            with _log_phase_duration("cleanup"):
+                await self._session_manager.close_safely()
 
     async def _execute_payload_in_session(
         self,
@@ -361,17 +381,18 @@ class Quel3ExecutionManager:
         parallel: bool,
     ) -> Quel3BackendExecutionResult:
         """Build session-bound drivers and execute a validated payload."""
-        session_state = self._build_payload_execution_session(
-            session=session,
-            alias_to_instrument_info=alias_to_instrument_info,
-            aliases=tuple(alias_to_instrument_info),
-            aliases_with_captures={
-                alias
-                for alias, timeline in payload.fixed_timelines.items()
-                if timeline.capture_windows
-            },
-            quelware_api=quelware_api,
-        )
+        with _log_phase_duration("bind_instruments"):
+            session_state = self._build_payload_execution_session(
+                session=session,
+                alias_to_instrument_info=alias_to_instrument_info,
+                aliases=tuple(alias_to_instrument_info),
+                aliases_with_captures={
+                    alias
+                    for alias, timeline in payload.fixed_timelines.items()
+                    if timeline.capture_windows
+                },
+                quelware_api=quelware_api,
+            )
         return await self._execute_payload(
             alias_to_port={
                 alias: str(info.port_id)
@@ -471,12 +492,13 @@ class Quel3ExecutionManager:
             )
             instrument_resource_ids.append(session_state.alias_to_resource_id[alias])
 
-        sequencer = self._sequencer_builder.build_prepared(
-            payload=payload,
-            sequencer_factory=quelware_api.sequencer_factory,
-            default_sampling_period_ns=self._sampling_period_ns,
-            alias_bindings=alias_bindings,
-        )
+        with _log_phase_duration("build_sequencer"):
+            sequencer = self._sequencer_builder.build_prepared(
+                payload=payload,
+                sequencer_factory=quelware_api.sequencer_factory,
+                default_sampling_period_ns=self._sampling_period_ns,
+                alias_bindings=alias_bindings,
+            )
 
         reference_delay_ns = max(
             (
@@ -524,55 +546,62 @@ class Quel3ExecutionManager:
         drivers = tuple(session_state.alias_to_driver.values())
         # Initializing drivers in parallel is currently unreliable, so initialize
         # them serially as a workaround.
-        for driver in drivers:
-            await driver.initialize()
+        with _log_phase_duration("initialize"):
+            for driver in drivers:
+                await driver.initialize()
 
-        if parallel:
-            await asyncio.gather(
-                *(
-                    session_state.alias_to_driver[alias].apply(
+        with _log_phase_duration("apply"):
+            if parallel:
+                await asyncio.gather(
+                    *(
+                        session_state.alias_to_driver[alias].apply(
+                            alias_to_directives[alias]
+                        )
+                        for alias in aliases
+                    )
+                )
+            else:
+                for alias in aliases:
+                    await session_state.alias_to_driver[alias].apply(
                         alias_to_directives[alias]
                     )
-                    for alias in aliases
-                )
-            )
-        else:
-            for alias in aliases:
-                await session_state.alias_to_driver[alias].apply(
-                    alias_to_directives[alias]
-                )
 
         shot_samples = {
             alias: {window.name: [] for window in timeline.capture_windows}
             for alias, timeline in payload.fixed_timelines.items()
         }
-        await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS)
-        await session_state.session.trigger(
-            instrument_ids=instrument_resource_ids,
-            wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,
-        )
-        results = await session_state.session.wait_for_results(instrument_resource_ids)
+        with _log_phase_duration("trigger"):
+            await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS)
+            await session_state.session.trigger(
+                instrument_ids=instrument_resource_ids,
+                wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,
+            )
+        with _log_phase_duration("fetch_results"):
+            results = await session_state.session.wait_for_results(
+                instrument_resource_ids
+            )
 
-        for alias, timeline in payload.fixed_timelines.items():
-            result = results[session_state.alias_to_resource_id[alias]]
-            for window in timeline.capture_windows:
-                window_key = window.name
-                capture_samples = self._extract_capture_samples(
-                    result,
-                    window_key,
-                    capture_mode=payload.capture_mode,
-                )
-                if capture_samples is None:
-                    continue
-                shot_samples[alias][window.name].append(capture_samples)
+        with _log_phase_duration("convert_result"):
+            for alias, timeline in payload.fixed_timelines.items():
+                result = results[session_state.alias_to_resource_id[alias]]
+                for window in timeline.capture_windows:
+                    window_key = window.name
+                    capture_samples = self._extract_capture_samples(
+                        result,
+                        window_key,
+                        capture_mode=payload.capture_mode,
+                    )
+                    if capture_samples is None:
+                        continue
+                    shot_samples[alias][window.name].append(capture_samples)
 
-        return self._build_measurement_result(
-            payload=payload,
-            shot_samples=shot_samples,
-            capture_sampling_period_ns=session_state.capture_sampling_period_ns,
-            backend_sampling_period_ns=self._sampling_period_ns,
-            capture_decimation_factor=self._capture_decimation_factor,
-        )
+            return self._build_measurement_result(
+                payload=payload,
+                shot_samples=shot_samples,
+                capture_sampling_period_ns=session_state.capture_sampling_period_ns,
+                backend_sampling_period_ns=self._sampling_period_ns,
+                capture_decimation_factor=self._capture_decimation_factor,
+            )
 
     @staticmethod
     def _extract_capture_samples(

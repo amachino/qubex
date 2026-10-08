@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from io import StringIO
@@ -39,6 +40,7 @@ from qubex.backend.quel3.formatters import Quel3ResourceView
 from qubex.backend.quel3.infra.quelware_imports import QuelwareExecutionApi
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.managers import (
+    execution_manager as execution_manager_module,
     session_workarounds as session_workarounds_module,
 )
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
@@ -2481,9 +2483,11 @@ def test_invalid_cable_delays_fail_before_opening_session(
     load_api.assert_not_called()
 
 
+@pytest.mark.parametrize("log_level", [logging.INFO, logging.DEBUG])
 def test_execution_packs_splits_and_logs_original_shot_ranges(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    log_level: int,
 ) -> None:
     """A mixed-frequency batch should restore input order and log every shot range."""
 
@@ -2562,9 +2566,7 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
         "_load_quelware_api",
         lambda: replace(api, sequencer_factory=cast(Any, Sequencer)),
     )
-    caplog.set_level(
-        logging.INFO, logger="qubex.backend.quel3.managers.execution_manager"
-    )
+    caplog.set_level(log_level, logger="qubex.backend.quel3")
     results = asyncio.run(
         manager.execute_batch_async(
             requests=[
@@ -2584,9 +2586,11 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
         np.testing.assert_allclose(
             result.data["alias-rq00"][0], expected, rtol=0, atol=1e-12
         )
-    messages = [
-        record.message for record in caplog.records if record.levelno == logging.INFO
-    ]
+    if log_level == logging.INFO:
+        assert not caplog.records
+        return
+    assert all(record.levelno == logging.DEBUG for record in caplog.records)
+    messages = [record.message for record in caplog.records]
     assert any("jobs=5 executions=5" in message for message in messages)
     assert any(
         "execution=0 sources=(job=0 shots=[0,2), job=1 shots=[0,2))" in message
@@ -2603,4 +2607,87 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
             [message for message in messages if "completed elapsed_seconds=" in message]
         )
         == 5
+    )
+
+
+def test_execution_phase_timings_measure_hardware_operations(
+    monkeypatch, caplog
+) -> None:
+    """DEBUG phase timings should separate session, initialization, apply, trigger, and fetch."""
+    clock = SimpleNamespace(now=0.0)
+    timer = SimpleNamespace(monotonic=lambda: clock.now)
+    monkeypatch.setattr(execution_manager_module, "time", timer)
+    monkeypatch.setattr(session_workarounds_module, "time", timer, raising=False)
+    caplog.set_level(logging.DEBUG, logger="qubex.backend.quel3")
+
+    class Driver(_FakeInstrumentDriver):
+        async def initialize(self):
+            clock.now += 2
+            await super().initialize()
+
+        async def apply(self, directive):
+            clock.now += 3
+            await super().apply(directive)
+
+        async def wait_for_result(self):
+            clock.now += 6
+            return await super().wait_for_result()
+
+    class Session(_FakeSession):
+        async def __aenter__(self):
+            clock.now += 1
+            return await super().__aenter__()
+
+        async def extend(self, new_ttl_ms):
+            clock.now += 4
+            return await super().extend(new_ttl_ms)
+
+        async def trigger(self, instrument_ids, wait_ms=None):
+            clock.now += 5
+            return await super().trigger(instrument_ids, wait_ms)
+
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00", _FakeInstrumentDefinition("TRANSCEIVER")
+            )
+        }
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: _FakeClient(Session()),
+            fixed_timeline_driver_factory=lambda session, info: Driver(),
+        ),
+    )
+    result = asyncio.run(
+        manager.execute_async(
+            request=BackendExecutionRequest(payload=_make_payload()),
+            instrument_cache=cache,
+        )
+    )
+    assert result.data["alias-rq00"][0].shape == (1,)
+    timings = {}
+    for record in caplog.records:
+        match = re.search(r"phase=(\w+).*elapsed_seconds=([\d.]+)", record.message)
+        if match:
+            timings[match[1]] = float(match[2])
+    assert timings == pytest.approx(
+        {
+            "session": 1,
+            "bind_instruments": 0,
+            "build_sequencer": 0,
+            "initialize": 2,
+            "apply": 3,
+            "trigger": 9,
+            "fetch_results": 6,
+            "convert_result": 0,
+            "restore_results": 0,
+            "finish_results": 0,
+            "cleanup": 0,
+        },
+        rel=0,
+        abs=1e-9,
     )
