@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -17,6 +17,10 @@ from qubex.backend.quel3 import (
     Quel3FixedTimeline,
     Quel3Waveform,
     Quel3WaveformEvent,
+)
+from qubex.backend.quel3.execution.payload_builder import (
+    BuiltExecution,
+    Quel3ExecutionPayloadBuilder,
 )
 from qubex.backend.quel3.execution.planner import Quel3ExecutionPlanner
 from qubex.backend.quel3.execution.resources import Quel3PayloadAnalyzer
@@ -70,6 +74,33 @@ def make_payload(
         n_iterations=shots,
         shot_interval_ns=0,
         capture_mode=mode,
+    )
+
+
+@dataclass(frozen=True)
+class _PreparedExecutions:
+    jobs: tuple[Quel3ExecutionPayload, ...]
+    executions: tuple[BuiltExecution, ...]
+    estimated_duration_ns: float
+
+
+def plan_jobs(
+    *payloads: Quel3ExecutionPayload,
+    cache: InstrumentCache | None = None,
+    **options: Any,
+) -> _PreparedExecutions:
+    """Analyze, plan, and build payloads for end-to-end packing assertions."""
+    analyses = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4).analyze_all(
+        payloads, cache or make_cache()
+    )
+    plan = Quel3ExecutionPlanner().plan(
+        tuple(analysis.planning for analysis in analyses),
+        options=Quel3ExecutionOptions(**options),
+    )
+    return _PreparedExecutions(
+        tuple(analysis.payload for analysis in analyses),
+        Quel3ExecutionPayloadBuilder().build_all(analyses, plan),
+        plan.estimated_duration_ns,
     )
 
 
@@ -132,6 +163,383 @@ def test_planning_uses_resource_metadata_to_place_payloads_and_split_shots() -> 
     assert plan.estimated_duration_ns == pytest.approx(37.5)
 
 
+def test_payload_builder_applies_supplied_placements_and_maps_captures() -> None:
+    """Payload construction should use plan offsets and retain each capture identity."""
+    from qubex.backend.quel3 import (
+        Quel3ExecutionPlan,
+        Quel3PayloadPlacement,
+        Quel3PlannedExecution,
+        Quel3ResourceUsage,
+    )
+
+    analyses = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4).analyze_all(
+        (make_payload(), make_payload()), make_cache()
+    )
+    run = Quel3PlannedExecution(
+        (Quel3PayloadPlacement(0, 0), Quel3PayloadPlacement(1, 10.4)),
+        1,
+        3,
+        13.6,
+        Quel3ResourceUsage({"R0": 8}, {"unit:rx_p00": 16}, 27.2),
+    )
+    built = Quel3ExecutionPayloadBuilder().build_all(
+        analyses, Quel3ExecutionPlan(2, (run,))
+    )[0]
+    timeline = built.payload.fixed_timelines["R0"]
+    assert [event.start_offset_ns for event in timeline.events] == [0, 10.4]
+    assert timeline.length_ns == pytest.approx(13.6)
+    assert built.payload.n_iterations == 2
+    assert built.result_mapping.capture_counts == {"R0": 2}
+    assert [
+        (fragment.job_index, fragment.shot_start, fragment.shot_stop)
+        for fragment in built.result_mapping.fragments
+    ] == [(0, 1, 3), (1, 1, 3)]
+    assert [
+        fragment.captures[0].execution_index
+        for fragment in built.result_mapping.fragments
+    ] == [0, 1]
+
+
+@pytest.mark.parametrize(
+    "mode", [mode for mode in Quel3CaptureMode if mode != Quel3CaptureMode.UNSPECIFIED]
+)
+def test_capture_limit_splits_all_modes_using_raw_samples(mode) -> None:
+    """RAW capacity should split every capture mode into the same shot ranges."""
+    plan = plan_jobs(make_payload(mode=mode), max_capture_samples=8)
+    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+    assert [
+        (
+            run.result_mapping.fragments[0].shot_start,
+            run.result_mapping.fragments[0].shot_stop,
+        )
+        for run in plan.executions
+    ] == [(0, 2), (2, 4), (4, 5)]
+    assert [run.resources.capture_samples for run in plan.executions] == [
+        {"unit:rx_p00": 8},
+        {"unit:rx_p00": 8},
+        {"unit:rx_p00": 4},
+    ]
+
+
+@pytest.mark.parametrize(("limit", "counts"), [(19, [4, 1]), (20, [5]), (21, [5])])
+def test_capture_limit_is_inclusive(limit, counts) -> None:
+    """Capture capacity should accept the exact limit and split just above it."""
+    assert [
+        run.payload.n_iterations
+        for run in plan_jobs(make_payload(), max_capture_samples=limit).executions
+    ] == counts
+
+
+def test_capture_capacity_is_summed_across_instruments_on_one_mux() -> None:
+    """Instruments sharing a receiver port should consume one combined budget."""
+    first = make_payload()
+    second = make_payload(alias="R1")
+    payload = replace(
+        first, fixed_timelines={**first.fixed_timelines, **second.fixed_timelines}
+    )
+    cache = make_cache({"R0": "unit:trx_p00p01", "R1": "unit:trx_p00p02"})
+    assert [
+        run.payload.n_iterations
+        for run in plan_jobs(payload, cache=cache, max_capture_samples=16).executions
+    ] == [2, 2, 1]
+
+
+def test_distinct_units_have_independent_capture_budgets() -> None:
+    """Identical receiver numbers on different units should have separate budgets."""
+    payload = make_payload()
+    other = make_payload(alias="R1")
+    payload = replace(
+        payload, fixed_timelines={**payload.fixed_timelines, **other.fixed_timelines}
+    )
+    cache = make_cache({"R0": "unit:trx_p00p01", "R1": "other:trx_p00p01"})
+    assert len(plan_jobs(payload, cache=cache, max_capture_samples=20).executions) == 1
+
+
+def test_frequency_changes_preserve_input_order() -> None:
+    """A B A jobs should execute in input order as three separate runs."""
+    plan = plan_jobs(
+        make_payload(),
+        make_payload(frequency=6.1e9),
+        make_payload(),
+    )
+    assert [run.result_mapping.fragments[0].job_index for run in plan.executions] == [
+        0,
+        1,
+        2,
+    ]
+    assert [
+        run.payload.fixed_timelines["R0"].frequency_hz for run in plan.executions
+    ] == [6e9, 6.1e9, 6e9]
+
+
+def test_unspecified_frequency_keeps_jobs_separate() -> None:
+    """An inherited hardware frequency should execute in its own run."""
+    plan = plan_jobs(
+        make_payload(),
+        make_payload(frequency=None),
+        make_payload(),
+    )
+    assert [run.result_mapping.fragments[0].job_index for run in plan.executions] == [
+        0,
+        1,
+        2,
+    ]
+
+
+def test_packing_checks_frequencies_only_against_current_run() -> None:
+    """A completed run's frequency should not prevent packing later adjacent jobs."""
+    plan = plan_jobs(
+        make_payload(shots=2),
+        make_payload(alias="R1", shots=1, frequency=5e9),
+        make_payload(shots=1, frequency=6.1e9),
+        cache=make_cache({"R0": "unit:trx_p00p01", "R1": "unit:trx_p02p03"}),
+    )
+    assert [
+        tuple(fragment.job_index for fragment in run.result_mapping.fragments)
+        for run in plan.executions
+    ] == [(0,), (1, 2)]
+    assert plan.executions[1].payload.fixed_timelines["R0"].frequency_hz == 6.1e9
+
+
+def test_merging_keeps_job_waveforms_and_preserves_events() -> None:
+    """Merging should namespace each job's waveforms and preserve gain and phase."""
+    first, second = make_payload(), make_payload()
+    plan = plan_jobs(first, second, max_waveform_samples=8)
+    assert len(plan.executions) == 1
+    run = plan.executions[0]
+    assert run.resources.waveform_samples == {"R0": 8}
+    assert len(run.payload.waveform_library) == 2
+    events = run.payload.fixed_timelines["R0"].events
+    assert [(e.start_offset_ns, e.gain, e.phase_offset_deg) for e in events] == [
+        (0, 0.5, 45),
+        (3.2, 0.5, 45),
+    ]
+    assert (
+        next(iter(run.payload.waveform_library.values())).iq_array
+        is first.waveform_library["shape"].iq_array
+    )
+    assert len(first.fixed_timelines["R0"].events) == 1
+    assert events[0].waveform_name != events[1].waveform_name
+    assert (
+        run.payload.waveform_library[events[1].waveform_name].iq_array
+        is second.waveform_library["shape"].iq_array
+    )
+
+
+def test_packing_does_not_compare_execution_costs() -> None:
+    """Adjacent compatible jobs should pack even when splitting adds executions."""
+    plan = plan_jobs(
+        make_payload(shots=3), make_payload(shots=3), max_capture_samples=12
+    )
+    assert [run.payload.n_iterations for run in plan.executions] == [1, 1, 1]
+    assert all(
+        tuple(fragment.job_index for fragment in run.result_mapping.fragments) == (0, 1)
+        for run in plan.executions
+    )
+
+
+def test_packing_starts_new_execution_at_waveform_limit() -> None:
+    """Packing should fill consecutive jobs up to capacity before starting a new run."""
+    plan = plan_jobs(
+        make_payload(), make_payload(), make_payload(), max_waveform_samples=8
+    )
+    assert [
+        tuple(fragment.job_index for fragment in run.result_mapping.fragments)
+        for run in plan.executions
+    ] == [(0, 1), (2,)]
+    assert [run.resources.waveform_samples for run in plan.executions] == [
+        {"R0": 8},
+        {"R0": 4},
+    ]
+
+
+def test_equal_waveforms_in_different_jobs_consume_separate_budget() -> None:
+    """Identical IQ samples in different jobs should count as separate waveforms."""
+    plan = plan_jobs(make_payload(), make_payload(), max_waveform_samples=4)
+    assert len(plan.executions) == 2
+    assert [run.result_mapping.fragments[0].job_index for run in plan.executions] == [
+        0,
+        1,
+    ]
+
+
+def test_merging_preserves_different_waveforms_with_the_same_name() -> None:
+    """Job-local waveform names should retain their own IQ samples after packing."""
+    first = make_payload()
+    second = replace(
+        first,
+        waveform_library={"shape": Quel3Waveform(np.full(4, 0.5 + 0j), 0.8)},
+    )
+    run = plan_jobs(first, second).executions[0]
+    events = run.payload.fixed_timelines["R0"].events
+    for event, expected in zip(events, (0.25, 0.5), strict=True):
+        np.testing.assert_array_equal(
+            run.payload.waveform_library[event.waveform_name].iq_array,
+            np.full(4, expected, dtype=np.complex128),
+        )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"n_iterations": 3},
+        {"shot_interval_ns": 0.8},
+        {"capture_mode": Quel3CaptureMode.AVERAGED_VALUE},
+    ],
+)
+def test_jobs_with_different_execution_settings_remain_separate(changes) -> None:
+    """Packing should preserve each job's iterations, interval, and capture mode."""
+    first = make_payload()
+    second = replace(first, **changes)
+    plan = plan_jobs(first, second)
+    assert len(plan.executions) == 2
+    assert [run.result_mapping.fragments[0].job_index for run in plan.executions] == [
+        0,
+        1,
+    ]
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"max_waveform_samples": 3},
+        {"max_capture_samples": 3},
+        {"max_execution_duration_ns": 3},
+    ],
+)
+def test_unsplittable_job_reports_the_violated_resource(options) -> None:
+    """A job exceeding a one-shot resource limit should fail before execution."""
+    with pytest.raises(ValueError, match=r"job 0.*limit"):
+        plan_jobs(make_payload(), **options)
+
+
+def test_time_limit_splits_even_when_merging_is_disabled() -> None:
+    """Disabling job merging should retain automatic duration-based splitting."""
+    plan = plan_jobs(make_payload(), merge_jobs=False, max_execution_duration_ns=6.4)
+    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+
+
+def test_time_limit_handles_decimal_boundary() -> None:
+    """Floating-point duration arithmetic should not add a spurious shot chunk."""
+    plan = plan_jobs(make_payload(samples=1, shots=6), max_execution_duration_ns=4.8)
+    assert [run.payload.n_iterations for run in plan.executions] == [6]
+
+
+def test_different_instrument_frequencies_split_multi_instrument_jobs() -> None:
+    """A frequency conflict on any shared instrument should prevent packing."""
+    first = make_payload()
+    second = make_payload(alias="R1", frequency=5e9)
+    combined = replace(
+        first, fixed_timelines={**first.fixed_timelines, **second.fixed_timelines}
+    )
+    changed = replace(
+        combined,
+        fixed_timelines={
+            **combined.fixed_timelines,
+            "R1": replace(second.fixed_timelines["R1"], frequency_hz=5e9 + 1),
+        },
+    )
+    cache = make_cache({"R0": "unit:trx_p00p01", "R1": "unit:trx_p02p03"})
+    assert [
+        tuple(fragment.job_index for fragment in run.result_mapping.fragments)
+        for run in plan_jobs(combined, changed, cache=cache).executions
+    ] == [(0,), (1,)]
+
+
+def test_waveform_limit_is_per_instrument_and_ignores_unused_shapes() -> None:
+    """Independent instrument libraries should each receive the full waveform budget."""
+    first, second = make_payload(), make_payload(alias="R1")
+    payload = replace(
+        first,
+        waveform_library={
+            **first.waveform_library,
+            "unused": Quel3Waveform(np.ones(100, dtype=np.complex128), 0.8),
+        },
+        fixed_timelines={**first.fixed_timelines, **second.fixed_timelines},
+    )
+    cache = make_cache({"R0": "unit:trx_p00p01", "R1": "unit:trx_p02p03"})
+    run = plan_jobs(payload, cache=cache, max_waveform_samples=4).executions[0]
+    assert run.resources.waveform_samples == {"R0": 4, "R1": 4}
+    assert len(run.payload.waveform_library) == 1
+
+
+def test_repeated_waveform_events_consume_one_library_entry() -> None:
+    """Repeated references should not multiply waveform library storage."""
+    payload = make_payload()
+    timeline = payload.fixed_timelines["R0"]
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "R0": replace(
+                timeline,
+                events=(
+                    *timeline.events,
+                    replace(timeline.events[0], start_offset_ns=5),
+                ),
+            )
+        },
+    )
+    assert plan_jobs(payload, max_waveform_samples=4).executions[
+        0
+    ].resources.waveform_samples == {"R0": 4}
+
+
+def test_capture_length_uses_ceiling_before_shot_multiplication() -> None:
+    """Off-grid capture lengths should use the same sample ceiling as execution."""
+    payload = make_payload()
+    timeline = payload.fixed_timelines["R0"]
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "R0": replace(
+                timeline, capture_windows=(Quel3CaptureWindow("read", 0.1, 0.81),)
+            )
+        },
+    )
+    run = plan_jobs(payload).executions[0]
+    assert run.resources.capture_samples == {"unit:rx_p00": 10}
+    assert run.payload.fixed_timelines["R0"].capture_windows[
+        0
+    ].start_offset_ns == pytest.approx(0.8)
+
+
+def test_empty_batch_and_generation_only_jobs_are_supported() -> None:
+    """Empty batches and timelines without capture should remain executable."""
+    assert plan_jobs().executions == ()
+    payload = make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "R0": replace(payload.fixed_timelines["R0"], capture_windows=())
+        },
+    )
+    assert plan_jobs(payload).executions[0].resources.capture_samples == {}
+
+
+def test_jobs_with_different_capture_periods_remain_separate() -> None:
+    """Different RAW sampling periods should not be merged into one result schema."""
+    cache = make_cache(
+        {"R0": "unit:trx_p00p01", "R1": "unit:trx_p02p03"}, {"R1": 400_000}
+    )
+    assert (
+        len(plan_jobs(make_payload(), make_payload(alias="R1"), cache=cache).executions)
+        == 2
+    )
+
+
+def test_job_with_mixed_capture_periods_is_rejected_before_execution() -> None:
+    """A single job requiring incompatible result sampling periods should fail early."""
+    first, second = make_payload(), make_payload(alias="R1")
+    payload = replace(
+        first, fixed_timelines={**first.fixed_timelines, **second.fixed_timelines}
+    )
+    cache = make_cache(
+        {"R0": "unit:trx_p00p01", "R1": "unit:trx_p02p03"}, {"R1": 400_000}
+    )
+    with pytest.raises(ValueError, match="Capture aliases must agree"):
+        plan_jobs(payload, cache=cache)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -145,3 +553,27 @@ def test_options_reject_invalid_limits_and_types(field, value) -> None:
     """Execution options should reject invalid types and nonfinite resource limits."""
     with pytest.raises(ValueError, match=field):
         Quel3ExecutionOptions(**{field: value})
+
+
+@pytest.mark.parametrize("delays", [None, {}, {"unit": {"trx_p00p01": 20}}])
+def test_jobs_with_distinct_cable_delays_keep_separate_executions(delays) -> None:
+    """Jobs with different cable-delay settings should retain separate directives."""
+    first = make_payload()
+    second = replace(first, cable_delay_ns=delays)
+    third = replace(first, cable_delay_ns={"unit": {"trx_p00p01": 40}})
+    plan = plan_jobs(second, third)
+    assert len(plan.executions) == 2
+    assert [run.payload.cable_delay_ns for run in plan.executions] == [
+        delays,
+        third.cable_delay_ns,
+    ]
+
+
+def test_duration_limit_includes_final_shot_interval() -> None:
+    """The appended shot interval should count toward each execution duration limit."""
+    payload = replace(make_payload(), shot_interval_ns=3.2)
+    plan = plan_jobs(payload, max_execution_duration_ns=12.8)
+    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+    assert [run.resources.duration_ns for run in plan.executions] == pytest.approx(
+        [12.8, 12.8, 6.4], rel=0, abs=1e-9
+    )
