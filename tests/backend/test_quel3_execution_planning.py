@@ -12,11 +12,13 @@ import pytest
 from qubex.backend.quel3 import (
     Quel3CaptureMode,
     Quel3CaptureWindow,
+    Quel3ExecutionOptions,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
     Quel3Waveform,
     Quel3WaveformEvent,
 )
+from qubex.backend.quel3.execution.planner import Quel3ExecutionPlanner
 from qubex.backend.quel3.execution.resources import Quel3PayloadAnalyzer
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 
@@ -98,3 +100,48 @@ def test_analysis_extracts_planning_metadata_and_normalizes_timelines() -> None:
         is payload.waveform_library["shape"].iq_array
     )
     assert payload.fixed_timelines["R0"] == timeline
+
+
+def test_planning_uses_resource_metadata_to_place_payloads_and_split_shots() -> None:
+    """Planning should determine offsets and shot ranges without waveform buffers."""
+    from qubex.backend.quel3.execution.resources import (
+        ExecutionConditions,
+        PayloadPlanningInfo,
+        ResourceRequirements,
+    )
+
+    info = PayloadPlanningInfo(
+        ResourceRequirements({"R0": 4}, {"unit:rx_p00": 4}, 3.2, 800_000),
+        ExecutionConditions(
+            5, Quel3CaptureMode.RAW_WAVEFORMS, 0.3, None, {"R0": 6e9}, 800_000
+        ),
+    )
+    plan = Quel3ExecutionPlanner().plan(
+        (info, info), options=Quel3ExecutionOptions(max_capture_samples=16)
+    )
+    assert plan.payload_count == 2
+    assert [(run.shot_start, run.shot_stop) for run in plan.executions] == [
+        (0, 2),
+        (2, 4),
+        (4, 5),
+    ]
+    assert [
+        (p.job_index, p.start_offset_ns) for p in plan.executions[0].placements
+    ] == [(0, 0), (1, 4.0)]
+    assert plan.executions[0].timeline_length_ns == pytest.approx(7.2)
+    assert plan.estimated_duration_ns == pytest.approx(37.5)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("max_capture_samples", 0),
+        ("max_waveform_samples", True),
+        ("max_execution_duration_ns", float("inf")),
+        ("merge_jobs", "yes"),
+    ],
+)
+def test_options_reject_invalid_limits_and_types(field, value) -> None:
+    """Execution options should reject invalid types and nonfinite resource limits."""
+    with pytest.raises(ValueError, match=field):
+        Quel3ExecutionOptions(**{field: value})
