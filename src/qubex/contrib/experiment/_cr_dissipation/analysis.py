@@ -21,6 +21,7 @@ from .fit import (
     ResidualBlock,
     covariance_whitener,
     fit_gls_candidate,
+    fit_profiled_affine_candidate,
     scalar_residual_blocks,
     select_aicc_candidate,
     whiten_predictions,
@@ -40,6 +41,7 @@ from .simulation import (
     Z_TARGET,
     CrNoiseRates,
     SemanticOperation,
+    SuperoperatorCache,
     compose_channel,
     leakage_aware_average_fidelity,
     noiseless_channel,
@@ -1011,15 +1013,6 @@ def fit_physical_dephasing(
     force_free: bool = False,
 ) -> PhysicalForwardDephasingFit:
     """Fit C/D total CR-active pure dephasing with affine SPAM terms."""
-    blocks = scalar_residual_blocks(values, standard_errors)
-    retained = [
-        index
-        for index in range(values.size)
-        if np.isfinite(values[index])
-        and np.isfinite(standard_errors[index])
-        and standard_errors[index] > 0.0
-    ]
-    n_observations = sum(block.rank for block in blocks)
     maximum_count = max(1, int(np.max(repetition_counts)))
     duration = (
         sum(
@@ -1030,25 +1023,27 @@ def fit_physical_dephasing(
         * maximum_count
     )
     upper = max(1e-8, 50.0 / max(duration, 1.0))
-    cache: dict[tuple[float, bool], NDArray[np.float64]] = {}
+    curve_cache: dict[tuple[float, bool], NDArray[np.float64]] = {}
+    superoperator_cache: SuperoperatorCache = {}
 
     def simulated(rate: float, signed: bool = False) -> NDArray[np.float64]:
-        key = (float(rate), signed)
-        if key not in cache:
+        uses_signed_override = signed and rate < 0.0
+        key = (float(rate), uses_signed_override)
+        if key not in curve_cache:
             kwargs: dict[str, float] = {}
             rates = fixed_rates
             if fitted_role == "control":
                 rates = replace(fixed_rates, control_pure_dephasing=max(rate, 0.0))
-                if signed:
+                if uses_signed_override:
                     kwargs["signed_control_pure_dephasing"] = rate
             else:
                 rates = replace(
                     fixed_rates,
                     target_rotating_frame_pure_dephasing=max(rate, 0.0),
                 )
-                if signed:
+                if uses_signed_override:
                     kwargs["signed_target_pure_dephasing"] = rate
-            cache[key] = simulate_repeated_observable(
+            curve_cache[key] = simulate_repeated_observable(
                 block_operations,
                 repetition_counts,
                 initial_density,
@@ -1057,55 +1052,31 @@ def fit_physical_dephasing(
                 target_idle=target_idle,
                 cr_rates=rates,
                 include_leakage=True,
+                cache=superoperator_cache,
                 **kwargs,
             )
-        return cache[key]
+        return curve_cache[key]
 
     def make_candidate(
         name: str, *, free_rate: bool, signed: bool = False
     ) -> CandidateFit:
-        names = (
-            ("spam_amplitude", "spam_offset")
-            if not free_rate
-            else (
-                "pure_dephasing_rate_per_ns",
-                "spam_amplitude",
-                "spam_offset",
-            )
-        )
-
-        def unpack(parameters: NDArray[np.float64]) -> tuple[float, float, float]:
-            return (
-                (0.0, float(parameters[0]), float(parameters[1]))
-                if not free_rate
-                else (float(parameters[0]), float(parameters[1]), float(parameters[2]))
-            )
-
-        def curve(parameters: NDArray[np.float64]) -> NDArray[np.float64]:
-            rate, amplitude, offset = unpack(parameters)
-            return amplitude * simulated(rate, signed=signed) + offset
-
-        def predictions(parameters: NDArray[np.float64]) -> list[NDArray[np.float64]]:
-            result = curve(parameters)
-            return [np.array([result[index]]) for index in retained]
-
         if free_rate:
-            initial = np.array([min(1e-5, upper / 10.0), 1.0, 0.0])
             lower_rate = -upper if signed else 0.0
-            bounds = (np.array([lower_rate, -2.0, -2.0]), np.array([upper, 2.0, 2.0]))
-        else:
-            initial = np.array([1.0, 0.0])
-            bounds = (np.array([-2.0, -2.0]), np.array([2.0, 2.0]))
-        return fit_gls_candidate(
+            return fit_profiled_affine_candidate(
+                name=name,
+                simulator=lambda rate: simulated(rate, signed=signed),
+                values=values,
+                standard_errors=standard_errors,
+                initial_rate=min(1e-5, upper / 10.0),
+                rate_bounds=(lower_rate, upper),
+                max_nfev=300,
+            )
+        return fit_profiled_affine_candidate(
             name=name,
-            parameter_names=names,
-            initial=initial,
-            bounds=bounds,
-            residual=lambda parameters: whiten_predictions(
-                predictions(parameters), blocks
-            ),
-            prediction=lambda parameters: curve(parameters),
-            n_observations=n_observations,
+            simulator=lambda rate: simulated(rate, signed=signed),
+            values=values,
+            standard_errors=standard_errors,
+            fixed_rate=0.0,
             max_nfev=300,
         )
 
@@ -1169,9 +1140,19 @@ def fit_physical_dephasing(
         and np.isfinite(unconstrained_error)
         and unconstrained_rate < -2.0 * unconstrained_error
     ):
+        selected = null
         status = CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION
         rate = 0.0
         rate_error = None
+        amplitude = float(null.parameters[0])
+        offset = float(null.parameters[1])
+    message = (
+        "The signed diagnostic required negative pure dephasing; the reported "
+        "physical fit uses the zero-rate candidate."
+        if status == CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION
+        else f"`{PROTOCOL_A}`/`{PROTOCOL_B}` nominal dissipation was fixed while "
+        "total CR-active pure dephasing was tested."
+    )
     return PhysicalForwardDephasingFit(
         True,
         selected.name,
@@ -1184,7 +1165,7 @@ def fit_physical_dephasing(
         amplitude * simulated(rate) + offset,
         unconstrained_rate,
         unconstrained_error,
-        "A/B nominal dissipation was fixed while total CR-active pure dephasing was tested.",
+        message,
     )
 
 
@@ -1362,7 +1343,9 @@ def _pure_dephasing_component(
     transverse_rate: float,
     longitudinal_rate: float,
 ) -> float:
-    """Return the nonnegative pure-dephasing part of a transverse rate."""
+    """Return the nonnegative pure-dephasing part, preserving invalid inputs."""
+    if not np.isfinite(transverse_rate) or not np.isfinite(longitudinal_rate):
+        return float("nan")
     return max(0.0, transverse_rate - 0.5 * longitudinal_rate)
 
 
@@ -1685,6 +1668,7 @@ def _extract_idle_equivalent_baseline(
         target_leakage=equivalent["target_leakage"],
         target_seepage=equivalent["target_seepage"],
     )
+    idle_superoperator_cache: SuperoperatorCache = {}
     c_raw = simulate_repeated_observable(
         schedules.semantic_blocks[PROTOCOL_C],
         counts,
@@ -1694,6 +1678,7 @@ def _extract_idle_equivalent_baseline(
         target_idle=target_idle,
         cr_rates=None,
         include_leakage=False,
+        cache=idle_superoperator_cache,
     )
     d_raw = simulate_repeated_observable(
         schedules.semantic_blocks[PROTOCOL_D],
@@ -1704,6 +1689,7 @@ def _extract_idle_equivalent_baseline(
         target_idle=target_idle,
         cr_rates=None,
         include_leakage=False,
+        cache=idle_superoperator_cache,
     )
     raw_reference_predictions: dict[str, NDArray[np.float64]] = {}
     reference_protocols = tuple(
@@ -1742,11 +1728,14 @@ def _extract_idle_equivalent_baseline(
                 target_idle=target_idle,
                 cr_rates=None,
                 include_leakage=False,
+                cache=idle_superoperator_cache,
             )
     c_data = getattr(measurements, PROTOCOL_C).actual
     d_data = getattr(measurements, PROTOCOL_D).actual
     if c_data.primary_standard_error is None or d_data.primary_standard_error is None:
-        raise ValueError("C/D primary standard errors are required.")
+        raise ValueError(
+            f"`{PROTOCOL_C}`/`{PROTOCOL_D}` primary standard errors are required."
+        )
     c_baseline_fit = fit_physical_dephasing(
         c_raw,
         c_data.primary_standard_error,
@@ -1857,16 +1846,20 @@ def _fidelity_limits(
     statuses: Mapping[str, CrDissipationRateStatus],
     primitive_covariance: NDArray[np.float64],
     primitive_order: Sequence[str],
+    *,
+    compute_uncertainty: bool = True,
 ) -> tuple[CrDissipationFidelityLimits, tuple[CrDissipationWarning, ...]]:
     """Compute idle, CR-on coherence, and CR-on dissipative fidelity limits."""
     operations = semantic_zx90(descriptor)
     ideal = noiseless_channel(operations)
+    superoperator_cache: SuperoperatorCache = {}
     idle_channel = compose_channel(
         operations,
         control_idle=control_idle,
         target_idle=target_idle,
         cr_rates=None,
         include_leakage=False,
+        cache=superoperator_cache,
     )
     idle_value = leakage_aware_average_fidelity(idle_channel, ideal)[0]
     idle_estimate = CrDissipationFidelityEstimate(idle_value, None, True, None)
@@ -1925,6 +1918,7 @@ def _fidelity_limits(
             target_idle=target_idle,
             cr_rates=rates_from(mapping),
             include_leakage=include_leakage,
+            cache=superoperator_cache,
         )
         return leakage_aware_average_fidelity(channel, ideal)[0]
 
@@ -1939,6 +1933,14 @@ def _fidelity_limits(
         if failed:
             return unavailable("Required rates failed: " + ", ".join(failed))
         value = evaluate({}, include_leakage)
+        if not compute_uncertainty:
+            return CrDissipationFidelityEstimate(
+                value,
+                None,
+                True,
+                None,
+                "Fidelity uncertainty calculation was disabled.",
+            )
         uncertain_indices = [
             index
             for index, name in enumerate(primitive_order)
@@ -1998,6 +2000,7 @@ def analyze_cr_dissipation(
     target_idle: IdleNoiseParameters,
     *,
     covariance_rcond: float,
+    compute_fidelity_uncertainty: bool = False,
 ) -> CrDissipationAnalysis:
     """Run the complete conditional analysis on processed measurements."""
     warnings: list[CrDissipationWarning] = []
@@ -2101,11 +2104,14 @@ def analyze_cr_dissipation(
     c_data = getattr(measurements, PROTOCOL_C).actual
     d_data = getattr(measurements, PROTOCOL_D).actual
     if c_data.primary_expectation is None or c_data.primary_standard_error is None:
-        raise ValueError("Protocol C primary data are required.")
+        raise ValueError(f"`{PROTOCOL_C}` primary data are required.")
     if d_data.primary_expectation is None or d_data.primary_standard_error is None:
-        raise ValueError("Protocol D primary data are required.")
+        raise ValueError(f"`{PROTOCOL_D}` primary data are required.")
     if dependency_failure:
-        message = "Skipped because at least one required A/B primitive rate failed."
+        message = (
+            f"Skipped because at least one required `{PROTOCOL_A}`/`{PROTOCOL_B}` "
+            "primitive rate failed."
+        )
         c_fit = _dependency_failed_physical_fit(message, counts.size)
         d_fit = _dependency_failed_physical_fit(message, counts.size)
     else:
@@ -2333,6 +2339,7 @@ def analyze_cr_dissipation(
         statuses,
         primitive_covariance,
         primitive_order,
+        compute_uncertainty=compute_fidelity_uncertainty,
     )
     warnings.extend(fidelity_warnings)
     fits = CrDissipationFits(control_fit, t1_a, leak_a, t1_b, leak_b, c_fit, d_fit)

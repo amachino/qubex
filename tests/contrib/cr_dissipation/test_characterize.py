@@ -27,6 +27,15 @@ class _Context:
         return label
 
 
+def test_optional_diagnostics_default_on_and_fidelity_uncertainty_off() -> None:
+    """Public defaults acquire diagnostics but avoid costly fidelity SEs."""
+    defaults = health.characterize_cr_dissipation.__kwdefaults__
+    assert defaults is not None
+    assert defaults["measure_reference"] is True
+    assert defaults["measure_orthogonal_components"] is True
+    assert defaults["compute_fidelity_uncertainty"] is False
+
+
 class _Experiment:
     def __init__(self) -> None:
         self.ctx = _Context()
@@ -78,7 +87,7 @@ def test_default_repetition_counts_span_twice_the_longer_idle_t1() -> None:
     ("t1_ns", "block_ns", "match"),
     [
         (float("inf"), 1_000.0, "finite positive idle T1"),
-        (4_000.0, 1_000.0, "fewer than nine A/B blocks"),
+        (4_000.0, 1_000.0, "fewer than nine .* blocks"),
     ],
 )
 def test_default_repetition_counts_require_a_representable_endpoint(
@@ -248,6 +257,64 @@ def test_reference_cache_is_invalidated_when_beta_changes(
     assert was_calibrated
     assert calibration.beta == pytest.approx(0.37)
     assert pulse.beta == pytest.approx(0.37)
+
+
+def test_malformed_reference_cache_falls_back_to_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed cached scalar fields should trigger recalibration instead of failing."""
+    source = FlatTop(duration=64.0, amplitude=0.23, tau=7.0, beta=0.37)
+    cached = {
+        "amplitude": "invalid",
+        "duration": 64.0,
+        "ramptime": 7.0,
+        "beta": 0.37,
+        "ramp_type": str(source.type),
+        "sampling_period": source.sampling_period,
+        "r_squared": "invalid",
+        "timestamp": "old",
+    }
+    stored: list[dict[str, Any]] = []
+    note = SimpleNamespace(
+        get_property=lambda *_: cached,
+        put_property=lambda _note, _key, value: stored.append(value),
+    )
+    exp = SimpleNamespace(ctx=SimpleNamespace(calib_note=note))
+    descriptor = SimpleNamespace(echoed=SimpleNamespace(cr_waveform=source))
+    replacement = health._ReferenceIx45Calibration(
+        0.14,
+        64.0,
+        7.0,
+        0.37,
+        str(source.type),
+        source.sampling_period,
+        0.98,
+        "new",
+    )
+    monkeypatch.setattr(
+        health,
+        "_calibrate_reference_ix45",
+        lambda *_args, **_kwargs: replacement,
+    )
+
+    pulse, calibration, was_calibrated = health._resolve_reference_ix45(
+        cast(Experiment, exp),
+        "Q0",
+        "Q1",
+        cast(ZX90Descriptor, descriptor),
+        amplitude=None,
+        force=False,
+        n_shots=100,
+        shot_interval=1000.0,
+        plot=False,
+        enable_tqdm=False,
+    )
+
+    assert was_calibrated
+    assert calibration is replacement
+    assert pulse.amplitude == pytest.approx(replacement.amplitude)
+    assert stored
+    assert stored[0]["amplitude"] == pytest.approx(replacement.amplitude)
 
 
 def test_reference_calibration_uses_canonical_shot_options(
@@ -422,6 +489,8 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
         zx90_no_echo=no_echo_override,
         idle_t1={"Q0": 1.0, "Q1": 1.0},
         idle_t2_echo={"Q0": 1.0, "Q1": 1.0},
+        measure_reference=False,
+        measure_orthogonal_components=False,
         plot=True,
     )
 
@@ -430,7 +499,9 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     assert calls[0]["n_shots"] == 444
     assert calls[0]["calibration_n_shots"] == 888
     assert calls[0]["n_bootstrap"] == 0
-    assert calls[0]["progress_label"] == "A/B primary"
+    assert calls[0]["progress_label"] == (
+        f"{health.PROTOCOL_A} / {health.PROTOCOL_B} primary"
+    )
     assert calls[1]["targets"] == ["Q0"]
     assert calls[1]["calibration"] == {"Q0": calibration["Q0"]}
     assert calls[1]["n_shots"] == 444
@@ -464,6 +535,14 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
         health.PROTOCOL_C: {"Q0": 0},
         health.PROTOCOL_D: {"Q1": 0},
     }
+    assert result.data["measurement_options"]["orthogonal_observables"] == {}
+    assert result.data["measurement_options"]["orthogonal_readout"] is None
+    assert result.data["measurement_options"]["reference_readout"] is None
+    assert result.data["analysis_options"]["c_d_fit_method"] == (
+        "two_qutrit_physical_forward_variable_projection"
+    )
+    assert result.data["analysis_options"]["c_d_nonlinear_parameter_count"] == 1
+    assert result.data["analysis_options"]["fidelity_uncertainty_method"] == "disabled"
     assert bootstrap_calls == [
         {
             "n_resamples": 12,
@@ -823,17 +902,18 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     assert a_traces["actual Xcomp"].yaxis == "y3"
     assert a_traces["actual target Pf"].yaxis == "y4"
     assert a_traces["Q1:Z"].yaxis == "y5"
-    assert tuple(figures[health.PROTOCOL_A].layout.yaxis.range) == (0.0, 1.0)
-    assert tuple(figures[health.PROTOCOL_A].layout.yaxis2.range) == (-1.0, 1.0)
-    assert tuple(figures[health.PROTOCOL_A].layout.yaxis3.range) == (-1.0, 1.0)
-    assert tuple(figures[health.PROTOCOL_A].layout.yaxis4.range) == (0.0, 0.08)
-    assert tuple(figures[health.PROTOCOL_A].layout.yaxis5.range) == (-1.0, 1.0)
+    a_layout = cast(Any, figures[health.PROTOCOL_A].layout)
+    assert tuple(a_layout.yaxis.range) == (0.0, 1.0)
+    assert tuple(a_layout.yaxis2.range) == (-1.0, 1.0)
+    assert tuple(a_layout.yaxis3.range) == (-1.0, 1.0)
+    assert tuple(a_layout.yaxis4.range) == (0.0, 0.08)
+    assert tuple(a_layout.yaxis5.range) == (-1.0, 1.0)
     expected_x_range = (0.0, 1.2)
     for figure in figures.values():
-        assert tuple(figure.layout.xaxis.range) == pytest.approx(expected_x_range)
-        assert figure.layout.legend.x == pytest.approx(1.02)
+        layout = cast(Any, figure.layout)
+        assert tuple(layout.xaxis.range) == pytest.approx(expected_x_range)
+        assert layout.legend.x == pytest.approx(1.02)
 
-    a_layout = figures[health.PROTOCOL_A].layout
     for panel in range(1, 6):
         suffix = "" if panel == 1 else str(panel)
         bottom_axis = getattr(a_layout, f"xaxis{suffix}")
@@ -847,6 +927,8 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
         top_ticks = np.asarray(top_axis.tickvals, dtype=float)
         assert np.allclose(np.diff(bottom_ticks), np.diff(bottom_ticks)[0])
         assert np.allclose(np.diff(top_ticks), np.diff(top_ticks)[0])
+        assert tuple(bottom_ticks) == pytest.approx((0.0, 0.25, 0.5, 0.75, 1.0))
+        assert np.all(np.mod(top_ticks, 4.0) == 0.0)
         assert tuple(top_axis.ticktext) == tuple(str(int(value)) for value in top_ticks)
         protocol_duration_us = float(
             np.max(getattr(measurements, health.PROTOCOL_A).elapsed_time_ns) / 1000.0
@@ -864,6 +946,7 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     assert all(annotation.yshift == 72 for annotation in a_layout.annotations[:5])
     assert len(a_layout.shapes) == 5
     c_figure = figures[health.PROTOCOL_C]
+    c_layout = cast(Any, c_figure.layout)
     c_traces = tuple(cast(Any, trace) for trace in c_figure.data)
     c_trace_names = {trace.name for trace in c_traces}
     assert "reference idle-only prediction" in c_trace_names
@@ -874,15 +957,13 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     assert reference_idle.line.width == pytest.approx(1.25)
     assert not any(
         str(annotation.text).startswith("Reference is diagnostic")
-        for annotation in c_figure.layout.annotations
+        for annotation in c_layout.annotations
     )
-    assert c_figure.layout.margin.b == 90
+    assert c_layout.margin.b == 90
     d_traces = tuple(cast(Any, trace) for trace in figures[health.PROTOCOL_D].data)
     assert "reference idle-only prediction" in {trace.name for trace in d_traces}
-    d_titles = {
-        str(annotation.text)
-        for annotation in figures[health.PROTOCOL_D].layout.annotations
-    }
+    d_layout = cast(Any, figures[health.PROTOCOL_D].layout)
+    d_titles = {str(annotation.text) for annotation in d_layout.annotations}
     assert "Target Zge" in d_titles
 
 

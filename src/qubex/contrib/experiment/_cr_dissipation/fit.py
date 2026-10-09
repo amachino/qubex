@@ -2,8 +2,8 @@
 Provide reusable ordinary-GLS primitives for CR dissipation fits.
 
 The module builds whitened residual blocks, performs robust initialization
-followed by ordinary GLS, selects nested candidates by AICc, and reports local
-covariance estimates.
+followed by ordinary GLS, profiles affine C/D nuisance parameters, selects
+nested candidates by AICc, and reports local covariance estimates.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy.optimize import OptimizeResult, least_squares
+from scipy.optimize import OptimizeResult, least_squares, lsq_linear
 
 from .types import CandidateFit
 
@@ -293,6 +293,197 @@ def fit_gls_candidate(
         n_observations=n_observations,
         n_parameters=n_parameters,
         message=str(final.message),
+    )
+
+
+def fit_profiled_affine_candidate(
+    *,
+    name: str,
+    simulator: Callable[[float], NDArray[np.float64]],
+    values: ArrayLike,
+    standard_errors: ArrayLike,
+    fixed_rate: float | None = None,
+    initial_rate: float | None = None,
+    rate_bounds: tuple[float, float] | None = None,
+    max_nfev: int = 300,
+) -> CandidateFit:
+    """Fit one nonlinear rate after profiling affine amplitude and offset."""
+    observed = np.asarray(values, dtype=np.float64)
+    errors = np.asarray(standard_errors, dtype=np.float64)
+    if observed.ndim != 1 or errors.shape != observed.shape:
+        raise ValueError("values and standard_errors must be matching 1D arrays.")
+    retained = np.flatnonzero(
+        np.isfinite(observed) & np.isfinite(errors) & (errors > 0.0)
+    )
+    n_observations = int(retained.size)
+    free_rate = fixed_rate is None
+    parameter_names = (
+        ("pure_dephasing_rate_per_ns", "spam_amplitude", "spam_offset")
+        if free_rate
+        else ("spam_amplitude", "spam_offset")
+    )
+    n_parameters = len(parameter_names)
+    if n_observations <= n_parameters + 1:
+        return _failed_candidate(
+            name,
+            parameter_names,
+            n_observations,
+            "AICc is undefined because N_obs <= k + 1.",
+        )
+
+    def evaluate_simulator(rate: float) -> NDArray[np.float64]:
+        """Return one validated simulator curve."""
+        simulated = np.asarray(simulator(float(rate)), dtype=np.float64)
+        if simulated.shape != observed.shape or not np.all(
+            np.isfinite(simulated[retained])
+        ):
+            raise ValueError("The profiled simulator returned an invalid curve.")
+        return simulated
+
+    def profile(
+        rate: float,
+    ) -> tuple[
+        float,
+        float,
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+    ]:
+        simulated = evaluate_simulator(rate)
+        design = np.column_stack(
+            (simulated[retained] / errors[retained], 1.0 / errors[retained])
+        )
+        target = observed[retained] / errors[retained]
+        linear = lsq_linear(
+            design,
+            target,
+            bounds=(np.array([-2.0, -2.0]), np.array([2.0, 2.0])),
+        )
+        if not linear.success or not np.all(np.isfinite(linear.x)):
+            raise ValueError("The profiled affine GLS solve failed.")
+        amplitude, offset = (float(linear.x[0]), float(linear.x[1]))
+        prediction = amplitude * simulated + offset
+        residual = (prediction[retained] - observed[retained]) / errors[retained]
+        return amplitude, offset, prediction, residual, simulated
+
+    if free_rate:
+        if initial_rate is None or rate_bounds is None:
+            raise ValueError("A free profiled rate requires initial_rate and bounds.")
+        lower, upper = (float(rate_bounds[0]), float(rate_bounds[1]))
+        if not np.isfinite(lower) or not np.isfinite(upper) or lower >= upper:
+            raise ValueError("rate_bounds must be finite and strictly increasing.")
+        initial = float(np.clip(initial_rate, lower, upper))
+
+        def residual(rate_array: NDArray[np.float64]) -> NDArray[np.float64]:
+            return profile(float(rate_array[0]))[3]
+
+        robust = _run_least_squares(
+            residual,
+            np.array([initial]),
+            (np.array([lower]), np.array([upper])),
+            loss="soft_l1",
+            max_nfev=max_nfev,
+        )
+        final_initial = (
+            np.asarray(robust.x, dtype=np.float64)
+            if robust is not None and np.all(np.isfinite(robust.x))
+            else np.array([initial])
+        )
+        final = _run_least_squares(
+            residual,
+            final_initial,
+            (np.array([lower]), np.array([upper])),
+            loss="linear",
+            max_nfev=max_nfev,
+        )
+        if final is None or not final.success or not np.all(np.isfinite(final.x)):
+            return _failed_candidate(
+                name,
+                parameter_names,
+                n_observations,
+                "Profiled one-dimensional GLS optimization failed.",
+            )
+        rate = float(final.x[0])
+    else:
+        rate = float(fixed_rate)
+        lower = rate
+        upper = rate
+
+    try:
+        amplitude, offset, prediction, whitened, simulated = profile(rate)
+    except (FloatingPointError, RuntimeError, ValueError, np.linalg.LinAlgError):
+        return _failed_candidate(
+            name,
+            parameter_names,
+            n_observations,
+            "Profiled affine GLS evaluation failed.",
+        )
+    chi_squared = float(whitened @ whitened)
+    reduced = chi_squared / max(1, n_observations - n_parameters)
+    if free_rate:
+        step = max(1e-10, 1e-5 * max(abs(rate), upper - lower))
+        left = max(lower, rate - step)
+        right = min(upper, rate + step)
+        if right <= left:
+            return _failed_candidate(
+                name,
+                parameter_names,
+                n_observations,
+                "Profiled rate derivative could not be evaluated.",
+            )
+        try:
+            left_curve = evaluate_simulator(left)
+            right_curve = evaluate_simulator(right)
+        except (FloatingPointError, RuntimeError, ValueError, np.linalg.LinAlgError):
+            return _failed_candidate(
+                name,
+                parameter_names,
+                n_observations,
+                "Profiled rate derivative could not be evaluated.",
+            )
+        derivative = (right_curve - left_curve) / (right - left)
+        jacobian = np.column_stack(
+            (
+                amplitude * derivative[retained] / errors[retained],
+                simulated[retained] / errors[retained],
+                1.0 / errors[retained],
+            )
+        )
+        parameters = np.array([rate, amplitude, offset], dtype=np.float64)
+    else:
+        jacobian = np.column_stack(
+            (simulated[retained] / errors[retained], 1.0 / errors[retained])
+        )
+        parameters = np.array([amplitude, offset], dtype=np.float64)
+    covariance = _local_covariance(jacobian, reduced_chi_squared=reduced)
+    if not np.all(np.isfinite(covariance)):
+        return _failed_candidate(
+            name,
+            parameter_names,
+            n_observations,
+            "Profiled GLS parameters are not locally identifiable.",
+        )
+    standard_errors = np.sqrt(np.maximum(np.diag(covariance), 0.0))
+    aicc = (
+        chi_squared
+        + 2.0 * n_parameters
+        + 2.0 * n_parameters * (n_parameters + 1) / (n_observations - n_parameters - 1)
+    )
+    return CandidateFit(
+        name=name,
+        success=True,
+        parameter_names=parameter_names,
+        parameters=parameters,
+        covariance=covariance,
+        standard_errors=np.asarray(standard_errors, dtype=np.float64),
+        jacobian=np.asarray(jacobian, dtype=np.float64),
+        prediction=prediction,
+        chi_squared=chi_squared,
+        reduced_chi_squared=float(reduced),
+        aicc=float(aicc),
+        n_observations=n_observations,
+        n_parameters=n_parameters,
+        message="Affine SPAM parameters were profiled in a one-dimensional rate fit.",
     )
 
 

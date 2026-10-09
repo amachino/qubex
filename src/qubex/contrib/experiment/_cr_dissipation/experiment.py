@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from itertools import pairwise
-from math import ceil
+from math import ceil, floor
 from numbers import Integral, Real
 from typing import Any, TypedDict, cast
 
@@ -138,12 +138,16 @@ def _default_repetition_counts(
             "repetition_counts; specify repetition_counts explicitly."
         )
     if not np.isfinite(ab_block_duration_ns) or ab_block_duration_ns <= 0.0:
-        raise ValueError("The A/B block duration must be positive and finite.")
+        raise ValueError(
+            f"The `{PROTOCOL_A}`/`{PROTOCOL_B}` block duration must be positive "
+            "and finite."
+        )
     endpoint = int(np.rint(2.0 * longest_idle_t1_ns / ab_block_duration_ns))
     positive_size = 9
     if endpoint < positive_size:
         raise ValueError(
-            "Twice the longer idle T1 spans fewer than nine A/B blocks; "
+            f"Twice the longer idle T1 spans fewer than nine `{PROTOCOL_A}`/"
+            f"`{PROTOCOL_B}` blocks; "
             "specify repetition_counts explicitly."
         )
     geometric = np.geomspace(1.0, float(endpoint), positive_size)
@@ -279,6 +283,33 @@ def _reference_fingerprint(
     )
 
 
+def _usable_reference_cache_entry(
+    candidate: _ReferenceIx45Calibration,
+    fingerprint: tuple[float, float, float | None, str, float],
+) -> bool:
+    """Return whether a deserialized IX45 calibration is valid and compatible."""
+    if (
+        isinstance(candidate.amplitude, bool)
+        or not isinstance(candidate.amplitude, Real)
+        or isinstance(candidate.r_squared, bool)
+        or not isinstance(candidate.r_squared, Real)
+    ):
+        return False
+    amplitude = float(candidate.amplitude)
+    r_squared = float(candidate.r_squared)
+    try:
+        compatible = candidate.fingerprint == fingerprint
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        compatible
+        and np.isfinite(amplitude)
+        and 0.0 < amplitude <= 1.0
+        and np.isfinite(r_squared)
+        and r_squared >= 0.5
+    )
+
+
 def _calibrate_reference_ix45(
     exp: Experiment,
     target: str,
@@ -405,15 +436,14 @@ def _resolve_reference_ix45(
             candidate = _ReferenceIx45Calibration(**cached)
         except (TypeError, ValueError):
             candidate = None
-        if (
-            candidate is not None
-            and candidate.fingerprint == fingerprint
-            and np.isfinite(candidate.amplitude)
-            and 0.0 < candidate.amplitude <= 1.0
-            and np.isfinite(candidate.r_squared)
-            and candidate.r_squared >= 0.5
+        if candidate is not None and _usable_reference_cache_entry(
+            candidate, fingerprint
         ):
-            return _make_ix45(cr_envelope, candidate.amplitude), candidate, False
+            return (
+                _make_ix45(cr_envelope, float(candidate.amplitude)),
+                candidate,
+                False,
+            )
     calibration = _calibrate_reference_ix45(
         exp,
         target,
@@ -631,7 +661,7 @@ def _orthogonal_acquisition(
                 named[name] = diagnostic_schedule(base, qubit, basis)
                 keys.append((protocol, qubit, basis))
     _announce_acquisition(
-        "A/B/C/D orthogonal Pauli diagnostics",
+        f"{' / '.join(PROTOCOLS)} orthogonal Pauli diagnostics",
         enable_tqdm=enable_tqdm,
     )
     results = measure_single_shot_batch(
@@ -863,16 +893,13 @@ def _configure_protocol_xaxes(
     cr_gate_counts: Sequence[int],
 ) -> None:
     """Add independent, uniformly spaced time and CR-gate axes to every panel."""
-    time_ticks = np.linspace(0.0, maximum_time_us, 6)
+    time_ticks = _nice_axis_ticks(maximum_time_us)
     measured_maximum_time_us = float(np.max(time_us))
     measured_maximum_gate_count = int(max(cr_gate_counts, default=0))
     gate_limit = (
         measured_maximum_gate_count * maximum_time_us / measured_maximum_time_us
     )
-    gate_step = max(4, 4 * ceil(gate_limit / 20.0))
-    gate_ticks = np.arange(0, int(np.floor(gate_limit)) + 1, gate_step, dtype=np.int64)
-    if gate_ticks.size == 0:
-        gate_ticks = np.array([0], dtype=np.int64)
+    gate_ticks = _nice_axis_ticks(gate_limit, quantum=4.0)
     grid_cells = rows * columns
     for panel in range(1, panel_count + 1):
         row, col = _panel_position(panel, columns)
@@ -899,7 +926,7 @@ def _configure_protocol_xaxes(
                     "range": [0.0, gate_limit],
                     "tickmode": "array",
                     "tickvals": gate_ticks,
-                    "ticktext": [str(value) for value in gate_ticks],
+                    "ticktext": [str(round(value)) for value in gate_ticks],
                     "showticklabels": True,
                     "showgrid": False,
                     "title": "CR gates (4n)",
@@ -907,6 +934,44 @@ def _configure_protocol_xaxes(
                 }
             }
         )
+        # Plotly does not reliably render a layout-only overlaid axis.  Bind a
+        # non-rendering trace to it so every panel retains its upper scale.
+        figure.add_trace(
+            go.Scatter(
+                x=[0.0, gate_limit],
+                y=[None, None],
+                xaxis=f"x{grid_cells + panel}",
+                yaxis=y_axis,
+                mode="markers",
+                marker={"opacity": 0.0},
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+
+
+def _nice_axis_ticks(
+    limit: float,
+    *,
+    target_intervals: int = 5,
+    quantum: float | None = None,
+) -> NDArray[np.float64]:
+    """Return zero-based, uniformly spaced ticks with human-friendly values."""
+    if not np.isfinite(limit) or limit <= 0.0:
+        return np.array([0.0], dtype=np.float64)
+    scaled_limit = limit if quantum is None else limit / quantum
+    raw_step = scaled_limit / max(1, target_intervals)
+    magnitude = 10.0 ** floor(np.log10(raw_step))
+    fraction = raw_step / magnitude
+    candidates = (
+        (1.0, 2.0, 5.0, 10.0) if quantum is not None else (1.0, 2.0, 2.5, 5.0, 10.0)
+    )
+    nice_fraction = next(candidate for candidate in candidates if fraction <= candidate)
+    step = nice_fraction * magnitude
+    if quantum is not None:
+        step *= quantum
+    stop = floor(limit / step + 1e-12)
+    return np.arange(stop + 1, dtype=np.float64) * step
 
 
 def _shift_subplot_titles(figure: go.Figure, count: int) -> None:
@@ -1156,7 +1221,9 @@ def _plot_cr_dissipation(
             _add_zero_line(figure, target_pf_row, columns)
             if has_orthogonal and measured.orthogonal is not None:
                 if control_orthogonal_row is None or target_orthogonal_row is None:
-                    raise ValueError("Missing A/B orthogonal plot rows.")
+                    raise ValueError(
+                        f"Missing `{PROTOCOL_A}`/`{PROTOCOL_B}` orthogonal plot rows."
+                    )
                 for index, (name, component) in enumerate(
                     measured.orthogonal.expectations.items()
                 ):
@@ -1427,8 +1494,8 @@ def characterize_cr_dissipation(
     n_shots: int = DEFAULT_N_SHOTS,
     gef_measurement_n_shots: int = DEFAULT_GEF_MEASUREMENT_N_SHOTS,
     shot_interval: float | None = None,
-    measure_reference: bool = False,
-    measure_orthogonal_components: bool = False,
+    measure_reference: bool = True,
+    measure_orthogonal_components: bool = True,
     zx90_no_echo: PulseSchedule | None = None,
     zx90_echo: PulseSchedule | None = None,
     idle_t1: Mapping[str, float] | None = None,
@@ -1440,6 +1507,7 @@ def characterize_cr_dissipation(
     gef_covariance_rcond: float = 1e-12,
     reference_ix45_amplitude: float | None = None,
     force_reference_ix45_calibration: bool = False,
+    compute_fidelity_uncertainty: bool = False,
     enable_tqdm: bool = True,
     plot: bool = True,
 ) -> Result:
@@ -1482,10 +1550,12 @@ def characterize_cr_dissipation(
         measurement default.
     measure_reference : bool, optional
         Whether to acquire duration-matched diagnostic reference sequences.
-        Reference data never enter primary fits or fidelity estimates.
+        Reference data never enter primary fits or fidelity estimates. Defaults
+        to `True`.
     measure_orthogonal_components : bool, optional
         Whether to acquire diagnostic components orthogonal to each primary
         observable using Pauli readout. These data never enter primary inference.
+        Defaults to `True`.
     zx90_no_echo : PulseSchedule | None, optional
         Optional full un-echoed ZX90-equivalent schedule used by A/B. It must
         contain both same-sign CR lobes, expose `echo=False`, and match the total
@@ -1525,6 +1595,11 @@ def characterize_cr_dissipation(
     force_reference_ix45_calibration : bool, optional
         Whether to ignore a compatible cached IX45 calibration and recalibrate.
         Cannot be combined with an explicit `reference_ix45_amplitude`.
+    compute_fidelity_uncertainty : bool, optional
+        Whether to propagate fitted-rate covariance into the two CR-on fidelity
+        limits with sigma points. Disable to retain central fidelities while
+        skipping the most expensive post-fit uncertainty calculation. Defaults
+        to `False`.
     enable_tqdm : bool, optional
         Whether acquisition services display progress bars.
     plot : bool, optional
@@ -1546,6 +1621,7 @@ def characterize_cr_dissipation(
         ("measure_reference", measure_reference),
         ("measure_orthogonal_components", measure_orthogonal_components),
         ("force_reference_ix45_calibration", force_reference_ix45_calibration),
+        ("compute_fidelity_uncertainty", compute_fidelity_uncertainty),
         ("enable_tqdm", enable_tqdm),
         ("plot", plot),
     ):
@@ -1679,7 +1755,7 @@ def characterize_cr_dissipation(
         bootstrap_seed=bootstrap_seed,
         bootstrap_confidence_level=confidence,
         enable_tqdm=enable_tqdm,
-        progress_label="A/B primary",
+        progress_label=f"{PROTOCOL_A} / {PROTOCOL_B} primary",
     )
     calibration = ab_result.data["calibration"]
     for protocol in (PROTOCOL_A, PROTOCOL_B):
@@ -1753,7 +1829,7 @@ def characterize_cr_dissipation(
             bootstrap_seed=bootstrap_seed,
             bootstrap_confidence_level=confidence,
             enable_tqdm=enable_tqdm,
-            progress_label="A/B diagnostic reference",
+            progress_label=f"{PROTOCOL_A} / {PROTOCOL_B} diagnostic reference",
         )
         for protocol in (PROTOCOL_A, PROTOCOL_B):
             reference_results[protocol] = ab_reference_result
@@ -1814,6 +1890,7 @@ def characterize_cr_dissipation(
         control_idle,
         target_idle,
         covariance_rcond=covariance_rcond,
+        compute_fidelity_uncertainty=compute_fidelity_uncertainty,
     )
     figures = _plot_cr_dissipation(measurements, analysis) if plot else {}
     if plot:
@@ -1884,12 +1961,16 @@ def characterize_cr_dissipation(
             PROTOCOL_C: "control_Xge",
             PROTOCOL_D: "target_Zge_unnormalized_Pg_minus_Pe",
         },
-        "orthogonal_observables": {
-            PROTOCOL_A: ("control_X", "control_Y", "target_Y", "target_Z"),
-            PROTOCOL_B: ("control_X", "control_Y", "target_Y", "target_Z"),
-            PROTOCOL_C: ("control_Y", "control_Z"),
-            PROTOCOL_D: ("target_X", "target_Y"),
-        },
+        "orthogonal_observables": (
+            {
+                PROTOCOL_A: ("control_X", "control_Y", "target_Y", "target_Z"),
+                PROTOCOL_B: ("control_X", "control_Y", "target_Y", "target_Z"),
+                PROTOCOL_C: ("control_Y", "control_Z"),
+                PROTOCOL_D: ("target_X", "target_Y"),
+            }
+            if measure_orthogonal_components
+            else {}
+        ),
         "primary_bootstrap": {
             PROTOCOL_A: {
                 control: selected_bootstrap_resamples(PROTOCOL_A, control),
@@ -1902,10 +1983,11 @@ def characterize_cr_dissipation(
             PROTOCOL_C: {control: 0},
             PROTOCOL_D: {target: 0},
         },
-        "orthogonal_readout": "pauli",
-        "reference_readout": "gef",
+        "orthogonal_readout": "pauli" if measure_orthogonal_components else None,
+        "reference_readout": "gef" if measure_reference else None,
         "reference_ix45_amplitude": reference_ix45_amplitude,
         "force_reference_ix45_calibration": force_reference_ix45_calibration,
+        "compute_fidelity_uncertainty": compute_fidelity_uncertainty,
         "enable_tqdm": enable_tqdm,
     }
     analysis_options = {
@@ -1919,9 +2001,15 @@ def characterize_cr_dissipation(
         "final_optimizer_loss": "linear",
         "model_selection_statistic": "gaussian_gls_aicc",
         "rate_uncertainty_method": "local_gls_covariance",
-        "c_d_fit_method": "two_qutrit_physical_forward_fit",
-        "fidelity_uncertainty_method": "scaled_unscented_transform",
-        "fidelity_uncertainty_is_conditional_on_idle_coherence_and_gef_calibration": True,
+        "c_d_fit_method": "two_qutrit_physical_forward_variable_projection",
+        "c_d_nonlinear_parameter_count": 1,
+        "fidelity_uncertainty_method": (
+            "scaled_unscented_transform" if compute_fidelity_uncertainty else "disabled"
+        ),
+        "fidelity_uncertainty_enabled": compute_fidelity_uncertainty,
+        "fidelity_uncertainty_is_conditional_on_idle_coherence_and_gef_calibration": (
+            compute_fidelity_uncertainty
+        ),
         "cross_protocol_covariance_approximation": "block_diagonal",
         "sigma_point_covariance_psd_relative_tolerance": PSD_RELATIVE_TOLERANCE,
         "cr_sign_dependent_dissipation": False,

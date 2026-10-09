@@ -33,6 +33,9 @@ from qubex.contrib.experiment._cr_dissipation.analysis import (
     target_exchange_trajectory,
     target_t1rho_trajectory,
 )
+from qubex.contrib.experiment._cr_dissipation.fit import (
+    fit_profiled_affine_candidate,
+)
 from qubex.contrib.experiment._cr_dissipation.pulses import (
     PROTOCOL_A,
     PROTOCOL_B,
@@ -259,11 +262,30 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
     assert all("target_t1rho" in parameters for parameters in propagated)
     assert all(expected_fixed.isdisjoint(parameters) for parameters in propagated)
 
+    propagated.clear()
+    disabled, _ = _fidelity_limits(
+        descriptor(),
+        IdleNoiseParameters(float("inf"), float("inf")),
+        IdleNoiseParameters(float("inf"), float("inf")),
+        nominal,
+        statuses,
+        covariance,
+        primitive_order,
+        compute_uncertainty=False,
+    )
+    assert not propagated
+    assert disabled.cr_on_coherence_limited.standard_error is None
+    assert disabled.cr_on_coherence_limited.message == (
+        "Fidelity uncertainty calculation was disabled."
+    )
+
 
 def test_pure_dephasing_component_uses_both_longitudinal_directions() -> None:
     """Control transverse decomposition includes upward and downward rates."""
     assert _pure_dephasing_component(8e-5, 6e-5) == pytest.approx(5e-5)
     assert _pure_dephasing_component(2e-5, 6e-5) == 0.0
+    assert np.isnan(_pure_dephasing_component(float("nan"), 6e-5))
+    assert np.isnan(_pure_dephasing_component(8e-5, float("nan")))
 
 
 def test_target_control_state_dependence_warning_is_diagnostic_only() -> None:
@@ -968,6 +990,25 @@ def test_pure_dephasing_delta_is_signed_relative_to_idle_equivalent() -> None:
     assert _signed_rate_difference(1e-5, 2e-5) == pytest.approx(-1e-5)
 
 
+def test_profiled_affine_fit_recovers_one_nonlinear_rate() -> None:
+    """Variable projection recovers rate, contrast, and offset."""
+    times = np.arange(10, dtype=np.float64)
+    true_rate = 0.18
+    values = 0.72 * np.exp(-true_rate * times) + 0.11
+    fit = fit_profiled_affine_candidate(
+        name="synthetic",
+        simulator=lambda rate: np.exp(-rate * times),
+        values=values,
+        standard_errors=np.full(times.size, 0.002),
+        initial_rate=0.1,
+        rate_bounds=(0.0, 1.0),
+    )
+
+    assert fit.success
+    assert fit.parameters == pytest.approx((true_rate, 0.72, 0.11), rel=1e-5)
+    assert fit.jacobian.shape == (times.size, 3)
+
+
 def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -986,9 +1027,17 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
     true_rate = 7e-4
     fixed_rates = CrNoiseRates(control_e_to_g=2e-5)
 
-    def fake_fit_gls_candidate(**kwargs: Any) -> CandidateFit:
+    def fake_profiled_fit(**kwargs: Any) -> CandidateFit:
         name = str(kwargs["name"])
-        parameter_names = tuple(cast(tuple[str, ...], kwargs["parameter_names"]))
+        parameter_names = (
+            ("spam_amplitude", "spam_offset")
+            if kwargs.get("fixed_rate") is not None
+            else (
+                "pure_dephasing_rate_per_ns",
+                "spam_amplitude",
+                "spam_offset",
+            )
+        )
 
         if name == "zero_total_dephasing":
             parameters = np.array([1.0, 0.0])
@@ -1022,8 +1071,8 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
 
     monkeypatch.setattr(
         analysis_module,
-        "fit_gls_candidate",
-        fake_fit_gls_candidate,
+        "fit_profiled_affine_candidate",
+        fake_profiled_fit,
     )
 
     fit = fit_physical_dephasing(
@@ -1061,9 +1110,17 @@ def test_physical_forward_fit_selects_zero_total_pure_dephasing(
         ),
     )
 
-    def fake_fit_gls_candidate(**kwargs: Any) -> CandidateFit:
+    def fake_profiled_fit(**kwargs: Any) -> CandidateFit:
         name = str(kwargs["name"])
-        names = tuple(cast(tuple[str, ...], kwargs["parameter_names"]))
+        names = (
+            ("spam_amplitude", "spam_offset")
+            if kwargs.get("fixed_rate") is not None
+            else (
+                "pure_dephasing_rate_per_ns",
+                "spam_amplitude",
+                "spam_offset",
+            )
+        )
         if name == "zero_total_dephasing":
             return _candidate(name, names, (1.0, 0.0), (0.01, 0.01), 0.0)
         return _candidate(
@@ -1074,7 +1131,9 @@ def test_physical_forward_fit_selects_zero_total_pure_dephasing(
             20.0,
         )
 
-    monkeypatch.setattr(analysis_module, "fit_gls_candidate", fake_fit_gls_candidate)
+    monkeypatch.setattr(
+        analysis_module, "fit_profiled_affine_candidate", fake_profiled_fit
+    )
     monkeypatch.setattr(
         analysis_module,
         "simulate_repeated_observable",
@@ -1097,3 +1156,82 @@ def test_physical_forward_fit_selects_zero_total_pure_dephasing(
     assert fit.selected_model == "zero_total_dephasing"
     assert fit.status == CrDissipationRateStatus.CONSISTENT_WITH_ZERO
     assert fit.rate_per_ns == 0.0
+
+
+def test_negative_signed_diagnostic_projects_to_the_zero_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An inconsistent signed diagnostic should use the zero model and its SPAM fit."""
+    counts = np.array([0, 1, 2, 3, 5, 8], dtype=np.int64)
+    idle = IdleNoiseParameters(float("inf"), float("inf"))
+    block = (
+        SemanticSegment(
+            80.0,
+            np.zeros((9, 9), dtype=np.complex128),
+            True,
+            "CR",
+        ),
+    )
+
+    def fake_profiled_fit(**kwargs: Any) -> CandidateFit:
+        name = str(kwargs["name"])
+        if name == "zero_total_dephasing":
+            return _candidate(
+                name,
+                ("spam_amplitude", "spam_offset"),
+                (0.8, 0.1),
+                (0.01, 0.01),
+                20.0,
+            )
+        if name == "free_nonnegative":
+            return _candidate(
+                name,
+                (
+                    "pure_dephasing_rate_per_ns",
+                    "spam_amplitude",
+                    "spam_offset",
+                ),
+                (1e-3, 1.2, 0.2),
+                (1e-4, 0.01, 0.01),
+                0.0,
+            )
+        return _candidate(
+            name,
+            (
+                "pure_dephasing_rate_per_ns",
+                "spam_amplitude",
+                "spam_offset",
+            ),
+            (-1e-3, 0.7, 0.05),
+            (1e-4, 0.01, 0.01),
+            0.0,
+        )
+
+    monkeypatch.setattr(
+        analysis_module, "fit_profiled_affine_candidate", fake_profiled_fit
+    )
+    monkeypatch.setattr(
+        analysis_module,
+        "simulate_repeated_observable",
+        lambda *_args, **_kwargs: np.ones(counts.size),
+    )
+
+    fit = fit_physical_dephasing(
+        np.ones(counts.size),
+        np.full(counts.size, 2e-5),
+        counts,
+        block,
+        initial_density=state_density("+x", "+x"),
+        observable=X_CONTROL,
+        control_idle=idle,
+        target_idle=idle,
+        fixed_rates=CrNoiseRates(),
+        fitted_role="control",
+    )
+
+    assert fit.status == CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION
+    assert fit.selected_model == "zero_total_dephasing"
+    assert fit.rate_per_ns == 0.0
+    assert fit.spam_amplitude == pytest.approx(0.8)
+    assert fit.spam_offset == pytest.approx(0.1)
+    assert fit.fitted_values == pytest.approx(np.full(counts.size, 0.9))

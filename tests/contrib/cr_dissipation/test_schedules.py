@@ -10,6 +10,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+import qubex.contrib.experiment._cr_dissipation.simulation as simulation_module
 from qubex.contrib.experiment._cr_dissipation.pulses import (
     PROTOCOL_D,
     PROTOCOLS,
@@ -48,6 +49,40 @@ from qubex.pulse import CrossResonance, FlatTop, VirtualZ
 def _pulse(duration: float = 20.0) -> FlatTop:
     """Build a lightweight calibrated waveform for schedule tests."""
     return FlatTop(duration=duration, amplitude=0.2, tau=4.0)
+
+
+def test_segment_superoperator_cache_reuses_matrix_exponential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Identical segments reuse their expensive matrix exponential."""
+    segment = SemanticSegment(
+        20.0,
+        np.zeros((9, 9), dtype=np.complex128),
+        True,
+        "CR",
+    )
+    idle = IdleNoiseParameters(float("inf"), float("inf"))
+    cache: simulation_module.SuperoperatorCache = {}
+    original_expm = simulation_module.expm
+    calls = 0
+
+    def counted_expm(matrix: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+        nonlocal calls
+        calls += 1
+        return original_expm(matrix)
+
+    monkeypatch.setattr(simulation_module, "expm", counted_expm)
+    for _ in range(2):
+        compose_channel(
+            (segment, segment),
+            control_idle=idle,
+            target_idle=idle,
+            cr_rates=CrNoiseRates(),
+            include_leakage=True,
+            cache=cache,
+        )
+
+    assert calls == 1
 
 
 def _echoed_zx90() -> CrossResonance:
@@ -502,6 +537,15 @@ def test_signed_diagnostic_accepts_negative_coefficient_only_explicitly() -> Non
             target_idle=idle,
             cr_rates=CrNoiseRates(control_e_to_g=-1e-5),
             include_leakage=False,
+        )
+    with pytest.raises(ValueError, match="nonnegative"):
+        compose_channel(
+            operation,
+            control_idle=idle,
+            target_idle=idle,
+            cr_rates=CrNoiseRates(control_e_to_g=-1e-5),
+            include_leakage=False,
+            signed_control_pure_dephasing=-1e-5,
         )
 
 

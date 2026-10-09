@@ -1,15 +1,16 @@
 """
 Simulate semantic two-qutrit CR evolution and fidelity limits.
 
-The module defines the qutrit operator basis, constructs piecewise Lindblad
-channels, evaluates repeated protocol observables, and propagates fitted-rate
-uncertainty into leakage-aware average fidelity.
+The module defines the qutrit operator basis, constructs cached piecewise
+Lindblad channels, evaluates repeated protocol observables, and optionally
+propagates fitted-rate uncertainty into leakage-aware average fidelity.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Literal
 
 import numpy as np
@@ -21,6 +22,7 @@ from .types import IdleNoiseParameters
 _COMPLEX = np.complex128
 _DIMENSION = 9
 _SUPER_DIMENSION = _DIMENSION**2
+_MAX_SEGMENT_CACHE_ENTRIES = 256
 
 
 def _basis(index: int) -> NDArray[np.complex128]:
@@ -78,6 +80,7 @@ class SemanticUnitary:
 
 
 SemanticOperation = SemanticSegment | SemanticUnitary
+SuperoperatorCache = MutableMapping[tuple[object, ...], NDArray[np.complex128]]
 
 
 @dataclass(frozen=True)
@@ -160,14 +163,28 @@ def simultaneous_rotation_segments(
     return tuple(segments)
 
 
+@lru_cache(maxsize=64)
+def _cached_hamiltonian_liouvillian(
+    hamiltonian_bytes: bytes,
+) -> NDArray[np.complex128]:
+    """Build a commutator Liouvillian from a canonical matrix encoding."""
+    hamiltonian = np.frombuffer(hamiltonian_bytes, dtype=_COMPLEX).reshape(
+        _DIMENSION, _DIMENSION
+    )
+    return np.asarray(
+        -1j * (np.kron(IDENTITY, hamiltonian) - np.kron(hamiltonian.T, IDENTITY)),
+        dtype=_COMPLEX,
+    )
+
+
 def hamiltonian_liouvillian(
     hamiltonian: NDArray[np.complex128],
 ) -> NDArray[np.complex128]:
-    """Return the column-vectorized commutator Liouvillian."""
-    hamiltonian = np.asarray(hamiltonian, dtype=_COMPLEX)
-    if hamiltonian.shape != (_DIMENSION, _DIMENSION):
+    """Return a cached column-vectorized commutator Liouvillian."""
+    canonical = np.ascontiguousarray(hamiltonian, dtype=_COMPLEX)
+    if canonical.shape != (_DIMENSION, _DIMENSION):
         raise ValueError("Hamiltonian must act on the two-qutrit Hilbert space.")
-    return -1j * (np.kron(IDENTITY, hamiltonian) - np.kron(hamiltonian.T, IDENTITY))
+    return _cached_hamiltonian_liouvillian(canonical.tobytes())
 
 
 def dissipator_superoperator(
@@ -210,35 +227,75 @@ def _embedded_transition(
     return tensor(local, I3) if role == "control" else tensor(I3, local)
 
 
-def _idle_dissipators(
+@lru_cache(maxsize=1)
+def _dissipator_components() -> Mapping[str, NDArray[np.complex128]]:
+    """Build the rate-independent Lindblad components once per process."""
+    plus_x = (G + E) / np.sqrt(2.0)
+    minus_x = (G - E) / np.sqrt(2.0)
+    operators = {
+        "control_e_to_g": _embedded_transition("control", G, E),
+        "control_g_to_e": _embedded_transition("control", E, G),
+        "control_e_to_f": _embedded_transition("control", F, E),
+        "control_f_to_e": _embedded_transition("control", E, F),
+        "control_phi": Z_CONTROL,
+        "target_e_to_g": _embedded_transition("target", G, E),
+        "target_x_plus_to_minus": _embedded_transition("target", minus_x, plus_x),
+        "target_x_minus_to_plus": _embedded_transition("target", plus_x, minus_x),
+        "target_phi": X_TARGET,
+        "target_g_to_f": _embedded_transition("target", F, G),
+        "target_e_to_f": _embedded_transition("target", F, E),
+        "target_f_to_g": _embedded_transition("target", G, F),
+        "target_f_to_e": _embedded_transition("target", E, F),
+        "target_idle_phi": Z_TARGET,
+    }
+    return {
+        name: np.asarray(dissipator_superoperator(operator), dtype=_COMPLEX)
+        for name, operator in operators.items()
+    }
+
+
+def _weighted_liouvillian(
+    terms: Sequence[tuple[float, str]],
+    *,
+    negative_components: frozenset[str] = frozenset(),
+) -> NDArray[np.complex128]:
+    """Combine rates with cached Lindblad components and validate their signs."""
+    components = _dissipator_components()
+    result = np.zeros((_SUPER_DIMENSION, _SUPER_DIMENSION), dtype=_COMPLEX)
+    for coefficient, component_name in terms:
+        if not np.isfinite(coefficient):
+            raise ValueError("Dissipative coefficients must be finite.")
+        if coefficient < 0.0 and component_name not in negative_components:
+            raise ValueError("Nominal dissipative coefficients must be nonnegative.")
+        if coefficient != 0.0:
+            result += coefficient * components[component_name]
+    return result
+
+
+@lru_cache(maxsize=64)
+def _idle_dissipative_liouvillian(
     control_idle: IdleNoiseParameters,
     target_idle: IdleNoiseParameters,
-) -> tuple[tuple[float, NDArray[np.complex128]], ...]:
-    """Return fixed idle dissipators for both qutrits."""
-    return (
+) -> NDArray[np.complex128]:
+    """Return a cached idle dissipative Liouvillian."""
+    return _weighted_liouvillian(
         (
-            control_idle.relaxation_rate_per_ns,
-            _embedded_transition("control", G, E),
+            (control_idle.relaxation_rate_per_ns, "control_e_to_g"),
+            (control_idle.pure_dephasing_rate_per_ns / 2.0, "control_phi"),
+            (target_idle.relaxation_rate_per_ns, "target_e_to_g"),
+            (target_idle.pure_dephasing_rate_per_ns / 2.0, "target_idle_phi"),
         ),
-        (control_idle.pure_dephasing_rate_per_ns / 2.0, Z_CONTROL),
-        (
-            target_idle.relaxation_rate_per_ns,
-            _embedded_transition("target", G, E),
-        ),
-        (target_idle.pure_dephasing_rate_per_ns / 2.0, Z_TARGET),
     )
 
 
-def _cr_dissipators(
+@lru_cache(maxsize=128)
+def _cr_dissipative_liouvillian(
     rates: CrNoiseRates,
-    *,
     include_leakage: bool,
-    signed_control_pure_dephasing: float | None = None,
-    signed_target_pure_dephasing: float | None = None,
-) -> tuple[tuple[float, NDArray[np.complex128]], ...]:
-    """Return CR-active dissipators for the selected physical model."""
-    plus_x = (G + E) / np.sqrt(2.0)
-    minus_x = (G - E) / np.sqrt(2.0)
+    signed_control_pure_dephasing: float | None,
+    signed_target_pure_dephasing: float | None,
+) -> NDArray[np.complex128]:
+    """Return a cached CR-active dissipative Liouvillian."""
     control_phi = (
         rates.control_pure_dephasing
         if signed_control_pure_dephasing is None
@@ -249,32 +306,64 @@ def _cr_dissipators(
         if signed_target_pure_dephasing is None
         else float(signed_target_pure_dephasing)
     )
-    result: list[tuple[float, NDArray[np.complex128]]] = [
-        (rates.control_e_to_g, _embedded_transition("control", G, E)),
-        (rates.control_g_to_e, _embedded_transition("control", E, G)),
-        (control_phi / 2.0, Z_CONTROL),
-        (
-            rates.target_t1rho / 2.0,
-            _embedded_transition("target", minus_x, plus_x),
-        ),
-        (
-            rates.target_t1rho / 2.0,
-            _embedded_transition("target", plus_x, minus_x),
-        ),
-        (target_phi / 2.0, X_TARGET),
+    terms: list[tuple[float, str]] = [
+        (rates.control_e_to_g, "control_e_to_g"),
+        (rates.control_g_to_e, "control_g_to_e"),
+        (control_phi / 2.0, "control_phi"),
+        (rates.target_t1rho / 2.0, "target_x_plus_to_minus"),
+        (rates.target_t1rho / 2.0, "target_x_minus_to_plus"),
+        (target_phi / 2.0, "target_phi"),
     ]
     if include_leakage:
-        result.extend(
+        terms.extend(
             [
-                (rates.control_e_to_f, _embedded_transition("control", F, E)),
-                (rates.control_f_to_e, _embedded_transition("control", E, F)),
-                (rates.target_leakage, _embedded_transition("target", F, G)),
-                (rates.target_leakage, _embedded_transition("target", F, E)),
-                (rates.target_seepage / 2.0, _embedded_transition("target", G, F)),
-                (rates.target_seepage / 2.0, _embedded_transition("target", E, F)),
+                (rates.control_e_to_f, "control_e_to_f"),
+                (rates.control_f_to_e, "control_f_to_e"),
+                (rates.target_leakage, "target_g_to_f"),
+                (rates.target_leakage, "target_e_to_f"),
+                (rates.target_seepage / 2.0, "target_f_to_g"),
+                (rates.target_seepage / 2.0, "target_f_to_e"),
             ]
         )
-    return tuple(result)
+    negative_components = frozenset(
+        name
+        for name, signed_rate in (
+            ("control_phi", signed_control_pure_dephasing),
+            ("target_phi", signed_target_pure_dephasing),
+        )
+        if signed_rate is not None
+    )
+    return _weighted_liouvillian(terms, negative_components=negative_components)
+
+
+def _segment_cache_key(
+    segment: SemanticSegment,
+    *,
+    control_idle: IdleNoiseParameters,
+    target_idle: IdleNoiseParameters,
+    cr_rates: CrNoiseRates | None,
+    include_leakage: bool,
+    signed_control_pure_dephasing: float | None,
+    signed_target_pure_dephasing: float | None,
+) -> tuple[object, ...]:
+    """Return a stable key for one segment superoperator."""
+    noise_key: tuple[object, ...]
+    if segment.cr_active and cr_rates is not None:
+        noise_key = (
+            "cr",
+            cr_rates,
+            include_leakage,
+            signed_control_pure_dephasing,
+            signed_target_pure_dephasing,
+        )
+    else:
+        noise_key = ("idle", control_idle, target_idle)
+    return (
+        float(segment.duration_ns),
+        bool(segment.cr_active),
+        np.asarray(segment.hamiltonian, dtype=_COMPLEX).tobytes(),
+        *noise_key,
+    )
 
 
 def segment_superoperator(
@@ -286,30 +375,40 @@ def segment_superoperator(
     include_leakage: bool,
     signed_control_pure_dephasing: float | None = None,
     signed_target_pure_dephasing: float | None = None,
+    cache: SuperoperatorCache | None = None,
 ) -> NDArray[np.complex128]:
     """Return one piecewise semantic evolution superoperator."""
+    key = _segment_cache_key(
+        segment,
+        control_idle=control_idle,
+        target_idle=target_idle,
+        cr_rates=cr_rates,
+        include_leakage=include_leakage,
+        signed_control_pure_dephasing=signed_control_pure_dephasing,
+        signed_target_pure_dephasing=signed_target_pure_dephasing,
+    )
+    if cache is not None and key in cache:
+        return cache[key]
     liouvillian = hamiltonian_liouvillian(segment.hamiltonian)
-    dissipators = (
-        _cr_dissipators(
+    dissipative = (
+        _cr_dissipative_liouvillian(
             cr_rates,
-            include_leakage=include_leakage,
-            signed_control_pure_dephasing=signed_control_pure_dephasing,
-            signed_target_pure_dephasing=signed_target_pure_dephasing,
+            include_leakage,
+            signed_control_pure_dephasing,
+            signed_target_pure_dephasing,
         )
         if segment.cr_active and cr_rates is not None
-        else _idle_dissipators(control_idle, target_idle)
+        else _idle_dissipative_liouvillian(control_idle, target_idle)
     )
-    for coefficient, operator in dissipators:
-        if not np.isfinite(coefficient):
-            raise ValueError("Dissipative coefficients must be finite.")
-        if coefficient < 0.0 and (
-            signed_control_pure_dephasing is None
-            and signed_target_pure_dephasing is None
-        ):
-            raise ValueError("Nominal dissipative coefficients must be nonnegative.")
-        if coefficient != 0.0:
-            liouvillian = liouvillian + coefficient * dissipator_superoperator(operator)
-    return np.asarray(expm(liouvillian * segment.duration_ns), dtype=_COMPLEX)
+    result = np.asarray(
+        expm((liouvillian + dissipative) * segment.duration_ns),
+        dtype=_COMPLEX,
+    )
+    if cache is not None:
+        if len(cache) >= _MAX_SEGMENT_CACHE_ENTRIES:
+            cache.pop(next(iter(cache)))
+        cache[key] = result
+    return result
 
 
 def compose_channel(
@@ -321,6 +420,7 @@ def compose_channel(
     include_leakage: bool,
     signed_control_pure_dephasing: float | None = None,
     signed_target_pure_dephasing: float | None = None,
+    cache: SuperoperatorCache | None = None,
 ) -> NDArray[np.complex128]:
     """Compose a chronological semantic channel."""
     channel = np.eye(_SUPER_DIMENSION, dtype=_COMPLEX)
@@ -336,6 +436,7 @@ def compose_channel(
                 include_leakage=include_leakage,
                 signed_control_pure_dephasing=signed_control_pure_dephasing,
                 signed_target_pure_dephasing=signed_target_pure_dephasing,
+                cache=cache,
             )
         channel = step @ channel
     return channel
@@ -364,6 +465,7 @@ def simulate_repeated_observable(
     include_leakage: bool = True,
     signed_control_pure_dephasing: float | None = None,
     signed_target_pure_dephasing: float | None = None,
+    cache: SuperoperatorCache | None = None,
 ) -> NDArray[np.float64]:
     """Simulate an expectation after integer powers of one protocol block."""
     block_channel = compose_channel(
@@ -374,6 +476,7 @@ def simulate_repeated_observable(
         include_leakage=include_leakage,
         signed_control_pure_dephasing=signed_control_pure_dephasing,
         signed_target_pure_dephasing=signed_target_pure_dephasing,
+        cache=cache,
     )
     values = []
     counts = np.asarray(repetition_counts, dtype=np.int64).reshape(-1)
