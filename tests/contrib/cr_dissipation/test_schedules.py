@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -17,10 +17,12 @@ from qubex.contrib.experiment._cr_dissipation.pulses import (
     build_reference_schedules,
     resolve_zx90_descriptor,
     semantic_protocol_blocks,
+    semantic_reference_blocks,
     semantic_un_echoed_zx90,
     semantic_zx90,
 )
 from qubex.contrib.experiment._cr_dissipation.simulation import (
+    X_CONTROL,
     X_TARGET,
     Y_TARGET,
     Z_TARGET,
@@ -307,6 +309,48 @@ def test_protocol_d_ideal_block_refocuses_z_even_with_zx_angle_error() -> None:
         )
 
 
+def test_cd_reference_semantics_match_blank_and_ix45_replacements() -> None:
+    """C uses blank lobes and D uses IX45 lobes in reference predictions."""
+    descriptor = resolve_zx90_descriptor(
+        _schedule_experiment(_echoed_zx90()), "Q0", "Q1", None
+    )
+    durations = {
+        "xi180": 32.0,
+        "yi180": 40.0,
+        "ix180": 32.0,
+        "iy180": 40.0,
+    }
+    blocks = semantic_reference_blocks(
+        descriptor,
+        external_durations_ns=durations,
+    )
+    actual = semantic_protocol_blocks(descriptor, external_durations_ns=durations)
+
+    c_labels = [operation.label for operation in blocks["control_cr_transverse_echo"]]
+    d_labels = [operation.label for operation in blocks[PROTOCOL_D]]
+    assert c_labels.count("blank-reference") == 8
+    assert "IX45(reference)" not in c_labels
+    assert d_labels.count("IX45(reference)") == 8
+    assert all(
+        not operation.cr_active
+        for block in blocks.values()
+        for operation in block
+        if isinstance(operation, SemanticSegment)
+    )
+    for protocol in ("control_cr_transverse_echo", PROTOCOL_D):
+        reference_duration = sum(
+            operation.duration_ns
+            for operation in blocks[protocol]
+            if isinstance(operation, SemanticSegment)
+        )
+        actual_duration = sum(
+            operation.duration_ns
+            for operation in actual[protocol]
+            if isinstance(operation, SemanticSegment)
+        )
+        assert reference_duration == pytest.approx(actual_duration)
+
+
 def test_protocol_d_dissipative_forward_model_uses_target_z() -> None:
     """D target rotating-frame dephasing reduces the simulated Z contrast."""
     descriptor = resolve_zx90_descriptor(
@@ -342,8 +386,9 @@ def test_protocol_d_dissipative_forward_model_uses_target_z() -> None:
 def test_semantic_rotary_is_used_for_echoed_protocols_but_not_ab() -> None:
     """Rotary metadata affects echoed C/D semantics but is excluded from A/B."""
     echoed = _echoed_zx90()
-    echoed.rotary_integrated_angle_rad = 0.2
-    echoed.rotary_phase_rad = 0.3
+    echoed_with_metadata = cast(Any, echoed)
+    echoed_with_metadata.rotary_integrated_angle_rad = 0.2
+    echoed_with_metadata.rotary_phase_rad = 0.3
     descriptor = resolve_zx90_descriptor(_schedule_experiment(echoed), "Q0", "Q1", None)
     actual_before = descriptor.full_un_echoed.values
 
@@ -351,6 +396,9 @@ def test_semantic_rotary_is_used_for_echoed_protocols_but_not_ab() -> None:
     positive = semantic_zx90(descriptor)[0]
     negative = semantic_zx90(descriptor)[4]
 
+    assert isinstance(ab_positive, SemanticSegment)
+    assert isinstance(positive, SemanticSegment)
+    assert isinstance(negative, SemanticSegment)
     np.testing.assert_allclose(negative.hamiltonian, -positive.hamiltonian)
     assert not np.allclose(ab_positive.hamiltonian, positive.hamiltonian)
     for label, waveform in actual_before.items():
@@ -389,6 +437,45 @@ def test_leakage_aware_fidelity_is_one_for_identity_channel() -> None:
     assert average == pytest.approx(1.0)
     assert entanglement == pytest.approx(1.0)
     assert survival == pytest.approx(1.0)
+
+
+def test_control_e_to_f_leakage_adds_half_rate_ge_coherence_decay() -> None:
+    """Control e-to-f leakage damps ge coherence at half the jump rate."""
+    rate = 3e-4
+    duration = 200.0
+    idle = IdleNoiseParameters(float("inf"), float("inf"))
+    operation = (
+        SemanticSegment(
+            duration,
+            np.zeros((9, 9), dtype=np.complex128),
+            True,
+            "CR",
+        ),
+    )
+
+    value = simulate_repeated_observable(
+        operation,
+        (1,),
+        state_density("+x", "g"),
+        X_CONTROL,
+        control_idle=idle,
+        target_idle=idle,
+        cr_rates=CrNoiseRates(control_e_to_f=rate),
+        include_leakage=True,
+    )[0]
+    coherence_only = simulate_repeated_observable(
+        operation,
+        (1,),
+        state_density("+x", "g"),
+        X_CONTROL,
+        control_idle=idle,
+        target_idle=idle,
+        cr_rates=CrNoiseRates(control_e_to_f=rate),
+        include_leakage=False,
+    )[0]
+
+    assert value == pytest.approx(np.exp(-0.5 * rate * duration), rel=1e-12)
+    assert coherence_only == pytest.approx(1.0, abs=1e-12)
 
 
 def test_signed_diagnostic_accepts_negative_coefficient_only_explicitly() -> None:

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -58,6 +59,38 @@ def test_invalid_repetition_counts_are_rejected_before_hardware(counts: Any) -> 
             idle_t1={"Q0": 1.0, "Q1": 1.0},
             idle_t2_echo={"Q0": 1.0, "Q1": 1.0},
             plot=False,
+        )
+
+
+def test_default_repetition_counts_span_twice_the_longer_idle_t1() -> None:
+    """The ten-point default grid is geometric from one to the 2T1 endpoint."""
+    counts = health._default_repetition_counts(
+        longest_idle_t1_ns=50_000.0,
+        ab_block_duration_ns=1_000.0,
+    )
+
+    assert counts == (0, 1, 2, 3, 6, 10, 18, 32, 56, 100)
+    assert len(counts) == 10
+    assert all(right > left for left, right in pairwise(counts))
+
+
+@pytest.mark.parametrize(
+    ("t1_ns", "block_ns", "match"),
+    [
+        (float("inf"), 1_000.0, "finite positive idle T1"),
+        (4_000.0, 1_000.0, "fewer than nine A/B blocks"),
+    ],
+)
+def test_default_repetition_counts_require_a_representable_endpoint(
+    t1_ns: float,
+    block_ns: float,
+    match: str,
+) -> None:
+    """An undefined ten-point default asks the caller for an explicit grid."""
+    with pytest.raises(ValueError, match=match):
+        health._default_repetition_counts(
+            longest_idle_t1_ns=t1_ns,
+            ab_block_duration_ns=block_ns,
         )
 
 
@@ -333,7 +366,14 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
             }
         )
 
-    monkeypatch.setattr(health, "_load_idle_noise", lambda *_args: (object(), object()))
+    monkeypatch.setattr(
+        health,
+        "_load_idle_noise",
+        lambda *_args: (
+            health.IdleNoiseParameters(4_000.0, 3_000.0),
+            health.IdleNoiseParameters(5_000.0, 3_000.0),
+        ),
+    )
 
     def resolve_descriptor(
         _exp: Any,
@@ -375,7 +415,6 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
         _fake_experiment(),
         "Q0",
         "Q1",
-        repetition_counts=(0, 1, 2, 3, 4),
         n_shots=222,
         gef_measurement_n_shots=444,
         gef_calibration_n_shots=888,
@@ -407,6 +446,18 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     assert result.data["pulse_timing"]["zx90_full_un_echoed"]["source"] == "override"
     assert result.data["measurement_options"]["n_shots"] == 222
     assert result.data["measurement_options"]["gef_measurement_n_shots"] == 444
+    assert result.data["measurement_options"]["repetition_counts"] == (
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        11,
+        17,
+        25,
+    )
     assert result.data["measurement_options"]["primary_bootstrap"] == {
         health.PROTOCOL_A: {"Q0": 0, "Q1": 12},
         health.PROTOCOL_B: {"Q0": 0, "Q1": 0},
@@ -707,7 +758,7 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
         measured(ab_data, 100.0, with_orthogonal=True),
         measured(ab_data, 100.0),
         measured(cd_data, 200.0, with_reference=True),
-        measured(cd_data, 300.0),
+        measured(cd_data, 300.0, with_reference=True),
     )
     fitted_decay = SimpleNamespace(fitted_values=np.linspace(1.0, 0.45, counts.size))
     fitted_leakage = SimpleNamespace(fitted_values=np.linspace(0.0, 0.08, counts.size))
@@ -742,10 +793,16 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
             }
         ),
         health.PROTOCOL_C: SimpleNamespace(
-            observables={"primary_expectation": np.linspace(1.0, 0.4, counts.size)}
+            observables={
+                "primary_expectation": np.linspace(1.0, 0.4, counts.size),
+                "reference_primary_expectation": np.linspace(1.0, 0.55, counts.size),
+            }
         ),
         health.PROTOCOL_D: SimpleNamespace(
-            observables={"primary_expectation": np.linspace(1.0, 0.4, counts.size)}
+            observables={
+                "primary_expectation": np.linspace(1.0, 0.4, counts.size),
+                "reference_primary_expectation": np.linspace(1.0, 0.65, counts.size),
+            }
         ),
     }
     analysis = cast(
@@ -806,14 +863,22 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     assert a_layout.yaxis6.visible is False
     assert all(annotation.yshift == 72 for annotation in a_layout.annotations[:5])
     assert len(a_layout.shapes) == 5
-    c_layout = figures[health.PROTOCOL_C].layout
-    reference_note = next(
-        annotation
-        for annotation in c_layout.annotations
-        if str(annotation.text).startswith("Reference is diagnostic")
+    c_figure = figures[health.PROTOCOL_C]
+    c_traces = tuple(cast(Any, trace) for trace in c_figure.data)
+    c_trace_names = {trace.name for trace in c_traces}
+    assert "reference idle-only prediction" in c_trace_names
+    reference_idle = next(
+        trace for trace in c_traces if trace.name == "reference idle-only prediction"
     )
-    assert reference_note.y == pytest.approx(-0.30)
-    assert c_layout.margin.b == 155
+    assert reference_idle.line.dash == "dot"
+    assert reference_idle.line.width == pytest.approx(1.25)
+    assert not any(
+        str(annotation.text).startswith("Reference is diagnostic")
+        for annotation in c_figure.layout.annotations
+    )
+    assert c_figure.layout.margin.b == 90
+    d_traces = tuple(cast(Any, trace) for trace in figures[health.PROTOCOL_D].data)
+    assert "reference idle-only prediction" in {trace.name for trace in d_traces}
     d_titles = {
         str(annotation.text)
         for annotation in figures[health.PROTOCOL_D].layout.annotations

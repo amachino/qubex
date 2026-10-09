@@ -353,14 +353,55 @@ def semantic_un_echoed_zx90(
     )
 
 
-def semantic_protocol_blocks(
-    descriptor: ZX90Descriptor,
+def _semantic_protocol_c_block(
+    zx90: tuple[SemanticOperation, ...],
     *,
+    xi180: SemanticSegment,
+    yi180: SemanticSegment,
+    simultaneous_yi_ix180: tuple[SemanticSegment, ...],
+) -> tuple[SemanticOperation, ...]:
+    """Assemble protocol C around one semantic ZX90 implementation."""
+    return (
+        *zx90,
+        xi180,
+        *zx90,
+        *simultaneous_yi_ix180,
+        *zx90,
+        xi180,
+        *zx90,
+        yi180,
+    )
+
+
+def _semantic_protocol_d_block(
+    zx90: tuple[SemanticOperation, ...],
+    *,
+    iz180: SemanticUnitary,
+    iy180: SemanticSegment,
+) -> tuple[SemanticOperation, ...]:
+    """Assemble protocol D around one semantic ZX90 implementation."""
+    return (
+        *zx90,
+        iz180,
+        *zx90,
+        iy180,
+        *zx90,
+        iz180,
+        *zx90,
+        iy180,
+    )
+
+
+def _semantic_external_operations(
     external_durations_ns: Mapping[str, float],
-) -> dict[str, tuple[SemanticOperation, ...]]:
-    """Build the four repeated semantic protocol blocks."""
-    un_echoed = semantic_un_echoed_zx90(descriptor)
-    zx90 = semantic_zx90(descriptor)
+) -> tuple[
+    SemanticSegment,
+    SemanticSegment,
+    tuple[SemanticSegment, ...],
+    SemanticUnitary,
+    SemanticSegment,
+]:
+    """Build the physical and virtual rotations surrounding C/D ZX90 gates."""
     xi = float(external_durations_ns["xi180"])
     yi = float(external_durations_ns["yi180"])
     ix = float(external_durations_ns["ix180"])
@@ -370,9 +411,6 @@ def semantic_protocol_blocks(
     )
     yi180 = SemanticSegment(
         yi, rotation_hamiltonian(Y_CONTROL, np.pi, yi), False, "YI180"
-    )
-    iy180 = SemanticSegment(
-        iy, rotation_hamiltonian(Y_TARGET, np.pi, iy), False, "IY180"
     )
     simultaneous = simultaneous_rotation_segments(
         (
@@ -384,28 +422,94 @@ def semantic_protocol_blocks(
         rotation_unitary(Z_TARGET, np.pi),
         "IZ180(target+CR-frame)",
     )
+    iy180 = SemanticSegment(
+        iy, rotation_hamiltonian(Y_TARGET, np.pi, iy), False, "IY180"
+    )
+    return xi180, yi180, simultaneous, iz180, iy180
+
+
+def semantic_protocol_blocks(
+    descriptor: ZX90Descriptor,
+    *,
+    external_durations_ns: Mapping[str, float],
+) -> dict[str, tuple[SemanticOperation, ...]]:
+    """Build the four repeated semantic protocol blocks."""
+    un_echoed = semantic_un_echoed_zx90(descriptor)
+    zx90 = semantic_zx90(descriptor)
+    xi180, yi180, simultaneous, iz180, iy180 = _semantic_external_operations(
+        external_durations_ns
+    )
     return {
         PROTOCOL_A: un_echoed * 4,
         PROTOCOL_B: un_echoed * 4,
-        PROTOCOL_C: (
-            *zx90,
-            xi180,
-            *zx90,
-            *simultaneous,
-            *zx90,
-            xi180,
-            *zx90,
-            yi180,
+        PROTOCOL_C: _semantic_protocol_c_block(
+            zx90,
+            xi180=xi180,
+            yi180=yi180,
+            simultaneous_yi_ix180=simultaneous,
         ),
-        PROTOCOL_D: (
-            *zx90,
-            iz180,
-            *zx90,
-            iy180,
-            *zx90,
-            iz180,
-            *zx90,
-            iy180,
+        PROTOCOL_D: _semantic_protocol_d_block(
+            zx90,
+            iz180=iz180,
+            iy180=iy180,
+        ),
+    }
+
+
+def semantic_reference_blocks(
+    descriptor: ZX90Descriptor,
+    *,
+    external_durations_ns: Mapping[str, float],
+) -> dict[str, tuple[SemanticOperation, ...]]:
+    """Build C/D semantic blocks for the duration-matched reference sequences."""
+    half_margin = descriptor.echo_margin_duration_ns / 2.0
+    internal_x = SemanticSegment(
+        descriptor.pi_pulse_duration_ns,
+        rotation_hamiltonian(
+            X_CONTROL,
+            np.pi,
+            descriptor.pi_pulse_duration_ns,
+        ),
+        False,
+        "XI180(internal)",
+    )
+    slot = (
+        *_idle_segment(half_margin, "echo-margin"),
+        internal_x,
+        *_idle_segment(half_margin, "echo-margin"),
+    )
+
+    def replacement_gate(angle_rad: float | None) -> tuple[SemanticOperation, ...]:
+        lobe = SemanticSegment(
+            descriptor.cr_lobe_duration_ns,
+            (
+                np.zeros((9, 9), dtype=np.complex128)
+                if angle_rad is None
+                else rotation_hamiltonian(
+                    X_TARGET,
+                    angle_rad,
+                    descriptor.cr_lobe_duration_ns,
+                )
+            ),
+            False,
+            "blank-reference" if angle_rad is None else "IX45(reference)",
+        )
+        return (lobe, *slot, lobe, *slot)
+
+    xi180, yi180, simultaneous, iz180, iy180 = _semantic_external_operations(
+        external_durations_ns
+    )
+    return {
+        PROTOCOL_C: _semantic_protocol_c_block(
+            replacement_gate(None),
+            xi180=xi180,
+            yi180=yi180,
+            simultaneous_yi_ix180=simultaneous,
+        ),
+        PROTOCOL_D: _semantic_protocol_d_block(
+            replacement_gate(np.pi / 4.0),
+            iz180=iz180,
+            iy180=iy180,
         ),
     }
 

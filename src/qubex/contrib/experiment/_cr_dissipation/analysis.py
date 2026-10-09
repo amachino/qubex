@@ -32,6 +32,7 @@ from .pulses import (
     PROTOCOL_D,
     ProtocolSchedules,
     ZX90Descriptor,
+    semantic_reference_blocks,
     semantic_zx90,
 )
 from .simulation import (
@@ -100,8 +101,8 @@ class _IdleEquivalentBaseline:
 
     predictions: dict[str, CrDissipationIdlePrediction]
     equivalent_rates: dict[str, float]
-    target_t1rho_by_protocol: dict[str, float]
     raw_cd_predictions: dict[str, NDArray[np.float64]]
+    raw_cd_reference_predictions: dict[str, NDArray[np.float64]]
 
 
 def _select_significant_nested_candidate(
@@ -248,27 +249,45 @@ def target_t1rho_trajectory(
     rate_per_ns: float,
     x_infinity: float,
     *,
+    initial_pf: float = 0.0,
+    leakage_rate_per_ns: float = 0.0,
+    seepage_rate_per_ns: float = 0.0,
     cr_lobe_duration_ns: float,
     blank_duration_ns: float,
     idle_transverse_rate_per_ns: float,
 ) -> NDArray[np.float64]:
-    """Propagate target X through actual CR/blank segment ordering."""
-    cr_factor = np.exp(-rate_per_ns * cr_lobe_duration_ns)
+    """Propagate leakage-coupled target X through CR/blank segments."""
+    cr_generator = np.array(
+        [
+            [
+                -(leakage_rate_per_ns + seepage_rate_per_ns),
+                0.0,
+                leakage_rate_per_ns,
+            ],
+            [
+                -rate_per_ns * x_infinity,
+                -(rate_per_ns + leakage_rate_per_ns),
+                rate_per_ns * x_infinity,
+            ],
+            [0.0, 0.0, 0.0],
+        ],
+        dtype=np.float64,
+    )
+    cr_step = expm(cr_generator * cr_lobe_duration_ns)
     blank_factor = np.exp(-idle_transverse_rate_per_ns * blank_duration_ns)
-
-    def one_unit(value: float) -> float:
-        value = x_infinity + (value - x_infinity) * cr_factor
-        value *= blank_factor
-        value = x_infinity + (value - x_infinity) * cr_factor
-        return value * blank_factor
-
-    output = []
+    blank_step = np.diag([1.0, blank_factor, 1.0])
+    unit = blank_step @ cr_step @ blank_step @ cr_step
+    computational_population = 1.0 - float(initial_pf)
+    initial = np.array(
+        [initial_pf, initial_value * computational_population, 1.0],
+        dtype=np.float64,
+    )
+    output: list[float] = []
     counts = np.asarray(repetition_counts, dtype=np.int64).reshape(-1)
     for count in counts:
-        value = float(initial_value)
-        for _ in range(4 * int(count)):
-            value = one_unit(value)
-        output.append(value)
+        state = np.linalg.matrix_power(unit, 4 * int(count)) @ initial
+        remaining = 1.0 - float(state[0])
+        output.append(float(state[1]) / remaining if remaining > 0.0 else np.nan)
     return np.asarray(output, dtype=np.float64)
 
 
@@ -525,9 +544,7 @@ def fit_control_populations(
             minimum_change=LEAKAGE_MINIMUM_CHANGE,
         )
     g_models = {
-        "G0": ({"control_e_to_g": idle_rate, "control_g_to_e": 0.0}, ()),
         "G1": ({"control_g_to_e": 0.0}, ("control_e_to_g",)),
-        "G1b": ({"control_e_to_g": idle_rate}, ("control_g_to_e",)),
         "G2": ({}, ("control_e_to_g", "control_g_to_e")),
     }
     f_models = {
@@ -536,7 +553,7 @@ def fit_control_populations(
         "F1b": ({"control_e_to_f": 0.0}, ("control_f_to_e",)),
         "F2": ({}, ("control_e_to_f", "control_f_to_e")),
     }
-    retained_g = tuple(g_models) if ge_dynamic else ("G0",)
+    retained_g = tuple(g_models) if ge_dynamic else ("G1",)
     retained_f = tuple(f_models) if ef_dynamic else ("F0",)
     upper = max(
         _rate_upper_bound(getattr(measurements, PROTOCOL_A).cr_active_time_ns),
@@ -638,14 +655,10 @@ def fit_control_populations(
     rates = candidate_rates[selected.name]
     g_name, f_name = selected.name.split(" x ")
     statuses = {
-        "control_e_to_g": (
-            CrDissipationRateStatus.UNRESOLVED_ASSUMED_IDLE
-            if g_name in ("G0", "G1b")
-            else CrDissipationRateStatus.RESOLVED
-        ),
+        "control_e_to_g": CrDissipationRateStatus.RESOLVED,
         "control_g_to_e": (
             CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
-            if g_name in ("G0", "G1")
+            if g_name == "G1"
             else CrDissipationRateStatus.RESOLVED
         ),
         "control_e_to_f": (
@@ -710,13 +723,28 @@ def fit_target_t1rho(
     protocol: str,
     descriptor: ZX90Descriptor,
     target_idle: IdleNoiseParameters,
-    *,
-    idle_equivalent_rate_per_ns: float,
+    exchange_fit: ExchangeRateFit,
 ) -> DecayRateFit:
-    """Fit one A/B target T1rho rate against its precomputed idle equivalent."""
+    """Fit total T1rho with leakage/seepage fixed from the target Pf fit."""
     data = getattr(measurements, protocol).actual
-    if data.target_x_comp is None or data.target_x_comp_standard_error is None:
+    if (
+        data.target_x_comp is None
+        or data.target_x_comp_standard_error is None
+        or data.target_gef is None
+    ):
         raise ValueError(f"{protocol} is missing target X data.")
+    if not exchange_fit.success:
+        return DecayRateFit(
+            False,
+            "fit_failed",
+            float("nan"),
+            None,
+            CrDissipationRateStatus.FIT_FAILED,
+            float("nan"),
+            {},
+            np.full(measurements.repetition_counts.shape, np.nan),
+            "T1rho fit requires an identifiable target leakage/seepage fit.",
+        )
     counts = measurements.repetition_counts
     blocks = scalar_residual_blocks(
         data.target_x_comp[1:],
@@ -732,10 +760,7 @@ def fit_target_t1rho(
     n_observations = sum(block.rank for block in blocks)
     initial_value = float(data.target_x_comp[0])
     active = getattr(measurements, protocol).cr_active_time_ns
-    upper = max(
-        _rate_upper_bound(active),
-        2.0 * idle_equivalent_rate_per_ns,
-    )
+    upper = _rate_upper_bound(active)
 
     def trajectory(rate: float, x_infinity: float) -> NDArray[np.float64]:
         return target_t1rho_trajectory(
@@ -743,49 +768,29 @@ def fit_target_t1rho(
             initial_value,
             rate,
             x_infinity,
+            initial_pf=float(data.target_gef.population[0, 2]),
+            leakage_rate_per_ns=exchange_fit.leakage_rate_per_ns,
+            seepage_rate_per_ns=exchange_fit.seepage_rate_per_ns,
             cr_lobe_duration_ns=descriptor.cr_lobe_duration_ns,
             blank_duration_ns=descriptor.echo_slot_duration_ns,
             idle_transverse_rate_per_ns=target_idle.transverse_rate_per_ns,
         )
 
-    def make_candidate(name: str, fixed_rate: float | None) -> CandidateFit:
-        names = (
-            ("x_infinity",) if fixed_rate is not None else ("rate_per_ns", "x_infinity")
-        )
+    def predictions(parameters: NDArray[np.float64]) -> list[NDArray[np.float64]]:
+        values = trajectory(float(parameters[0]), float(parameters[1]))
+        return [np.array([values[index]]) for index in retained_indices]
 
-        def unpack(parameters: NDArray[np.float64]) -> tuple[float, float]:
-            return (
-                (fixed_rate, float(parameters[0]))
-                if fixed_rate is not None
-                else (float(parameters[0]), float(parameters[1]))
-            )
-
-        def predictions(parameters: NDArray[np.float64]) -> list[NDArray[np.float64]]:
-            rate, x_inf = unpack(parameters)
-            values = trajectory(rate, x_inf)
-            return [np.array([values[index]]) for index in retained_indices]
-
-        return fit_gls_candidate(
-            name=name,
-            parameter_names=names,
-            initial=np.array([0.0])
-            if fixed_rate is not None
-            else np.array([_bounded_rate_initial(upper), 0.0]),
-            bounds=(
-                np.array([-1.5]) if fixed_rate is not None else np.array([0.0, -1.5]),
-                np.array([1.5]) if fixed_rate is not None else np.array([upper, 1.5]),
-            ),
-            residual=lambda parameters: whiten_predictions(
-                predictions(parameters), blocks
-            ),
-            prediction=lambda parameters: np.concatenate(predictions(parameters)),
-            n_observations=n_observations,
-        )
-
-    null = make_candidate("idle_equivalent", idle_equivalent_rate_per_ns)
-    free = make_candidate("free", None)
-    candidates = {null.name: null, free.name: free}
-    if not null.success or not free.success:
+    free = fit_gls_candidate(
+        name="free",
+        parameter_names=("rate_per_ns", "x_infinity"),
+        initial=np.array([_bounded_rate_initial(upper), 0.0]),
+        bounds=(np.array([0.0, -1.5]), np.array([upper, 1.5])),
+        residual=lambda parameters: whiten_predictions(predictions(parameters), blocks),
+        prediction=lambda parameters: np.concatenate(predictions(parameters)),
+        n_observations=n_observations,
+    )
+    candidates = {free.name: free}
+    if not free.success:
         return DecayRateFit(
             False,
             "fit_failed",
@@ -795,45 +800,20 @@ def fit_target_t1rho(
             float("nan"),
             candidates,
             np.full(counts.shape, np.nan),
-            "T1rho null/free GLS comparison failed.",
+            "T1rho total-rate GLS fit failed.",
         )
     rate = float(free.parameters[0])
     error = float(free.standard_errors[0])
-    delta = (
-        float(null.aicc - free.aicc)
-        if null.aicc is not None and free.aicc is not None
-        else -np.inf
-    )
-    significance = (
-        abs(rate - idle_equivalent_rate_per_ns) / error
-        if error > 0.0 and np.isfinite(error)
-        else 0.0
-    )
-    if (
-        delta >= MODEL_SELECTION_DELTA_AICC
-        and significance >= PARAMETER_SIGNIFICANCE_THRESHOLD
-    ):
-        selected = free
-        status = CrDissipationRateStatus.RESOLVED
-        selected_rate = rate
-        selected_error: float | None = error
-        x_infinity = float(free.parameters[1])
-    else:
-        selected = null
-        status = CrDissipationRateStatus.UNRESOLVED_ASSUMED_IDLE
-        selected_rate = idle_equivalent_rate_per_ns
-        selected_error = None
-        x_infinity = float(null.parameters[0])
     return DecayRateFit(
         True,
-        selected.name,
-        selected_rate,
-        selected_error,
-        status,
-        x_infinity,
+        free.name,
+        rate,
+        error,
+        CrDissipationRateStatus.RESOLVED,
+        float(free.parameters[1]),
         candidates,
-        trajectory(selected_rate, x_infinity),
-        "Compared a free total CR-active rate with the precomputed idle equivalent.",
+        trajectory(rate, float(free.parameters[1])),
+        "Fitted total CR-active T1rho conditional on fixed leakage/seepage rates.",
     )
 
 
@@ -1030,7 +1010,7 @@ def fit_physical_dephasing(
     fitted_role: Literal["control", "target"],
     force_free: bool = False,
 ) -> PhysicalForwardDephasingFit:
-    """Fit C/D additional pure dephasing with affine SPAM nuisance terms."""
+    """Fit C/D total CR-active pure dephasing with affine SPAM terms."""
     blocks = scalar_residual_blocks(values, standard_errors)
     retained = [
         index
@@ -1148,7 +1128,7 @@ def fit_physical_dephasing(
             None,
             "Free constrained estimator used for non-recursive idle baseline.",
         )
-    null = make_candidate("zero_additional_dephasing", free_rate=False)
+    null = make_candidate("zero_total_dephasing", free_rate=False)
     diagnostic = make_candidate("signed_diagnostic", free_rate=True, signed=True)
     candidates = {null.name: null, free.name: free, diagnostic.name: diagnostic}
     if not null.success or not free.success:
@@ -1204,7 +1184,7 @@ def fit_physical_dephasing(
         amplitude * simulated(rate) + offset,
         unconstrained_rate,
         unconstrained_error,
-        "A/B nominal dissipation was fixed while additional pure dephasing was tested.",
+        "A/B nominal dissipation was fixed while total CR-active pure dephasing was tested.",
     )
 
 
@@ -1384,6 +1364,11 @@ def _pure_dephasing_component(
 ) -> float:
     """Return the nonnegative pure-dephasing part of a transverse rate."""
     return max(0.0, transverse_rate - 0.5 * longitudinal_rate)
+
+
+def _signed_rate_difference(total_rate: float, idle_equivalent_rate: float) -> float:
+    """Return a signed CR-active minus idle-equivalent rate diagnostic."""
+    return float(total_rate - idle_equivalent_rate)
 
 
 def _control_standard_error(fit: ControlPopulationRateFit, name: str) -> float | None:
@@ -1601,6 +1586,18 @@ def _fit_idle_target_exchange(
     return float(candidate.parameters[0]), float(candidate.parameters[1])
 
 
+def _timing_duration(
+    schedules: ProtocolSchedules,
+    protocol: str,
+    name: str,
+) -> float:
+    """Return one numeric protocol-timing entry and reject metadata tuples."""
+    value = schedules.timing[protocol][name]
+    if isinstance(value, tuple):
+        raise TypeError(f"Protocol timing `{protocol}.{name}` must be numeric.")
+    return float(value)
+
+
 def _extract_idle_equivalent_baseline(
     measurements: CrDissipationMeasurements,
     schedules: ProtocolSchedules,
@@ -1708,6 +1705,44 @@ def _extract_idle_equivalent_baseline(
         cr_rates=None,
         include_leakage=False,
     )
+    raw_reference_predictions: dict[str, NDArray[np.float64]] = {}
+    reference_protocols = tuple(
+        protocol
+        for protocol in (PROTOCOL_C, PROTOCOL_D)
+        if getattr(measurements, protocol).reference is not None
+    )
+    if reference_protocols:
+        reference_blocks = semantic_reference_blocks(
+            descriptor,
+            external_durations_ns={
+                "xi180": _timing_duration(
+                    schedules, PROTOCOL_C, "external_xi180_duration_ns"
+                ),
+                "yi180": _timing_duration(
+                    schedules, PROTOCOL_C, "external_yi180_duration_ns"
+                ),
+                "ix180": _timing_duration(
+                    schedules, PROTOCOL_C, "external_ix180_duration_ns"
+                ),
+                "iy180": _timing_duration(schedules, PROTOCOL_D, "iy180_duration_ns"),
+            },
+        )
+        reference_inputs = {
+            PROTOCOL_C: (state_density("+x", "+x"), X_CONTROL),
+            PROTOCOL_D: (state_density("g", "g"), Z_TARGET),
+        }
+        for protocol in reference_protocols:
+            initial_density, observable = reference_inputs[protocol]
+            raw_reference_predictions[protocol] = simulate_repeated_observable(
+                reference_blocks[protocol],
+                counts,
+                initial_density,
+                observable,
+                control_idle=control_idle,
+                target_idle=target_idle,
+                cr_rates=None,
+                include_leakage=False,
+            )
     c_data = getattr(measurements, PROTOCOL_C).actual
     d_data = getattr(measurements, PROTOCOL_D).actual
     if c_data.primary_standard_error is None or d_data.primary_standard_error is None:
@@ -1758,8 +1793,8 @@ def _extract_idle_equivalent_baseline(
     return _IdleEquivalentBaseline(
         predictions,
         equivalent,
-        target_t1rho_by_protocol,
         {PROTOCOL_C: c_raw, PROTOCOL_D: d_raw},
+        raw_reference_predictions,
     )
 
 
@@ -1781,9 +1816,17 @@ def _apply_idle_prediction_spam(
             if actual_fit.success
             else raw
         )
+        observables = {"primary_expectation": plotted}
+        reference_raw = baseline.raw_cd_reference_predictions.get(protocol)
+        if reference_raw is not None:
+            observables["reference_primary_expectation"] = (
+                actual_fit.spam_amplitude * reference_raw + actual_fit.spam_offset
+                if actual_fit.success
+                else reference_raw
+            )
         predictions[protocol] = CrDissipationIdlePrediction(
             getattr(measurements, protocol).elapsed_time_ns,
-            {"primary_expectation": plotted},
+            observables,
             {
                 **baseline.equivalent_rates,
                 phi_name: (
@@ -1843,7 +1886,6 @@ def _fidelity_limits(
     )
     fixed_statuses = {
         CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED,
-        CrDissipationRateStatus.UNRESOLVED_ASSUMED_IDLE,
         CrDissipationRateStatus.CONSISTENT_WITH_ZERO,
         CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION,
     }
@@ -1973,29 +2015,29 @@ def analyze_cr_dissipation(
         control_idle,
         covariance_rcond=covariance_rcond,
     )
+    leak_a = fit_target_exchange(measurements, PROTOCOL_A, descriptor)
+    leak_b = fit_target_exchange(measurements, PROTOCOL_B, descriptor)
     t1_a = fit_target_t1rho(
         measurements,
         PROTOCOL_A,
         descriptor,
         target_idle,
-        idle_equivalent_rate_per_ns=idle_baseline.target_t1rho_by_protocol[PROTOCOL_A],
+        leak_a,
     )
     t1_b = fit_target_t1rho(
         measurements,
         PROTOCOL_B,
         descriptor,
         target_idle,
-        idle_equivalent_rate_per_ns=idle_baseline.target_t1rho_by_protocol[PROTOCOL_B],
+        leak_b,
     )
-    leak_a = fit_target_exchange(measurements, PROTOCOL_A, descriptor)
-    leak_b = fit_target_exchange(measurements, PROTOCOL_B, descriptor)
     warnings.extend(
         _target_control_state_dependence_warnings(t1_a, t1_b, leak_a, leak_b)
     )
     t1_status = _aggregate_status(
         t1_a.status,
         t1_b.status,
-        unresolved=CrDissipationRateStatus.UNRESOLVED_ASSUMED_IDLE,
+        unresolved=CrDissipationRateStatus.PARTIALLY_UNRESOLVED,
     )
     target_t1rho, target_t1rho_error = _aggregate_value_error(
         t1_a.rate_per_ns,
@@ -2238,24 +2280,26 @@ def analyze_cr_dissipation(
         target_t2rho_status,
         (PROTOCOL_A, PROTOCOL_B, PROTOCOL_D),
     )
+    control_idle_pure_dephasing = _pure_dephasing_component(
+        idle_equivalent["control_transverse"],
+        idle_equivalent["control_e_to_g"] + idle_equivalent["control_g_to_e"],
+    )
+    target_idle_rotating_frame_pure_dephasing = _pure_dephasing_component(
+        idle_equivalent["target_t2rho"],
+        idle_equivalent["target_t1rho"],
+    )
     derived = {
         "control_pure_dephasing": _estimate(
             nominal["control_pure_dephasing"],
             c_fit.rate_standard_error_per_ns,
-            _pure_dephasing_component(
-                idle_equivalent["control_transverse"],
-                idle_equivalent["control_e_to_g"] + idle_equivalent["control_g_to_e"],
-            ),
+            control_idle_pure_dephasing,
             c_fit.status,
             (PROTOCOL_C,),
         ),
         "target_rotating_frame_pure_dephasing": _estimate(
             nominal["target_rotating_frame_pure_dephasing"],
             d_fit.rate_standard_error_per_ns,
-            _pure_dephasing_component(
-                idle_equivalent["target_t2rho"],
-                idle_equivalent["target_t1rho"],
-            ),
+            target_idle_rotating_frame_pure_dephasing,
             d_fit.status,
             (PROTOCOL_D,),
         ),
@@ -2317,6 +2361,28 @@ def analyze_cr_dissipation(
             "idle_equivalent_extraction": "non_recursive_synthetic_baseline",
             "cr_sign_dependent_dissipation": False,
             "protocol_d_primary_observable": "target_Zge_unnormalized_Pg_minus_Pe",
+            "transverse_rate_definition": "coherence_only_excludes_leakage",
+            "pure_dephasing_definition": "cr_active_total_effective_rate",
+            "target_t1rho_fit_conditioning": (
+                "leakage_seepage_fixed_at_pf_fit_central_values"
+            ),
+            "target_t1rho_x_infinity_fidelity_treatment": (
+                "fit_nuisance_not_propagated_symmetric_dressed_relaxation_used"
+            ),
+            "pure_dephasing_delta_per_ns": {
+                "control": _signed_rate_difference(
+                    nominal["control_pure_dephasing"],
+                    control_idle_pure_dephasing,
+                ),
+                "target_rotating_frame": _signed_rate_difference(
+                    nominal["target_rotating_frame_pure_dephasing"],
+                    target_idle_rotating_frame_pure_dephasing,
+                ),
+            },
+            "pure_dephasing_delta_standard_error_per_ns": {
+                "control": c_fit.rate_standard_error_per_ns,
+                "target_rotating_frame": d_fit.rate_standard_error_per_ns,
+            },
         },
     )
 

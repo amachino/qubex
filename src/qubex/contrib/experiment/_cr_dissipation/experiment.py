@@ -73,7 +73,6 @@ from .types import (
     IdleNoiseParameters,
 )
 
-DEFAULT_REPETITION_COUNTS = (0, 1, 2, 3, 5, 8, 13, 21, 34, 55)
 DEFAULT_N_SHOTS = 2048
 DEFAULT_GEF_MEASUREMENT_N_SHOTS = 4096
 DEFAULT_GEF_CALIBRATION_N_SHOTS = 8192
@@ -108,9 +107,9 @@ class _ReferenceIx45Calibration:
         )
 
 
-def _validate_repetition_counts(values: Sequence[int] | None) -> tuple[int, ...]:
+def _validate_repetition_counts(values: Sequence[int]) -> tuple[int, ...]:
     """Return the validated strictly increasing protocol repetition grid."""
-    resolved = DEFAULT_REPETITION_COUNTS if values is None else tuple(values)
+    resolved = tuple(values)
     if len(resolved) < 5:
         raise ValueError("repetition_counts must contain at least five points.")
     if any(
@@ -125,6 +124,35 @@ def _validate_repetition_counts(values: Sequence[int] | None) -> tuple[int, ...]
     if any(right <= left for left, right in pairwise(normalized)):
         raise ValueError("repetition_counts must be unique and strictly increasing.")
     return normalized
+
+
+def _default_repetition_counts(
+    *,
+    longest_idle_t1_ns: float,
+    ab_block_duration_ns: float,
+) -> tuple[int, ...]:
+    """Return zero plus nine geometric counts ending at two idle T1 times."""
+    if not np.isfinite(longest_idle_t1_ns) or longest_idle_t1_ns <= 0.0:
+        raise ValueError(
+            "A finite positive idle T1 is required to generate default "
+            "repetition_counts; specify repetition_counts explicitly."
+        )
+    if not np.isfinite(ab_block_duration_ns) or ab_block_duration_ns <= 0.0:
+        raise ValueError("The A/B block duration must be positive and finite.")
+    endpoint = int(np.rint(2.0 * longest_idle_t1_ns / ab_block_duration_ns))
+    positive_size = 9
+    if endpoint < positive_size:
+        raise ValueError(
+            "Twice the longer idle T1 spans fewer than nine A/B blocks; "
+            "specify repetition_counts explicitly."
+        )
+    geometric = np.geomspace(1.0, float(endpoint), positive_size)
+    positive: list[int] = []
+    for index, raw_value in enumerate(geometric):
+        lower = 1 if index == 0 else positive[-1] + 1
+        upper = endpoint - (positive_size - index - 1)
+        positive.append(int(np.clip(np.rint(raw_value), lower, upper)))
+    return (0, *positive)
 
 
 def _positive_integer(value: int, name: str) -> int:
@@ -755,6 +783,7 @@ def _line_trace(
     name: str,
     color: str,
     dash: str = "solid",
+    width: float = 2.5,
 ) -> go.Scatter:
     """Build one Qubex-style smooth line trace."""
     dense_x, dense_y = _smooth_plot_curve(x, y)
@@ -763,7 +792,7 @@ def _line_trace(
         y=dense_y,
         mode="lines",
         name=name,
-        line={"color": color, "dash": dash, "width": 2.5},
+        line={"color": color, "dash": dash, "width": width},
     )
 
 
@@ -1232,6 +1261,21 @@ def _plot_cr_dissipation(
                     ),
                     **_panel_kwargs(1, columns),
                 )
+                reference_idle_values = analysis.idle_predictions[
+                    protocol
+                ].observables.get("reference_primary_expectation")
+                if reference_idle_values is not None:
+                    figure.add_trace(
+                        _line_trace(
+                            time_us,
+                            reference_idle_values,
+                            name="reference idle-only prediction",
+                            color=_PRIMARY_COLOR,
+                            dash="dot",
+                            width=1.25,
+                        ),
+                        **_panel_kwargs(1, columns),
+                    )
             figure.update_yaxes(range=[-1.0, 1.0], **_panel_kwargs(1, columns))
             _add_zero_line(figure, 1, columns)
             if has_orthogonal and measured.orthogonal is not None:
@@ -1250,19 +1294,6 @@ def _plot_cr_dissipation(
                     )
                 figure.update_yaxes(range=[-1.0, 1.0], **_panel_kwargs(2, columns))
                 _add_zero_line(figure, 2, columns)
-            if protocol == PROTOCOL_C and measured.reference is not None:
-                figure.add_annotation(
-                    text=(
-                        "Reference is diagnostic only and is not expected to coincide "
-                        "with the actual idle-only prediction."
-                    ),
-                    xref="paper",
-                    yref="paper",
-                    x=0.0,
-                    y=-0.30,
-                    showarrow=False,
-                )
-        has_reference_note = protocol == PROTOCOL_C and measured.reference is not None
         figure.update_layout(
             template=viz.DEFAULT_TEMPLATE,
             title={"text": protocol, "x": 0.5, "xanchor": "center", "y": 0.995},
@@ -1271,7 +1302,7 @@ def _plot_cr_dissipation(
             margin={
                 "t": 165,
                 "r": 220,
-                "b": 155 if has_reference_note else 90,
+                "b": 90,
                 "l": 95,
             },
             legend={"x": 1.02, "xanchor": "left", "y": 1.0, "yanchor": "top"},
@@ -1435,7 +1466,9 @@ def characterize_cr_dissipation(
         Distinct qubit labels defining the calibrated CR pair.
     repetition_counts : Sequence[int] | None, optional
         Strictly increasing nonnegative repetition counts starting at zero.
-        At least five points are required. Defaults to a Fibonacci-like grid.
+        At least five points are required. When omitted, use zero followed by
+        nine geometrically spaced integer counts from one to the A/B count whose
+        elapsed time is twice the longer control/target idle T1.
     n_shots : int, optional
         Shots per non-GEF measurement configuration, including all orthogonal
         Pauli diagnostics and IX45 reference calibration. Must be at least two to
@@ -1534,7 +1567,11 @@ def characterize_cr_dissipation(
             "reference_ix45_amplitude and force_reference_ix45_calibration=True "
             "cannot be specified together."
         )
-    counts = _validate_repetition_counts(repetition_counts)
+    counts = (
+        None
+        if repetition_counts is None
+        else _validate_repetition_counts(repetition_counts)
+    )
     shots = _positive_integer(n_shots, "n_shots")
     gef_shots = _positive_integer(
         gef_measurement_n_shots,
@@ -1591,6 +1628,11 @@ def characterize_cr_dissipation(
         zx90_echo,
         zx90_no_echo,
     )
+    if counts is None:
+        counts = _default_repetition_counts(
+            longest_idle_t1_ns=max(control_idle.t1_ns, target_idle.t1_ns),
+            ab_block_duration_ns=4.0 * float(descriptor.full_un_echoed.duration),
+        )
     schedules = build_protocol_schedules(exp, control, target, descriptor, counts)
 
     reference_calibration: _ReferenceIx45Calibration | None = None

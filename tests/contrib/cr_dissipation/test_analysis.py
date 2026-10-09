@@ -20,6 +20,7 @@ from qubex.contrib.experiment._cr_dissipation.analysis import (
     _fit_idle_target_t1rho,
     _pure_dephasing_component,
     _select_significant_nested_candidate,
+    _signed_rate_difference,
     _simplex_boundary_override,
     _target_control_state_dependence_warnings,
     control_population_trajectory,
@@ -206,12 +207,12 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
     statuses.update(
         {
             "control_e_to_g": CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED,
-            "control_g_to_e": CrDissipationRateStatus.UNRESOLVED_ASSUMED_IDLE,
+            "control_g_to_e": CrDissipationRateStatus.PARTIALLY_UNRESOLVED,
             "control_e_to_f": CrDissipationRateStatus.CONSISTENT_WITH_ZERO,
             "control_f_to_e": CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION,
             "target_t1rho": CrDissipationRateStatus.PARTIALLY_UNRESOLVED,
             "control_transverse": CrDissipationRateStatus.PARTIALLY_UNRESOLVED,
-            "target_t2rho": CrDissipationRateStatus.UNRESOLVED_ASSUMED_IDLE,
+            "target_t2rho": CrDissipationRateStatus.PARTIALLY_UNRESOLVED,
         }
     )
     covariance = np.eye(len(primitive_order)) * 1e-12
@@ -247,7 +248,6 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
 
     expected_fixed = {
         "control_e_to_g",
-        "control_g_to_e",
         "control_e_to_f",
         "control_f_to_e",
     }
@@ -333,14 +333,12 @@ def test_target_control_state_dependence_warning_is_diagnostic_only() -> None:
     assert after == before
 
 
-def test_idle_baseline_precedes_actual_fit_and_supplies_t1rho_null(
+def test_idle_baseline_precedes_actual_total_t1rho_fit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Actual selection starts only after the one-pass baseline is available."""
     events: list[object] = []
-    baseline = SimpleNamespace(
-        target_t1rho_by_protocol={PROTOCOL_A: 1.23e-4, PROTOCOL_B: 2.34e-4}
-    )
+    baseline = SimpleNamespace()
 
     def extract(*_args: Any, **_kwargs: Any) -> Any:
         events.append("baseline")
@@ -350,12 +348,17 @@ def test_idle_baseline_precedes_actual_fit_and_supplies_t1rho_null(
         events.append("control")
         return SimpleNamespace()
 
-    def target_fit(*_args: Any, **kwargs: Any) -> Any:
-        events.append(kwargs["idle_equivalent_rate_per_ns"])
+    def target_fit(*_args: Any, **_kwargs: Any) -> Any:
+        events.append("target_t1rho")
         raise RuntimeError("stop after observing the first actual T1rho fit")
+
+    def exchange_fit(*_args: Any, **_kwargs: Any) -> Any:
+        events.append("target_exchange")
+        return SimpleNamespace(success=True)
 
     monkeypatch.setattr(analysis_module, "_extract_idle_equivalent_baseline", extract)
     monkeypatch.setattr(analysis_module, "fit_control_populations", control_fit)
+    monkeypatch.setattr(analysis_module, "fit_target_exchange", exchange_fit)
     monkeypatch.setattr(analysis_module, "fit_target_t1rho", target_fit)
 
     with pytest.raises(RuntimeError, match="stop after observing"):
@@ -368,7 +371,13 @@ def test_idle_baseline_precedes_actual_fit_and_supplies_t1rho_null(
             covariance_rcond=1e-12,
         )
 
-    assert events == ["baseline", "control", 1.23e-4]
+    assert events == [
+        "baseline",
+        "control",
+        "target_exchange",
+        "target_exchange",
+        "target_t1rho",
+    ]
 
 
 def test_control_simplification_updates_status_and_covariance(
@@ -791,7 +800,7 @@ def test_target_t1rho_and_leakage_reduced_fits_recover_synthetic_rates() -> None
     counts = np.array([0, 1, 2, 3, 5, 8, 13], dtype=np.int64)
     desc = descriptor()
     idle = IdleNoiseParameters(45_000.0, 50_000.0)
-    t1rho = 1.1e-4
+    t1rho = idle.transverse_rate_per_ns
     leakage = 4e-5
     seepage = 2e-5
     x = target_t1rho_trajectory(
@@ -799,6 +808,9 @@ def test_target_t1rho_and_leakage_reduced_fits_recover_synthetic_rates() -> None
         0.96,
         t1rho,
         0.08,
+        initial_pf=0.01,
+        leakage_rate_per_ns=leakage,
+        seepage_rate_per_ns=seepage,
         cr_lobe_duration_ns=50.0,
         blank_duration_ns=40.0,
         idle_transverse_rate_per_ns=idle.transverse_rate_per_ns,
@@ -834,12 +846,102 @@ def test_target_t1rho_and_leakage_reduced_fits_recover_synthetic_rates() -> None
         },
     )
 
+    exchange = fit_target_exchange(
+        measurements,
+        PROTOCOL_A,
+        desc,
+        force_all_candidates=True,
+    )
     decay = fit_target_t1rho(
         measurements,
         PROTOCOL_A,
         desc,
         idle,
-        idle_equivalent_rate_per_ns=idle.transverse_rate_per_ns,
+        exchange,
+    )
+    uncoupled_decay = fit_target_t1rho(
+        measurements,
+        PROTOCOL_A,
+        desc,
+        idle,
+        replace(exchange, leakage_rate_per_ns=0.0, seepage_rate_per_ns=0.0),
+    )
+
+    assert decay.status == CrDissipationRateStatus.RESOLVED
+    assert decay.selected_model == "free"
+    assert decay.rate_per_ns == pytest.approx(t1rho, rel=2e-3)
+    assert abs(decay.rate_per_ns - t1rho) < abs(uncoupled_decay.rate_per_ns - t1rho)
+    assert exchange.selected_model == "L2"
+    assert exchange.leakage_rate_per_ns == pytest.approx(leakage, rel=3e-3)
+    assert exchange.seepage_rate_per_ns == pytest.approx(seepage, rel=3e-3)
+
+
+def test_symmetric_target_leakage_does_not_mimic_t1rho_without_seepage() -> None:
+    """Symmetric leakage alone leaves normalized computational X unchanged."""
+    counts = np.array([0, 1, 2, 5, 8], dtype=np.int64)
+
+    values = target_t1rho_trajectory(
+        counts,
+        0.93,
+        0.0,
+        0.0,
+        initial_pf=0.02,
+        leakage_rate_per_ns=8e-5,
+        seepage_rate_per_ns=0.0,
+        cr_lobe_duration_ns=50.0,
+        blank_duration_ns=0.0,
+        idle_transverse_rate_per_ns=0.0,
+    )
+
+    np.testing.assert_allclose(values, 0.93, rtol=0.0, atol=1e-12)
+
+
+def test_t1rho_fit_recovers_zero_from_symmetric_leakage_only() -> None:
+    """A fixed leakage-only Pf model does not bias fitted T1rho above zero."""
+    counts = np.array([0, 1, 2, 3, 5, 8, 13], dtype=np.int64)
+    desc = descriptor()
+    idle = IdleNoiseParameters(float("inf"), float("inf"))
+    leakage = 8e-5
+    initial_pf = 0.02
+    x = target_t1rho_trajectory(
+        counts,
+        0.93,
+        0.0,
+        0.0,
+        initial_pf=initial_pf,
+        leakage_rate_per_ns=leakage,
+        seepage_rate_per_ns=0.0,
+        cr_lobe_duration_ns=50.0,
+        blank_duration_ns=40.0,
+        idle_transverse_rate_per_ns=0.0,
+    )
+    pf = target_exchange_trajectory(
+        counts,
+        initial_pf,
+        leakage,
+        0.0,
+        cr_lobe_duration_ns=50.0,
+    )
+    target_population = np.column_stack(
+        [(1.0 - pf) * (1.0 + x) / 2.0, (1.0 - pf) * (1.0 - x) / 2.0, pf]
+    )
+    protocol_data = CrDissipationProtocolData(
+        target_gef=population_series(target_population),
+        target_x_comp=x,
+        target_x_comp_standard_error=np.full(counts.size, 2e-4),
+    )
+    dummy = CrDissipationProtocolData(
+        primary_expectation=np.ones(counts.size),
+        primary_standard_error=np.full(counts.size, 2e-4),
+    )
+    measurements = measurements_from_protocol_data(
+        counts,
+        {
+            PROTOCOL_A: protocol_data,
+            PROTOCOL_B: protocol_data,
+            PROTOCOL_C: dummy,
+            PROTOCOL_D: dummy,
+        },
     )
     exchange = fit_target_exchange(
         measurements,
@@ -848,11 +950,22 @@ def test_target_t1rho_and_leakage_reduced_fits_recover_synthetic_rates() -> None
         force_all_candidates=True,
     )
 
-    assert decay.status == CrDissipationRateStatus.RESOLVED
-    assert decay.rate_per_ns == pytest.approx(t1rho, rel=2e-3)
-    assert exchange.selected_model == "L2"
+    decay = fit_target_t1rho(
+        measurements,
+        PROTOCOL_A,
+        desc,
+        idle,
+        exchange,
+    )
+
     assert exchange.leakage_rate_per_ns == pytest.approx(leakage, rel=3e-3)
-    assert exchange.seepage_rate_per_ns == pytest.approx(seepage, rel=3e-3)
+    assert decay.rate_per_ns == pytest.approx(0.0, abs=1e-9)
+
+
+def test_pure_dephasing_delta_is_signed_relative_to_idle_equivalent() -> None:
+    """The derived pure-dephasing comparison preserves either sign."""
+    assert _signed_rate_difference(2e-5, 2e-5) == pytest.approx(0.0, abs=1e-15)
+    assert _signed_rate_difference(1e-5, 2e-5) == pytest.approx(-1e-5)
 
 
 def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
@@ -877,7 +990,7 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
         name = str(kwargs["name"])
         parameter_names = tuple(cast(tuple[str, ...], kwargs["parameter_names"]))
 
-        if name == "zero_additional_dephasing":
+        if name == "zero_total_dephasing":
             parameters = np.array([1.0, 0.0])
             errors = np.array([0.01, 0.01])
             aicc = 20.0
@@ -931,3 +1044,56 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
     assert fit.status == CrDissipationRateStatus.RESOLVED
     assert fit.rate_per_ns == pytest.approx(true_rate)
     assert fit.rate_standard_error_per_ns == pytest.approx(5e-5)
+
+
+def test_physical_forward_fit_selects_zero_total_pure_dephasing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C zero model means the full CR-active pure-dephasing rate is zero."""
+    counts = np.array([0, 1, 2, 3, 5, 8], dtype=np.int64)
+    idle = IdleNoiseParameters(float("inf"), float("inf"))
+    block = (
+        SemanticSegment(
+            80.0,
+            np.zeros((9, 9), dtype=np.complex128),
+            True,
+            "CR",
+        ),
+    )
+
+    def fake_fit_gls_candidate(**kwargs: Any) -> CandidateFit:
+        name = str(kwargs["name"])
+        names = tuple(cast(tuple[str, ...], kwargs["parameter_names"]))
+        if name == "zero_total_dephasing":
+            return _candidate(name, names, (1.0, 0.0), (0.01, 0.01), 0.0)
+        return _candidate(
+            name,
+            names,
+            (0.0, 1.0, 0.0),
+            (1e-5, 0.01, 0.01),
+            20.0,
+        )
+
+    monkeypatch.setattr(analysis_module, "fit_gls_candidate", fake_fit_gls_candidate)
+    monkeypatch.setattr(
+        analysis_module,
+        "simulate_repeated_observable",
+        lambda *_args, **_kwargs: np.ones(counts.size),
+    )
+
+    fit = fit_physical_dephasing(
+        np.ones(counts.size),
+        np.full(counts.size, 2e-5),
+        counts,
+        block,
+        initial_density=state_density("+x", "+x"),
+        observable=X_CONTROL,
+        control_idle=idle,
+        target_idle=idle,
+        fixed_rates=CrNoiseRates(),
+        fitted_role="control",
+    )
+
+    assert fit.selected_model == "zero_total_dephasing"
+    assert fit.status == CrDissipationRateStatus.CONSISTENT_WITH_ZERO
+    assert fit.rate_per_ns == 0.0

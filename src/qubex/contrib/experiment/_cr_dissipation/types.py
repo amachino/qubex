@@ -24,7 +24,6 @@ class CrDissipationRateStatus(str, Enum):
     RESOLVED = "resolved"
     NOMINAL_ZERO_UNRESOLVED = "nominal_zero_unresolved"
     PARTIALLY_UNRESOLVED = "partially_unresolved"
-    UNRESOLVED_ASSUMED_IDLE = "unresolved_assumed_idle"
     CONSISTENT_WITH_ZERO = "consistent_with_zero"
     INCONSISTENT_RATE_DECOMPOSITION = "inconsistent_rate_decomposition"
     FIT_FAILED = "fit_failed"
@@ -267,7 +266,7 @@ class CrDissipationFidelityLimits:
 
 @dataclass(frozen=True)
 class CrDissipationIdlePrediction:
-    """Store an actual-sequence idle-only predicted curve."""
+    """Store idle-only predictions for actual and optional reference sequences."""
 
     elapsed_time_ns: NDArray[np.float64]
     observables: dict[str, NDArray[np.float64]]
