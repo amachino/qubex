@@ -1340,6 +1340,11 @@ class Experiment:
         capture_placement : CapturePlacement | None, optional
             Capture-window placement strategy.
             If `None`, service default is used.
+            QuEL-1 `entire_schedule` reserves a 32 ns workaround capture,
+            a 32 ns leading post blank, and a 32 ns trailing post blank.
+            The main capture starts at 64 ns and includes all requested
+            waveforms, with its duration aligned to 32 ns independently of
+            `shot_interval`.
         capture_targets : list[str] | None, optional
             Explicit capture targets for `entire_schedule` placement.
         plot : bool | None, optional
