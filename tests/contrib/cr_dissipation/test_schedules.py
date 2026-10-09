@@ -1,8 +1,9 @@
-"""Fast simulator and semantic pulse tests for the v11 specification."""
+"""Test CR dissipation schedules and semantic two-qutrit simulation."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import cast
 
@@ -10,24 +11,31 @@ import numpy as np
 import pytest
 
 from qubex.contrib.experiment._cr_dissipation.pulses import (
+    PROTOCOL_D,
     PROTOCOLS,
     build_protocol_schedules,
     build_reference_schedules,
     resolve_zx90_descriptor,
+    semantic_protocol_blocks,
     semantic_un_echoed_zx90,
     semantic_zx90,
 )
 from qubex.contrib.experiment._cr_dissipation.simulation import (
     X_TARGET,
+    Y_TARGET,
+    Z_TARGET,
     ZX,
     CrNoiseRates,
     F,
     G,
     SemanticSegment,
+    apply_channel,
     compose_channel,
     leakage_aware_average_fidelity,
     propagate_fidelity_uncertainty,
+    simulate_repeated_observable,
     simultaneous_rotation_segments,
+    state_density,
     tensor,
 )
 from qubex.contrib.experiment._cr_dissipation.types import IdleNoiseParameters
@@ -57,8 +65,28 @@ def _echoed_zx90() -> CrossResonance:
 
 def _schedule_experiment(echoed: CrossResonance) -> Experiment:
     """Build the pulse-service subset used by protocol schedule builders."""
+
+    def zx90(*_args: object, **kwargs: object) -> CrossResonance:
+        if kwargs.get("rotary_amplitude") != 0.0:
+            return echoed
+        return CrossResonance(
+            "Q0",
+            "Q1",
+            cr_amplitude=echoed.cr_amplitude,
+            cr_duration=echoed.cr_duration,
+            cr_ramptime=echoed.cr_ramptime,
+            cr_phase=echoed.cr_phase,
+            cr_beta=echoed.cr_beta,
+            cancel_amplitude=0.02,
+            cancel_phase=echoed.cancel_phase,
+            cancel_beta=echoed.cancel_beta,
+            echo=True,
+            pi_pulse=echoed.pi_pulse,
+            pi_margin=4.0,
+        )
+
     pulse = SimpleNamespace(
-        zx90=lambda *_args, **_kwargs: echoed,
+        zx90=zx90,
         get_pulse_for_state=lambda *_args: _pulse(),
         x90=lambda _target: _pulse(),
         x90m=lambda _target: _pulse(),
@@ -70,8 +98,8 @@ def _schedule_experiment(echoed: CrossResonance) -> Experiment:
     return cast(Experiment, SimpleNamespace(pulse=pulse))
 
 
-def test_un_echoed_ab_gate_preserves_positive_calibrated_cr_lobes() -> None:
-    """A/B use two same-sign calibrated lobes and duration-matched blank slots."""
+def test_un_echoed_ab_gate_removes_rotary_but_preserves_cr_and_cancel() -> None:
+    """A/B remove rotary while preserving CR, cancel, and matched blank slots."""
     echoed = _echoed_zx90()
     descriptor = resolve_zx90_descriptor(_schedule_experiment(echoed), "Q0", "Q1", None)
 
@@ -81,9 +109,20 @@ def test_un_echoed_ab_gate_preserves_positive_calibrated_cr_lobes() -> None:
         descriptor.full_un_echoed.values["Q0-Q1"][: echoed.cr_waveform.length],
         echoed.cr_waveform.values,
     )
-    np.testing.assert_allclose(
+    assert not np.allclose(
         descriptor.full_un_echoed.values["Q1"][: echoed.cancel_waveform.length],
         echoed.cancel_waveform.values,
+    )
+    expected_cancel = FlatTop(
+        duration=echoed.cr_duration,
+        amplitude=0.02,
+        tau=echoed.cr_ramptime,
+        phase=echoed.cancel_phase,
+        beta=echoed.cancel_beta,
+    )
+    np.testing.assert_allclose(
+        descriptor.full_un_echoed.values["Q1"][: expected_cancel.length],
+        expected_cancel.values,
     )
     assert [operation.label for operation in semantic_un_echoed_zx90(descriptor)] == [
         "ZX45(+1)",
@@ -101,6 +140,47 @@ def test_un_echoed_ab_gate_preserves_positive_calibrated_cr_lobes() -> None:
         "XI180(internal)",
         "echo-margin",
     ]
+
+
+def test_explicit_full_un_echoed_zx90_is_used_for_ab() -> None:
+    """A full un-echoed override replaces only the A/B protocol unit."""
+    echoed = _echoed_zx90()
+    exp = _schedule_experiment(echoed)
+    generated = resolve_zx90_descriptor(exp, "Q0", "Q1", None).full_un_echoed
+
+    descriptor = resolve_zx90_descriptor(
+        exp,
+        "Q0",
+        "Q1",
+        echoed,
+        generated,
+    )
+
+    assert descriptor.echoed is echoed
+    assert descriptor.full_un_echoed is generated
+
+
+def test_single_lobe_no_echo_primitive_is_rejected_for_ab() -> None:
+    """A/B reject the single-lobe primitive in place of a full ZX90 unit."""
+    echoed = _echoed_zx90()
+    primitive = CrossResonance(
+        "Q0",
+        "Q1",
+        cr_amplitude=echoed.cr_amplitude,
+        cr_duration=echoed.cr_duration,
+        cr_ramptime=echoed.cr_ramptime,
+        cancel_amplitude=0.02,
+        echo=False,
+    )
+
+    with pytest.raises(ValueError, match="total CR-active duration"):
+        resolve_zx90_descriptor(
+            _schedule_experiment(echoed),
+            "Q0",
+            "Q1",
+            echoed,
+            primitive,
+        )
 
 
 def test_reference_protocols_preserve_actual_schedule_durations() -> None:
@@ -125,21 +205,156 @@ def test_reference_protocols_preserve_actual_schedule_durations() -> None:
         )
 
 
-def test_semantic_rotary_metadata_does_not_modify_actual_waveforms() -> None:
-    """Semantic rotary metadata augments the model without changing measured pulses."""
+def test_protocol_d_uses_ground_state_z_readout_without_analysis_rotation() -> None:
+    """Protocol D prepares target ground and uses direct GEF Z readout."""
+    echoed = _echoed_zx90()
+    exp = _schedule_experiment(echoed)
+    descriptor = resolve_zx90_descriptor(exp, "Q0", "Q1", None)
+    schedules = build_protocol_schedules(exp, "Q0", "Q1", descriptor, (0, 1))
+
+    assert schedules.actual[PROTOCOL_D][0].duration == pytest.approx(
+        schedules.base[PROTOCOL_D][0].duration
+    )
+    assert schedules.timing[PROTOCOL_D]["operation_order"] == (
+        "ZX90",
+        "IZ180",
+        "ZX90",
+        "IY180",
+        "ZX90",
+        "IZ180",
+        "ZX90",
+        "IY180",
+    )
+    assert [operation.label for operation in schedules.semantic_blocks[PROTOCOL_D]] == [
+        "ZX45(+1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "ZX45(-1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "IZ180(target+CR-frame)",
+        "ZX45(+1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "ZX45(-1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "IY180",
+        "ZX45(+1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "ZX45(-1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "IZ180(target+CR-frame)",
+        "ZX45(+1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "ZX45(-1)",
+        "echo-margin",
+        "XI180(internal)",
+        "echo-margin",
+        "IY180",
+    ]
+
+
+def test_protocol_d_ideal_block_refocuses_z_even_with_zx_angle_error() -> None:
+    """The swapped D block returns ground-state Z for a common ZX angle error."""
+    descriptor = resolve_zx90_descriptor(
+        _schedule_experiment(_echoed_zx90()), "Q0", "Q1", None
+    )
+    block = semantic_protocol_blocks(
+        descriptor,
+        external_durations_ns={
+            "xi180": 32.0,
+            "yi180": 40.0,
+            "ix180": 32.0,
+            "iy180": 40.0,
+        },
+    )[PROTOCOL_D]
+    detuned = tuple(
+        replace(operation, hamiltonian=1.13 * operation.hamiltonian)
+        if isinstance(operation, SemanticSegment) and operation.label.startswith("ZX45")
+        else operation
+        for operation in block
+    )
+    idle = IdleNoiseParameters(float("inf"), float("inf"))
+    initial = state_density("g", "g")
+
+    channel = compose_channel(
+        detuned,
+        control_idle=idle,
+        target_idle=idle,
+        cr_rates=None,
+        include_leakage=False,
+    )
+    final = apply_channel(channel, initial)
+    for observable, expected in (
+        (Z_TARGET, 1.0),
+        (X_TARGET, 0.0),
+        (Y_TARGET, 0.0),
+    ):
+        assert np.real(np.trace(initial @ observable)) == pytest.approx(expected)
+        assert np.real(np.trace(final @ observable)) == pytest.approx(
+            expected, abs=1e-12
+        )
+
+
+def test_protocol_d_dissipative_forward_model_uses_target_z() -> None:
+    """D target rotating-frame dephasing reduces the simulated Z contrast."""
+    descriptor = resolve_zx90_descriptor(
+        _schedule_experiment(_echoed_zx90()), "Q0", "Q1", None
+    )
+    block = semantic_protocol_blocks(
+        descriptor,
+        external_durations_ns={
+            "xi180": 32.0,
+            "yi180": 40.0,
+            "ix180": 32.0,
+            "iy180": 40.0,
+        },
+    )[PROTOCOL_D]
+    idle = IdleNoiseParameters(float("inf"), float("inf"))
+
+    values = simulate_repeated_observable(
+        block,
+        (0, 1, 2),
+        state_density("g", "g"),
+        Z_TARGET,
+        control_idle=idle,
+        target_idle=idle,
+        cr_rates=CrNoiseRates(target_rotating_frame_pure_dephasing=1e-3),
+        include_leakage=True,
+    )
+
+    assert values[0] == pytest.approx(1.0)
+    assert np.all(np.isfinite(values))
+    assert values[-1] < values[1] < values[0]
+
+
+def test_semantic_rotary_is_used_for_echoed_protocols_but_not_ab() -> None:
+    """Rotary metadata affects echoed C/D semantics but is excluded from A/B."""
     echoed = _echoed_zx90()
     echoed.rotary_integrated_angle_rad = 0.2
     echoed.rotary_phase_rad = 0.3
     descriptor = resolve_zx90_descriptor(_schedule_experiment(echoed), "Q0", "Q1", None)
     actual_before = descriptor.full_un_echoed.values
 
-    positive = semantic_un_echoed_zx90(descriptor)[0]
+    ab_positive = semantic_un_echoed_zx90(descriptor)[0]
+    positive = semantic_zx90(descriptor)[0]
     negative = semantic_zx90(descriptor)[4]
 
     np.testing.assert_allclose(negative.hamiltonian, -positive.hamiltonian)
+    assert not np.allclose(ab_positive.hamiltonian, positive.hamiltonian)
     for label, waveform in actual_before.items():
         np.testing.assert_allclose(descriptor.full_un_echoed.values[label], waveform)
-    assert not descriptor.warnings
 
 
 def test_qutrit_embedding_stops_zx_but_not_unconditional_ix_after_control_leakage() -> (

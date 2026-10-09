@@ -1,9 +1,10 @@
 """
 Build hardware schedules and matching semantic CR protocol descriptions.
 
-Actual schedules preserve calibrated waveforms. Semantic operations retain the
-same segment timing for physical forward simulation without interpreting raw
-waveform samples as an exact Hamiltonian.
+Actual schedules preserve calibrated waveforms and timing. A/B rebuild their
+same-sign lobes with the calibrated cancellation tone and zero rotary, while
+C/D retain the complete echoed ZX90. Semantic operations mirror that distinction
+without interpreting raw waveform samples as an exact Hamiltonian.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from .simulation import (
     rotation_unitary,
     simultaneous_rotation_segments,
 )
-from .types import CrDissipationWarning
 
 PROTOCOL_A = "control_ground_cr_population"
 PROTOCOL_B = "control_excited_cr_population"
@@ -45,7 +45,13 @@ PROTOCOLS = (PROTOCOL_A, PROTOCOL_B, PROTOCOL_C, PROTOCOL_D)
 
 @dataclass(frozen=True)
 class ZX90Descriptor:
-    """Store the actual echoed gate and reconstructable semantic metadata."""
+    """
+    Store the actual echoed gate and reconstructable semantic metadata.
+
+    The calibrated echoed schedule is preserved for C/D. When pre-combination
+    rotary metadata are unavailable, the semantic model omits the rotary term
+    under the echoed-gate approximation that its coherent IX rotation cancels.
+    """
 
     echoed: PulseSchedule
     full_un_echoed: PulseSchedule
@@ -57,7 +63,6 @@ class ZX90Descriptor:
     pi_pulse: Waveform
     rotary_integrated_angle_rad: float | None
     rotary_phase_rad: float | None
-    warnings: tuple[CrDissipationWarning, ...]
 
     @property
     def cr_active_duration_ns(self) -> float:
@@ -74,30 +79,39 @@ class ProtocolSchedules:
     semantic_blocks: dict[str, tuple[SemanticOperation, ...]]
     elapsed_time_ns: dict[str, np.ndarray]
     cr_active_time_ns: dict[str, np.ndarray]
-    timing: dict[str, dict[str, float]]
+    timing: dict[str, dict[str, float | tuple[str, ...]]]
 
 
-def _positive_duration(value: Any, name: str) -> float:
+def _positive_duration(
+    value: Any,
+    name: str,
+    *,
+    source: str = "zx90_echo",
+) -> float:
     """Validate one required positive duration from calibrated gate metadata."""
     if isinstance(value, bool) or not isinstance(value, Real):
         raise ValueError(  # noqa: TRY004 - public override contract requires ValueError
-            f"zx90_echo must expose numeric `{name}` metadata."
+            f"{source} must expose numeric `{name}` metadata."
         )
     duration = float(value)
     if not np.isfinite(duration) or duration <= 0.0:
-        raise ValueError(f"zx90_echo `{name}` must be positive and finite.")
+        raise ValueError(f"{source} `{name}` must be positive and finite.")
     return duration
 
 
-def _frequencies(schedule: PulseSchedule) -> Mapping[str, float | None]:
+def _frequencies(
+    schedule: PulseSchedule,
+    *,
+    source: str = "zx90_echo",
+) -> Mapping[str, float | None]:
     """Return validated frequency metadata from a pulse schedule."""
     getter = getattr(schedule, "get_frequencies", None)
     if getter is None:
-        raise ValueError("zx90_echo must expose frequency metadata.")
+        raise ValueError(f"{source} must expose frequency metadata.")
     frequencies = getter()
     if not isinstance(frequencies, Mapping):
         raise ValueError(  # noqa: TRY004 - incompatible overrides are ValueError
-            "zx90_echo frequency metadata is invalid."
+            f"{source} frequency metadata is invalid."
         )
     return frequencies
 
@@ -119,8 +133,9 @@ def resolve_zx90_descriptor(
     control_qubit: str,
     target_qubit: str,
     zx90_echo: PulseSchedule | None,
+    zx90_no_echo: PulseSchedule | None = None,
 ) -> ZX90Descriptor:
-    """Resolve an echoed ZX90 and construct a waveform-preserving A/B unit."""
+    """Resolve an echoed ZX90 and construct a rotary-free A/B unit."""
     echoed = (
         exp.pulse.zx90(control_qubit, target_qubit, echo=True)
         if zx90_echo is None
@@ -134,21 +149,16 @@ def resolve_zx90_descriptor(
     total_duration = _positive_duration(getattr(echoed, "duration", None), "duration")
     pi_pulse = getattr(echoed, "pi_pulse", None)
     cr_waveform = getattr(echoed, "cr_waveform", None)
-    cancel_waveform = getattr(echoed, "cancel_waveform", None)
     if not isinstance(pi_pulse, Waveform):
         raise ValueError(  # noqa: TRY004 - incompatible overrides are ValueError
             "zx90_echo must expose its calibrated `pi_pulse` waveform."
         )
-    if not isinstance(cr_waveform, Waveform) or not isinstance(
-        cancel_waveform, Waveform
-    ):
+    if not isinstance(cr_waveform, Waveform):
         raise ValueError(  # noqa: TRY004 - incompatible overrides are ValueError
-            "zx90_echo must expose calibrated `cr_waveform` and `cancel_waveform`."
+            "zx90_echo must expose its calibrated `cr_waveform`."
         )
-    if not np.isclose(cr_waveform.duration, cr_duration) or not np.isclose(
-        cancel_waveform.duration, cr_duration
-    ):
-        raise ValueError("ZX90 CR/cancel waveform durations do not match cr_duration.")
+    if not np.isclose(cr_waveform.duration, cr_duration):
+        raise ValueError("ZX90 CR waveform duration does not match cr_duration.")
 
     slot_duration = (total_duration - 2.0 * cr_duration) / 2.0
     if slot_duration < pi_pulse.duration - 1e-9:
@@ -163,46 +173,86 @@ def resolve_zx90_descriptor(
     cr_label = f"{control_qubit}-{target_qubit}"
     labels = (control_qubit, cr_label, target_qubit)
     frequencies = _frequencies(echoed)
-    with PulseSchedule(list(labels)) as lobe:
-        lobe.add(cr_label, cr_waveform)
-        lobe.add(target_qubit, cancel_waveform)
-    lobe.set_frequencies(frequencies)
-    blank = _blank_schedule(labels, slot_duration, frequencies)
-    with PulseSchedule(list(labels)) as full_un_echoed:
-        full_un_echoed.call(lobe, copy=True)
-        full_un_echoed.call(blank, copy=True)
-        full_un_echoed.call(lobe, copy=True)
-        full_un_echoed.call(blank, copy=True)
-    full_un_echoed.set_frequencies(frequencies)
-    full_un_echoed.cr_duration = 2.0 * cr_duration  # type: ignore[attr-defined]
-    full_un_echoed.echo = False  # type: ignore[attr-defined]
-    if not np.isclose(full_un_echoed.duration, total_duration, atol=1e-9, rtol=0.0):
-        raise ValueError("Reconstructed full un-echoed ZX90 has mismatched timing.")
+    if zx90_no_echo is None:
+        rotary_free = exp.pulse.zx90(
+            control_qubit,
+            target_qubit,
+            rotary_amplitude=0.0,
+            echo=True,
+        )
+        if getattr(rotary_free, "echo", None) is not True:
+            raise ValueError("The rotary-free A/B calibration must be an echoed ZX90.")
+        rotary_free_duration = _positive_duration(
+            getattr(rotary_free, "duration", None),
+            "rotary-free duration",
+        )
+        rotary_free_cr = getattr(rotary_free, "cr_waveform", None)
+        cancel_waveform = getattr(rotary_free, "cancel_waveform", None)
+        if not isinstance(rotary_free_cr, Waveform) or not isinstance(
+            cancel_waveform, Waveform
+        ):
+            raise ValueError(
+                "A/B rotary removal requires calibrated CR and cancel waveforms."
+            )
+        if not np.isclose(rotary_free_duration, total_duration) or not np.isclose(
+            float(rotary_free_cr.duration), cr_duration
+        ):
+            raise ValueError(
+                "The rotary-free A/B ZX90 timing does not match the supplied ZX90."
+            )
+        if not np.allclose(rotary_free_cr.values, cr_waveform.values):
+            raise ValueError(
+                "Removing A/B rotary unexpectedly changed the calibrated CR waveform."
+            )
+        if not np.isclose(cancel_waveform.duration, cr_duration):
+            raise ValueError("A/B cancel waveform duration does not match cr_duration.")
+        with PulseSchedule(list(labels)) as lobe:
+            lobe.add(cr_label, cr_waveform)
+            lobe.add(target_qubit, cancel_waveform)
+        lobe.set_frequencies(frequencies)
+        blank = _blank_schedule(labels, slot_duration, frequencies)
+        with PulseSchedule(list(labels)) as full_un_echoed:
+            full_un_echoed.call(lobe, copy=True)
+            full_un_echoed.call(blank, copy=True)
+            full_un_echoed.call(lobe, copy=True)
+            full_un_echoed.call(blank, copy=True)
+        full_un_echoed.set_frequencies(frequencies)
+        full_un_echoed.cr_duration = 2.0 * cr_duration  # type: ignore[attr-defined]
+        full_un_echoed.echo = False  # type: ignore[attr-defined]
+    else:
+        if not isinstance(zx90_no_echo, PulseSchedule):
+            raise TypeError("zx90_no_echo must be a PulseSchedule or None.")
+        if not zx90_no_echo.is_valid():
+            raise ValueError("zx90_no_echo must be a valid pulse schedule.")
+        if getattr(zx90_no_echo, "echo", None) is not False:
+            raise ValueError("zx90_no_echo must be explicitly marked un-echoed.")
+        no_echo_cr_duration = _positive_duration(
+            getattr(zx90_no_echo, "cr_duration", None),
+            "cr_duration",
+            source="zx90_no_echo",
+        )
+        no_echo_duration = _positive_duration(
+            getattr(zx90_no_echo, "duration", None),
+            "duration",
+            source="zx90_no_echo",
+        )
+        if not np.isclose(no_echo_cr_duration, 2.0 * cr_duration):
+            raise ValueError(
+                "zx90_no_echo must contain the same total CR-active duration as "
+                "zx90_echo. A single-lobe echo=False primitive is not sufficient."
+            )
+        if not np.isclose(no_echo_duration, total_duration):
+            raise ValueError(
+                "zx90_no_echo and zx90_echo must have the same total duration."
+            )
+        _frequencies(zx90_no_echo, source="zx90_no_echo")
+        full_un_echoed = zx90_no_echo
 
     rotary_angle = getattr(echoed, "rotary_integrated_angle_rad", None)
     rotary_phase = getattr(echoed, "rotary_phase_rad", None)
-    semantic_warnings: tuple[CrDissipationWarning, ...] = ()
     if rotary_angle is None or rotary_phase is None:
         rotary_angle = None
         rotary_phase = None
-        semantic_warnings = (
-            CrDissipationWarning(
-                code="semantic_hamiltonian_approximation",
-                message=(
-                    "The actual calibrated pulse is preserved, but the semantic "
-                    "simulator uses a reconstructable ZX-only CR Hamiltonian."
-                ),
-                affected_outputs=("C", "D", "fidelity"),
-            ),
-            CrDissipationWarning(
-                code="semantic_rotary_not_available",
-                message=(
-                    "Pre-combination rotary angle/phase metadata is unavailable; "
-                    "the actual rotary remains in every measured pulse."
-                ),
-                affected_outputs=("C", "D", "fidelity"),
-            ),
-        )
     else:
         rotary_angle = float(rotary_angle)
         rotary_phase = float(rotary_phase)
@@ -220,7 +270,6 @@ def resolve_zx90_descriptor(
         pi_pulse=pi_pulse,
         rotary_integrated_angle_rad=rotary_angle,
         rotary_phase_rad=rotary_phase,
-        warnings=semantic_warnings,
     )
 
 
@@ -231,11 +280,12 @@ def semantic_cr_lobe(
     descriptor: ZX90Descriptor,
     *,
     sign: Literal[-1, 1],
+    include_rotary: bool = True,
 ) -> SemanticSegment:
     """Build one intended ZX45 lobe with optional semantic rotary metadata."""
     duration = descriptor.cr_lobe_duration_ns
     hamiltonian = rotation_hamiltonian(ZX, sign * np.pi / 4.0, duration)
-    if descriptor.rotary_integrated_angle_rad is not None:
+    if include_rotary and descriptor.rotary_integrated_angle_rad is not None:
         if descriptor.rotary_phase_rad is None:
             raise ValueError("Rotary angle metadata requires rotary phase metadata.")
         axis = (
@@ -293,12 +343,12 @@ def semantic_zx90(descriptor: ZX90Descriptor) -> tuple[SemanticOperation, ...]:
 def semantic_un_echoed_zx90(
     descriptor: ZX90Descriptor,
 ) -> tuple[SemanticOperation, ...]:
-    """Build the A/B same-sign CR-lobe unit with duration-matched blanks."""
+    """Build the A/B same-sign rotary-free unit with duration-matched blanks."""
     blank = _idle_segment(descriptor.echo_slot_duration_ns, "echo-slot-blank")
     return (
-        semantic_cr_lobe(descriptor, sign=1),
+        semantic_cr_lobe(descriptor, sign=1, include_rotary=False),
         *blank,
-        semantic_cr_lobe(descriptor, sign=1),
+        semantic_cr_lobe(descriptor, sign=1, include_rotary=False),
         *blank,
     )
 
@@ -330,7 +380,10 @@ def semantic_protocol_blocks(
             (X_TARGET, np.pi, ix, "IX180"),
         )
     )
-    iz180 = SemanticUnitary(rotation_unitary(Z_TARGET, np.pi), "IZ180(fixed-frame)")
+    iz180 = SemanticUnitary(
+        rotation_unitary(Z_TARGET, np.pi),
+        "IZ180(target+CR-frame)",
+    )
     return {
         PROTOCOL_A: un_echoed * 4,
         PROTOCOL_B: un_echoed * 4,
@@ -346,13 +399,13 @@ def semantic_protocol_blocks(
         ),
         PROTOCOL_D: (
             *zx90,
-            iy180,
-            *zx90,
             iz180,
             *zx90,
             iy180,
             *zx90,
             iz180,
+            *zx90,
+            iy180,
         ),
     }
 
@@ -422,12 +475,12 @@ def _actual_protocol_block(
         with PulseSchedule() as block:
             for _ in range(2):
                 block.call(descriptor.echoed, copy=True)
-                block.add(target, exp.pulse.y180(target))
-                block.barrier()
-                block.call(descriptor.echoed, copy=True)
                 z180 = exp.pulse.z180()
                 block.add(target, z180)
                 block.add(cr_label, z180)
+                block.barrier()
+                block.call(descriptor.echoed, copy=True)
+                block.add(target, exp.pulse.y180(target))
                 block.barrier()
         block.set_frequencies(_frequencies(descriptor.echoed))
         return block
@@ -444,7 +497,7 @@ def _protocol_preparations(
         PROTOCOL_A: _state_preparation(exp, control, target, "0", "+"),
         PROTOCOL_B: _state_preparation(exp, control, target, "1", "+"),
         PROTOCOL_C: _state_preparation(exp, control, target, "+", "+"),
-        PROTOCOL_D: _state_preparation(exp, control, target, "0", "+y"),
+        PROTOCOL_D: _state_preparation(exp, control, target, "0", "0"),
     }
 
 
@@ -452,13 +505,13 @@ def _primary_analyzers(
     exp: Any,
     control: str,
     target: str,
-) -> dict[str, tuple[str, Waveform]]:
+) -> dict[str, tuple[str, Waveform | None]]:
     """Build the common primary analyzers for all four protocols."""
     return {
         PROTOCOL_A: (target, exp.pulse.y90(target)),
         PROTOCOL_B: (target, exp.pulse.y90(target)),
         PROTOCOL_C: (control, exp.pulse.y90(control)),
-        PROTOCOL_D: (target, exp.pulse.x90(target)),
+        PROTOCOL_D: (target, None),
     }
 
 
@@ -498,7 +551,11 @@ def build_protocol_schedules(
             base.set_frequencies(_frequencies(descriptor.echoed))
             bases.append(base)
             analyzer_target, analyzer = primary_analyzers[protocol]
-            sequences.append(append_analyzer(base, analyzer_target, analyzer))
+            sequences.append(
+                base
+                if analyzer is None
+                else append_analyzer(base, analyzer_target, analyzer)
+            )
         actual[protocol] = tuple(sequences)
         base_schedules[protocol] = tuple(bases)
         elapsed[protocol] = count_array * blocks[protocol].duration
@@ -535,6 +592,16 @@ def build_protocol_schedules(
             "zx90_echo_margin_duration_ns": descriptor.echo_margin_duration_ns,
             "iy180_duration_ns": external["iy180"],
             "virtual_iz180_duration_ns": 0.0,
+            "operation_order": (
+                "ZX90",
+                "IZ180",
+                "ZX90",
+                "IY180",
+                "ZX90",
+                "IZ180",
+                "ZX90",
+                "IY180",
+            ),
         },
     }
     return ProtocolSchedules(
@@ -646,6 +713,10 @@ def build_reference_schedules(
                 base.call(units[protocol].repeated(int(count)), copy=True)
             base.set_frequencies(_frequencies(descriptor.echoed))
             analyzer_target, analyzer = analyzers[protocol]
-            sequences.append(append_analyzer(base, analyzer_target, analyzer))
+            sequences.append(
+                base
+                if analyzer is None
+                else append_analyzer(base, analyzer_target, analyzer)
+            )
         result[protocol] = tuple(sequences)
     return result

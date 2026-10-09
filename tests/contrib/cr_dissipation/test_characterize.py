@@ -318,6 +318,8 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     calibration = {"Q0": object(), "Q1": object()}
     calls: list[dict[str, Any]] = []
     bootstrap_calls: list[dict[str, Any]] = []
+    no_echo_override = PulseSchedule()
+    resolved_pulses: list[tuple[Any, Any]] = []
 
     def measure_gef(*_args: Any, **kwargs: Any) -> Any:
         calls.append(kwargs)
@@ -332,7 +334,18 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
         )
 
     monkeypatch.setattr(health, "_load_idle_noise", lambda *_args: (object(), object()))
-    monkeypatch.setattr(health, "resolve_zx90_descriptor", lambda *_args: descriptor)
+
+    def resolve_descriptor(
+        _exp: Any,
+        _control: str,
+        _target: str,
+        zx90_echo: Any,
+        zx90_no_echo: Any,
+    ) -> Any:
+        resolved_pulses.append((zx90_echo, zx90_no_echo))
+        return descriptor
+
+    monkeypatch.setattr(health, "resolve_zx90_descriptor", resolve_descriptor)
     monkeypatch.setattr(health, "build_protocol_schedules", lambda *_args: schedules)
     monkeypatch.setattr(health, "measure_gef_populations", measure_gef)
 
@@ -367,6 +380,7 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
         gef_measurement_n_shots=444,
         gef_calibration_n_shots=888,
         gef_bootstrap_n_resamples=12,
+        zx90_no_echo=no_echo_override,
         idle_t1={"Q0": 1.0, "Q1": 1.0},
         idle_t2_echo={"Q0": 1.0, "Q1": 1.0},
         plot=True,
@@ -389,6 +403,8 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     assert calls[1]["progress_label"].startswith(health.PROTOCOL_C)
     assert calls[2]["progress_label"].startswith(health.PROTOCOL_D)
     assert shown == list(protocols)
+    assert resolved_pulses == [(None, no_echo_override)]
+    assert result.data["pulse_timing"]["zx90_full_un_echoed"]["source"] == "override"
     assert result.data["measurement_options"]["n_shots"] == 222
     assert result.data["measurement_options"]["gef_measurement_n_shots"] == 444
     assert result.data["measurement_options"]["primary_bootstrap"] == {
@@ -581,6 +597,7 @@ def test_all_orthogonal_diagnostics_use_pauli_readout(
     }
     assert set(processed[health.PROTOCOL_C].component_roles.values()) == {"control"}
     assert set(processed[health.PROTOCOL_D].component_roles.values()) == {"target"}
+    assert set(processed[health.PROTOCOL_D].expectations) == {"Q1:X", "Q1:Y"}
     assert np.all(processed[health.PROTOCOL_A].expectations["Q0:X"] < 0.0)
     assert processed[health.PROTOCOL_C].standard_errors
     assert processed[health.PROTOCOL_D].standard_errors
@@ -668,13 +685,19 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
         component_roles={"Q0:Y": "control", "Q1:Z": "target"},
     )
 
-    def measured(data: Any, duration: float, *, with_orthogonal: bool = False) -> Any:
+    def measured(
+        data: Any,
+        duration: float,
+        *,
+        with_orthogonal: bool = False,
+        with_reference: bool = False,
+    ) -> Any:
         elapsed = counts.astype(float) * duration
         return health.CrDissipationProtocolMeasurements(
             elapsed,
             elapsed * 0.5,
             data,
-            None,
+            data if with_reference else None,
             orthogonal if with_orthogonal else None,
         )
 
@@ -683,7 +706,7 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
         4 * counts,
         measured(ab_data, 100.0, with_orthogonal=True),
         measured(ab_data, 100.0),
-        measured(cd_data, 200.0),
+        measured(cd_data, 200.0, with_reference=True),
         measured(cd_data, 300.0),
     )
     fitted_decay = SimpleNamespace(fitted_values=np.linspace(1.0, 0.45, counts.size))
@@ -754,15 +777,48 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
         assert figure.layout.legend.x == pytest.approx(1.02)
 
     a_layout = figures[health.PROTOCOL_A].layout
-    for row in range(1, 6):
-        suffix = "" if row == 1 else str(row)
+    for panel in range(1, 6):
+        suffix = "" if panel == 1 else str(panel)
         bottom_axis = getattr(a_layout, f"xaxis{suffix}")
-        top_axis = getattr(a_layout, f"xaxis{5 + row}")
+        top_axis = getattr(a_layout, f"xaxis{6 + panel}")
         assert bottom_axis.showticklabels
+        assert bottom_axis.title.text == "Elapsed sequence time [us]"
         assert top_axis.side == "top"
         assert top_axis.overlaying == f"x{suffix}"
-        assert tuple(top_axis.ticktext) == tuple(str(value) for value in 4 * counts)
+        assert top_axis.title.text == "CR gates (4n)"
+        bottom_ticks = np.asarray(bottom_axis.tickvals, dtype=float)
+        top_ticks = np.asarray(top_axis.tickvals, dtype=float)
+        assert np.allclose(np.diff(bottom_ticks), np.diff(bottom_ticks)[0])
+        assert np.allclose(np.diff(top_ticks), np.diff(top_ticks)[0])
+        assert tuple(top_axis.ticktext) == tuple(str(int(value)) for value in top_ticks)
+        protocol_duration_us = float(
+            np.max(getattr(measurements, health.PROTOCOL_A).elapsed_time_ns) / 1000.0
+        )
+        expected_gate_limit = int(4 * counts[-1]) * (
+            expected_x_range[1] / protocol_duration_us
+        )
+        assert tuple(top_axis.range) == pytest.approx((0, expected_gate_limit))
+        y_axis = getattr(a_layout, f"yaxis{suffix}")
+        assert y_axis.title.text
+    assert a_layout.width == 1500
+    assert a_layout.xaxis.domain[1] < a_layout.xaxis2.domain[0]
+    assert a_layout.xaxis6.visible is False
+    assert a_layout.yaxis6.visible is False
+    assert all(annotation.yshift == 72 for annotation in a_layout.annotations[:5])
     assert len(a_layout.shapes) == 5
+    c_layout = figures[health.PROTOCOL_C].layout
+    reference_note = next(
+        annotation
+        for annotation in c_layout.annotations
+        if str(annotation.text).startswith("Reference is diagnostic")
+    )
+    assert reference_note.y == pytest.approx(-0.30)
+    assert c_layout.margin.b == 155
+    d_titles = {
+        str(annotation.text)
+        for annotation in figures[health.PROTOCOL_D].layout.annotations
+    }
+    assert "Target Zge" in d_titles
 
 
 @pytest.mark.parametrize(

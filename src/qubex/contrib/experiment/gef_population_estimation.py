@@ -797,7 +797,7 @@ def measure_gef_populations(
         )
         if enable_tqdm and resolved_progress_label is not None:
             print(
-                f"\nMeasuring: {resolved_progress_label} — GEF calibration",
+                f"Measuring: {resolved_progress_label} — GEF calibration",
                 flush=True,
             )
         calibration_by_target = calibrate_gef_population(
@@ -828,7 +828,7 @@ def measure_gef_populations(
     }
     if enable_tqdm and resolved_progress_label is not None:
         print(
-            f"\nMeasuring: {resolved_progress_label} — GEF populations",
+            f"Measuring: {resolved_progress_label} — GEF populations",
             flush=True,
         )
     batch_iq, batch_summaries = _measure_configurations(

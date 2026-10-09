@@ -15,4 +15,9 @@ Modules are organized by responsibility and follow the execution flow:
 - `types`: immutable records exchanged between these layers.
 
 Only `qubex.contrib.experiment.cr_dissipation` is a public API.
+
+The protocol split is intentional: A/B estimate population exchange, target
+T1rho, leakage, and seepage; C estimates control pure dephasing; D estimates
+target rotating-frame pure dephasing. Reference and orthogonal acquisitions are
+diagnostic-only.
 """

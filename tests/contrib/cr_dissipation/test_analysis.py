@@ -668,7 +668,6 @@ def descriptor() -> ZX90Descriptor:
         pi,
         None,
         None,
-        (),
     )
 
 
@@ -696,6 +695,26 @@ def test_c_d_observable_is_not_leakage_normalized() -> None:
     assert sign == 1.0
     np.testing.assert_allclose(values, [0.5, 0.4])
     assert errors[0] == pytest.approx(np.sqrt((4.0 + 9.0 - 2.0) * 1e-4))
+
+
+def test_protocol_d_z_observable_keeps_the_pg_minus_pe_sign() -> None:
+    """Direct D Z readout uses Pg-Pe without initial-sign normalization."""
+    population = np.array([[0.2, 0.7, 0.1], [0.1, 0.5, 0.4]])
+    covariance = np.tile(np.eye(3) * 1e-4, (2, 1, 1))
+    series = GefPopulationSeries(
+        population,
+        covariance,
+        np.sqrt(np.diagonal(covariance, axis1=1, axis2=2)),
+        population.copy(),
+    )
+
+    values, _, sign = nonnormalized_ge_expectation(
+        series,
+        align_initial_sign=False,
+    )
+
+    assert sign == 1.0
+    np.testing.assert_allclose(values, [-0.5, -0.4])
 
 
 def test_joint_control_fit_recovers_four_rates_and_excludes_n_zero() -> None:

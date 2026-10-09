@@ -36,7 +36,7 @@ from .pulses import (
 )
 from .simulation import (
     X_CONTROL,
-    Y_TARGET,
+    Z_TARGET,
     CrNoiseRates,
     SemanticOperation,
     compose_channel,
@@ -175,11 +175,17 @@ def computational_polarization(
 
 def nonnormalized_ge_expectation(
     series: GefPopulationSeries,
+    *,
+    align_initial_sign: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], float]:
-    """Return signed non-normalized `Pg-Pe` and its full-covariance SE."""
+    """Return non-normalized `Pg-Pe` and its full-covariance standard error."""
     population = np.asarray(series.population, dtype=np.float64)
     difference = population[:, 0] - population[:, 1]
-    sign = 1.0 if difference.size == 0 or difference[0] >= 0.0 else -1.0
+    sign = (
+        1.0
+        if not align_initial_sign or difference.size == 0 or difference[0] >= 0.0
+        else -1.0
+    )
     values = sign * difference
     errors = np.full(values.shape, np.nan, dtype=np.float64)
     vector = np.array([1.0, -1.0, 0.0], dtype=np.float64)
@@ -1695,8 +1701,8 @@ def _extract_idle_equivalent_baseline(
     d_raw = simulate_repeated_observable(
         schedules.semantic_blocks[PROTOCOL_D],
         counts,
-        state_density("g", "+y"),
-        Y_TARGET,
+        state_density("g", "g"),
+        Z_TARGET,
         control_idle=control_idle,
         target_idle=target_idle,
         cr_rates=None,
@@ -1724,8 +1730,8 @@ def _extract_idle_equivalent_baseline(
         d_data.primary_standard_error,
         counts,
         schedules.semantic_blocks[PROTOCOL_D],
-        initial_density=state_density("g", "+y"),
-        observable=Y_TARGET,
+        initial_density=state_density("g", "g"),
+        observable=Z_TARGET,
         control_idle=control_idle,
         target_idle=target_idle,
         fixed_rates=baseline_rates,
@@ -1950,10 +1956,9 @@ def analyze_cr_dissipation(
     target_idle: IdleNoiseParameters,
     *,
     covariance_rcond: float,
-    initial_warnings: Sequence[CrDissipationWarning] = (),
 ) -> CrDissipationAnalysis:
     """Run the complete conditional analysis on processed measurements."""
-    warnings = list(initial_warnings)
+    warnings: list[CrDissipationWarning] = []
     idle_baseline = _extract_idle_equivalent_baseline(
         measurements,
         schedules,
@@ -2088,8 +2093,8 @@ def analyze_cr_dissipation(
             d_data.primary_standard_error,
             counts,
             schedules.semantic_blocks[PROTOCOL_D],
-            initial_density=state_density("g", "+y"),
-            observable=Y_TARGET,
+            initial_density=state_density("g", "g"),
+            observable=Z_TARGET,
             control_idle=control_idle,
             target_idle=target_idle,
             fixed_rates=fixed,
@@ -2311,6 +2316,7 @@ def analyze_cr_dissipation(
             "cross_protocol_covariance_approximation": "block_diagonal",
             "idle_equivalent_extraction": "non_recursive_synthetic_baseline",
             "cr_sign_dependent_dissipation": False,
+            "protocol_d_primary_observable": "target_Zge_unnormalized_Pg_minus_Pe",
         },
     )
 

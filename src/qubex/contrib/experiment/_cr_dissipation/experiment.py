@@ -14,8 +14,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from itertools import pairwise
+from math import ceil
 from numbers import Integral, Real
-from typing import Any
+from typing import Any, TypedDict, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -462,7 +463,10 @@ def _protocol_data(
         names,
         control if protocol == PROTOCOL_C else target,
     )
-    primary, primary_error, _ = nonnormalized_ge_expectation(primary_series)
+    primary, primary_error, _ = nonnormalized_ge_expectation(
+        primary_series,
+        align_initial_sign=protocol != PROTOCOL_D,
+    )
     return CrDissipationProtocolData(
         control_gef=primary_series if protocol == PROTOCOL_C else None,
         target_gef=primary_series if protocol == PROTOCOL_D else None,
@@ -576,7 +580,7 @@ def _orthogonal_acquisition(
         PROTOCOL_A: ((control, "X"), (control, "Y"), (target, "Y"), (target, "Z")),
         PROTOCOL_B: ((control, "X"), (control, "Y"), (target, "Y"), (target, "Z")),
         PROTOCOL_C: ((control, "Y"), (control, "Z")),
-        PROTOCOL_D: ((target, "X"), (target, "Z")),
+        PROTOCOL_D: ((target, "X"), (target, "Y")),
     }
 
     def diagnostic_schedule(
@@ -766,7 +770,7 @@ def _line_trace(
 def _announce_acquisition(description: str, *, enable_tqdm: bool) -> None:
     """Print an acquisition heading immediately before its progress bar."""
     if enable_tqdm:
-        print(f"\nMeasuring: {description}", flush=True)
+        print(f"Measuring: {description}", flush=True)
 
 
 def _pf_axis_range(values: Sequence[NDArray[np.float64] | None]) -> list[float]:
@@ -787,41 +791,75 @@ def _pf_axis_range(values: Sequence[NDArray[np.float64] | None]) -> list[float]:
     return [lower, upper]
 
 
-def _add_zero_line(figure: go.Figure, row: int) -> None:
+def _panel_position(panel: int, columns: int) -> tuple[int, int]:
+    """Return a one-based subplot row and column for a panel index."""
+    return (panel - 1) // columns + 1, (panel - 1) % columns + 1
+
+
+class _SubplotCoordinates(TypedDict):
+    """Identify one Plotly subplot using one-based coordinates."""
+
+    row: int
+    col: int
+
+
+def _panel_kwargs(panel: int, columns: int) -> _SubplotCoordinates:
+    """Return Plotly subplot coordinates for one logical panel."""
+    row, col = _panel_position(panel, columns)
+    return {"row": row, "col": col}
+
+
+def _add_zero_line(figure: go.Figure, panel: int, columns: int) -> None:
     """Add a subtle zero baseline to one subplot."""
     # Plotly's type stub accepts axis IDs only, while the runtime also accepts
     # integer subplot coordinates.
     plotly_figure: Any = figure
+    row, col = _panel_position(panel, columns)
     plotly_figure.add_hline(
         y=0.0,
         line={"color": "rgba(80, 80, 80, 0.45)", "width": 1},
         row=row,
-        col=1,
+        col=col,
     )
 
 
 def _configure_protocol_xaxes(
     figure: go.Figure,
     *,
+    panel_count: int,
     rows: int,
+    columns: int,
     maximum_time_us: float,
     time_us: NDArray[np.float64],
     cr_gate_counts: Sequence[int],
 ) -> None:
-    """Show elapsed time below and CR-gate counts above every subplot."""
-    ticktext = [str(value) for value in cr_gate_counts]
-    for row in range(1, rows + 1):
-        suffix = "" if row == 1 else str(row)
+    """Add independent, uniformly spaced time and CR-gate axes to every panel."""
+    time_ticks = np.linspace(0.0, maximum_time_us, 6)
+    measured_maximum_time_us = float(np.max(time_us))
+    measured_maximum_gate_count = int(max(cr_gate_counts, default=0))
+    gate_limit = (
+        measured_maximum_gate_count * maximum_time_us / measured_maximum_time_us
+    )
+    gate_step = max(4, 4 * ceil(gate_limit / 20.0))
+    gate_ticks = np.arange(0, int(np.floor(gate_limit)) + 1, gate_step, dtype=np.int64)
+    if gate_ticks.size == 0:
+        gate_ticks = np.array([0], dtype=np.int64)
+    grid_cells = rows * columns
+    for panel in range(1, panel_count + 1):
+        row, col = _panel_position(panel, columns)
+        suffix = "" if panel == 1 else str(panel)
         base_axis = f"x{suffix}"
         y_axis = f"y{suffix}"
-        top_layout_key = f"xaxis{rows + row}"
+        top_layout_key = f"xaxis{grid_cells + panel}"
         figure.update_xaxes(
             range=[0.0, maximum_time_us],
-            tickvals=time_us,
+            tickmode="array",
+            tickvals=time_ticks,
             showticklabels=True,
-            title_text="Elapsed sequence time [us]" if row == rows else None,
+            title_text="Elapsed sequence time [us]",
+            automargin=True,
             row=row,
-            col=1,
+            col=col,
         )
         figure.update_layout(
             {
@@ -829,22 +867,24 @@ def _configure_protocol_xaxes(
                     "overlaying": base_axis,
                     "anchor": y_axis,
                     "side": "top",
-                    "range": [0.0, maximum_time_us],
-                    "tickvals": time_us,
-                    "ticktext": ticktext,
+                    "range": [0.0, gate_limit],
+                    "tickmode": "array",
+                    "tickvals": gate_ticks,
+                    "ticktext": [str(value) for value in gate_ticks],
                     "showticklabels": True,
                     "showgrid": False,
-                    "title": "CR gates (4n)" if row == 1 else None,
+                    "title": "CR gates (4n)",
+                    "automargin": True,
                 }
             }
         )
 
 
 def _shift_subplot_titles(figure: go.Figure, count: int) -> None:
-    """Move only subplot-title annotations below their upper tick labels."""
-    annotations: Any = figure.layout.annotations
+    """Place panel titles above their upper axis title and tick labels."""
+    annotations: Any = cast(Any, figure.layout).annotations
     for annotation in annotations[:count]:
-        annotation.update(yshift=-16)
+        annotation.update(yshift=72)
 
 
 def _marker_trace(
@@ -900,18 +940,29 @@ def _plot_cr_dissipation(
                 target_pf_row = 4
                 control_orthogonal_row = 2
                 target_orthogonal_row = 5
+                y_titles = [
+                    "Population",
+                    "Expectation value",
+                    "Xcomp",
+                    "Pf",
+                    "Expectation value",
+                ]
             else:
                 titles = ["Control GEF population", "Target Xcomp", "Target Pf"]
                 target_x_row = 2
                 target_pf_row = 3
                 control_orthogonal_row = None
                 target_orthogonal_row = None
+                y_titles = ["Population", "Xcomp", "Pf"]
+            columns = min(2, len(titles))
+            rows = ceil(len(titles) / columns)
             figure = make_subplots(
-                rows=len(titles),
-                cols=1,
-                shared_xaxes=True,
+                rows=rows,
+                cols=columns,
+                shared_xaxes=False,
                 subplot_titles=titles,
-                vertical_spacing=0.06,
+                vertical_spacing=0.18 if rows > 1 else 0.0,
+                horizontal_spacing=0.12,
             )
             control = measured.actual.control_gef
             fitted = analysis.fits.control_population_ab.fitted_populations.get(
@@ -930,8 +981,7 @@ def _plot_cr_dissipation(
                             name=f"actual {state}",
                             color=color,
                         ),
-                        row=1,
-                        col=1,
+                        **_panel_kwargs(1, columns),
                     )
                     if fitted is not None:
                         figure.add_trace(
@@ -941,8 +991,7 @@ def _plot_cr_dissipation(
                                 name=f"fit {state}",
                                 color=color,
                             ),
-                            row=1,
-                            col=1,
+                            **_panel_kwargs(1, columns),
                         )
                     if idle_control is not None:
                         figure.add_trace(
@@ -953,8 +1002,7 @@ def _plot_cr_dissipation(
                                 color=color,
                                 dash="dash",
                             ),
-                            row=1,
-                            col=1,
+                            **_panel_kwargs(1, columns),
                         )
             if measured.actual.target_x_comp is not None:
                 figure.add_trace(
@@ -965,8 +1013,7 @@ def _plot_cr_dissipation(
                         name="actual Xcomp",
                         color=_PRIMARY_COLOR,
                     ),
-                    row=target_x_row,
-                    col=1,
+                    **_panel_kwargs(target_x_row, columns),
                 )
             target = measured.actual.target_gef
             if target is not None:
@@ -979,8 +1026,7 @@ def _plot_cr_dissipation(
                         name="actual target Pf",
                         color=_PF_COLOR,
                     ),
-                    row=target_pf_row,
-                    col=1,
+                    **_panel_kwargs(target_pf_row, columns),
                 )
             t1_fit = (
                 analysis.fits.target_a_t1rho
@@ -1028,8 +1074,7 @@ def _plot_cr_dissipation(
                         color=color,
                         dash="dash" if name.startswith("idle-only") else "solid",
                     ),
-                    row=row,
-                    col=1,
+                    **_panel_kwargs(row, columns),
                 )
             if measured.reference is not None:
                 reference_control = measured.reference.control_gef
@@ -1043,8 +1088,7 @@ def _plot_cr_dissipation(
                                 color=_STATE_COLORS[state],
                                 symbol="circle-open",
                             ),
-                            row=1,
-                            col=1,
+                            **_panel_kwargs(1, columns),
                         )
                 if measured.reference.target_x_comp is not None:
                     figure.add_trace(
@@ -1055,8 +1099,7 @@ def _plot_cr_dissipation(
                             color=_PRIMARY_COLOR,
                             symbol="circle-open",
                         ),
-                        row=target_x_row,
-                        col=1,
+                        **_panel_kwargs(target_x_row, columns),
                     )
                 reference_target = measured.reference.target_gef
                 if reference_target is not None:
@@ -1069,17 +1112,19 @@ def _plot_cr_dissipation(
                             color=_PF_COLOR,
                             symbol="circle-open",
                         ),
-                        row=target_pf_row,
-                        col=1,
+                        **_panel_kwargs(target_pf_row, columns),
                     )
-            figure.update_yaxes(range=[0.0, 1.0], row=1, col=1)
-            figure.update_yaxes(range=[-1.0, 1.0], row=target_x_row, col=1)
+            figure.update_yaxes(range=[0.0, 1.0], **_panel_kwargs(1, columns))
             figure.update_yaxes(
-                range=_pf_axis_range(pf_values), row=target_pf_row, col=1
+                range=[-1.0, 1.0], **_panel_kwargs(target_x_row, columns)
             )
-            _add_zero_line(figure, 1)
-            _add_zero_line(figure, target_x_row)
-            _add_zero_line(figure, target_pf_row)
+            figure.update_yaxes(
+                range=_pf_axis_range(pf_values),
+                **_panel_kwargs(target_pf_row, columns),
+            )
+            _add_zero_line(figure, 1, columns)
+            _add_zero_line(figure, target_x_row, columns)
+            _add_zero_line(figure, target_pf_row, columns)
             if has_orthogonal and measured.orthogonal is not None:
                 if control_orthogonal_row is None or target_orthogonal_row is None:
                     raise ValueError("Missing A/B orthogonal plot rows.")
@@ -1107,25 +1152,33 @@ def _plot_cr_dissipation(
                             name=name,
                             color=fitting.COLORS[(index + 3) % len(fitting.COLORS)],
                         ),
-                        row=row,
-                        col=1,
+                        **_panel_kwargs(row, columns),
                     )
                 figure.update_yaxes(
-                    range=[-1.0, 1.0], row=control_orthogonal_row, col=1
+                    range=[-1.0, 1.0],
+                    **_panel_kwargs(control_orthogonal_row, columns),
                 )
-                figure.update_yaxes(range=[-1.0, 1.0], row=target_orthogonal_row, col=1)
-                _add_zero_line(figure, control_orthogonal_row)
-                _add_zero_line(figure, target_orthogonal_row)
+                figure.update_yaxes(
+                    range=[-1.0, 1.0],
+                    **_panel_kwargs(target_orthogonal_row, columns),
+                )
+                _add_zero_line(figure, control_orthogonal_row, columns)
+                _add_zero_line(figure, target_orthogonal_row, columns)
         else:
-            titles = ["Control Xge" if protocol == PROTOCOL_C else "Target Yge"]
+            titles = ["Control Xge" if protocol == PROTOCOL_C else "Target Zge"]
+            y_titles = ["Expectation value"]
             if has_orthogonal:
                 titles.append("Orthogonal diagnostics")
+                y_titles.append("Expectation value")
+            columns = min(2, len(titles))
+            rows = ceil(len(titles) / columns)
             figure = make_subplots(
-                rows=len(titles),
-                cols=1,
-                shared_xaxes=True,
+                rows=rows,
+                cols=columns,
+                shared_xaxes=False,
                 subplot_titles=titles,
-                vertical_spacing=0.06,
+                vertical_spacing=0.18 if rows > 1 else 0.0,
+                horizontal_spacing=0.12,
             )
             values = measured.actual.primary_expectation
             errors = measured.actual.primary_standard_error
@@ -1138,8 +1191,7 @@ def _plot_cr_dissipation(
                         name="actual",
                         color=_PRIMARY_COLOR,
                     ),
-                    row=1,
-                    col=1,
+                    **_panel_kwargs(1, columns),
                 )
                 fit = (
                     analysis.fits.control_pure_dephasing_c
@@ -1153,8 +1205,7 @@ def _plot_cr_dissipation(
                         name="physical fit",
                         color=_PRIMARY_COLOR,
                     ),
-                    row=1,
-                    col=1,
+                    **_panel_kwargs(1, columns),
                 )
             idle_values = analysis.idle_predictions[protocol].observables.get(
                 "primary_expectation"
@@ -1168,8 +1219,7 @@ def _plot_cr_dissipation(
                         color=_PRIMARY_COLOR,
                         dash="dash",
                     ),
-                    row=1,
-                    col=1,
+                    **_panel_kwargs(1, columns),
                 )
             if measured.reference is not None:
                 figure.add_trace(
@@ -1180,11 +1230,10 @@ def _plot_cr_dissipation(
                         color=_PRIMARY_COLOR,
                         symbol="circle-open",
                     ),
-                    row=1,
-                    col=1,
+                    **_panel_kwargs(1, columns),
                 )
-            figure.update_yaxes(range=[-1.0, 1.0], row=1, col=1)
-            _add_zero_line(figure, 1)
+            figure.update_yaxes(range=[-1.0, 1.0], **_panel_kwargs(1, columns))
+            _add_zero_line(figure, 1, columns)
             if has_orthogonal and measured.orthogonal is not None:
                 for index, (name, component) in enumerate(
                     measured.orthogonal.expectations.items()
@@ -1197,11 +1246,10 @@ def _plot_cr_dissipation(
                             name=name,
                             color=fitting.COLORS[(index + 3) % len(fitting.COLORS)],
                         ),
-                        row=2,
-                        col=1,
+                        **_panel_kwargs(2, columns),
                     )
-                figure.update_yaxes(range=[-1.0, 1.0], row=2, col=1)
-                _add_zero_line(figure, 2)
+                figure.update_yaxes(range=[-1.0, 1.0], **_panel_kwargs(2, columns))
+                _add_zero_line(figure, 2, columns)
             if protocol == PROTOCOL_C and measured.reference is not None:
                 figure.add_annotation(
                     text=(
@@ -1211,20 +1259,38 @@ def _plot_cr_dissipation(
                     xref="paper",
                     yref="paper",
                     x=0.0,
-                    y=-0.14,
+                    y=-0.30,
                     showarrow=False,
                 )
+        has_reference_note = protocol == PROTOCOL_C and measured.reference is not None
         figure.update_layout(
             template=viz.DEFAULT_TEMPLATE,
             title={"text": protocol, "x": 0.5, "xanchor": "center", "y": 0.995},
-            height=245 * len(titles) + 80,
-            margin={"t": 95, "r": 210, "b": 75, "l": 75},
+            width=1500,
+            height=420 * rows + 140,
+            margin={
+                "t": 165,
+                "r": 220,
+                "b": 155 if has_reference_note else 90,
+                "l": 95,
+            },
             legend={"x": 1.02, "xanchor": "left", "y": 1.0, "yanchor": "top"},
         )
+        for panel, y_title in enumerate(y_titles, start=1):
+            figure.update_yaxes(
+                title_text=y_title,
+                automargin=True,
+                **_panel_kwargs(panel, columns),
+            )
+        for panel in range(len(titles) + 1, rows * columns + 1):
+            figure.update_xaxes(visible=False, **_panel_kwargs(panel, columns))
+            figure.update_yaxes(visible=False, **_panel_kwargs(panel, columns))
         _shift_subplot_titles(figure, len(titles))
         _configure_protocol_xaxes(
             figure,
-            rows=len(titles),
+            panel_count=len(titles),
+            rows=rows,
+            columns=columns,
             maximum_time_us=maximum_time_us,
             time_us=time_us,
             cr_gate_counts=tuple(int(value) for value in measurements.cr_gate_counts),
@@ -1332,6 +1398,7 @@ def characterize_cr_dissipation(
     shot_interval: float | None = None,
     measure_reference: bool = False,
     measure_orthogonal_components: bool = False,
+    zx90_no_echo: PulseSchedule | None = None,
     zx90_echo: PulseSchedule | None = None,
     idle_t1: Mapping[str, float] | None = None,
     idle_t2_echo: Mapping[str, float] | None = None,
@@ -1350,7 +1417,14 @@ def characterize_cr_dissipation(
 
     All public time inputs and raw timings are in ns; rates are in 1/ns. C/D
     use the non-normalized qutrit observable `Pg-Pe`. Reference and orthogonal
-    acquisitions are diagnostic-only and never enter primary inference.
+    acquisitions are diagnostic-only and never enter primary inference. A/B use
+    same-sign CR lobes with the calibrated cancellation tone but without rotary;
+    C/D retain the complete calibrated echoed ZX90. The C/D and fidelity
+    forward models use intended rotations with actual pulse timing. If the
+    calibrated schedule does not expose pre-combination rotary angle/phase
+    metadata, its semantic rotary term is omitted under the echoed-gate
+    approximation that the coherent IX rotation cancels; the hardware pulse is
+    unchanged.
 
     Parameters
     ----------
@@ -1379,9 +1453,20 @@ def characterize_cr_dissipation(
     measure_orthogonal_components : bool, optional
         Whether to acquire diagnostic components orthogonal to each primary
         observable using Pauli readout. These data never enter primary inference.
+    zx90_no_echo : PulseSchedule | None, optional
+        Optional full un-echoed ZX90-equivalent schedule used by A/B. It must
+        contain both same-sign CR lobes, expose `echo=False`, and match the total
+        and CR-active durations of `zx90_echo`. It is also expected to contain no
+        rotary component; this cannot be inferred from a generic schedule. A
+        single-lobe schedule returned by `exp.pulse.zx90(..., echo=False)` is not
+        sufficient. When omitted, build a rotary-free schedule from the calibrated
+        CR and cancellation waveforms.
     zx90_echo : PulseSchedule | None, optional
         Optional echoed calibrated ZX90 schedule. When omitted, resolve it from
-        the pulse service.
+        the pulse service. This schedule is used by C/D and fidelity simulation.
+        When `zx90_no_echo` is omitted, the pulse service is also queried with
+        zero rotary to build A/B; that schedule must match this schedule's timing
+        and CR waveform.
     idle_t1, idle_t2_echo : Mapping[str, float] | None, optional
         Optional mappings of qubit labels to fixed idle coherence times in ns.
         When omitted, load the saved `t1` and `t2_echo` parameters.
@@ -1499,7 +1584,13 @@ def characterize_cr_dissipation(
         idle_t1,
         idle_t2_echo,
     )
-    descriptor = resolve_zx90_descriptor(exp, control, target, zx90_echo)
+    descriptor = resolve_zx90_descriptor(
+        exp,
+        control,
+        target,
+        zx90_echo,
+        zx90_no_echo,
+    )
     schedules = build_protocol_schedules(exp, control, target, descriptor, counts)
 
     reference_calibration: _ReferenceIx45Calibration | None = None
@@ -1681,7 +1772,6 @@ def characterize_cr_dissipation(
         control_idle,
         target_idle,
         covariance_rcond=covariance_rcond,
-        initial_warnings=descriptor.warnings,
     )
     figures = _plot_cr_dissipation(measurements, analysis) if plot else {}
     if plot:
@@ -1699,6 +1789,8 @@ def characterize_cr_dissipation(
         "zx90_full_un_echoed": {
             "duration_ns": float(descriptor.full_un_echoed.duration),
             "cr_active_duration_ns": descriptor.cr_active_duration_ns,
+            "rotary_included": False,
+            "source": "override" if zx90_no_echo is not None else "generated",
         },
         "protocols": schedules.timing,
         "reference_ix45": (
@@ -1717,6 +1809,12 @@ def characterize_cr_dissipation(
             }
         ),
         "semantic_rotary_available": descriptor.rotary_integrated_angle_rad is not None,
+        "actual_echoed_pulse_preserved": True,
+        "semantic_rotary_treatment": (
+            "explicit"
+            if descriptor.rotary_integrated_angle_rad is not None
+            else "omitted_assumed_echo_cancelled"
+        ),
     }
     measurement_options = {
         "repetition_counts": counts,
@@ -1737,6 +1835,18 @@ def characterize_cr_dissipation(
             PROTOCOL_B: "gef_control_and_target",
             PROTOCOL_C: "gef_control_only",
             PROTOCOL_D: "gef_target_only",
+        },
+        "primary_observable": {
+            PROTOCOL_A: "target_Xcomp_and_control_GEF",
+            PROTOCOL_B: "target_Xcomp_and_control_GEF",
+            PROTOCOL_C: "control_Xge",
+            PROTOCOL_D: "target_Zge_unnormalized_Pg_minus_Pe",
+        },
+        "orthogonal_observables": {
+            PROTOCOL_A: ("control_X", "control_Y", "target_Y", "target_Z"),
+            PROTOCOL_B: ("control_X", "control_Y", "target_Y", "target_Z"),
+            PROTOCOL_C: ("control_Y", "control_Z"),
+            PROTOCOL_D: ("target_X", "target_Y"),
         },
         "primary_bootstrap": {
             PROTOCOL_A: {
@@ -1774,6 +1884,11 @@ def characterize_cr_dissipation(
         "sigma_point_covariance_psd_relative_tolerance": PSD_RELATIVE_TOLERANCE,
         "cr_sign_dependent_dissipation": False,
         "semantic_hamiltonian_model": "intended_rotation_with_actual_timing",
+        "semantic_rotary_treatment": (
+            "explicit"
+            if descriptor.rotary_integrated_angle_rad is not None
+            else "omitted_assumed_echo_cancelled"
+        ),
     }
     actual_raw_iq = _merge_result_branch(actual_results, "raw_iq")
     population_fits = _merge_result_branch(actual_results, "fits")
