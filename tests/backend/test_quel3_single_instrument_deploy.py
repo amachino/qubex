@@ -8,7 +8,11 @@ from typing import Any, cast
 
 import pytest
 
-from qubex.backend.quel3 import InstrumentSpec, Quel3BackendController
+from qubex.backend.quel3 import (
+    InstrumentConfiguration,
+    InstrumentSpec,
+    Quel3BackendController,
+)
 from qubex.backend.quel3.infra import Quel3ResourceReader
 from qubex.backend.quel3.infra.quelware_imports import QuelwareInstrumentEntities
 from qubex.backend.quel3.instrument_cache import InstrumentCache
@@ -27,6 +31,39 @@ def _spec(alias: str = "Q02", port_id: str = "unit-a:tx_p01") -> InstrumentSpec:
         frequency_range_min_hz=4e9,
         frequency_range_max_hz=6e9,
     )
+
+
+def test_modify_target_frequencies_preserves_instrument_width_and_other_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Frequency changes should append matching aliases with their existing range widths."""
+    controller = Quel3BackendController()
+    original = _spec("Q00")
+    sibling = _spec("Q01")
+    monkeypatch.setattr(
+        controller,
+        "get_instrument_configuration",
+        lambda: InstrumentConfiguration(instruments=(original, sibling)),
+    )
+    deployed: list[InstrumentSpec] = []
+
+    def deploy(*, instrument: InstrumentSpec, append: bool) -> Any:
+        assert append is True
+        deployed.append(instrument)
+        return None
+
+    monkeypatch.setattr(controller, "deploy_instrument", deploy)
+    controller.modify_target_frequencies({"Q00": 7.0})
+
+    assert deployed == [
+        InstrumentSpec(
+            alias="Q00",
+            port_id=original.port_id,
+            role=original.role,
+            frequency_range_min_hz=6e9,
+            frequency_range_max_hz=8e9,
+        )
+    ]
 
 
 def _info(

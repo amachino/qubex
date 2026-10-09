@@ -464,6 +464,32 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
 
+    def modify_target_frequencies(
+        self, target_frequencies_ghz: dict[str, float]
+    ) -> None:
+        """Redeploy target instruments at the specified frequencies in GHz."""
+        if not target_frequencies_ghz:
+            return
+        instruments = {
+            instrument.alias: instrument
+            for instrument in self.get_instrument_configuration().instruments
+        }
+        for alias, frequency in target_frequencies_ghz.items():
+            instrument = instruments[alias]
+            margin = (
+                instrument.frequency_range_max_hz - instrument.frequency_range_min_hz
+            ) / 2
+            self.deploy_instrument(
+                instrument=InstrumentSpec(
+                    port_id=instrument.port_id,
+                    alias=alias,
+                    role=instrument.role,
+                    frequency_range_min_hz=frequency * 1e9 - margin,
+                    frequency_range_max_hz=frequency * 1e9 + margin,
+                ),
+                append=True,
+            )
+
     def deploy_instruments(
         self,
         *,
