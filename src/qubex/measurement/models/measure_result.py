@@ -85,11 +85,17 @@ class MeasureData:
     raw: NDArray
     classifier: StateClassifier | None = None
     sampling_period: float = SAMPLING_PERIOD_NS
+    preclassified: bool = False
 
     def __post_init__(self) -> None:
         """Validate sampling metadata values."""
         if self.sampling_period <= 0:
             raise ValueError("sampling_period must be positive.")
+        if self.preclassified:
+            if self.mode != MeasureMode.SINGLE:
+                raise ValueError("Preclassified data requires single-shot mode.")
+            if not np.issubdtype(np.asarray(self.raw).dtype, np.integer):
+                raise TypeError("Preclassified data must contain integer state labels.")
 
     def __repr__(self) -> str:
         """Return a compact representation for notebook-friendly display."""
@@ -104,16 +110,21 @@ class MeasureData:
             f"mode={self.mode!r}, "
             f"raw={_format_raw_preview(self.raw)}, "
             f"classifier={classifier}, "
-            f"sampling_period={self.sampling_period})"
+            f"sampling_period={self.sampling_period}, "
+            f"preclassified={self.preclassified})"
         )
 
     @cached_property
     def n_states(self) -> int:
         """Return the number of classifier states."""
-        if self.classifier is None:
-            raise ValueError("Classifier is not set")
-        else:
+        if self.classifier is not None:
             return self.classifier.n_states
+        if self.preclassified:
+            labels = np.asarray(self.raw, dtype=np.int64).reshape(-1)
+            accepted = labels[labels >= 0]
+            if accepted.size > 0:
+                return int(np.max(accepted)) + 1
+        raise ValueError("Classifier is not set")
 
     @cached_property
     def kerneled(
@@ -134,10 +145,11 @@ class MeasureData:
     def classified(self) -> NDArray:
         """Return hard-classified labels for each shot."""
         if self.mode == MeasureMode.SINGLE:
+            if self.preclassified:
+                return np.asarray(self.raw, dtype=np.int64).reshape(-1)
             if self.classifier is not None:
                 return self.classifier.predict(self.kerneled)
-            else:
-                raise ValueError("Classifier is not set")
+            raise ValueError("Classifier is not set")
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -159,10 +171,11 @@ class MeasureData:
     @cached_property
     def counts(self) -> dict[str, int]:
         """Return per-state counts for classified data."""
-        if len(self.classified) == 0:
-            raise ValueError("No classification data available")
         classified_labels = self.classified
-        count = np.bincount(classified_labels, minlength=self.n_states)
+        accepted_labels = classified_labels[classified_labels >= 0]
+        if len(accepted_labels) == 0:
+            raise ValueError("No classification data available")
+        count = np.bincount(accepted_labels, minlength=self.n_states)
         state = {str(label): count[label] for label in range(len(count))}
         return state
 
@@ -244,10 +257,13 @@ class MeasureData:
     ) -> NDArray:
         """Return soft classification probabilities for each shot."""
         if self.mode == MeasureMode.SINGLE:
+            if self.preclassified:
+                raise ValueError(
+                    "Soft classification is not available for preclassified data."
+                )
             if self.classifier is not None:
                 return self.classifier.predict_proba(self.kerneled)
-            else:
-                raise ValueError("Classifier is not set")
+            raise ValueError("Classifier is not set")
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -270,14 +286,17 @@ class MeasureData:
         """
         if threshold is None:
             return self.classified
-        else:
-            data = self.get_soft_classified_data()
-            if len(data) == 0:
-                raise ValueError("No classification data available")
-            max_probs = np.max(data, axis=1)
-            labels = np.argmax(data, axis=1)
-            result = np.where(max_probs > threshold, labels, -1)
-            return result
+        if self.preclassified:
+            raise ValueError(
+                "Thresholded classification is not supported for preclassified data."
+            )
+        data = self.get_soft_classified_data()
+        if len(data) == 0:
+            raise ValueError("No classification data available")
+        max_probs = np.max(data, axis=1)
+        labels = np.argmax(data, axis=1)
+        result = np.where(max_probs > threshold, labels, -1)
+        return result
 
     def plot(
         self,
@@ -1169,9 +1188,9 @@ class MultipleMeasureResult:
             Counts per bitstring.
         """
         classified_data = self.get_classified_data(targets, threshold=threshold)
-        classified_labels = np.array(
-            ["".join(map(str, row)) for row in classified_data]
-        )
+        classified_labels = [
+            "".join(map(str, row)) for row in classified_data if all(row >= 0)
+        ]
         return Counter(classified_labels)
 
     def get_probabilities(
