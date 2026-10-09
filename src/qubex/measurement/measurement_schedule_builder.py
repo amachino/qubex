@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Literal
 
 from qxpulse import PulseSchedule, RampType
 
@@ -13,9 +12,7 @@ from qubex.system import ControlParameters, Mux, Target, TargetRegistry
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .models.capture_schedule import Capture, CaptureSchedule
-from .models.measurement_schedule import MeasurementSchedule
-
-CapturePlacement = Literal["pulse_aligned", "entire_schedule"]
+from .models.measurement_schedule import CapturePlacement, MeasurementSchedule
 
 
 class MeasurementScheduleBuilder:
@@ -292,6 +289,7 @@ class MeasurementScheduleBuilder:
         return MeasurementSchedule(
             pulse_schedule=schedule,
             capture_schedule=capture_schedule,
+            capture_placement=capture_placement,
         )
 
     def _build_capture_schedule(

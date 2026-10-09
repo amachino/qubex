@@ -95,6 +95,7 @@ def test_validate_schedule_accepts_full_span_captures_without_pulse_ranges() -> 
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=pulse_schedule,
         capture_schedule=capture_schedule,
+        capture_placement="entire_schedule",
     )
 
     adapter = Quel1MeasurementBackendAdapter(
@@ -501,6 +502,7 @@ def test_create_sampled_sequences_uses_zero_delay_for_entire_schedule() -> None:
                 ),
             ]
         ),
+        capture_placement="entire_schedule",
     )
 
     _, cap_sequences = adapter._create_sampled_sequences(  # noqa: SLF001
