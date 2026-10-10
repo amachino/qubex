@@ -32,7 +32,6 @@ from qubex.analysis import FitResult, FitStatus, fitting
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL3
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
-    DEFAULT_INTERVAL,
     DEFAULT_RABI_FREQUENCY,
     DEFAULT_RABI_TIME_RANGE,
     DEFAULT_SHOTS,
@@ -50,6 +49,7 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
+from qubex.measurement.measurement_defaults import resolve_shot_interval_ns
 from qubex.system import MixingUtil
 from qubex.system.quel1.quel1_system_constants import CNCO_CENTER_CTRL_HZ
 from qubex.typing import TargetMap
@@ -685,8 +685,14 @@ class CharacterizationService:
             initial_state = "0"
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -752,8 +758,14 @@ class CharacterizationService:
             initial_state = "0"
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
 
@@ -869,8 +881,14 @@ class CharacterizationService:
             initial_state = "0"
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if targets is None:
@@ -995,8 +1013,14 @@ class CharacterizationService:
             time_range = DEFAULT_RABI_TIME_RANGE
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -1210,8 +1234,14 @@ class CharacterizationService:
             rabi_level = "ge"
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if verbose is None:
@@ -1305,8 +1335,14 @@ class CharacterizationService:
         """Measure amplitude-Rabi relation for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if targets is None:
@@ -1380,8 +1416,14 @@ class CharacterizationService:
         """Calibrate control frequency for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if detuning_range is None:
@@ -1422,8 +1464,14 @@ class CharacterizationService:
         """Calibrate EF control frequency for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if verbose is None:
@@ -1498,8 +1546,14 @@ class CharacterizationService:
         """Calibrate readout frequency for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -1674,8 +1728,14 @@ class CharacterizationService:
 
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -1805,8 +1865,14 @@ class CharacterizationService:
             n_cpmg = 1
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -1974,8 +2040,14 @@ class CharacterizationService:
             spectator_state = "0"
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -2112,8 +2184,14 @@ class CharacterizationService:
             detuning = 0.001
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if time_range is None:
@@ -2201,8 +2279,14 @@ class CharacterizationService:
             second_rotation_axis = "Y"
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if rotation_frequency is None:
             rotation_frequency = 0.0002
         if plot is None:
@@ -2331,8 +2415,14 @@ class CharacterizationService:
             second_rotation_axis = "Y"
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if rotation_frequency is None:
             rotation_frequency = 0.0002
         if plot is None:
@@ -3067,8 +3157,14 @@ class CharacterizationService:
             qubit_state = "0"
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -3492,8 +3588,14 @@ class CharacterizationService:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -3621,8 +3723,14 @@ class CharacterizationService:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -3863,8 +3971,14 @@ class CharacterizationService:
             threshold = 0.5
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -4057,8 +4171,14 @@ class CharacterizationService:
             fidelity_ratio = 0.99
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -4390,8 +4510,14 @@ class CharacterizationService:
             fidelity_ratio = 0.99
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -5090,8 +5216,14 @@ class CharacterizationService:
         """
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -5201,8 +5333,14 @@ class CharacterizationService:
         """
         if shots is None:
             shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        interval = resolve_shot_interval_ns(
+            getattr(
+                getattr(self.ctx, "experiment_system", None),
+                "measurement_defaults",
+                None,
+            ),
+            interval,
+        )
         if plot is None:
             plot = True
         if save_image is None:

@@ -17,7 +17,6 @@ from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_CR_RAMPTIME,
     DEFAULT_CR_TIME_RANGE,
-    DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
 )
 from qubex.experiment.models import Result
@@ -31,6 +30,7 @@ from qubex.pulse import (
 from qubex.typing import TargetMap
 
 from ._deprecated_options import resolve_shot_options
+from ._measurement_defaults import resolve_shot_interval
 
 
 def measure_cr_crosstalk(
@@ -95,8 +95,7 @@ def measure_cr_crosstalk(
         ramp_type = "RaisedCosine"
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if reset_awg_and_capunits is None:
         reset_awg_and_capunits = True
     if plot is None:
@@ -319,8 +318,7 @@ def cr_crosstalk_hamiltonian_tomography(
         ramp_type = "RaisedCosine"
     if n_shots is None:
         n_shots = CALIBRATION_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if reset_awg_and_capunits is None:
         reset_awg_and_capunits = True
     if plot is None:

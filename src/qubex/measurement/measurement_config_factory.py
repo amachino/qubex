@@ -12,6 +12,7 @@ from .measurement_defaults import (
     DEFAULT_STATE_CLASSIFICATION,
     DEFAULT_TIME_INTEGRATION,
     resolve_measurement_defaults,
+    resolve_shot_interval_ns,
 )
 from .models.measurement_config import MeasurementConfig, ReturnItem
 
@@ -58,9 +59,9 @@ class MeasurementConfigFactory:
                 n_shots,
                 measurement_defaults.execution.n_shots,
             ),
-            shot_interval=_or_default(
+            shot_interval=resolve_shot_interval_ns(
+                getattr(self._experiment_system, "measurement_defaults", None),
                 shot_interval,
-                measurement_defaults.execution.shot_interval_ns,
             ),
             shot_averaging=_or_default(
                 shot_averaging,

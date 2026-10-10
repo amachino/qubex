@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 
 from qubex.core import Model
+from qubex.system.measurement_defaults import validate_shot_interval_ns
 
 
 class ReturnItem(str, Enum):
@@ -28,6 +29,11 @@ class MeasurementConfig(Model):
     time_integration: bool
     state_classification: bool
     return_items: tuple[ReturnItem, ...] = ()
+
+    @field_validator("shot_interval", mode="before")
+    @classmethod
+    def _validate_shot_interval(cls, value: object) -> float:
+        return validate_shot_interval_ns(value, name="shot_interval")
 
     @model_validator(mode="after")
     def _validate_invariants(self) -> MeasurementConfig:

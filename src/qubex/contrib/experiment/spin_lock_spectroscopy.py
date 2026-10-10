@@ -17,9 +17,11 @@ from qubex.contrib.experiment.chevron_matched_transform import (
     estimate_qubit_frequency_from_chevron,
 )
 from qubex.experiment import Experiment
-from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.experiment.experiment_constants import DEFAULT_SHOTS
 from qubex.experiment.models.result import Result
 from qubex.pulse import PulseSchedule, Rect
+
+from ._measurement_defaults import resolve_shot_interval
 
 __all__ = ["spin_lock_sequence", "spin_lock_spectroscopy"]
 
@@ -289,20 +291,6 @@ def _resolve_positive_integer(value: int | None, *, name: str, default: int) -> 
     value = int(value)
     if value <= 0:
         raise ValueError(f"{name} must be a positive integer.")
-    return value
-
-
-def _resolve_nonnegative_finite_float(
-    value: float | None,
-    *,
-    name: str,
-    default: float,
-) -> float:
-    if value is None:
-        value = default
-    value = float(value)
-    if not np.isfinite(value) or value < 0:
-        raise ValueError(f"{name} must be finite and nonnegative.")
     return value
 
 
@@ -1628,7 +1616,7 @@ def spin_lock_spectroscopy(
     n_shots
         Number of shots per sweep point. Defaults to ``DEFAULT_SHOTS``.
     shot_interval
-        Measurement interval. Defaults to ``DEFAULT_INTERVAL``.
+        Measurement interval. Defaults to configured ``execution.shot_interval_ns``.
     plot
         Whether to display the heatmap and relaxation-time figures.
     save_image
@@ -1702,11 +1690,7 @@ def spin_lock_spectroscopy(
         name="n_shots",
         default=DEFAULT_SHOTS,
     )
-    shot_interval = _resolve_nonnegative_finite_float(
-        shot_interval,
-        name="shot_interval",
-        default=DEFAULT_INTERVAL,
-    )
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     plot = _resolve_bool(plot, default=True)
     save_image = _resolve_bool(save_image, default=False)
     estimate_with_chevron = _resolve_bool(estimate_with_chevron, default=True)

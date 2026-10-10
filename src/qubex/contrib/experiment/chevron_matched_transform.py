@@ -13,10 +13,11 @@ import qubex.visualization as viz
 from qubex.compat.numpy_compat import trapezoid
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
-    DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
 )
 from qubex.experiment.models.result import Result
+
+from ._measurement_defaults import resolve_shot_interval
 
 
 def estimate_qubit_frequency_from_chevron(
@@ -158,8 +159,7 @@ def estimate_qubit_frequency_from_chevron(
         omega_rabi_range = 0.1 * (10 ** np.linspace(0, 1, 256) - 1) / 9
     if n_shots is None:
         n_shots = max(1, DEFAULT_SHOTS // 4)
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if quadratic_window is None:
         quadratic_window = 3
     if background_radius is None:
@@ -442,8 +442,7 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         n_shots = max(1, DEFAULT_SHOTS // 4)
     if search_n_shots is None:
         search_n_shots = n_shots
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if final_quadratic_window is None:
         final_quadratic_window = 3
     if background_radius is None:
@@ -1035,8 +1034,7 @@ def measure_chevron_pattern(
         amplitude = exp.ctx.params.control_amplitude[target]
     if n_shots is None:
         n_shots = max(1, DEFAULT_SHOTS // 4)
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if save_image is None:
