@@ -366,6 +366,7 @@ class PortSettingProtocol(Protocol):
     """Protocol for one port setting row in system config database."""
 
     port: PortType
+    ndelay_or_nwait: tuple[int, ...]
 
 
 class PortConfigAcquirerProtocol(Protocol):
