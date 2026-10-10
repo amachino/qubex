@@ -141,6 +141,28 @@ def test_connect_skips_when_already_connected() -> None:
     assert called is False
 
 
+def test_connected_box_names_returns_empty_when_disconnected() -> None:
+    """A disconnected manager should report no connected box names."""
+    manager = _make_manager()
+
+    assert manager.connected_box_names() == set()
+
+
+def test_connected_box_names_returns_names_from_active_pool() -> None:
+    """A connected manager should report every box name in its active pool."""
+    manager = _make_manager()
+    boxpool = _FakeBoxPool()
+    boxpool._boxes = {"A": (object(), object()), "B": (object(), object())}
+    manager.set_connected_state(
+        boxpool=boxpool,  # type: ignore[arg-type]
+        quel1system=_FakeQuel1System(),  # type: ignore[arg-type]
+        cap_resource_map={},
+        gen_resource_map={},
+    )
+
+    assert manager.connected_box_names() == {"A", "B"}
+
+
 def test_connect_reconnects_when_requested_boxes_are_missing() -> None:
     """Given connected subset, when connect requests missing boxes, then it reconnects."""
     manager = _make_manager()

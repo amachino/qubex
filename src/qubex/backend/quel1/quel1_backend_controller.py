@@ -166,6 +166,10 @@ class Quel1BackendController(BackendController):
         """Return connected box pool."""
         return self._connection_manager.boxpool
 
+    def connected_box_names(self) -> set[str]:
+        """Return box names present in the connected box pool."""
+        return self._connection_manager.connected_box_names()
+
     @property
     def quel1system(self) -> Quel1System:
         """Return connected Quel1 system."""
