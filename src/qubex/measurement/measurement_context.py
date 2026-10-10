@@ -43,6 +43,11 @@ class MeasurementContext:
         return self._system_manager.backend_controller
 
     @property
+    def qubit_labels(self) -> list[str]:
+        """Return qubit labels configured for this measurement context."""
+        return list(self._qubits)
+
+    @property
     def box_ids(self) -> list[str]:
         """Return box IDs corresponding to configured qubits."""
         boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)

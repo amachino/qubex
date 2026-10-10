@@ -14,6 +14,13 @@ from .measurement_config import MeasurementConfig, ReturnItem
 from .measurement_record import MeasurementRecord
 from .measurement_result import MeasurementResult
 from .measurement_schedule import MeasurementSchedule
+from .measurement_stability import (
+    MeasurementStabilitySnapshot,
+    MonitorStatistic,
+    OutputSignalCorrection,
+    OutputSignalKind,
+    OutputSignalReferenceScope,
+)
 from .quel1_measurement_options import Quel1MeasurementOptions
 from .sweep_measurement_result import (
     NDSweepMeasurementResult,
@@ -35,8 +42,13 @@ __all__ = [
     "MeasurementRecord",
     "MeasurementResult",
     "MeasurementSchedule",
+    "MeasurementStabilitySnapshot",
+    "MonitorStatistic",
     "MultipleMeasureResult",
     "NDSweepMeasurementResult",
+    "OutputSignalCorrection",
+    "OutputSignalKind",
+    "OutputSignalReferenceScope",
     "Quel1MeasurementOptions",
     "ReturnItem",
     "SweepAxes",

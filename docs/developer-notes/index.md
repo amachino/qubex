@@ -31,6 +31,7 @@ Manage development notes and operational documents.
 - [Analysis Package Layering Plan](analysis-package-layering-plan.md)
 - [Measurement Backend Responsibility Policy](measurement-backend-responsibility-policy.md)
 - [Measurement Backend Responsibility Migration Plan](measurement-backend-responsibility-migration-plan.md)
+- [Measurement Monitor Service Design](measurement-monitor-service-design.md)
 - [Shared Packages Generalization Plan](shared-packages-generalization-plan.md)
 - [Improvement Backlog](improvement-backlog.md)
 - [Hardware Validation Template](hardware-validation-template.md)
