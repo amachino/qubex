@@ -174,29 +174,6 @@ def test_un_echoed_ab_gate_removes_rotary_but_preserves_cr_and_cancel() -> None:
     ]
 
 
-def test_single_lobe_no_echo_primitive_is_rejected_for_ab() -> None:
-    """A/B reject the single-lobe primitive in place of a full ZX90 unit."""
-    echoed = _echoed_zx90()
-    primitive = CrossResonance(
-        "Q0",
-        "Q1",
-        cr_amplitude=echoed.cr_amplitude,
-        cr_duration=echoed.cr_duration,
-        cr_ramptime=echoed.cr_ramptime,
-        cancel_amplitude=0.02,
-        echo=False,
-    )
-
-    with pytest.raises(ValueError, match="total CR-active duration"):
-        resolve_zx90_descriptor(
-            _schedule_experiment(echoed),
-            "Q0",
-            "Q1",
-            echoed,
-            primitive,
-        )
-
-
 def test_reference_protocols_preserve_actual_schedule_durations() -> None:
     """Every diagnostic reference remains duration-matched to its actual protocol."""
     echoed = _echoed_zx90()

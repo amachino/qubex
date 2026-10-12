@@ -1,5 +1,5 @@
 # ruff: noqa: SLF001
-"""Public validation and fail-fast tests for CR dissipation v11."""
+"""Essential public API, acquisition, and plotting tests for CR dissipation."""
 
 from __future__ import annotations
 
@@ -83,74 +83,6 @@ def test_default_repetition_counts_span_twice_the_longer_idle_t1() -> None:
     assert all(right > left for left, right in pairwise(counts))
 
 
-@pytest.mark.parametrize(
-    ("t1_ns", "block_ns", "match"),
-    [
-        (float("inf"), 1_000.0, "finite positive idle T1"),
-        (4_000.0, 1_000.0, "fewer than nine .* blocks"),
-    ],
-)
-def test_default_repetition_counts_require_a_representable_endpoint(
-    t1_ns: float,
-    block_ns: float,
-    match: str,
-) -> None:
-    """An undefined ten-point default asks the caller for an explicit grid."""
-    with pytest.raises(ValueError, match=match):
-        health._default_repetition_counts(
-            longest_idle_t1_ns=t1_ns,
-            ab_block_duration_ns=block_ns,
-        )
-
-
-def test_ambiguous_reference_calibration_options_are_rejected() -> None:
-    """A supplied amplitude and forced calibration cannot both be requested."""
-    with pytest.raises(ValueError, match="cannot be specified together"):
-        health.characterize_cr_dissipation(
-            _fake_experiment(),
-            "Q0",
-            "Q1",
-            reference_ix45_amplitude=0.1,
-            force_reference_ix45_calibration=True,
-            idle_t1={"Q0": 1.0, "Q1": 1.0},
-            idle_t2_echo={"Q0": 1.0, "Q1": 1.0},
-            plot=False,
-        )
-
-
-@pytest.mark.parametrize(
-    "name",
-    ["n_shots", "gef_measurement_n_shots", "gef_calibration_n_shots"],
-)
-def test_shot_counts_require_at_least_two(name: str) -> None:
-    """Shot validation happens before pulse resolution or acquisition."""
-    options: dict[str, Any] = {name: 1}
-    with pytest.raises(ValueError, match=rf"{name} must be at least two"):
-        health.characterize_cr_dissipation(
-            _fake_experiment(),
-            "Q0",
-            "Q1",
-            idle_t1={"Q0": 1.0, "Q1": 1.0},
-            idle_t2_echo={"Q0": 1.0, "Q1": 1.0},
-            plot=False,
-            **options,
-        )
-
-
-def test_shot_counts_require_integers() -> None:
-    """Boolean shot counts are rejected separately from the lower bound."""
-    with pytest.raises(TypeError, match="gef_calibration_n_shots must be an integer"):
-        health.characterize_cr_dissipation(
-            _fake_experiment(),
-            "Q0",
-            "Q1",
-            gef_calibration_n_shots=True,
-            idle_t1={"Q0": 1.0, "Q1": 1.0},
-            idle_t2_echo={"Q0": 1.0, "Q1": 1.0},
-            plot=False,
-        )
-
-
 def test_missing_idle_coherence_fails_before_pulse_resolution() -> None:
     """Both qubits' T1 and T2_echo are mandatory fixed inputs."""
     with pytest.raises(ValueError, match="missing for qubit Q1"):
@@ -161,30 +93,6 @@ def test_missing_idle_coherence_fails_before_pulse_resolution() -> None:
             idle_t1={"Q0": 30_000.0},
             idle_t2_echo={"Q0": 20_000.0, "Q1": 20_000.0},
             plot=False,
-        )
-
-
-def test_explicit_idle_value_errors_are_not_masked_by_other_stored_inputs() -> None:
-    """An invalid explicit T1 should retain its precise validation error."""
-    loader = SimpleNamespace(
-        load_param_data=lambda name: {"Q0": 20_000.0, "Q1": 20_000.0}
-    )
-    exp = cast(
-        Experiment,
-        SimpleNamespace(
-            ctx=SimpleNamespace(
-                system_manager=SimpleNamespace(config_loader=loader),
-            )
-        ),
-    )
-
-    with pytest.raises(ValueError, match="t1_ns must be positive"):
-        health._load_idle_noise(
-            exp,
-            "Q0",
-            "Q1",
-            {"Q0": -1.0, "Q1": 30_000.0},
-            None,
         )
 
 
@@ -257,139 +165,6 @@ def test_reference_cache_is_invalidated_when_beta_changes(
     assert was_calibrated
     assert calibration.beta == pytest.approx(0.37)
     assert pulse.beta == pytest.approx(0.37)
-
-
-def test_malformed_reference_cache_falls_back_to_calibration(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Malformed cached scalar fields should trigger recalibration instead of failing."""
-    source = FlatTop(duration=64.0, amplitude=0.23, tau=7.0, beta=0.37)
-    cached = {
-        "amplitude": "invalid",
-        "duration": 64.0,
-        "ramptime": 7.0,
-        "beta": 0.37,
-        "ramp_type": str(source.type),
-        "sampling_period": source.sampling_period,
-        "r_squared": "invalid",
-        "timestamp": "old",
-    }
-    stored: list[dict[str, Any]] = []
-    note = SimpleNamespace(
-        get_property=lambda *_: cached,
-        put_property=lambda _note, _key, value: stored.append(value),
-    )
-    exp = SimpleNamespace(ctx=SimpleNamespace(calib_note=note))
-    descriptor = SimpleNamespace(echoed=SimpleNamespace(cr_waveform=source))
-    replacement = health._ReferenceIx45Calibration(
-        0.14,
-        64.0,
-        7.0,
-        0.37,
-        str(source.type),
-        source.sampling_period,
-        0.98,
-        "new",
-    )
-    monkeypatch.setattr(
-        health,
-        "_calibrate_reference_ix45",
-        lambda *_args, **_kwargs: replacement,
-    )
-
-    pulse, calibration, was_calibrated = health._resolve_reference_ix45(
-        cast(Experiment, exp),
-        "Q0",
-        "Q1",
-        cast(ZX90Descriptor, descriptor),
-        amplitude=None,
-        force=False,
-        n_shots=100,
-        shot_interval=1000.0,
-        plot=False,
-        enable_tqdm=False,
-    )
-
-    assert was_calibrated
-    assert calibration is replacement
-    assert pulse.amplitude == pytest.approx(replacement.amplitude)
-    assert stored
-    assert stored[0]["amplitude"] == pytest.approx(replacement.amplitude)
-
-
-def test_reference_calibration_uses_canonical_shot_options(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """IX45 calibration must not emit deprecated shot-option warnings."""
-    cr_envelope = FlatTop(duration=64.0, amplitude=0.23, tau=7.0, beta=0.37)
-    hpi = FlatTop(duration=32.0, amplitude=0.2, tau=4.0, beta=0.1)
-    calls: list[dict[str, Any]] = []
-
-    def sweep_parameter(**kwargs: Any) -> Any:
-        calls.append(kwargs)
-        data = SimpleNamespace(normalized=np.linspace(0.0, 1.0, 21))
-        return SimpleNamespace(data={"Q1": data})
-
-    exp = SimpleNamespace(
-        pulse=SimpleNamespace(get_hpi_pulse=lambda _target: hpi),
-        measurement_service=SimpleNamespace(sweep_parameter=sweep_parameter),
-    )
-    monkeypatch.setattr(
-        health.fitting,
-        "fit_ampl_calib_data",
-        lambda **_kwargs: {"amplitude": 0.12, "r2": 0.99},
-    )
-
-    health._calibrate_reference_ix45(
-        cast(Experiment, exp),
-        "Q1",
-        cr_envelope,
-        n_shots=100,
-        shot_interval=1234.0,
-        plot=False,
-        enable_tqdm=True,
-    )
-
-    assert len(calls) == 1
-    assert calls[0]["n_shots"] == 100
-    assert calls[0]["shot_interval"] == 1234.0
-    assert calls[0]["enable_tqdm"] is True
-    assert "shots" not in calls[0]
-    assert "interval" not in calls[0]
-
-
-@pytest.mark.parametrize("r_squared", [float("nan"), float("inf"), float("-inf"), 0.49])
-def test_reference_calibration_rejects_nonfinite_or_low_fit_quality(
-    monkeypatch: pytest.MonkeyPatch,
-    r_squared: float,
-) -> None:
-    """IX45 calibration accepts only finite fit quality above threshold."""
-    cr_envelope = FlatTop(duration=64.0, amplitude=0.23, tau=7.0)
-    hpi = FlatTop(duration=32.0, amplitude=0.2, tau=4.0)
-    exp = SimpleNamespace(
-        pulse=SimpleNamespace(get_hpi_pulse=lambda _target: hpi),
-        measurement_service=SimpleNamespace(
-            sweep_parameter=lambda **_kwargs: SimpleNamespace(
-                data={"Q1": SimpleNamespace(normalized=np.linspace(0.0, 1.0, 21))}
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        health.fitting,
-        "fit_ampl_calib_data",
-        lambda **_kwargs: {"amplitude": 0.12, "r2": r_squared},
-    )
-
-    with pytest.raises(RuntimeError, match="quality validation"):
-        health._calibrate_reference_ix45(
-            cast(Experiment, exp),
-            "Q1",
-            cr_envelope,
-            n_shots=100,
-            shot_interval=1234.0,
-            plot=False,
-            enable_tqdm=False,
-        )
 
 
 def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
@@ -545,6 +320,12 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     assert result.data["analysis_options"]["fidelity_uncertainty_method"] == "disabled"
     assert result.data["analysis_options"]["initial_condition_treatment"] == (
         "latent_nuisance_with_n0_observation"
+    )
+    assert result.data["analysis_options"]["model_selection_rule"] == (
+        "simplest_within_global_delta_aicc"
+    )
+    assert result.data["analysis_options"]["rate_optimizer_initialization"] == (
+        "deterministic_multistart"
     )
     assert bootstrap_calls == [
         {

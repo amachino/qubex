@@ -26,6 +26,7 @@ class CrDissipationRateStatus(str, Enum):
     PARTIALLY_UNRESOLVED = "partially_unresolved"
     CONSISTENT_WITH_ZERO = "consistent_with_zero"
     INCONSISTENT_RATE_DECOMPOSITION = "inconsistent_rate_decomposition"
+    MODEL_MISMATCH = "model_mismatch"
     FIT_FAILED = "fit_failed"
 
 
@@ -126,6 +127,17 @@ class CrDissipationMeasurements:
 
 
 @dataclass(frozen=True)
+class FitGoodnessOfFit:
+    """Store an absolute diagnostic for one whitened least-squares fit."""
+
+    degrees_of_freedom: int
+    chi_squared_p_value: float | None
+    maximum_absolute_whitened_residual: float
+    accepted: bool
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class CandidateFit:
     """Store one final ordinary-GLS candidate fit."""
 
@@ -143,6 +155,9 @@ class CandidateFit:
     n_observations: int
     n_parameters: int
     message: str
+    goodness_of_fit: FitGoodnessOfFit | None = None
+    n_initializations: int = 1
+    n_successful_initializations: int = 1
 
 
 @dataclass(frozen=True)
@@ -160,6 +175,9 @@ class ControlPopulationRateFit:
     initial_populations: dict[str, NDArray[np.float64]]
     initial_population_covariances: dict[str, NDArray[np.float64]]
     message: str
+    goodness_of_fit_by_protocol: dict[str, FitGoodnessOfFit] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)

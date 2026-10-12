@@ -11,15 +11,14 @@ import numpy as np
 import pytest
 
 import qubex.contrib.experiment._cr_dissipation.analysis as analysis_module
+import qubex.contrib.experiment._cr_dissipation.fit as fit_module
 from qubex.contrib.experiment._cr_dissipation.analysis import (
-    _aggregate_value_error,
     _fidelity_limits,
     _fit_idle_control_rates,
     _fit_idle_target_exchange,
     _fit_idle_target_t1rho,
     _pure_dephasing_component,
-    _select_significant_nested_candidate,
-    _target_control_state_dependence_warnings,
+    computational_polarization,
     control_population_trajectory,
     fit_control_populations,
     fit_physical_dephasing,
@@ -30,12 +29,15 @@ from qubex.contrib.experiment._cr_dissipation.analysis import (
     target_exchange_trajectory,
     target_t1rho_trajectory,
 )
+from qubex.contrib.experiment._cr_dissipation.fit import (
+    fit_gls_candidate,
+    select_aicc_candidate,
+)
 from qubex.contrib.experiment._cr_dissipation.pulses import (
     PROTOCOL_A,
     PROTOCOL_B,
     PROTOCOL_C,
     PROTOCOL_D,
-    ProtocolSchedules,
     ZX90Descriptor,
 )
 from qubex.contrib.experiment._cr_dissipation.simulation import (
@@ -46,11 +48,8 @@ from qubex.contrib.experiment._cr_dissipation.simulation import (
 )
 from qubex.contrib.experiment._cr_dissipation.types import (
     CandidateFit,
-    CrDissipationMeasurements,
     CrDissipationProtocolData,
     CrDissipationRateStatus,
-    DecayRateFit,
-    ExchangeRateFit,
     GefPopulationSeries,
     IdleNoiseParameters,
 )
@@ -85,8 +84,8 @@ def _candidate(
     )
 
 
-def test_aicc_winner_is_iteratively_reduced_when_one_rate_is_sub_2sigma() -> None:
-    """A complex initial winner drops only its insignificant nested rate."""
+def test_aicc_winner_is_not_reduced_outside_the_competitive_delta() -> None:
+    """A sub-2-sigma rate is retained when its nested model is not competitive."""
     candidates = {
         "L2": _candidate("L2", ("leak", "seep"), (4e-5, 2e-6), (5e-6, 2e-6), 0.0),
         "L1": _candidate("L1", ("leak",), (4e-5,), (5e-6,), 8.0),
@@ -94,8 +93,26 @@ def test_aicc_winner_is_iteratively_reduced_when_one_rate_is_sub_2sigma() -> Non
         "L0": _candidate("L0", (), (), (), 30.0),
     }
 
-    selected = _select_significant_nested_candidate(
-        candidates, {"leak": 0.0, "seep": 0.0}
+    selected = select_aicc_candidate(
+        candidates,
+        delta_threshold=analysis_module.MODEL_SELECTION_DELTA_AICC,
+    )
+
+    assert selected is not None
+    assert selected.name == "L2"
+
+
+def test_aicc_selects_the_simplest_competitive_nested_model() -> None:
+    """A simpler nested model is selected only within the global AICc window."""
+    candidates = {
+        "L2": _candidate("L2", ("leak", "seep"), (4e-5, 2e-6), (5e-6, 2e-6), 0.0),
+        "L1": _candidate("L1", ("leak",), (4e-5,), (5e-6,), 5.0),
+        "L0": _candidate("L0", (), (), (), 30.0),
+    }
+
+    selected = select_aicc_candidate(
+        candidates,
+        delta_threshold=analysis_module.MODEL_SELECTION_DELTA_AICC,
     )
 
     assert selected is not None
@@ -112,17 +129,71 @@ def test_aicc_simplification_preserves_initial_condition_nuisance() -> None:
             (5e-6, 2e-6, 1e-3),
             0.0,
         ),
-        "L1": _candidate("L1", ("leak", "initial_pf"), (4e-5, 0.02), (5e-6, 1e-3), 8.0),
+        "L1": _candidate("L1", ("leak", "initial_pf"), (4e-5, 0.02), (5e-6, 1e-3), 5.0),
         "L0": _candidate("L0", ("initial_pf",), (0.02,), (1e-3,), 30.0),
     }
 
-    selected = _select_significant_nested_candidate(
-        candidates, {"leak": 0.0, "seep": 0.0}
+    selected = select_aicc_candidate(
+        candidates,
+        delta_threshold=analysis_module.MODEL_SELECTION_DELTA_AICC,
     )
 
     assert selected is not None
     assert selected.name == "L1"
     assert "initial_pf" in selected.parameter_names
+
+
+def test_gls_multistart_selects_the_lowest_chi_squared_solution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-start retains the successful final solution with minimum chi-squared."""
+
+    def stationary_result(
+        _residual: Any,
+        initial: np.ndarray,
+        _bounds: Any,
+        **_kwargs: Any,
+    ) -> Any:
+        return SimpleNamespace(
+            x=initial.copy(),
+            success=True,
+            jac=np.ones((3, 1)),
+            message="synthetic",
+        )
+
+    monkeypatch.setattr(fit_module, "_run_least_squares", stationary_result)
+    candidate = fit_gls_candidate(
+        name="multistart",
+        parameter_names=("rate_per_ns",),
+        initial=np.array([1.0]),
+        additional_initials=(np.array([4.0]),),
+        bounds=(np.array([0.0]), np.array([5.0])),
+        residual=lambda parameters: np.full(3, parameters[0] - 4.0),
+        prediction=lambda parameters: np.full(3, parameters[0]),
+        n_observations=3,
+    )
+
+    assert candidate.success
+    assert candidate.parameters == pytest.approx([4.0])
+    assert candidate.n_initializations == 2
+    assert candidate.n_successful_initializations == 2
+
+
+def test_gls_candidate_records_absolute_goodness_of_fit() -> None:
+    """A grossly mismatched candidate fails the absolute residual diagnostic."""
+    candidate = fit_gls_candidate(
+        name="mismatch",
+        parameter_names=(),
+        initial=np.empty(0),
+        bounds=(np.empty(0), np.empty(0)),
+        residual=lambda _parameters: np.array([10.0, -10.0]),
+        prediction=lambda _parameters: np.zeros(2),
+        n_observations=2,
+    )
+
+    assert candidate.goodness_of_fit is not None
+    assert not candidate.goodness_of_fit.accepted
+    assert candidate.goodness_of_fit.maximum_absolute_whitened_residual == 10.0
 
 
 @pytest.mark.parametrize(
@@ -251,6 +322,23 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
         "Fidelity uncertainty calculation was disabled."
     )
 
+    mismatch_statuses = dict(statuses)
+    mismatch_statuses["target_t1rho"] = CrDissipationRateStatus.MODEL_MISMATCH
+    blocked, _ = _fidelity_limits(
+        descriptor(),
+        IdleNoiseParameters(float("inf"), float("inf")),
+        IdleNoiseParameters(float("inf"), float("inf")),
+        nominal,
+        mismatch_statuses,
+        covariance,
+        primitive_order,
+        compute_uncertainty=False,
+    )
+    assert blocked.idle_coherence_limited.available
+    assert not blocked.cr_on_coherence_limited.available
+    assert not blocked.cr_on_dissipative_limited.available
+    assert "model mismatch" in str(blocked.cr_on_coherence_limited.message)
+
 
 def test_pure_dephasing_component_uses_both_longitudinal_directions() -> None:
     """Control transverse decomposition includes upward and downward rates."""
@@ -260,124 +348,10 @@ def test_pure_dephasing_component_uses_both_longitudinal_directions() -> None:
     assert np.isnan(_pure_dephasing_component(8e-5, float("nan")))
 
 
-def test_target_control_state_dependence_warning_is_diagnostic_only() -> None:
-    """Only a significant resolved A/B difference emits the warning."""
-    resolved = CrDissipationRateStatus.RESOLVED
-    exchange_a = SimpleNamespace(
-        leakage_rate_per_ns=4e-5,
-        leakage_standard_error_per_ns=2e-6,
-        leakage_status=resolved,
-        seepage_rate_per_ns=2e-5,
-        seepage_standard_error_per_ns=2e-6,
-        seepage_status=resolved,
-    )
-    exchange_b = SimpleNamespace(
-        leakage_rate_per_ns=4.1e-5,
-        leakage_standard_error_per_ns=2e-6,
-        leakage_status=resolved,
-        seepage_rate_per_ns=2.1e-5,
-        seepage_standard_error_per_ns=2e-6,
-        seepage_status=resolved,
-    )
-    t1_a = SimpleNamespace(
-        rate_per_ns=5e-5,
-        rate_standard_error_per_ns=2e-6,
-        status=resolved,
-    )
-    t1_same = SimpleNamespace(
-        rate_per_ns=5.1e-5,
-        rate_standard_error_per_ns=2e-6,
-        status=resolved,
-    )
-    t1_different = SimpleNamespace(
-        rate_per_ns=8e-5,
-        rate_standard_error_per_ns=2e-6,
-        status=resolved,
-    )
-
-    assert not _target_control_state_dependence_warnings(
-        cast(DecayRateFit, t1_a),
-        cast(DecayRateFit, t1_same),
-        cast(ExchangeRateFit, exchange_a),
-        cast(ExchangeRateFit, exchange_b),
-    )
-    before = _aggregate_value_error(
-        t1_a.rate_per_ns,
-        t1_a.rate_standard_error_per_ns,
-        t1_different.rate_per_ns,
-        t1_different.rate_standard_error_per_ns,
-    )
-    warnings = _target_control_state_dependence_warnings(
-        cast(DecayRateFit, t1_a),
-        cast(DecayRateFit, t1_different),
-        cast(ExchangeRateFit, exchange_a),
-        cast(ExchangeRateFit, exchange_b),
-    )
-    after = _aggregate_value_error(
-        t1_a.rate_per_ns,
-        t1_a.rate_standard_error_per_ns,
-        t1_different.rate_per_ns,
-        t1_different.rate_standard_error_per_ns,
-    )
-
-    assert [warning.affected_outputs for warning in warnings] == [("target_t1rho",)]
-    assert all(
-        warning.code == "target_rate_control_state_dependence" for warning in warnings
-    )
-    assert after == before
-
-
-def test_idle_baseline_precedes_actual_total_t1rho_fit(
+def test_control_aicc_winner_retains_an_uncertain_rate_and_covariance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Actual selection starts only after the one-pass baseline is available."""
-    events: list[object] = []
-    baseline = SimpleNamespace()
-
-    def extract(*_args: Any, **_kwargs: Any) -> Any:
-        events.append("baseline")
-        return baseline
-
-    def control_fit(*_args: Any, **_kwargs: Any) -> Any:
-        events.append("control")
-        return SimpleNamespace()
-
-    def target_fit(*_args: Any, **_kwargs: Any) -> Any:
-        events.append("target_t1rho")
-        raise RuntimeError("stop after observing the first actual T1rho fit")
-
-    def exchange_fit(*_args: Any, **_kwargs: Any) -> Any:
-        events.append("target_exchange")
-        return SimpleNamespace(success=True)
-
-    monkeypatch.setattr(analysis_module, "_extract_idle_equivalent_baseline", extract)
-    monkeypatch.setattr(analysis_module, "fit_control_populations", control_fit)
-    monkeypatch.setattr(analysis_module, "fit_target_exchange", exchange_fit)
-    monkeypatch.setattr(analysis_module, "fit_target_t1rho", target_fit)
-
-    with pytest.raises(RuntimeError, match="stop after observing"):
-        analysis_module.analyze_cr_dissipation(
-            cast(CrDissipationMeasurements, SimpleNamespace()),
-            descriptor(),
-            cast(ProtocolSchedules, SimpleNamespace()),
-            IdleNoiseParameters(50_000.0, 40_000.0),
-            IdleNoiseParameters(45_000.0, 35_000.0),
-            covariance_rcond=1e-12,
-        )
-
-    assert events == [
-        "baseline",
-        "control",
-        "target_exchange",
-        "target_exchange",
-        "target_t1rho",
-    ]
-
-
-def test_control_simplification_updates_status_and_covariance(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The final joint-fit metadata comes from the post-significance model."""
+    """A noncompetitive nested model cannot force an uncertain rate to zero."""
     counts = np.array([0, 1, 2, 3, 5, 8], dtype=np.int64)
     control = population_series(np.tile([0.90, 0.08, 0.02], (counts.size, 1)))
     target = population_series(np.tile([0.50, 0.48, 0.02], (counts.size, 1)))
@@ -419,20 +393,23 @@ def test_control_simplification_updates_status_and_covariance(
         force_all_candidates=True,
     )
 
-    assert fitted.selected_model == "G1 x F0"
+    assert fitted.selected_model == "G2 x F0"
     assert fitted.statuses["control_e_to_g"] == CrDissipationRateStatus.RESOLVED
     assert (
         fitted.statuses["control_g_to_e"]
-        == CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
+        == CrDissipationRateStatus.PARTIALLY_UNRESOLVED
     )
     assert fitted.covariance[0, 0] == pytest.approx(25e-12)
-    np.testing.assert_array_equal(fitted.covariance[1:, :], 0.0)
+    assert fitted.covariance[1, 1] == pytest.approx(1e-12)
+    assert analysis_module._control_standard_error(  # noqa: SLF001
+        fitted, "control_g_to_e"
+    ) == pytest.approx(1e-6)
 
 
-def test_exchange_simplification_marks_insignificant_seepage_zero(
+def test_exchange_aicc_winner_retains_an_uncertain_seepage_rate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A sub-2-sigma seepage parameter is removed from an initial L2 winner."""
+    """A sub-2-sigma seepage estimate remains when L1 is not competitive."""
     counts = np.array([0, 1, 2, 3, 5, 8], dtype=np.int64)
     control = population_series(np.tile([0.90, 0.08, 0.02], (counts.size, 1)))
     target = population_series(np.tile([0.50, 0.48, 0.02], (counts.size, 1)))
@@ -462,11 +439,11 @@ def test_exchange_simplification_marks_insignificant_seepage_zero(
         measurements, PROTOCOL_A, descriptor(), force_all_candidates=True
     )
 
-    assert fitted.selected_model == "L1"
+    assert fitted.selected_model == "L2"
     assert fitted.leakage_status == CrDissipationRateStatus.RESOLVED
-    assert fitted.seepage_status == CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
-    assert fitted.seepage_standard_error_per_ns is None
-    np.testing.assert_array_equal(fitted.covariance[1], 0.0)
+    assert fitted.seepage_status == CrDissipationRateStatus.PARTIALLY_UNRESOLVED
+    assert fitted.seepage_standard_error_per_ns == pytest.approx(1e-6)
+    assert fitted.covariance[1, 1] == pytest.approx(1e-12)
 
 
 def test_exchange_fit_keeps_initial_rates_inside_long_duration_bounds() -> None:
@@ -693,16 +670,15 @@ def test_c_d_observable_is_not_leakage_normalized() -> None:
         population.copy(),
     )
 
-    values, errors, sign = nonnormalized_ge_expectation(series)
+    values, errors = nonnormalized_ge_expectation(series)
 
-    assert sign == 1.0
     np.testing.assert_allclose(values, [0.5, 0.4])
     assert errors[0] == pytest.approx(np.sqrt((4.0 + 9.0 - 2.0) * 1e-4))
 
 
-def test_protocol_d_z_observable_keeps_the_pg_minus_pe_sign() -> None:
-    """Direct D Z readout uses Pg-Pe without initial-sign normalization."""
-    population = np.array([[0.2, 0.7, 0.1], [0.1, 0.5, 0.4]])
+def test_ab_target_x_uses_fixed_positive_y90_analyzer_convention() -> None:
+    """A/B target X is Pe-Pg and never inferred from the measured n=0 sign."""
+    population = np.array([[0.8, 0.2, 0.0], [0.1, 0.7, 0.2]])
     covariance = np.tile(np.eye(3) * 1e-4, (2, 1, 1))
     series = GefPopulationSeries(
         population,
@@ -711,18 +687,15 @@ def test_protocol_d_z_observable_keeps_the_pg_minus_pe_sign() -> None:
         population.copy(),
     )
 
-    values, _, sign = nonnormalized_ge_expectation(
-        series,
-        align_initial_sign=False,
-    )
+    values, errors = computational_polarization(series)
 
-    assert sign == 1.0
-    np.testing.assert_allclose(values, [-0.5, -0.4])
+    np.testing.assert_allclose(values, [-0.6, 0.75])
+    assert np.all(np.isfinite(errors))
 
 
 def test_joint_control_fit_recovers_rates_and_fits_initial_populations() -> None:
     """The A/B joint GLS fit includes n=0 as a latent-state observation."""
-    counts = np.array([0, 1, 2, 3, 5, 8, 13], dtype=np.int64)
+    counts = np.array([0, 1, 3, 8, 13], dtype=np.int64)
     desc = descriptor()
     idle = IdleNoiseParameters(50_000.0, 40_000.0)
     true_rates = {
@@ -777,7 +750,6 @@ def test_joint_control_fit_recovers_rates_and_fits_initial_populations() -> None
         desc,
         idle,
         covariance_rcond=1e-12,
-        force_all_candidates=True,
     )
 
     assert fitted.success
@@ -788,6 +760,7 @@ def test_joint_control_fit_recovers_rates_and_fits_initial_populations() -> None
     selected = fitted.candidates[fitted.selected_model]
     assert selected.n_observations == 2 * 2 * counts.size
     assert selected.n_parameters == 8
+    assert selected.n_initializations > 1
     np.testing.assert_allclose(
         fitted.initial_populations[PROTOCOL_A], [0.98, 0.02, 0.0], atol=2e-6
     )
@@ -798,6 +771,8 @@ def test_joint_control_fit_recovers_rates_and_fits_initial_populations() -> None
         assert covariance.shape == (3, 3)
         np.testing.assert_allclose(covariance.sum(axis=0), 0.0, atol=1e-14)
         np.testing.assert_allclose(covariance.sum(axis=1), 0.0, atol=1e-14)
+    assert set(fitted.goodness_of_fit_by_protocol) == {PROTOCOL_A, PROTOCOL_B}
+    assert all(item.accepted for item in fitted.goodness_of_fit_by_protocol.values())
 
 
 def test_target_t1rho_and_leakage_reduced_fits_recover_synthetic_rates() -> None:

@@ -19,7 +19,10 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.linalg import expm
 
 from .fit import (
+    GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT,
+    GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
     ResidualBlock,
+    assess_goodness_of_fit,
     covariance_whitener,
     fit_gls_candidate,
     fit_profiled_affine_candidate,
@@ -64,6 +67,7 @@ from .types import (
     CrDissipationWarning,
     DecayRateFit,
     ExchangeRateFit,
+    FitGoodnessOfFit,
     GefPopulationSeries,
     IdleNoiseParameters,
     PhysicalForwardDephasingFit,
@@ -108,53 +112,48 @@ class _IdleEquivalentBaseline:
     raw_cd_reference_predictions: dict[str, NDArray[np.float64]]
 
 
-def _select_significant_nested_candidate(
-    candidates: Mapping[str, CandidateFit],
-    null_values: Mapping[str, float],
-) -> CandidateFit | None:
-    """
-    Select by AICc, then iteratively remove sub-2-sigma parameters.
+def _selected_rate_status(
+    candidate: CandidateFit,
+    parameter_name: str,
+) -> CrDissipationRateStatus:
+    """Classify one selected rate without replacing its central estimate."""
+    if candidate.goodness_of_fit is not None and not candidate.goodness_of_fit.accepted:
+        return CrDissipationRateStatus.MODEL_MISMATCH
+    if parameter_name not in candidate.parameter_names:
+        return CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
+    index = candidate.parameter_names.index(parameter_name)
+    value = abs(float(candidate.parameters[index]))
+    error = float(candidate.standard_errors[index])
+    if (
+        np.isfinite(error)
+        and error > 0.0
+        and value / error >= PARAMETER_SIGNIFICANCE_THRESHOLD
+    ):
+        return CrDissipationRateStatus.RESOLVED
+    return CrDissipationRateStatus.PARTIALLY_UNRESOLVED
 
-    Parameters absent from `null_values` are nuisance parameters shared by all
-    candidates.  They are retained without applying the physical-rate
-    significance test.  Each simplification is restricted to a successful
-    nested candidate which retains all nuisance and significant parameters.
-    """
-    selected = select_aicc_candidate(
-        candidates,
-        delta_threshold=MODEL_SELECTION_DELTA_AICC,
-    )
-    while selected is not None and selected.parameter_names:
-        significant = set(selected.parameter_names) - set(null_values)
-        for index, name in enumerate(selected.parameter_names):
-            if name not in null_values:
-                continue
-            error = float(selected.standard_errors[index])
-            distance = abs(float(selected.parameters[index]) - null_values[name])
-            if (
-                np.isfinite(error)
-                and error > 0.0
-                and distance / error >= PARAMETER_SIGNIFICANCE_THRESHOLD
-            ):
-                significant.add(name)
-        selected_names = set(selected.parameter_names)
-        if significant == selected_names:
-            break
-        nested = {
-            name: candidate
-            for name, candidate in candidates.items()
-            if candidate.success
-            and set(candidate.parameter_names) < selected_names
-            and significant.issubset(candidate.parameter_names)
-        }
-        replacement = select_aicc_candidate(
-            nested,
-            delta_threshold=MODEL_SELECTION_DELTA_AICC,
+
+def _protocol_goodness_of_fit(
+    observations: Sequence[_VectorObservation],
+    predictions: Mapping[str, NDArray[np.float64]],
+) -> dict[str, FitGoodnessOfFit]:
+    """Assess A and B whitened residuals separately without allocating shared DOF."""
+    output: dict[str, FitGoodnessOfFit] = {}
+    for protocol in (PROTOCOL_A, PROTOCOL_B):
+        residuals = [
+            item.block.whitener
+            @ (
+                predictions[protocol][item.point_index, item.component_indices]
+                - item.block.observed
+            )
+            for item in observations
+            if item.protocol == protocol
+        ]
+        output[protocol] = assess_goodness_of_fit(
+            np.concatenate(residuals) if residuals else np.empty(0),
+            n_parameters=0,
         )
-        if replacement is None:
-            break
-        selected = replacement
-    return selected
+    return output
 
 
 def _simplex_coordinates(
@@ -211,18 +210,24 @@ def _simplex_coordinate_jacobian(
 def computational_polarization(
     series: GefPopulationSeries,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Return leakage-normalized `(Pg-Pe)/(Pg+Pe)` and delta-method SE."""
+    """
+    Return target X after the fixed A/B ``+Y90`` analysis rotation.
+
+    Qubex prepares target ``+X`` with ``+Y90`` and A/B applies another
+    ``+Y90`` before the GEF readout.  Consequently positive target X maps to
+    negative measured Z, so the fixed observable is ``(Pe-Pg)/(Pg+Pe)``.
+    """
     population = np.asarray(series.population, dtype=np.float64)
     covariance = np.asarray(series.covariance, dtype=np.float64)
     denominator = population[:, 0] + population[:, 1]
     values = np.full(population.shape[0], np.nan, dtype=np.float64)
     errors = np.full_like(values, np.nan)
     valid = np.isfinite(denominator) & (denominator > 0.0)
-    values[valid] = (population[valid, 0] - population[valid, 1]) / denominator[valid]
+    values[valid] = (population[valid, 1] - population[valid, 0]) / denominator[valid]
     for index in np.flatnonzero(valid):
         pg, pe = population[index, :2]
         total = pg + pe
-        gradient = np.array([2.0 * pe / total**2, -2.0 * pg / total**2, 0.0])
+        gradient = np.array([-2.0 * pe / total**2, 2.0 * pg / total**2, 0.0])
         cov = covariance[index]
         if cov.shape == (3, 3) and np.all(np.isfinite(cov)):
             variance = float(gradient @ cov @ gradient)
@@ -234,25 +239,31 @@ def computational_polarization(
 def nonnormalized_ge_expectation(
     series: GefPopulationSeries,
     *,
-    align_initial_sign: bool = True,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], float]:
-    """Return non-normalized `Pg-Pe` and its full-covariance standard error."""
+    population_order: Literal["g_minus_e", "e_minus_g"] = "g_minus_e",
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """
+    Return a fixed non-normalized GE expectation and its covariance-based SE.
+
+    ``g_minus_e`` is direct Z readout. ``e_minus_g`` is the X expectation
+    produced by the fixed ``+Y90`` analyzer used by protocol C. The convention
+    is determined by the pulse sequence and never inferred from measured data.
+    """
     population = np.asarray(series.population, dtype=np.float64)
-    difference = population[:, 0] - population[:, 1]
-    sign = (
-        1.0
-        if not align_initial_sign or difference.size == 0 or difference[0] >= 0.0
-        else -1.0
-    )
-    values = sign * difference
+    if population_order == "g_minus_e":
+        values = population[:, 0] - population[:, 1]
+        vector = np.array([1.0, -1.0, 0.0], dtype=np.float64)
+    elif population_order == "e_minus_g":
+        values = population[:, 1] - population[:, 0]
+        vector = np.array([-1.0, 1.0, 0.0], dtype=np.float64)
+    else:
+        raise ValueError(f"Unknown GE population order {population_order!r}.")
     errors = np.full(values.shape, np.nan, dtype=np.float64)
-    vector = np.array([1.0, -1.0, 0.0], dtype=np.float64)
     for index, covariance in enumerate(np.asarray(series.covariance, dtype=np.float64)):
         if covariance.shape == (3, 3) and np.all(np.isfinite(covariance)):
             variance = float(vector @ covariance @ vector)
             if variance >= -1e-15:
                 errors[index] = np.sqrt(max(variance, 0.0))
-    return values, errors, sign
+    return values, errors
 
 
 def three_level_rate_matrix(
@@ -751,31 +762,15 @@ def fit_control_populations(
     ):
         return _failed_control_fit(candidates, excluded)
 
-    selected = _select_significant_nested_candidate(
+    selected = select_aicc_candidate(
         candidates,
-        null_rates,
+        delta_threshold=MODEL_SELECTION_DELTA_AICC,
     )
     if selected is None:
         return _failed_control_fit(candidates, excluded)
     rates = candidate_rates[selected.name]
-    g_name, f_name = selected.name.split(" x ")
     statuses = {
-        "control_e_to_g": CrDissipationRateStatus.RESOLVED,
-        "control_g_to_e": (
-            CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
-            if g_name == "G1"
-            else CrDissipationRateStatus.RESOLVED
-        ),
-        "control_e_to_f": (
-            CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
-            if f_name in ("F0", "F1b")
-            else CrDissipationRateStatus.RESOLVED
-        ),
-        "control_f_to_e": (
-            CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
-            if f_name in ("F0", "F1")
-            else CrDissipationRateStatus.RESOLVED
-        ),
+        name: _selected_rate_status(selected, name) for name in _CONTROL_RATE_ORDER
     }
     covariance = np.zeros((4, 4), dtype=np.float64)
     for left, left_name in enumerate(_CONTROL_RATE_ORDER):
@@ -808,8 +803,12 @@ def fit_control_populations(
         initial_populations=candidate_initials[selected.name],
         initial_population_covariances=initial_covariances,
         message=(
-            "Final ordinary-GLS joint fit selected."
+            "Final multi-start ordinary-GLS joint fit selected by global AICc."
             + (f" Excluded points: {', '.join(excluded)}." if excluded else "")
+        ),
+        goodness_of_fit_by_protocol=_protocol_goodness_of_fit(
+            observations,
+            candidate_predictions[selected.name],
         ),
     )
 
@@ -937,7 +936,7 @@ def fit_target_t1rho(
         selected_model=free.name,
         rate_per_ns=rate,
         rate_standard_error_per_ns=error,
-        status=CrDissipationRateStatus.RESOLVED,
+        status=_selected_rate_status(free, "rate_per_ns"),
         x_infinity=float(free.parameters[1]),
         candidates=candidates,
         fitted_values=trajectory(
@@ -1057,9 +1056,9 @@ def fit_target_exchange(
         for candidate in candidates.values()
     ):
         return _failed_exchange_fit(candidates, counts.size)
-    selected = _select_significant_nested_candidate(
+    selected = select_aicc_candidate(
         candidates,
-        {"leakage_rate_per_ns": 0.0, "seepage_rate_per_ns": 0.0},
+        delta_threshold=MODEL_SELECTION_DELTA_AICC,
     )
     if selected is None:
         return _failed_exchange_fit(candidates, counts.size)
@@ -1103,16 +1102,8 @@ def fit_target_exchange(
         seepage_rate_per_ns=seep,
         leakage_standard_error_per_ns=leak_error,
         seepage_standard_error_per_ns=seep_error,
-        leakage_status=(
-            CrDissipationRateStatus.RESOLVED
-            if leak_free
-            else CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
-        ),
-        seepage_status=(
-            CrDissipationRateStatus.RESOLVED
-            if seep_free
-            else CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
-        ),
+        leakage_status=_selected_rate_status(selected, "leakage_rate_per_ns"),
+        seepage_status=_selected_rate_status(selected, "seepage_rate_per_ns"),
         covariance=covariance,
         candidates=candidates,
         fitted_values=trajectories[selected.name],
@@ -1122,7 +1113,7 @@ def fit_target_exchange(
         ),
         message=(
             "Selected a reduced target leakage/seepage model with a latent "
-            "initial population by ordinary-GLS AICc."
+            "initial population by multi-start ordinary-GLS AICc."
         ),
     )
 
@@ -1244,7 +1235,7 @@ def fit_physical_dephasing(
             free.name,
             float(free.parameters[0]),
             float(free.standard_errors[0]),
-            CrDissipationRateStatus.RESOLVED,
+            _selected_rate_status(free, "pure_dephasing_rate_per_ns"),
             float(free.parameters[1]),
             float(free.parameters[2]),
             candidates,
@@ -1258,30 +1249,26 @@ def fit_physical_dephasing(
     candidates = {null.name: null, free.name: free, diagnostic.name: diagnostic}
     if not null.success or not free.success:
         return _failed_physical_fit(candidates, values.size)
-    error = float(free.standard_errors[0])
-    delta = (
-        float(null.aicc - free.aicc)
-        if null.aicc is not None and free.aicc is not None
-        else -np.inf
+    selected = select_aicc_candidate(
+        {null.name: null, free.name: free},
+        delta_threshold=MODEL_SELECTION_DELTA_AICC,
     )
-    significance = (
-        float(free.parameters[0]) / error if error > 0.0 and np.isfinite(error) else 0.0
-    )
-    if (
-        delta >= MODEL_SELECTION_DELTA_AICC
-        and significance >= PARAMETER_SIGNIFICANCE_THRESHOLD
-    ):
-        selected = free
+    if selected is None:
+        return _failed_physical_fit(candidates, values.size)
+    if selected.name == free.name:
         rate = float(free.parameters[0])
-        rate_error: float | None = error
-        status = CrDissipationRateStatus.RESOLVED
+        rate_error: float | None = float(free.standard_errors[0])
+        status = _selected_rate_status(free, "pure_dephasing_rate_per_ns")
         amplitude = float(free.parameters[1])
         offset = float(free.parameters[2])
     else:
-        selected = null
         rate = 0.0
         rate_error = None
-        status = CrDissipationRateStatus.CONSISTENT_WITH_ZERO
+        status = (
+            CrDissipationRateStatus.MODEL_MISMATCH
+            if null.goodness_of_fit is not None and not null.goodness_of_fit.accepted
+            else CrDissipationRateStatus.CONSISTENT_WITH_ZERO
+        )
         amplitude = float(null.parameters[0])
         offset = float(null.parameters[1])
     unconstrained_rate = float(diagnostic.parameters[0]) if diagnostic.success else None
@@ -1292,7 +1279,7 @@ def fit_physical_dephasing(
         unconstrained_rate is not None
         and unconstrained_error is not None
         and np.isfinite(unconstrained_error)
-        and unconstrained_rate < -2.0 * unconstrained_error
+        and unconstrained_rate < -PARAMETER_SIGNIFICANCE_THRESHOLD * unconstrained_error
     ):
         selected = null
         status = CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION
@@ -1300,6 +1287,8 @@ def fit_physical_dephasing(
         rate_error = None
         amplitude = float(null.parameters[0])
         offset = float(null.parameters[1])
+    if selected.goodness_of_fit is not None and not selected.goodness_of_fit.accepted:
+        status = CrDissipationRateStatus.MODEL_MISMATCH
     message = (
         "The signed diagnostic required negative pure dephasing; the reported "
         "physical fit uses the zero-rate candidate."
@@ -1360,6 +1349,8 @@ def _aggregate_status(
     """Combine two protocol statuses into one conservative aggregate status."""
     if CrDissipationRateStatus.FIT_FAILED in (left, right):
         return CrDissipationRateStatus.FIT_FAILED
+    if CrDissipationRateStatus.MODEL_MISMATCH in (left, right):
+        return CrDissipationRateStatus.MODEL_MISMATCH
     if left == right == CrDissipationRateStatus.RESOLVED:
         return CrDissipationRateStatus.RESOLVED
     if left == right == unresolved:
@@ -1509,8 +1500,11 @@ def _signed_rate_difference(total_rate: float, idle_equivalent_rate: float) -> f
 
 
 def _control_standard_error(fit: ControlPopulationRateFit, name: str) -> float | None:
-    """Return a resolved control-rate standard error when available."""
-    if not fit.success or fit.statuses[name] != CrDissipationRateStatus.RESOLVED:
+    """Return the SE of a control rate retained by the selected model."""
+    if not fit.success:
+        return None
+    selected = fit.candidates.get(fit.selected_model)
+    if selected is None or name not in selected.parameter_names:
         return None
     index = fit.parameter_order.index(name)
     variance = fit.covariance[index, index]
@@ -2116,10 +2110,16 @@ def _fidelity_limits(
         failed = [
             name
             for name in dependencies
-            if statuses.get(name) == CrDissipationRateStatus.FIT_FAILED
+            if statuses.get(name)
+            in (
+                CrDissipationRateStatus.FIT_FAILED,
+                CrDissipationRateStatus.MODEL_MISMATCH,
+            )
         ]
         if failed:
-            return unavailable("Required rates failed: " + ", ".join(failed))
+            return unavailable(
+                "Required rates failed or have model mismatch: " + ", ".join(failed)
+            )
         value = evaluate({}, include_leakage)
         if not compute_uncertainty:
             return CrDissipationFidelityEstimate(
@@ -2288,6 +2288,9 @@ def analyze_cr_dissipation(
     dependency_failure = any(
         statuses[name] == CrDissipationRateStatus.FIT_FAILED for name in required_ab
     )
+    dependency_mismatch = any(
+        statuses[name] == CrDissipationRateStatus.MODEL_MISMATCH for name in required_ab
+    )
     counts = measurements.repetition_counts
     c_data = getattr(measurements, PROTOCOL_C).actual
     d_data = getattr(measurements, PROTOCOL_D).actual
@@ -2336,6 +2339,21 @@ def analyze_cr_dissipation(
             fixed_rates=fixed,
             fitted_role="target",
         )
+        if dependency_mismatch:
+            dependency_message = (
+                " A required A/B primitive fit has absolute model mismatch; "
+                "this conditional C/D estimate is diagnostic only."
+            )
+            c_fit = replace(
+                c_fit,
+                status=CrDissipationRateStatus.MODEL_MISMATCH,
+                message=c_fit.message + dependency_message,
+            )
+            d_fit = replace(
+                d_fit,
+                status=CrDissipationRateStatus.MODEL_MISMATCH,
+                message=d_fit.message + dependency_message,
+            )
     nominal["control_pure_dephasing"] = (
         c_fit.rate_per_ns if c_fit.success else float("nan")
     )
@@ -2377,6 +2395,45 @@ def analyze_cr_dissipation(
                 "fit_failed",
                 "One or more fits failed; independent outputs were retained.",
                 failed_fits,
+            )
+        )
+    mismatched_fits = tuple(
+        name
+        for name, has_mismatch in (
+            (
+                "control_population_ab",
+                CrDissipationRateStatus.MODEL_MISMATCH in control_fit.statuses.values(),
+            ),
+            ("target_a_t1rho", t1_a.status == CrDissipationRateStatus.MODEL_MISMATCH),
+            (
+                "target_a_leakage",
+                CrDissipationRateStatus.MODEL_MISMATCH
+                in (leak_a.leakage_status, leak_a.seepage_status),
+            ),
+            ("target_b_t1rho", t1_b.status == CrDissipationRateStatus.MODEL_MISMATCH),
+            (
+                "target_b_leakage",
+                CrDissipationRateStatus.MODEL_MISMATCH
+                in (leak_b.leakage_status, leak_b.seepage_status),
+            ),
+            (
+                "control_pure_dephasing_c",
+                c_fit.status == CrDissipationRateStatus.MODEL_MISMATCH,
+            ),
+            (
+                "target_rotating_frame_pure_dephasing_d",
+                d_fit.status == CrDissipationRateStatus.MODEL_MISMATCH,
+            ),
+        )
+        if has_mismatch
+    )
+    if mismatched_fits:
+        warnings.append(
+            CrDissipationWarning(
+                "model_mismatch",
+                "One or more optimizations converged but failed absolute "
+                "goodness-of-fit limits; dependent fidelity is unavailable.",
+                mismatched_fits,
             )
         )
     invalid_idle_equivalents = tuple(
@@ -2553,9 +2610,19 @@ def analyze_cr_dissipation(
         metadata={
             "uncertainty_conditioning": "idle_coherence_and_gef_calibration_fixed",
             "initial_condition_treatment": "latent_nuisance_with_n0_observation",
+            "model_selection": "simplest_candidate_within_global_delta_aicc_6",
+            "rate_optimization": "deterministic_multistart",
+            "absolute_goodness_of_fit_limits": {
+                "reduced_chi_squared": GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
+                "maximum_absolute_whitened_residual": (
+                    GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT
+                ),
+                "covariance_conditioning": "gef_calibration_fixed",
+            },
             "cross_protocol_covariance_approximation": "block_diagonal",
             "idle_equivalent_extraction": "non_recursive_synthetic_baseline",
             "cr_sign_dependent_dissipation": False,
+            "protocol_c_primary_observable": "control_Xge_unnormalized_Pe_minus_Pg",
             "protocol_d_primary_observable": "target_Zge_unnormalized_Pg_minus_Pe",
             "transverse_rate_definition": "coherence_only_excludes_leakage",
             "pure_dephasing_definition": "cr_active_total_effective_rate",
@@ -2589,6 +2656,8 @@ def _derived_status(
     """Combine dependency statuses for a derived transverse rate."""
     if CrDissipationRateStatus.FIT_FAILED in dependencies:
         return CrDissipationRateStatus.FIT_FAILED
+    if CrDissipationRateStatus.MODEL_MISMATCH in dependencies:
+        return CrDissipationRateStatus.MODEL_MISMATCH
     if all(status == CrDissipationRateStatus.RESOLVED for status in dependencies):
         return CrDissipationRateStatus.RESOLVED
     return CrDissipationRateStatus.PARTIALLY_UNRESOLVED

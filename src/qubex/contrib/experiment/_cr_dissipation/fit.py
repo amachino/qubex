@@ -14,10 +14,13 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import OptimizeResult, least_squares, lsq_linear
+from scipy.stats import chi2
 
-from .types import CandidateFit
+from .types import CandidateFit, FitGoodnessOfFit
 
 _EPS = float(np.finfo(np.float64).eps)
+GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT = 5.0
+GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT = 8.0
 
 
 # Residual construction and covariance whitening
@@ -161,6 +164,89 @@ def _local_covariance(
     return np.asarray(covariance * max(1.0, reduced_chi_squared), dtype=np.float64)
 
 
+def assess_goodness_of_fit(
+    whitened_residual: ArrayLike,
+    *,
+    n_parameters: int,
+) -> FitGoodnessOfFit:
+    """Assess gross model mismatch from absolute whitened residuals."""
+    residual = np.asarray(whitened_residual, dtype=np.float64).reshape(-1)
+    degrees_of_freedom = int(residual.size - n_parameters)
+    if residual.size == 0 or not np.all(np.isfinite(residual)):
+        return FitGoodnessOfFit(
+            degrees_of_freedom,
+            None,
+            float("nan"),
+            False,
+            "No finite whitened residuals were available.",
+        )
+    chi_squared = float(residual @ residual)
+    maximum = float(np.max(np.abs(residual)))
+    if degrees_of_freedom <= 0:
+        return FitGoodnessOfFit(
+            degrees_of_freedom,
+            None,
+            maximum,
+            False,
+            "Absolute goodness-of-fit requires positive residual degrees of freedom.",
+        )
+    reduced = chi_squared / degrees_of_freedom
+    p_value = float(chi2.sf(chi_squared, degrees_of_freedom))
+    accepted = bool(
+        reduced <= GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT
+        and maximum <= GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT
+    )
+    reason = None
+    if not accepted:
+        reason = (
+            "Whitened residuals exceed the conservative absolute fit limits "
+            f"(reduced chi-squared={reduced:.3g}, max |r|={maximum:.3g})."
+        )
+    return FitGoodnessOfFit(
+        degrees_of_freedom,
+        p_value,
+        maximum,
+        accepted,
+        reason,
+    )
+
+
+def _rate_multistart_initials(
+    initial: NDArray[np.float64],
+    lower: NDArray[np.float64],
+    upper: NDArray[np.float64],
+    names: Sequence[str],
+) -> tuple[NDArray[np.float64], ...]:
+    """Build deterministic low/high perturbations of free rate parameters."""
+    rate_indices = tuple(
+        index
+        for index, name in enumerate(names)
+        if "rate" in name or (name.startswith("control_") and "_to_" in name)
+    )
+    if not rate_indices:
+        return ()
+
+    def clipped(candidate: NDArray[np.float64]) -> NDArray[np.float64]:
+        return np.clip(candidate, lower, upper)
+
+    starts: list[NDArray[np.float64]] = []
+    for factor in (0.1, 10.0):
+        candidate = initial.copy()
+        candidate[list(rate_indices)] *= factor
+        starts.append(clipped(candidate))
+    for index in rate_indices:
+        candidate = initial.copy()
+        candidate[index] *= 10.0
+        starts.append(clipped(candidate))
+    unique: list[NDArray[np.float64]] = []
+    for candidate in starts:
+        if not np.array_equal(candidate, initial) and not any(
+            np.array_equal(candidate, existing) for existing in unique
+        ):
+            unique.append(candidate)
+    return tuple(unique)
+
+
 def fit_gls_candidate(
     *,
     name: str,
@@ -170,6 +256,7 @@ def fit_gls_candidate(
     residual: Callable[[NDArray[np.float64]], NDArray[np.float64]],
     prediction: Callable[[NDArray[np.float64]], NDArray[np.float64]],
     n_observations: int,
+    additional_initials: Sequence[ArrayLike] | None = None,
     preliminary_loss: str = "soft_l1",
     max_nfev: int = 3000,
 ) -> CandidateFit:
@@ -213,6 +300,9 @@ def fit_gls_candidate(
             message="Fixed-parameter candidate evaluated."
             if success
             else "Fixed-parameter candidate evaluation failed.",
+            goodness_of_fit=(
+                assess_goodness_of_fit(whitened, n_parameters=0) if success else None
+            ),
         )
 
     if n_observations <= n_parameters + 1:
@@ -222,41 +312,66 @@ def fit_gls_candidate(
             n_observations,
             "AICc is undefined because N_obs <= k + 1.",
         )
-    robust = _run_least_squares(
-        residual,
-        initial_array,
-        (lower, upper),
-        loss=preliminary_loss,
-        max_nfev=max_nfev,
+    extra = (
+        _rate_multistart_initials(initial_array, lower, upper, names)
+        if additional_initials is None
+        else tuple(np.asarray(value, dtype=np.float64) for value in additional_initials)
     )
-    final_initial = (
-        np.asarray(robust.x, dtype=np.float64)
-        if robust is not None and np.all(np.isfinite(robust.x))
-        else initial_array
-    )
-    final = _run_least_squares(
-        residual,
-        final_initial,
-        (lower, upper),
-        loss="linear",
-        max_nfev=max_nfev,
-    )
-    if final is None or not final.success or not np.all(np.isfinite(final.x)):
+    starts = (initial_array, *extra)
+    if any(start.shape != initial_array.shape for start in starts):
+        raise ValueError("all candidate initializations must have matching shapes.")
+    if any(np.any(start < lower) or np.any(start > upper) for start in starts):
+        raise ValueError("candidate initializations must lie within bounds.")
+    solutions: list[tuple[float, OptimizeResult, NDArray[np.float64]]] = []
+    for start in starts:
+        robust = _run_least_squares(
+            residual,
+            start,
+            (lower, upper),
+            loss=preliminary_loss,
+            max_nfev=max_nfev,
+        )
+        final_initial = (
+            np.asarray(robust.x, dtype=np.float64)
+            if robust is not None and np.all(np.isfinite(robust.x))
+            else start
+        )
+        final_attempt = _run_least_squares(
+            residual,
+            final_initial,
+            (lower, upper),
+            loss="linear",
+            max_nfev=max_nfev,
+        )
+        if (
+            final_attempt is None
+            or not final_attempt.success
+            or not np.all(np.isfinite(final_attempt.x))
+        ):
+            continue
+        attempt_residual = np.asarray(
+            residual(np.asarray(final_attempt.x, dtype=np.float64)), dtype=np.float64
+        )
+        if attempt_residual.shape != (n_observations,) or not np.all(
+            np.isfinite(attempt_residual)
+        ):
+            continue
+        solutions.append(
+            (
+                float(attempt_residual @ attempt_residual),
+                final_attempt,
+                attempt_residual,
+            )
+        )
+    if not solutions:
         return _failed_candidate(
             name,
             names,
             n_observations,
             "Final ordinary GLS optimization failed.",
         )
+    _, final, whitened = min(solutions, key=lambda item: item[0])
     parameters = np.asarray(final.x, dtype=np.float64)
-    whitened = np.asarray(residual(parameters), dtype=np.float64)
-    if whitened.shape != (n_observations,) or not np.all(np.isfinite(whitened)):
-        return _failed_candidate(
-            name,
-            names,
-            n_observations,
-            "Final ordinary GLS residual is invalid.",
-        )
     chi_squared = float(whitened @ whitened)
     reduced = chi_squared / max(1, n_observations - n_parameters)
     jacobian = np.asarray(final.jac, dtype=np.float64)
@@ -293,6 +408,9 @@ def fit_gls_candidate(
         n_observations=n_observations,
         n_parameters=n_parameters,
         message=str(final.message),
+        goodness_of_fit=assess_goodness_of_fit(whitened, n_parameters=n_parameters),
+        n_initializations=len(starts),
+        n_successful_initializations=len(solutions),
     )
 
 
@@ -377,32 +495,56 @@ def fit_profiled_affine_candidate(
         def residual(rate_array: NDArray[np.float64]) -> NDArray[np.float64]:
             return profile(float(rate_array[0]))[3]
 
-        robust = _run_least_squares(
-            residual,
-            np.array([initial]),
-            (np.array([lower]), np.array([upper])),
-            loss="soft_l1",
-            max_nfev=max_nfev,
+        lower_array = np.array([lower])
+        upper_array = np.array([upper])
+        start_values = tuple(
+            dict.fromkeys(
+                (
+                    initial,
+                    lower + 0.1 * (upper - lower),
+                    lower + 0.5 * (upper - lower),
+                    lower + 0.9 * (upper - lower),
+                )
+            )
         )
-        final_initial = (
-            np.asarray(robust.x, dtype=np.float64)
-            if robust is not None and np.all(np.isfinite(robust.x))
-            else np.array([initial])
-        )
-        final = _run_least_squares(
-            residual,
-            final_initial,
-            (np.array([lower]), np.array([upper])),
-            loss="linear",
-            max_nfev=max_nfev,
-        )
-        if final is None or not final.success or not np.all(np.isfinite(final.x)):
+        solutions: list[tuple[float, OptimizeResult]] = []
+        for start in start_values:
+            robust = _run_least_squares(
+                residual,
+                np.array([start]),
+                (lower_array, upper_array),
+                loss="soft_l1",
+                max_nfev=max_nfev,
+            )
+            final_initial = (
+                np.asarray(robust.x, dtype=np.float64)
+                if robust is not None and np.all(np.isfinite(robust.x))
+                else np.array([start])
+            )
+            attempt = _run_least_squares(
+                residual,
+                final_initial,
+                (lower_array, upper_array),
+                loss="linear",
+                max_nfev=max_nfev,
+            )
+            if (
+                attempt is None
+                or not attempt.success
+                or not np.all(np.isfinite(attempt.x))
+            ):
+                continue
+            attempt_residual = residual(np.asarray(attempt.x, dtype=np.float64))
+            if np.all(np.isfinite(attempt_residual)):
+                solutions.append((float(attempt_residual @ attempt_residual), attempt))
+        if not solutions:
             return _failed_candidate(
                 name,
                 parameter_names,
                 n_observations,
                 "Profiled one-dimensional GLS optimization failed.",
             )
+        _, final = min(solutions, key=lambda item: item[0])
         rate = float(final.x[0])
     else:
         rate = float(fixed_rate)
@@ -484,6 +626,9 @@ def fit_profiled_affine_candidate(
         n_observations=n_observations,
         n_parameters=n_parameters,
         message="Affine SPAM parameters were profiled in a one-dimensional rate fit.",
+        goodness_of_fit=assess_goodness_of_fit(whitened, n_parameters=n_parameters),
+        n_initializations=len(start_values) if free_rate else 1,
+        n_successful_initializations=len(solutions) if free_rate else 1,
     )
 
 

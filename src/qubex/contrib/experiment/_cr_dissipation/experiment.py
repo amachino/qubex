@@ -49,6 +49,10 @@ from .analysis import (
     nonnormalized_ge_expectation,
     simplex_boundary_bootstrap_required,
 )
+from .fit import (
+    GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT,
+    GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
+)
 from .pulses import (
     PROTOCOL_A,
     PROTOCOL_B,
@@ -509,11 +513,10 @@ def _protocol_data(
         control_series = _gef_series(result, names, control)
         target_series = _gef_series(result, names, target)
         target_x, target_x_error = computational_polarization(target_series)
-        sign = 1.0 if target_x[0] >= 0.0 else -1.0
         return CrDissipationProtocolData(
             control_gef=control_series,
             target_gef=target_series,
-            target_x_comp=sign * target_x,
+            target_x_comp=target_x,
             target_x_comp_standard_error=target_x_error,
         )
     primary_series = _gef_series(
@@ -521,9 +524,9 @@ def _protocol_data(
         names,
         control if protocol == PROTOCOL_C else target,
     )
-    primary, primary_error, _ = nonnormalized_ge_expectation(
+    primary, primary_error = nonnormalized_ge_expectation(
         primary_series,
-        align_initial_sign=protocol != PROTOCOL_D,
+        population_order="e_minus_g" if protocol == PROTOCOL_C else "g_minus_e",
     )
     return CrDissipationProtocolData(
         control_gef=primary_series if protocol == PROTOCOL_C else None,
@@ -1515,16 +1518,17 @@ def characterize_cr_dissipation(
     """
     Characterize CR-active dissipation and compute three fidelity limits.
 
-    All public time inputs and raw timings are in ns; rates are in 1/ns. C/D
-    use the non-normalized qutrit observable `Pg-Pe`. Reference and orthogonal
-    acquisitions are diagnostic-only and never enter primary inference. A/B use
-    same-sign CR lobes with the calibrated cancellation tone but without rotary;
-    C/D retain the complete calibrated echoed ZX90. The C/D and fidelity
-    forward models use intended rotations with actual pulse timing. If the
-    calibrated schedule does not expose pre-combination rotary angle/phase
-    metadata, its semantic rotary term is omitted under the echoed-gate
-    approximation that the coherent IX rotation cancels; the hardware pulse is
-    unchanged.
+    All public time inputs and raw timings are in ns; rates are in 1/ns.
+    Protocol C uses non-normalized `Pe-Pg` after its fixed `+Y90` analyzer;
+    protocol D directly uses non-normalized `Pg-Pe`. Reference and orthogonal
+    acquisitions are diagnostic-only and never enter primary inference. A/B
+    use same-sign CR lobes with the calibrated cancellation tone but without
+    rotary; C/D retain the complete calibrated echoed ZX90. The C/D and
+    fidelity forward models use intended rotations with actual pulse timing.
+    If the calibrated schedule does not expose pre-combination rotary
+    angle/phase metadata, its semantic rotary term is omitted under the
+    echoed-gate approximation that the coherent IX rotation cancels; the
+    hardware pulse is unchanged.
 
     Parameters
     ----------
@@ -1620,6 +1624,10 @@ def characterize_cr_dissipation(
     A/B initial populations and contrasts are fitted nuisance parameters;
     measured `n=0` values constrain them as ordinary observations rather than
     being fixed as exact initial conditions.
+    Rate candidates use deterministic multi-start optimization and global AICc
+    competition. Sub-2-sigma free rates retain their fitted central values,
+    while gross absolute residual failures are reported as `model_mismatch` and
+    make dependent fidelity limits unavailable.
     """
     for name, value in (
         ("measure_reference", measure_reference),
@@ -1960,9 +1968,9 @@ def characterize_cr_dissipation(
             PROTOCOL_D: "gef_target_only",
         },
         "primary_observable": {
-            PROTOCOL_A: "target_Xcomp_and_control_GEF",
-            PROTOCOL_B: "target_Xcomp_and_control_GEF",
-            PROTOCOL_C: "control_Xge",
+            PROTOCOL_A: "target_Xcomp_normalized_Pe_minus_Pg_and_control_GEF",
+            PROTOCOL_B: "target_Xcomp_normalized_Pe_minus_Pg_and_control_GEF",
+            PROTOCOL_C: "control_Xge_unnormalized_Pe_minus_Pg",
             PROTOCOL_D: "target_Zge_unnormalized_Pg_minus_Pe",
         },
         "orthogonal_observables": (
@@ -2004,6 +2012,14 @@ def characterize_cr_dissipation(
         "preliminary_optimizer_loss": "soft_l1",
         "final_optimizer_loss": "linear",
         "model_selection_statistic": "gaussian_gls_aicc",
+        "model_selection_rule": "simplest_within_global_delta_aicc",
+        "rate_optimizer_initialization": "deterministic_multistart",
+        "goodness_of_fit_reduced_chi_squared_limit": (
+            GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT
+        ),
+        "goodness_of_fit_maximum_absolute_whitened_residual_limit": (
+            GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT
+        ),
         "rate_uncertainty_method": "local_gls_covariance",
         "initial_condition_treatment": "latent_nuisance_with_n0_observation",
         "c_d_fit_method": "two_qutrit_physical_forward_variable_projection",
