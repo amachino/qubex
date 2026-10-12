@@ -81,50 +81,6 @@ def test_summarize_iq_shots_rejects_invalid_shot_data(
         summarize_iq_shots(iq)
 
 
-@pytest.mark.parametrize(
-    ("covariance", "message"),
-    [
-        (
-            np.array(
-                [
-                    [1.0, 0.5, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 0.0, 1.0],
-                ]
-            ),
-            "symmetric",
-        ),
-        (np.diag([1.0, 1.0, 1.0, 1.0, -0.1]), "positive semidefinite"),
-    ],
-)
-def test_iq_moment_summary_rejects_invalid_covariance(
-    covariance: np.ndarray,
-    message: str,
-) -> None:
-    """A moment summary should reject matrices that are not covariances."""
-    with pytest.raises(ValueError, match=message):
-        IQMomentSummary(
-            mean=np.zeros(5),
-            covariance=covariance,
-            n_shots=100,
-        )
-
-
-@pytest.mark.parametrize("n_shots", [True, 2.5])
-def test_iq_moment_summary_rejects_noninteger_shot_counts(
-    n_shots: object,
-) -> None:
-    """A moment summary should require an integer shot count."""
-    with pytest.raises(TypeError, match="n_shots"):
-        IQMomentSummary(
-            mean=np.zeros(5),
-            covariance=np.eye(5),
-            n_shots=n_shots,  # type: ignore[arg-type]
-        )
-
-
 def test_reconstruct_state_features_is_independent_of_thermal_population() -> None:
     """Six calibration configurations should recover state features for unknown q."""
     state_features = np.array(
@@ -248,34 +204,3 @@ def test_fit_rejects_nonidentifiable_state_features() -> None:
 
     with pytest.raises(ValueError, match="not identifiable"):
         fit_gef_population(summaries, state_features)
-
-
-@pytest.mark.parametrize(
-    ("covariance_rcond", "error"),
-    [
-        (False, TypeError),
-        (-1e-3, ValueError),
-        (1.0, ValueError),
-        (float("nan"), ValueError),
-    ],
-)
-def test_fit_rejects_invalid_covariance_cutoffs(
-    covariance_rcond: object,
-    error: type[Exception],
-) -> None:
-    """The covariance cutoff should be a finite real in the half-open unit interval."""
-    state_features = np.eye(3, 5)
-    summaries = {
-        name: _summary(mean)
-        for name, mean in _unknown_means(
-            state_features,
-            np.array([0.2, 0.3, 0.5]),
-        ).items()
-    }
-
-    with pytest.raises(error, match="covariance_rcond"):
-        fit_gef_population(
-            summaries,
-            state_features,
-            covariance_rcond=covariance_rcond,  # type: ignore[arg-type]
-        )

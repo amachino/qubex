@@ -13,15 +13,12 @@ import pytest
 import qubex.contrib.experiment._cr_dissipation.analysis as analysis_module
 from qubex.contrib.experiment._cr_dissipation.analysis import (
     _aggregate_value_error,
-    _change_detected,
     _fidelity_limits,
     _fit_idle_control_rates,
     _fit_idle_target_exchange,
     _fit_idle_target_t1rho,
     _pure_dephasing_component,
     _select_significant_nested_candidate,
-    _signed_rate_difference,
-    _simplex_boundary_override,
     _target_control_state_dependence_warnings,
     control_population_trajectory,
     fit_control_populations,
@@ -32,9 +29,6 @@ from qubex.contrib.experiment._cr_dissipation.analysis import (
     simplex_boundary_bootstrap_required,
     target_exchange_trajectory,
     target_t1rho_trajectory,
-)
-from qubex.contrib.experiment._cr_dissipation.fit import (
-    fit_profiled_affine_candidate,
 )
 from qubex.contrib.experiment._cr_dissipation.pulses import (
     PROTOCOL_A,
@@ -108,34 +102,27 @@ def test_aicc_winner_is_iteratively_reduced_when_one_rate_is_sub_2sigma() -> Non
     assert selected.name == "L1"
 
 
-def test_boundary_fraction_is_only_an_auxiliary_flat_boundary_override() -> None:
-    """A material occupancy change recovers dynamics hidden by clipping."""
-    values = np.tile([0.55, 0.45, 0.0], (3, 1))
-    base = population_series(values)
-    confidence_interval = np.array([[0.50, 0.40, 0.0], [0.60, 0.50, 0.01]])
-    initial = SimpleNamespace(
-        confidence_interval=confidence_interval,
-        boundary_fraction=np.array([0.0, 0.0, 0.9]),
-    )
-    changed = SimpleNamespace(
-        confidence_interval=confidence_interval,
-        boundary_fraction=np.array([0.0, 0.0, 0.5]),
-    )
-    stable = SimpleNamespace(
-        confidence_interval=confidence_interval,
-        boundary_fraction=np.array([0.0, 0.0, 0.8]),
+def test_aicc_simplification_preserves_initial_condition_nuisance() -> None:
+    """Initial-condition nuisance parameters survive physical-rate reduction."""
+    candidates = {
+        "L2": _candidate(
+            "L2",
+            ("leak", "seep", "initial_pf"),
+            (4e-5, 2e-6, 0.02),
+            (5e-6, 2e-6, 1e-3),
+            0.0,
+        ),
+        "L1": _candidate("L1", ("leak", "initial_pf"), (4e-5, 0.02), (5e-6, 1e-3), 8.0),
+        "L0": _candidate("L0", ("initial_pf",), (0.02,), (1e-3,), 30.0),
+    }
+
+    selected = _select_significant_nested_candidate(
+        candidates, {"leak": 0.0, "seep": 0.0}
     )
 
-    assert _simplex_boundary_override(
-        replace(base, bootstrap=(initial, changed, changed)),
-        2,
-        minimum_change=0.003,
-    )
-    assert not _simplex_boundary_override(
-        replace(base, bootstrap=(initial, stable, stable)),
-        2,
-        minimum_change=0.003,
-    )
+    assert selected is not None
+    assert selected.name == "L1"
+    assert "initial_pf" in selected.parameter_names
 
 
 @pytest.mark.parametrize(
@@ -170,21 +157,6 @@ def test_simplex_boundary_bootstrap_is_requested_only_when_unconstrained_data_ar
             minimum_change=0.003,
         )
         is expected
-    )
-
-
-def test_change_detection_uses_independent_material_and_significance_maxima() -> None:
-    """Material and significance maxima may occur at different points."""
-    values = np.array([0.0, 0.02, 0.001])
-    reference = np.zeros(3)
-    errors = np.array([0.001, 0.1, 0.0001])
-
-    assert _change_detected(
-        values,
-        errors,
-        reference,
-        minimum_change=0.01,
-        include_initial_error=False,
     )
 
 
@@ -748,8 +720,8 @@ def test_protocol_d_z_observable_keeps_the_pg_minus_pe_sign() -> None:
     np.testing.assert_allclose(values, [-0.5, -0.4])
 
 
-def test_joint_control_fit_recovers_four_rates_and_excludes_n_zero() -> None:
-    """The A/B joint GLS fit recovers rates using only n>0 residuals."""
+def test_joint_control_fit_recovers_rates_and_fits_initial_populations() -> None:
+    """The A/B joint GLS fit includes n=0 as a latent-state observation."""
     counts = np.array([0, 1, 2, 3, 5, 8, 13], dtype=np.int64)
     desc = descriptor()
     idle = IdleNoiseParameters(50_000.0, 40_000.0)
@@ -814,7 +786,18 @@ def test_joint_control_fit_recovers_four_rates_and_excludes_n_zero() -> None:
         assert fitted.rates_per_ns[name] == pytest.approx(expected, rel=2e-3)
         assert fitted.statuses[name] == CrDissipationRateStatus.RESOLVED
     selected = fitted.candidates[fitted.selected_model]
-    assert selected.n_observations == 2 * 2 * (counts.size - 1)
+    assert selected.n_observations == 2 * 2 * counts.size
+    assert selected.n_parameters == 8
+    np.testing.assert_allclose(
+        fitted.initial_populations[PROTOCOL_A], [0.98, 0.02, 0.0], atol=2e-6
+    )
+    np.testing.assert_allclose(
+        fitted.initial_populations[PROTOCOL_B], [0.03, 0.95, 0.02], atol=2e-6
+    )
+    for covariance in fitted.initial_population_covariances.values():
+        assert covariance.shape == (3, 3)
+        np.testing.assert_allclose(covariance.sum(axis=0), 0.0, atol=1e-14)
+        np.testing.assert_allclose(covariance.sum(axis=1), 0.0, atol=1e-14)
 
 
 def test_target_t1rho_and_leakage_reduced_fits_recover_synthetic_rates() -> None:
@@ -896,26 +879,70 @@ def test_target_t1rho_and_leakage_reduced_fits_recover_synthetic_rates() -> None
     assert exchange.selected_model == "L2"
     assert exchange.leakage_rate_per_ns == pytest.approx(leakage, rel=3e-3)
     assert exchange.seepage_rate_per_ns == pytest.approx(seepage, rel=3e-3)
+    assert exchange.initial_pf == pytest.approx(0.01, abs=2e-6)
+    assert exchange.candidates[exchange.selected_model].n_observations == counts.size
+    assert exchange.candidates[exchange.selected_model].n_parameters == 3
+    assert decay.initial_x_comp == pytest.approx(0.96, abs=2e-6)
+    assert decay.candidates[decay.selected_model].n_observations == counts.size
+    assert decay.candidates[decay.selected_model].n_parameters == 3
 
-
-def test_symmetric_target_leakage_does_not_mimic_t1rho_without_seepage() -> None:
-    """Symmetric leakage alone leaves normalized computational X unchanged."""
-    counts = np.array([0, 1, 2, 5, 8], dtype=np.int64)
-
-    values = target_t1rho_trajectory(
+    x_only_data = replace(protocol_data, target_gef=None)
+    x_only_measurements = measurements_from_protocol_data(
         counts,
-        0.93,
-        0.0,
-        0.0,
-        initial_pf=0.02,
-        leakage_rate_per_ns=8e-5,
-        seepage_rate_per_ns=0.0,
-        cr_lobe_duration_ns=50.0,
-        blank_duration_ns=0.0,
-        idle_transverse_rate_per_ns=0.0,
+        {
+            PROTOCOL_A: x_only_data,
+            PROTOCOL_B: x_only_data,
+            PROTOCOL_C: dummy,
+            PROTOCOL_D: dummy,
+        },
+    )
+    x_only_decay = fit_target_t1rho(
+        x_only_measurements,
+        PROTOCOL_A,
+        desc,
+        idle,
+        exchange,
+    )
+    assert x_only_decay.success
+
+
+def test_target_exchange_does_not_fix_curve_to_noisy_n_zero() -> None:
+    """Later Pf observations can move the fitted latent initial population."""
+    counts = np.array([0, 1, 2, 3, 5, 8, 13], dtype=np.int64)
+    desc = descriptor()
+    true_pf0 = 0.02
+    leakage = 4e-5
+    seepage = 2e-5
+    pf = target_exchange_trajectory(
+        counts,
+        true_pf0,
+        leakage,
+        seepage,
+        cr_lobe_duration_ns=desc.cr_lobe_duration_ns,
+    )
+    population = np.column_stack((0.5 * (1.0 - pf), 0.5 * (1.0 - pf), pf))
+    population[0] = [0.48, 0.48, 0.04]
+    target = population_series(population, error=1e-4)
+    target.standard_error[0, 2] = 0.02
+    target.covariance[0, 2, 2] = 0.02**2
+    control = population_series(np.tile([1.0, 0.0, 0.0], (counts.size, 1)))
+    ab = CrDissipationProtocolData(control_gef=control, target_gef=target)
+    cd = CrDissipationProtocolData(
+        primary_expectation=np.ones(counts.size),
+        primary_standard_error=np.full(counts.size, 2e-4),
+    )
+    measurements = measurements_from_protocol_data(
+        counts,
+        {PROTOCOL_A: ab, PROTOCOL_B: ab, PROTOCOL_C: cd, PROTOCOL_D: cd},
     )
 
-    np.testing.assert_allclose(values, 0.93, rtol=0.0, atol=1e-12)
+    fitted = fit_target_exchange(
+        measurements, PROTOCOL_A, desc, force_all_candidates=True
+    )
+
+    assert fitted.success
+    assert fitted.initial_pf == pytest.approx(true_pf0, abs=2e-4)
+    assert fitted.fitted_values[0] != pytest.approx(0.04, abs=1e-3)
 
 
 def test_t1rho_fit_recovers_zero_from_symmetric_leakage_only() -> None:
@@ -982,31 +1009,6 @@ def test_t1rho_fit_recovers_zero_from_symmetric_leakage_only() -> None:
 
     assert exchange.leakage_rate_per_ns == pytest.approx(leakage, rel=3e-3)
     assert decay.rate_per_ns == pytest.approx(0.0, abs=1e-9)
-
-
-def test_pure_dephasing_delta_is_signed_relative_to_idle_equivalent() -> None:
-    """The derived pure-dephasing comparison preserves either sign."""
-    assert _signed_rate_difference(2e-5, 2e-5) == pytest.approx(0.0, abs=1e-15)
-    assert _signed_rate_difference(1e-5, 2e-5) == pytest.approx(-1e-5)
-
-
-def test_profiled_affine_fit_recovers_one_nonlinear_rate() -> None:
-    """Variable projection recovers rate, contrast, and offset."""
-    times = np.arange(10, dtype=np.float64)
-    true_rate = 0.18
-    values = 0.72 * np.exp(-true_rate * times) + 0.11
-    fit = fit_profiled_affine_candidate(
-        name="synthetic",
-        simulator=lambda rate: np.exp(-rate * times),
-        values=values,
-        standard_errors=np.full(times.size, 0.002),
-        initial_rate=0.1,
-        rate_bounds=(0.0, 1.0),
-    )
-
-    assert fit.success
-    assert fit.parameters == pytest.approx((true_rate, 0.72, 0.11), rel=1e-5)
-    assert fit.jacobian.shape == (times.size, 3)
 
 
 def test_physical_forward_fit_selects_resolved_control_pure_dephasing(

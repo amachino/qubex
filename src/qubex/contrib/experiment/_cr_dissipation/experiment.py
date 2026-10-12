@@ -1462,8 +1462,9 @@ def _print_summary(
         )
     print(
         "± values are conditional statistical 1σ uncertainties with supplied "
-        "idle T1/T2_echo and fitted GEF calibration held fixed; selected cross-fit "
-        "and cross-protocol covariances are neglected."
+        "idle T1/T2_echo and fitted GEF calibration held fixed. Within-fit "
+        "initial-condition correlations are included; selected cross-fit and "
+        "cross-protocol covariances are neglected."
     )
     for label, estimate in (
         ("Idle coherence limited", analysis.fidelity.idle_coherence_limited),
@@ -1616,6 +1617,9 @@ def characterize_cr_dissipation(
     -----
     This function performs hardware acquisition. When reference calibration is
     requested, it may also update the experiment calibration-note store.
+    A/B initial populations and contrasts are fitted nuisance parameters;
+    measured `n=0` values constrain them as ordinary observations rather than
+    being fixed as exact initial conditions.
     """
     for name, value in (
         ("measure_reference", measure_reference),
@@ -2001,6 +2005,7 @@ def characterize_cr_dissipation(
         "final_optimizer_loss": "linear",
         "model_selection_statistic": "gaussian_gls_aicc",
         "rate_uncertainty_method": "local_gls_covariance",
+        "initial_condition_treatment": "latent_nuisance_with_n0_observation",
         "c_d_fit_method": "two_qutrit_physical_forward_variable_projection",
         "c_d_nonlinear_parameter_count": 1,
         "fidelity_uncertainty_method": (

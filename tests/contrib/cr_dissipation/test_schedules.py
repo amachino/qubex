@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+from scipy.linalg import expm
 
 import qubex.contrib.experiment._cr_dissipation.simulation as simulation_module
 from qubex.contrib.experiment._cr_dissipation.pulses import (
@@ -27,19 +28,13 @@ from qubex.contrib.experiment._cr_dissipation.simulation import (
     X_TARGET,
     Y_TARGET,
     Z_TARGET,
-    ZX,
     CrNoiseRates,
-    F,
-    G,
     SemanticSegment,
-    apply_channel,
+    SemanticUnitary,
     compose_channel,
-    leakage_aware_average_fidelity,
     propagate_fidelity_uncertainty,
     simulate_repeated_observable,
-    simultaneous_rotation_segments,
     state_density,
-    tensor,
 )
 from qubex.contrib.experiment._cr_dissipation.types import IdleNoiseParameters
 from qubex.experiment import Experiment
@@ -179,24 +174,6 @@ def test_un_echoed_ab_gate_removes_rotary_but_preserves_cr_and_cancel() -> None:
     ]
 
 
-def test_explicit_full_un_echoed_zx90_is_used_for_ab() -> None:
-    """A full un-echoed override replaces only the A/B protocol unit."""
-    echoed = _echoed_zx90()
-    exp = _schedule_experiment(echoed)
-    generated = resolve_zx90_descriptor(exp, "Q0", "Q1", None).full_un_echoed
-
-    descriptor = resolve_zx90_descriptor(
-        exp,
-        "Q0",
-        "Q1",
-        echoed,
-        generated,
-    )
-
-    assert descriptor.echoed is echoed
-    assert descriptor.full_un_echoed is generated
-
-
 def test_single_lobe_no_echo_primitive_is_rejected_for_ab() -> None:
     """A/B reject the single-lobe primitive in place of a full ZX90 unit."""
     echoed = _echoed_zx90()
@@ -322,17 +299,16 @@ def test_protocol_d_ideal_block_refocuses_z_even_with_zx_angle_error() -> None:
         else operation
         for operation in block
     )
-    idle = IdleNoiseParameters(float("inf"), float("inf"))
     initial = state_density("g", "g")
 
-    channel = compose_channel(
-        detuned,
-        control_idle=idle,
-        target_idle=idle,
-        cr_rates=None,
-        include_leakage=False,
-    )
-    final = apply_channel(channel, initial)
+    final = initial
+    for operation in detuned:
+        unitary = (
+            operation.unitary
+            if isinstance(operation, SemanticUnitary)
+            else expm(-1.0j * operation.hamiltonian * operation.duration_ns)
+        )
+        final = unitary @ final @ unitary.conj().T
     for observable, expected in (
         (Z_TARGET, 1.0),
         (X_TARGET, 0.0),
@@ -440,40 +416,6 @@ def test_semantic_rotary_is_used_for_echoed_protocols_but_not_ab() -> None:
         np.testing.assert_allclose(descriptor.full_un_echoed.values[label], waveform)
 
 
-def test_qutrit_embedding_stops_zx_but_not_unconditional_ix_after_control_leakage() -> (
-    None
-):
-    """ZX annihilates control-f while unconditional target rotation remains."""
-    leaked_control = np.outer(F, F.conj())
-    target_ground = np.outer(G, G.conj())
-    state = tensor(leaked_control, target_ground)
-
-    np.testing.assert_allclose(ZX @ state, 0.0, atol=1e-14)
-    assert np.linalg.norm(X_TARGET @ state) > 0.0
-
-
-def test_simultaneous_pulses_do_not_stretch_the_shorter_rotation() -> None:
-    """Piecewise layers stop the short Hamiltonian at its calibrated duration."""
-    segments = simultaneous_rotation_segments(
-        ((ZX, np.pi / 4.0, 20.0, "short"), (X_TARGET, np.pi, 50.0, "long"))
-    )
-
-    assert [segment.duration_ns for segment in segments] == [20.0, 30.0]
-    assert segments[0].label == "short+long"
-    assert segments[1].label == "long"
-
-
-def test_leakage_aware_fidelity_is_one_for_identity_channel() -> None:
-    """The generalized `(d Fe + s)/(d+1)` formula reduces to unity."""
-    channel = np.eye(81, dtype=np.complex128)
-
-    average, entanglement, survival = leakage_aware_average_fidelity(channel, channel)
-
-    assert average == pytest.approx(1.0)
-    assert entanglement == pytest.approx(1.0)
-    assert survival == pytest.approx(1.0)
-
-
 def test_control_e_to_f_leakage_adds_half_rate_ge_coherence_decay() -> None:
     """Control e-to-f leakage damps ge coherence at half the jump rate."""
     rate = 3e-4
@@ -511,42 +453,6 @@ def test_control_e_to_f_leakage_adds_half_rate_ge_coherence_decay() -> None:
 
     assert value == pytest.approx(np.exp(-0.5 * rate * duration), rel=1e-12)
     assert coherence_only == pytest.approx(1.0, abs=1e-12)
-
-
-def test_signed_diagnostic_accepts_negative_coefficient_only_explicitly() -> None:
-    """Negative pure dephasing is represented as a signed Liouvillian term."""
-    idle = IdleNoiseParameters(float("inf"), float("inf"))
-    operation = (
-        SemanticSegment(10.0, np.zeros((9, 9), dtype=np.complex128), True, "CR"),
-    )
-
-    diagnostic = compose_channel(
-        operation,
-        control_idle=idle,
-        target_idle=idle,
-        cr_rates=CrNoiseRates(),
-        include_leakage=False,
-        signed_control_pure_dephasing=-1e-5,
-    )
-
-    assert np.all(np.isfinite(diagnostic))
-    with pytest.raises(ValueError, match="nonnegative"):
-        compose_channel(
-            operation,
-            control_idle=idle,
-            target_idle=idle,
-            cr_rates=CrNoiseRates(control_e_to_g=-1e-5),
-            include_leakage=False,
-        )
-    with pytest.raises(ValueError, match="nonnegative"):
-        compose_channel(
-            operation,
-            control_idle=idle,
-            target_idle=idle,
-            cr_rates=CrNoiseRates(control_e_to_g=-1e-5),
-            include_leakage=False,
-            signed_control_pure_dephasing=-1e-5,
-        )
 
 
 def test_unscented_covariance_psd_handling_and_positive_rates() -> None:

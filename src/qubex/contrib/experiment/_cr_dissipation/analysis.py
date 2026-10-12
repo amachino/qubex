@@ -1,10 +1,11 @@
 """
 Fit CR-active rates and derive conditional fidelity limits.
 
-A/B determine population exchange, target T1rho, leakage, and seepage. C/D use
-those rates as fixed inputs to physical forward fits for pure dephasing. A
-synthetic idle-only pass supplies comparable baselines without recursively
-calling the primary analysis.
+A/B determine population exchange, target T1rho, leakage, and seepage while
+fitting measured `n=0` states as nuisance parameters. C/D use those rates as
+fixed inputs to physical forward fits for pure dephasing. A synthetic idle-only
+pass supplies comparable baselines without recursively calling the primary
+analysis.
 """
 
 from __future__ import annotations
@@ -114,17 +115,20 @@ def _select_significant_nested_candidate(
     """
     Select by AICc, then iteratively remove sub-2-sigma parameters.
 
-    Each simplification is restricted to a successful nested candidate which
-    retains every parameter that was significant in the current model.  The
-    loop is finite because every accepted replacement has fewer parameters.
+    Parameters absent from `null_values` are nuisance parameters shared by all
+    candidates.  They are retained without applying the physical-rate
+    significance test.  Each simplification is restricted to a successful
+    nested candidate which retains all nuisance and significant parameters.
     """
     selected = select_aicc_candidate(
         candidates,
         delta_threshold=MODEL_SELECTION_DELTA_AICC,
     )
     while selected is not None and selected.parameter_names:
-        significant: set[str] = set()
+        significant = set(selected.parameter_names) - set(null_values)
         for index, name in enumerate(selected.parameter_names):
+            if name not in null_values:
+                continue
             error = float(selected.standard_errors[index])
             distance = abs(float(selected.parameters[index]) - null_values[name])
             if (
@@ -151,6 +155,57 @@ def _select_significant_nested_candidate(
             break
         selected = replacement
     return selected
+
+
+def _simplex_coordinates(
+    population: ArrayLike,
+) -> tuple[tuple[int, int, int], NDArray[np.float64]]:
+    """Return stable stick-breaking coordinates around the dominant state."""
+    values = np.asarray(population, dtype=np.float64)
+    if values.shape != (3,) or not np.all(np.isfinite(values)):
+        raise ValueError("Initial GEF population must be a finite length-three vector.")
+    if float(np.min(values)) < -1e-10:
+        raise ValueError("Initial GEF population must be nonnegative.")
+    clipped = np.maximum(values, 0.0)
+    total = float(np.sum(clipped))
+    if total <= 0.0:
+        raise ValueError("Initial GEF population must have positive total weight.")
+    normalized = clipped / total
+    dominant = int(np.argmax(normalized))
+    first, second = (index for index in range(3) if index != dominant)
+    first_value = float(normalized[first])
+    remaining = max(1.0 - first_value, np.finfo(np.float64).eps)
+    second_fraction = float(np.clip(normalized[second] / remaining, 0.0, 1.0))
+    return (dominant, first, second), np.array([first_value, second_fraction])
+
+
+def _population_from_simplex_coordinates(
+    coordinates: ArrayLike,
+    order: tuple[int, int, int],
+) -> NDArray[np.float64]:
+    """Map two bounded stick-breaking coordinates onto the GEF simplex."""
+    first_value, second_fraction = np.asarray(coordinates, dtype=np.float64)
+    dominant, first, second = order
+    remaining = 1.0 - first_value
+    population = np.empty(3, dtype=np.float64)
+    population[first] = first_value
+    population[second] = remaining * second_fraction
+    population[dominant] = remaining * (1.0 - second_fraction)
+    return population
+
+
+def _simplex_coordinate_jacobian(
+    coordinates: ArrayLike,
+    order: tuple[int, int, int],
+) -> NDArray[np.float64]:
+    """Return the population Jacobian for stick-breaking coordinates."""
+    first_value, second_fraction = np.asarray(coordinates, dtype=np.float64)
+    dominant, first, second = order
+    jacobian = np.zeros((3, 2), dtype=np.float64)
+    jacobian[first] = (1.0, 0.0)
+    jacobian[second] = (-second_fraction, 1.0 - first_value)
+    jacobian[dominant] = (-(1.0 - second_fraction), -(1.0 - first_value))
+    return jacobian
 
 
 def computational_polarization(
@@ -247,7 +302,7 @@ def control_population_trajectory(
 
 def target_t1rho_trajectory(
     repetition_counts: ArrayLike,
-    initial_value: float,
+    initial_x_comp: float,
     rate_per_ns: float,
     x_infinity: float,
     *,
@@ -281,7 +336,7 @@ def target_t1rho_trajectory(
     unit = blank_step @ cr_step @ blank_step @ cr_step
     computational_population = 1.0 - float(initial_pf)
     initial = np.array(
-        [initial_pf, initial_value * computational_population, 1.0],
+        [initial_pf, initial_x_comp * computational_population, 1.0],
         dtype=np.float64,
     )
     output: list[float] = []
@@ -330,14 +385,14 @@ def _control_observations(
     *,
     covariance_rcond: float,
 ) -> tuple[tuple[_VectorObservation, ...], tuple[str, ...]]:
-    """Build usable A/B population observations with covariance whitening."""
+    """Build usable A/B population observations, including measured `n=0`."""
     observations: list[_VectorObservation] = []
     excluded: list[str] = []
     for protocol in (PROTOCOL_A, PROTOCOL_B):
         series = getattr(measurements, protocol).actual.control_gef
         if series is None:
             raise ValueError(f"{protocol} is missing control GEF data.")
-        for index in range(1, measurements.repetition_counts.size):
+        for index in range(measurements.repetition_counts.size):
             observed = np.asarray(series.population[index, 1:3], dtype=np.float64)
             covariance = np.asarray(
                 series.covariance[index][1:3, 1:3], dtype=np.float64
@@ -491,19 +546,24 @@ def fit_control_populations(
     covariance_rcond: float,
     force_all_candidates: bool = False,
 ) -> ControlPopulationRateFit:
-    """Jointly fit the A/B three-state control model and select submodels."""
+    """Jointly fit A/B rates and latent initial simplex populations."""
     observations, excluded = _control_observations(
         measurements,
         covariance_rcond=covariance_rcond,
     )
     n_observations = sum(item.block.rank for item in observations)
-    initial_by_protocol = {}
+    measured_initials: dict[str, NDArray[np.float64]] = {}
+    coordinate_orders: dict[str, tuple[int, int, int]] = {}
+    initial_coordinates: dict[str, NDArray[np.float64]] = {}
     for protocol in (PROTOCOL_A, PROTOCOL_B):
         series = getattr(measurements, protocol).actual.control_gef
         if series is None:
             raise ValueError(f"{protocol} is missing control GEF data.")
-        initial_by_protocol[protocol] = np.asarray(
-            series.population[0], dtype=np.float64
+        order, coordinates = _simplex_coordinates(series.population[0])
+        coordinate_orders[protocol] = order
+        initial_coordinates[protocol] = coordinates
+        measured_initials[protocol] = _population_from_simplex_coordinates(
+            coordinates, order
         )
     counts = measurements.repetition_counts
     idle_rate = control_idle.relaxation_rate_per_ns
@@ -518,7 +578,7 @@ def fit_control_populations(
             blank_duration_ns=descriptor.echo_slot_duration_ns,
             idle_e_to_g_per_ns=idle_rate,
         )
-        for protocol, initial in initial_by_protocol.items()
+        for protocol, initial in measured_initials.items()
     }
     ge_dynamic = force_all_candidates
     ef_dynamic = force_all_candidates
@@ -564,7 +624,16 @@ def fit_control_populations(
     candidates: dict[str, CandidateFit] = {}
     candidate_rates: dict[str, dict[str, float]] = {}
     candidate_predictions: dict[str, dict[str, NDArray[np.float64]]] = {}
+    candidate_initials: dict[str, dict[str, NDArray[np.float64]]] = {}
     blocks = tuple(item.block for item in observations)
+    nuisance_names = tuple(
+        name
+        for protocol in (PROTOCOL_A, PROTOCOL_B)
+        for name in (
+            f"{protocol}_initial_minor_population",
+            f"{protocol}_initial_conditional_population",
+        )
+    )
 
     for g_name in retained_g:
         for f_name in retained_f:
@@ -579,13 +648,29 @@ def fit_control_populations(
                 names: tuple[str, ...] = free_names,
             ) -> dict[str, float]:
                 rates = dict(fixed_values)
-                rates.update(zip(names, parameters, strict=True))
+                rates.update(zip(names, parameters[: len(names)], strict=True))
                 return rates
+
+            def initials_from(
+                parameters: NDArray[np.float64],
+                *,
+                rate_count: int = len(free_names),
+            ) -> dict[str, NDArray[np.float64]]:
+                output: dict[str, NDArray[np.float64]] = {}
+                offset = rate_count
+                for protocol in (PROTOCOL_A, PROTOCOL_B):
+                    output[protocol] = _population_from_simplex_coordinates(
+                        parameters[offset : offset + 2],
+                        coordinate_orders[protocol],
+                    )
+                    offset += 2
+                return output
 
             def trajectories(
                 parameters: NDArray[np.float64],
             ) -> dict[str, NDArray[np.float64]]:
                 rates = rates_from(parameters)
+                initials = initials_from(parameters)
                 return {
                     protocol: control_population_trajectory(
                         counts,
@@ -595,7 +680,7 @@ def fit_control_populations(
                         blank_duration_ns=descriptor.echo_slot_duration_ns,
                         idle_e_to_g_per_ns=idle_rate,
                     )
-                    for protocol, initial in initial_by_protocol.items()
+                    for protocol, initial in initials.items()
                 }
 
             def block_predictions(
@@ -617,16 +702,33 @@ def fit_control_populations(
                     else np.empty(0)
                 )
 
-            initial = np.full(
-                len(free_names),
-                _bounded_rate_initial(upper, max(idle_rate, 1e-5)),
-                dtype=np.float64,
+            initial = np.concatenate(
+                (
+                    np.full(
+                        len(free_names),
+                        _bounded_rate_initial(upper, max(idle_rate, 1e-5)),
+                        dtype=np.float64,
+                    ),
+                    *(
+                        initial_coordinates[protocol]
+                        for protocol in (PROTOCOL_A, PROTOCOL_B)
+                    ),
+                )
             )
+            parameter_names = (*free_names, *nuisance_names)
             candidate = fit_gls_candidate(
                 name=name,
-                parameter_names=free_names,
+                parameter_names=parameter_names,
                 initial=initial,
-                bounds=(np.zeros(len(free_names)), np.full(len(free_names), upper)),
+                bounds=(
+                    np.zeros(len(parameter_names)),
+                    np.concatenate(
+                        (
+                            np.full(len(free_names), upper),
+                            np.ones(len(nuisance_names)),
+                        )
+                    ),
+                ),
                 residual=residual,
                 prediction=prediction,
                 n_observations=n_observations,
@@ -635,6 +737,7 @@ def fit_control_populations(
             if candidate.success:
                 candidate_rates[name] = rates_from(candidate.parameters)
                 candidate_predictions[name] = trajectories(candidate.parameters)
+                candidate_initials[name] = initials_from(candidate.parameters)
 
     required_sectors = []
     if ge_dynamic:
@@ -683,6 +786,16 @@ def fit_control_populations(
             if right_name in selected.parameter_names:
                 source_right = selected.parameter_names.index(right_name)
                 covariance[left, right] = selected.covariance[source_left, source_right]
+    initial_covariances: dict[str, NDArray[np.float64]] = {}
+    for protocol_index, protocol in enumerate((PROTOCOL_A, PROTOCOL_B)):
+        coordinate_names = nuisance_names[2 * protocol_index : 2 * protocol_index + 2]
+        indices = [selected.parameter_names.index(name) for name in coordinate_names]
+        coordinate_covariance = selected.covariance[np.ix_(indices, indices)]
+        coordinates = selected.parameters[indices]
+        jacobian = _simplex_coordinate_jacobian(
+            coordinates, coordinate_orders[protocol]
+        )
+        initial_covariances[protocol] = jacobian @ coordinate_covariance @ jacobian.T
     return ControlPopulationRateFit(
         success=True,
         selected_model=selected.name,
@@ -692,6 +805,8 @@ def fit_control_populations(
         parameter_order=_CONTROL_RATE_ORDER,
         candidates=candidates,
         fitted_populations=candidate_predictions[selected.name],
+        initial_populations=candidate_initials[selected.name],
+        initial_population_covariances=initial_covariances,
         message=(
             "Final ordinary-GLS joint fit selected."
             + (f" Excluded points: {', '.join(excluded)}." if excluded else "")
@@ -715,6 +830,8 @@ def _failed_control_fit(
         parameter_order=_CONTROL_RATE_ORDER,
         candidates=candidates,
         fitted_populations={},
+        initial_populations={},
+        initial_population_covariances={},
         message="No identifiable joint GLS candidate. "
         + (f"Excluded points: {', '.join(excluded)}." if excluded else ""),
     )
@@ -727,50 +844,49 @@ def fit_target_t1rho(
     target_idle: IdleNoiseParameters,
     exchange_fit: ExchangeRateFit,
 ) -> DecayRateFit:
-    """Fit total T1rho with leakage/seepage fixed from the target Pf fit."""
+    """Fit total T1rho and initial contrast with target exchange rates fixed."""
     data = getattr(measurements, protocol).actual
-    if (
-        data.target_x_comp is None
-        or data.target_x_comp_standard_error is None
-        or data.target_gef is None
-    ):
+    if data.target_x_comp is None or data.target_x_comp_standard_error is None:
         raise ValueError(f"{protocol} is missing target X data.")
     if not exchange_fit.success:
         return DecayRateFit(
-            False,
-            "fit_failed",
-            float("nan"),
-            None,
-            CrDissipationRateStatus.FIT_FAILED,
-            float("nan"),
-            {},
-            np.full(measurements.repetition_counts.shape, np.nan),
-            "T1rho fit requires an identifiable target leakage/seepage fit.",
+            success=False,
+            selected_model="fit_failed",
+            rate_per_ns=float("nan"),
+            rate_standard_error_per_ns=None,
+            status=CrDissipationRateStatus.FIT_FAILED,
+            x_infinity=float("nan"),
+            candidates={},
+            fitted_values=np.full(measurements.repetition_counts.shape, np.nan),
+            initial_x_comp=float("nan"),
+            initial_x_comp_standard_error=None,
+            message="T1rho fit requires an identifiable target leakage/seepage fit.",
         )
     counts = measurements.repetition_counts
-    blocks = scalar_residual_blocks(
-        data.target_x_comp[1:],
-        data.target_x_comp_standard_error[1:],
-    )
     retained_indices = [
         index
-        for index in range(1, counts.size)
+        for index in range(counts.size)
         if np.isfinite(data.target_x_comp[index])
         and np.isfinite(data.target_x_comp_standard_error[index])
         and data.target_x_comp_standard_error[index] > 0.0
     ]
+    blocks = scalar_residual_blocks(
+        data.target_x_comp[retained_indices],
+        data.target_x_comp_standard_error[retained_indices],
+    )
     n_observations = sum(block.rank for block in blocks)
-    initial_value = float(data.target_x_comp[0])
     active = getattr(measurements, protocol).cr_active_time_ns
     upper = _rate_upper_bound(active)
 
-    def trajectory(rate: float, x_infinity: float) -> NDArray[np.float64]:
+    def trajectory(
+        rate: float, x_infinity: float, initial_x_comp: float
+    ) -> NDArray[np.float64]:
         return target_t1rho_trajectory(
             counts,
-            initial_value,
+            initial_x_comp,
             rate,
             x_infinity,
-            initial_pf=float(data.target_gef.population[0, 2]),
+            initial_pf=exchange_fit.initial_pf,
             leakage_rate_per_ns=exchange_fit.leakage_rate_per_ns,
             seepage_rate_per_ns=exchange_fit.seepage_rate_per_ns,
             cr_lobe_duration_ns=descriptor.cr_lobe_duration_ns,
@@ -779,14 +895,22 @@ def fit_target_t1rho(
         )
 
     def predictions(parameters: NDArray[np.float64]) -> list[NDArray[np.float64]]:
-        values = trajectory(float(parameters[0]), float(parameters[1]))
+        values = trajectory(
+            float(parameters[0]), float(parameters[1]), float(parameters[2])
+        )
         return [np.array([values[index]]) for index in retained_indices]
 
     free = fit_gls_candidate(
         name="free",
-        parameter_names=("rate_per_ns", "x_infinity"),
-        initial=np.array([_bounded_rate_initial(upper), 0.0]),
-        bounds=(np.array([0.0, -1.5]), np.array([upper, 1.5])),
+        parameter_names=("rate_per_ns", "x_infinity", "initial_x_comp"),
+        initial=np.array(
+            [
+                _bounded_rate_initial(upper),
+                0.0,
+                np.clip(data.target_x_comp[0], -1.0, 1.0),
+            ]
+        ),
+        bounds=(np.array([0.0, -1.5, -1.0]), np.array([upper, 1.5, 1.0])),
         residual=lambda parameters: whiten_predictions(predictions(parameters), blocks),
         prediction=lambda parameters: np.concatenate(predictions(parameters)),
         n_observations=n_observations,
@@ -794,28 +918,34 @@ def fit_target_t1rho(
     candidates = {free.name: free}
     if not free.success:
         return DecayRateFit(
-            False,
-            "fit_failed",
-            float("nan"),
-            None,
-            CrDissipationRateStatus.FIT_FAILED,
-            float("nan"),
-            candidates,
-            np.full(counts.shape, np.nan),
-            "T1rho total-rate GLS fit failed.",
+            success=False,
+            selected_model="fit_failed",
+            rate_per_ns=float("nan"),
+            rate_standard_error_per_ns=None,
+            status=CrDissipationRateStatus.FIT_FAILED,
+            x_infinity=float("nan"),
+            candidates=candidates,
+            fitted_values=np.full(counts.shape, np.nan),
+            initial_x_comp=float("nan"),
+            initial_x_comp_standard_error=None,
+            message="T1rho total-rate GLS fit failed.",
         )
     rate = float(free.parameters[0])
     error = float(free.standard_errors[0])
     return DecayRateFit(
-        True,
-        free.name,
-        rate,
-        error,
-        CrDissipationRateStatus.RESOLVED,
-        float(free.parameters[1]),
-        candidates,
-        trajectory(rate, float(free.parameters[1])),
-        "Fitted total CR-active T1rho conditional on fixed leakage/seepage rates.",
+        success=True,
+        selected_model=free.name,
+        rate_per_ns=rate,
+        rate_standard_error_per_ns=error,
+        status=CrDissipationRateStatus.RESOLVED,
+        x_infinity=float(free.parameters[1]),
+        candidates=candidates,
+        fitted_values=trajectory(
+            rate, float(free.parameters[1]), float(free.parameters[2])
+        ),
+        initial_x_comp=float(free.parameters[2]),
+        initial_x_comp_standard_error=float(free.standard_errors[2]),
+        message="Fitted total CR-active T1rho with a latent initial contrast.",
     )
 
 
@@ -826,7 +956,7 @@ def fit_target_exchange(
     *,
     force_all_candidates: bool = False,
 ) -> ExchangeRateFit:
-    """Fit L0/L1/L1b/L2 to one target f-population series."""
+    """Fit L0/L1/L1b/L2 and a latent initial target f population."""
     series = getattr(measurements, protocol).actual.target_gef
     if series is None:
         raise ValueError(f"{protocol} is missing target GEF data.")
@@ -835,7 +965,7 @@ def fit_target_exchange(
     errors = np.asarray(series.standard_error[:, 2], dtype=np.float64)
     retained = [
         index
-        for index in range(1, counts.size)
+        for index in range(counts.size)
         if np.isfinite(values[index])
         and np.isfinite(errors[index])
         and errors[index] > 0.0
@@ -865,16 +995,19 @@ def fit_target_exchange(
     candidates: dict[str, CandidateFit] = {}
     trajectories: dict[str, NDArray[np.float64]] = {}
     rates: dict[str, tuple[float, float]] = {}
+    initial_pfs: dict[str, float] = {}
     for name in retained_models:
-        fixed_leak, fixed_seep, parameter_names = models[name]
+        fixed_leak, fixed_seep, rate_parameter_names = models[name]
+        parameter_names = (*rate_parameter_names, "initial_pf")
 
         def unpack(
             parameters: NDArray[np.float64],
             *,
             leak_fixed: float | None = fixed_leak,
             seep_fixed: float | None = fixed_seep,
+            rate_count: int = len(rate_parameter_names),
         ) -> tuple[float, float]:
-            iterator = iter(parameters)
+            iterator = iter(parameters[:rate_count])
             leak = float(next(iterator)) if leak_fixed is None else leak_fixed
             seep = float(next(iterator)) if seep_fixed is None else seep_fixed
             return leak, seep
@@ -883,7 +1016,7 @@ def fit_target_exchange(
             leak, seep = unpack(parameters)
             return target_exchange_trajectory(
                 counts,
-                values[0],
+                float(parameters[-1]),
                 leak,
                 seep,
                 cr_lobe_duration_ns=descriptor.cr_lobe_duration_ns,
@@ -896,10 +1029,15 @@ def fit_target_exchange(
         candidate = fit_gls_candidate(
             name=name,
             parameter_names=parameter_names,
-            initial=np.full(len(parameter_names), _bounded_rate_initial(upper)),
+            initial=np.concatenate(
+                (
+                    np.full(len(rate_parameter_names), _bounded_rate_initial(upper)),
+                    np.array([np.clip(values[0], 0.0, 1.0)]),
+                )
+            ),
             bounds=(
                 np.zeros(len(parameter_names)),
-                np.full(len(parameter_names), upper),
+                np.concatenate((np.full(len(rate_parameter_names), upper), np.ones(1))),
             ),
             residual=lambda parameters: whiten_predictions(
                 predictions(parameters), blocks
@@ -911,8 +1049,11 @@ def fit_target_exchange(
         if candidate.success:
             rates[name] = unpack(candidate.parameters)
             trajectories[name] = trajectory(candidate.parameters)
+            initial_pfs[name] = float(candidate.parameters[-1])
     if dynamic and not any(
-        candidate.success and candidate.parameter_names
+        candidate.success
+        and set(candidate.parameter_names)
+        & {"leakage_rate_per_ns", "seepage_rate_per_ns"}
         for candidate in candidates.values()
     ):
         return _failed_exchange_fit(candidates, counts.size)
@@ -956,22 +1097,33 @@ def fit_target_exchange(
                         source_left, source_right
                     ]
     return ExchangeRateFit(
-        True,
-        selected.name,
-        leak,
-        seep,
-        leak_error,
-        seep_error,
-        CrDissipationRateStatus.RESOLVED
-        if leak_free
-        else CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED,
-        CrDissipationRateStatus.RESOLVED
-        if seep_free
-        else CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED,
-        covariance,
-        candidates,
-        trajectories[selected.name],
-        "Selected a reduced target leakage/seepage model by ordinary-GLS AICc.",
+        success=True,
+        selected_model=selected.name,
+        leakage_rate_per_ns=leak,
+        seepage_rate_per_ns=seep,
+        leakage_standard_error_per_ns=leak_error,
+        seepage_standard_error_per_ns=seep_error,
+        leakage_status=(
+            CrDissipationRateStatus.RESOLVED
+            if leak_free
+            else CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
+        ),
+        seepage_status=(
+            CrDissipationRateStatus.RESOLVED
+            if seep_free
+            else CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
+        ),
+        covariance=covariance,
+        candidates=candidates,
+        fitted_values=trajectories[selected.name],
+        initial_pf=initial_pfs[selected.name],
+        initial_pf_standard_error=float(
+            selected.standard_errors[selected.parameter_names.index("initial_pf")]
+        ),
+        message=(
+            "Selected a reduced target leakage/seepage model with a latent "
+            "initial population by ordinary-GLS AICc."
+        ),
     )
 
 
@@ -980,18 +1132,20 @@ def _failed_exchange_fit(
 ) -> ExchangeRateFit:
     """Build the failed result for an unidentifiable target exchange fit."""
     return ExchangeRateFit(
-        False,
-        "fit_failed",
-        float("nan"),
-        float("nan"),
-        None,
-        None,
-        CrDissipationRateStatus.FIT_FAILED,
-        CrDissipationRateStatus.FIT_FAILED,
-        np.full((2, 2), np.nan),
-        candidates,
-        np.full(size, np.nan),
-        "No identifiable target exchange candidate.",
+        success=False,
+        selected_model="fit_failed",
+        leakage_rate_per_ns=float("nan"),
+        seepage_rate_per_ns=float("nan"),
+        leakage_standard_error_per_ns=None,
+        seepage_standard_error_per_ns=None,
+        leakage_status=CrDissipationRateStatus.FIT_FAILED,
+        seepage_status=CrDissipationRateStatus.FIT_FAILED,
+        covariance=np.full((2, 2), np.nan),
+        candidates=candidates,
+        fitted_values=np.full(size, np.nan),
+        initial_pf=float("nan"),
+        initial_pf_standard_error=None,
+        message="No identifiable target exchange candidate.",
     )
 
 
@@ -1390,15 +1544,25 @@ def _fit_idle_control_rates(
         for item in observations
     )
     counts = measurements.repetition_counts
-    initials = {
-        protocol: synthetic[protocol][0] for protocol in (PROTOCOL_A, PROTOCOL_B)
-    }
+    coordinate_orders: dict[str, tuple[int, int, int]] = {}
+    initial_coordinates: dict[str, NDArray[np.float64]] = {}
+    for protocol in (PROTOCOL_A, PROTOCOL_B):
+        order, coordinates = _simplex_coordinates(synthetic[protocol][0])
+        coordinate_orders[protocol] = order
+        initial_coordinates[protocol] = coordinates
 
     def trajectories(parameters: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
         rates: dict[str, float] = {
             name: float(value)
-            for name, value in zip(_CONTROL_RATE_ORDER, parameters, strict=True)
+            for name, value in zip(_CONTROL_RATE_ORDER, parameters[:4], strict=True)
         }
+        initials: dict[str, NDArray[np.float64]] = {}
+        offset = len(_CONTROL_RATE_ORDER)
+        for protocol in (PROTOCOL_A, PROTOCOL_B):
+            initials[protocol] = _population_from_simplex_coordinates(
+                parameters[offset : offset + 2], coordinate_orders[protocol]
+            )
+            offset += 2
         return {
             protocol: control_population_trajectory(
                 counts,
@@ -1422,14 +1586,28 @@ def _fit_idle_control_rates(
         _rate_upper_bound(getattr(measurements, PROTOCOL_A).cr_active_time_ns),
         2.0 * control_idle.relaxation_rate_per_ns,
     )
-    initial = np.array(
-        [control_idle.relaxation_rate_per_ns, 0.0, 0.0, 0.0], dtype=np.float64
+    initial = np.concatenate(
+        (
+            np.array(
+                [control_idle.relaxation_rate_per_ns, 0.0, 0.0, 0.0],
+                dtype=np.float64,
+            ),
+            *(initial_coordinates[protocol] for protocol in (PROTOCOL_A, PROTOCOL_B)),
+        )
+    )
+    nuisance_names = tuple(
+        name
+        for protocol in (PROTOCOL_A, PROTOCOL_B)
+        for name in (
+            f"{protocol}_initial_minor_population",
+            f"{protocol}_initial_conditional_population",
+        )
     )
     candidate = fit_gls_candidate(
         name="idle_full_control",
-        parameter_names=_CONTROL_RATE_ORDER,
+        parameter_names=(*_CONTROL_RATE_ORDER, *nuisance_names),
         initial=initial,
-        bounds=(np.zeros(4), np.full(4, upper)),
+        bounds=(np.zeros(8), np.concatenate((np.full(4, upper), np.ones(4)))),
         residual=lambda parameters: whiten_predictions(
             block_predictions(parameters), blocks
         ),
@@ -1445,10 +1623,10 @@ def _fit_idle_control_rates(
         ):
             return {
                 name: float(value)
-                for name, value in zip(_CONTROL_RATE_ORDER, initial, strict=True)
+                for name, value in zip(_CONTROL_RATE_ORDER, initial[:4], strict=True)
             }
         return dict.fromkeys(_CONTROL_RATE_ORDER, float("nan"))
-    return dict(zip(_CONTROL_RATE_ORDER, candidate.parameters, strict=True))
+    return dict(zip(_CONTROL_RATE_ORDER, candidate.parameters[:4], strict=True))
 
 
 def _fit_idle_target_t1rho(
@@ -1460,13 +1638,8 @@ def _fit_idle_target_t1rho(
     active_time_ns: NDArray[np.float64],
 ) -> float:
     """Apply the free constrained A/B T1rho estimator without a null model."""
-    retained = (
-        np.flatnonzero(
-            np.isfinite(synthetic[1:])
-            & np.isfinite(standard_errors[1:])
-            & (standard_errors[1:] > 0.0)
-        )
-        + 1
+    retained = np.flatnonzero(
+        np.isfinite(synthetic) & np.isfinite(standard_errors) & (standard_errors > 0.0)
     )
     if retained.size == 0:
         return float("nan")
@@ -1475,7 +1648,7 @@ def _fit_idle_target_t1rho(
     def curve(parameters: NDArray[np.float64]) -> NDArray[np.float64]:
         return target_t1rho_trajectory(
             counts,
-            float(synthetic[0]),
+            float(parameters[2]),
             float(parameters[0]),
             float(parameters[1]),
             cr_lobe_duration_ns=descriptor.cr_lobe_duration_ns,
@@ -1489,7 +1662,7 @@ def _fit_idle_target_t1rho(
     )
     candidate = fit_gls_candidate(
         name="idle_free_t1rho",
-        parameter_names=("rate_per_ns", "x_infinity"),
+        parameter_names=("rate_per_ns", "x_infinity", "initial_x_comp"),
         initial=np.array(
             [
                 _bounded_rate_initial(
@@ -1497,11 +1670,12 @@ def _fit_idle_target_t1rho(
                     target_idle.transverse_rate_per_ns,
                 ),
                 0.0,
+                float(np.clip(synthetic[0], -1.0, 1.0)),
             ]
         ),
         bounds=(
-            np.array([0.0, -1.5]),
-            np.array([upper, 1.5]),
+            np.array([0.0, -1.5, -1.0]),
+            np.array([upper, 1.5, 1.0]),
         ),
         residual=lambda parameters: whiten_predictions(
             [np.array([curve(parameters)[index]]) for index in retained], blocks
@@ -1511,7 +1685,7 @@ def _fit_idle_target_t1rho(
     )
     if candidate.success:
         return float(candidate.parameters[0])
-    expected = np.array([target_idle.transverse_rate_per_ns, 0.0])
+    expected = np.array([target_idle.transverse_rate_per_ns, 0.0, float(synthetic[0])])
     residual = whiten_predictions(
         [np.array([curve(expected)[index]]) for index in retained], blocks
     )
@@ -1526,13 +1700,8 @@ def _fit_idle_target_exchange(
     active_time_ns: NDArray[np.float64],
 ) -> tuple[float, float]:
     """Apply the free constrained two-way exchange estimator without selection."""
-    retained = (
-        np.flatnonzero(
-            np.isfinite(synthetic[1:])
-            & np.isfinite(standard_errors[1:])
-            & (standard_errors[1:] > 0.0)
-        )
-        + 1
+    retained = np.flatnonzero(
+        np.isfinite(synthetic) & np.isfinite(standard_errors) & (standard_errors > 0.0)
     )
     if retained.size == 0:
         return float("nan"), float("nan")
@@ -1541,7 +1710,7 @@ def _fit_idle_target_exchange(
     def curve(parameters: NDArray[np.float64]) -> NDArray[np.float64]:
         return target_exchange_trajectory(
             counts,
-            float(synthetic[0]),
+            float(parameters[2]),
             float(parameters[0]),
             float(parameters[1]),
             cr_lobe_duration_ns=descriptor.cr_lobe_duration_ns,
@@ -1549,9 +1718,28 @@ def _fit_idle_target_exchange(
 
     candidate = fit_gls_candidate(
         name="idle_free_exchange",
-        parameter_names=("leakage_rate_per_ns", "seepage_rate_per_ns"),
-        initial=np.full(2, _bounded_rate_initial(_rate_upper_bound(active_time_ns))),
-        bounds=(np.zeros(2), np.full(2, _rate_upper_bound(active_time_ns))),
+        parameter_names=(
+            "leakage_rate_per_ns",
+            "seepage_rate_per_ns",
+            "initial_pf",
+        ),
+        initial=np.array(
+            [
+                _bounded_rate_initial(_rate_upper_bound(active_time_ns)),
+                _bounded_rate_initial(_rate_upper_bound(active_time_ns)),
+                float(np.clip(synthetic[0], 0.0, 1.0)),
+            ]
+        ),
+        bounds=(
+            np.zeros(3),
+            np.array(
+                [
+                    _rate_upper_bound(active_time_ns),
+                    _rate_upper_bound(active_time_ns),
+                    1.0,
+                ]
+            ),
+        ),
         residual=lambda parameters: whiten_predictions(
             [np.array([curve(parameters)[index]]) for index in retained], blocks
         ),
@@ -1559,7 +1747,7 @@ def _fit_idle_target_exchange(
         n_observations=sum(block.rank for block in blocks),
     )
     if not candidate.success:
-        boundary = np.zeros(2)
+        boundary = np.array([0.0, 0.0, float(synthetic[0])])
         residual = whiten_predictions(
             [np.array([curve(boundary)[index]]) for index in retained], blocks
         )
@@ -2364,6 +2552,7 @@ def analyze_cr_dissipation(
         warnings=tuple(warnings),
         metadata={
             "uncertainty_conditioning": "idle_coherence_and_gef_calibration_fixed",
+            "initial_condition_treatment": "latent_nuisance_with_n0_observation",
             "cross_protocol_covariance_approximation": "block_diagonal",
             "idle_equivalent_extraction": "non_recursive_synthetic_baseline",
             "cr_sign_dependent_dissipation": False,

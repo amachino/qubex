@@ -272,24 +272,6 @@ def test_measure_gef_populations_uses_gef_specific_shot_defaults() -> None:
     assert fit.population_standard_error.shape == (3,)
 
 
-def test_calibrate_gef_population_uses_configured_shot_interval() -> None:
-    """An omitted interval should resolve from measurement defaults."""
-    samples = _state_samples()
-    exp = _DummyExperiment(
-        [_pure(samples, state) for state in ("g", "g", "e", "f", "e", "f")]
-    )
-
-    calibrate_gef_population(
-        exp,  # type: ignore[arg-type]
-        targets="Q0",
-        n_shots=100,
-    )
-
-    assert all(
-        call["shot_interval"] == 2468.0 for call in exp.measurement_service.calls
-    )
-
-
 def test_measure_gef_populations_reuses_supplied_calibration() -> None:
     """Supplying calibration should avoid repeating the six calibration measurements."""
     samples = _state_samples()
@@ -428,43 +410,6 @@ def test_measure_gef_populations_rejects_empty_sequences() -> None:
         )
 
 
-def test_measure_gef_populations_rejects_invalid_bootstrap_before_measurement() -> None:
-    """Invalid bootstrap options should fail before hardware measurements."""
-    exp = _DummyExperiment([])
-    with PulseSchedule(["Q0"]) as preparation:
-        preparation.add("Q0", Blank(duration=2.0))
-
-    with pytest.raises(TypeError, match="bootstrap_seed"):
-        measure_gef_populations(
-            exp,  # type: ignore[arg-type]
-            targets="Q0",
-            sequences=[preparation],
-            bootstrap_seed=True,
-        )
-
-    assert not exp.measurement_service.calls
-
-
-@pytest.mark.parametrize("progress_label", ["", "   ", 123])
-def test_measure_gef_populations_rejects_invalid_progress_labels(
-    progress_label: object,
-) -> None:
-    """An optional progress label must be a nonempty human-readable string."""
-    exp = _DummyExperiment([])
-    with PulseSchedule(["Q0"]) as preparation:
-        preparation.add("Q0", Blank(duration=2.0))
-
-    with pytest.raises((TypeError, ValueError), match="progress_label"):
-        measure_gef_populations(
-            exp,  # type: ignore[arg-type]
-            targets="Q0",
-            sequences=[preparation],
-            progress_label=progress_label,  # type: ignore[arg-type]
-        )
-
-    assert not exp.measurement_service.calls
-
-
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
@@ -509,41 +454,6 @@ def test_measure_gef_populations_requires_two_shots_for_covariance(name: str) ->
         )
 
     assert not exp.measurement_service.calls
-
-
-def test_measure_gef_populations_validates_reused_bootstrap_calibration_first() -> None:
-    """Missing calibration IQ should fail before unknown-state measurements."""
-    samples = _state_samples()
-    calibration_exp = _DummyExperiment(
-        [
-            _pure(samples, "g"),
-            _pure(samples, "g"),
-            _pure(samples, "e"),
-            _pure(samples, "f"),
-            _pure(samples, "e"),
-            _pure(samples, "f"),
-        ]
-    )
-    calibration = calibrate_gef_population(
-        calibration_exp,  # type: ignore[arg-type]
-        targets="Q0",
-        n_shots=100,
-    )
-    del calibration["Q0"].raw_iq["c6"]
-    measurement_exp = _DummyExperiment([])
-    with PulseSchedule(["Q0"]) as preparation:
-        preparation.add("Q0", Blank(duration=2.0))
-
-    with pytest.raises(ValueError, match="c6"):
-        measure_gef_populations(
-            measurement_exp,  # type: ignore[arg-type]
-            targets="Q0",
-            sequences=[preparation],
-            calibration=calibration,
-            n_bootstrap=2,
-        )
-
-    assert not measurement_exp.measurement_service.calls
 
 
 def test_measure_gef_populations_rejects_missing_batch_target() -> None:

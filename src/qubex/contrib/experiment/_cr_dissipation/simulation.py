@@ -104,7 +104,6 @@ def state_density(control: str, target: str) -> NDArray[np.complex128]:
         "g": G,
         "e": E,
         "+x": (G + E) / np.sqrt(2.0),
-        "+y": (G + 1j * E) / np.sqrt(2.0),
     }
     try:
         vector = np.kron(states[control.lower()], states[target.lower()])

@@ -522,15 +522,12 @@ def _state_preparation(
     control: str,
     target: str,
     control_state: Literal["0", "1", "+"],
-    target_state: Literal["0", "+", "+y"],
+    target_state: Literal["0", "+"],
 ) -> PulseSchedule:
     """Build one protocol input-state preparation schedule."""
     with PulseSchedule([control, target]) as schedule:
         schedule.add(control, exp.pulse.get_pulse_for_state(control, control_state))
-        if target_state == "+y":
-            schedule.add(target, exp.pulse.x90m(target))
-        else:
-            schedule.add(target, exp.pulse.get_pulse_for_state(target, target_state))
+        schedule.add(target, exp.pulse.get_pulse_for_state(target, target_state))
         schedule.barrier()
     return schedule
 

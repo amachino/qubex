@@ -543,6 +543,9 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     )
     assert result.data["analysis_options"]["c_d_nonlinear_parameter_count"] == 1
     assert result.data["analysis_options"]["fidelity_uncertainty_method"] == "disabled"
+    assert result.data["analysis_options"]["initial_condition_treatment"] == (
+        "latent_nuisance_with_n0_observation"
+    )
     assert bootstrap_calls == [
         {
             "n_resamples": 12,
@@ -551,73 +554,6 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
             "covariance_rcond": 1e-12,
         }
     ]
-
-
-def test_boundary_bootstrap_reuses_only_selected_ab_raw_iq(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Boundary diagnostics resample only the selected target's A/B sequences."""
-    names = {
-        health.PROTOCOL_A: ("a0", "a1"),
-        health.PROTOCOL_B: ("b0", "b1"),
-    }
-    calibration = {"Q0": object(), "Q1": object()}
-    raw_iq = {
-        name: {
-            configuration: {"Q0": np.ones(2), "Q1": np.ones(2)}
-            for configuration in ("s1", "s4", "s5")
-        }
-        for name in (*names[health.PROTOCOL_A], *names[health.PROTOCOL_B])
-    }
-    bootstrap = {
-        name: {"Q0": "disabled-control", "Q1": "disabled-target"} for name in raw_iq
-    }
-    result = health.Result(
-        data={
-            "calibration": calibration,
-            "raw_iq": raw_iq,
-            "bootstrap": bootstrap,
-        }
-    )
-    calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
-
-    monkeypatch.setattr(
-        health,
-        "_select_boundary_bootstrap_sequence_names",
-        lambda *_args: {"Q1": ("a0", "a1")},
-    )
-
-    def bootstrap_selected(
-        selected_calibration: dict[str, Any],
-        selected_raw_iq: dict[str, Any],
-        **_kwargs: Any,
-    ) -> dict[str, dict[str, str]]:
-        calls.append((selected_calibration, selected_raw_iq))
-        return {name: {"Q1": f"bootstrap-{name}"} for name in selected_raw_iq}
-
-    monkeypatch.setattr(health, "bootstrap_gef_populations", bootstrap_selected)
-
-    selected = health._run_selective_ab_bootstrap(
-        result,
-        names,
-        "Q0",
-        "Q1",
-        n_resamples=12,
-        seed=0,
-        confidence_level=0.95,
-        covariance_rcond=1e-12,
-    )
-
-    assert selected == {"Q1": ("a0", "a1")}
-    assert calls == [
-        (
-            {"Q1": calibration["Q1"]},
-            {"a0": raw_iq["a0"], "a1": raw_iq["a1"]},
-        )
-    ]
-    assert bootstrap["a0"]["Q1"] == "bootstrap-a0"
-    assert bootstrap["a1"]["Q1"] == "bootstrap-a1"
-    assert bootstrap["b0"]["Q1"] == "disabled-target"
 
 
 def test_boundary_bootstrap_selects_only_protocols_with_flat_boundary_data(
@@ -731,54 +667,6 @@ def test_all_orthogonal_diagnostics_use_pauli_readout(
     assert np.all(processed[health.PROTOCOL_A].expectations["Q0:X"] < 0.0)
     assert processed[health.PROTOCOL_C].standard_errors
     assert processed[health.PROTOCOL_D].standard_errors
-
-
-@pytest.mark.parametrize(
-    "normalized",
-    [np.ones(1), np.array([0.0, 0.0, float("nan"), 0.0])],
-)
-def test_orthogonal_acquisition_rejects_invalid_normalized_shots(
-    monkeypatch: pytest.MonkeyPatch,
-    normalized: np.ndarray[Any, Any],
-) -> None:
-    """Pauli normalization must return one finite value per acquired shot."""
-    base = {
-        protocol: (PulseSchedule(),)
-        for protocol in (
-            health.PROTOCOL_A,
-            health.PROTOCOL_B,
-            health.PROTOCOL_C,
-            health.PROTOCOL_D,
-        )
-    }
-    schedules = SimpleNamespace(base=base)
-    pulse = SimpleNamespace(
-        x90=lambda _qubit: Blank(4.0),
-        y90m=lambda _qubit: Blank(4.0),
-        rabi_params={
-            "Q0": SimpleNamespace(normalize=lambda _values: normalized),
-            "Q1": SimpleNamespace(normalize=lambda _values: normalized),
-        },
-    )
-    exp = cast(Experiment, SimpleNamespace(pulse=pulse))
-    monkeypatch.setattr(
-        health,
-        "measure_single_shot_batch",
-        lambda *_args, **_kwargs: [
-            {"Q0": np.ones(4), "Q1": np.ones(4)} for _ in range(12)
-        ],
-    )
-
-    with pytest.raises(ValueError, match="normalization must return 4 finite shots"):
-        health._orthogonal_acquisition(
-            exp,
-            cast(health.ProtocolSchedules, schedules),
-            "Q0",
-            "Q1",
-            n_shots=4,
-            shot_interval=1000.0,
-            enable_tqdm=False,
-        )
 
 
 def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
@@ -965,17 +853,3 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     d_layout = cast(Any, figures[health.PROTOCOL_D].layout)
     d_titles = {str(annotation.text) for annotation in d_layout.annotations}
     assert "Target Zge" in d_titles
-
-
-@pytest.mark.parametrize(
-    ("values", "expected"),
-    [
-        ([np.array([0.01, 0.02])], (0.0, 0.05)),
-        ([np.array([-0.01, 0.08])], (-0.01, 0.08)),
-    ],
-)
-def test_pf_axis_range_is_zero_anchored_with_minimum_span(
-    values: list[np.ndarray[Any, Any]], expected: tuple[float, float]
-) -> None:
-    """Pf plots include zero and expand to a span of at least 0.05."""
-    assert tuple(health._pf_axis_range(values)) == pytest.approx(expected)

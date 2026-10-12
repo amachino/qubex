@@ -68,7 +68,7 @@ class IdleNoiseParameters:
 
 @dataclass(frozen=True)
 class GefPopulationSeries:
-    """Store processed GEF populations and conditional uncertainty."""
+    """Store processed GEF populations with calibration-conditional uncertainty."""
 
     population: NDArray[np.float64]
     covariance: NDArray[np.float64]
@@ -147,7 +147,7 @@ class CandidateFit:
 
 @dataclass(frozen=True)
 class ControlPopulationRateFit:
-    """Store the selected joint A/B control-population fit."""
+    """Store selected A/B rates and latent initial GEF populations."""
 
     success: bool
     selected_model: str
@@ -157,12 +157,14 @@ class ControlPopulationRateFit:
     parameter_order: tuple[str, ...]
     candidates: dict[str, CandidateFit]
     fitted_populations: dict[str, NDArray[np.float64]]
+    initial_populations: dict[str, NDArray[np.float64]]
+    initial_population_covariances: dict[str, NDArray[np.float64]]
     message: str
 
 
 @dataclass(frozen=True)
 class DecayRateFit:
-    """Store one selected target T1rho fit."""
+    """Store one selected target T1rho fit and latent initial contrast."""
 
     success: bool
     selected_model: str
@@ -172,12 +174,14 @@ class DecayRateFit:
     x_infinity: float
     candidates: dict[str, CandidateFit]
     fitted_values: NDArray[np.float64]
+    initial_x_comp: float
+    initial_x_comp_standard_error: float | None
     message: str
 
 
 @dataclass(frozen=True)
 class ExchangeRateFit:
-    """Store one selected target leakage/seepage fit."""
+    """Store selected target exchange rates and latent initial f population."""
 
     success: bool
     selected_model: str
@@ -190,6 +194,8 @@ class ExchangeRateFit:
     covariance: NDArray[np.float64]
     candidates: dict[str, CandidateFit]
     fitted_values: NDArray[np.float64]
+    initial_pf: float
+    initial_pf_standard_error: float | None
     message: str
 
 
