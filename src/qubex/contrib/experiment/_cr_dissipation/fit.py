@@ -16,7 +16,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import OptimizeResult, least_squares, lsq_linear
 from scipy.stats import chi2
 
-from .types import CandidateFit, FitGoodnessOfFit
+from .types import CandidateFit, CrDissipationFitQuality, FitGoodnessOfFit
 
 _EPS = float(np.finfo(np.float64).eps)
 GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT = 5.0
@@ -137,7 +137,7 @@ def _local_covariance(
     *,
     reduced_chi_squared: float,
 ) -> NDArray[np.float64]:
-    """Compute `(J_w.T J_w)+` once from a whitened-residual Jacobian."""
+    """Compute the scaled inverse information matrix for a full-rank Jacobian."""
     if jacobian.ndim != 2 or not np.all(np.isfinite(jacobian)):
         return np.full((jacobian.shape[-1], jacobian.shape[-1]), np.nan)
     n_parameters = jacobian.shape[1]
@@ -169,26 +169,31 @@ def assess_goodness_of_fit(
     *,
     n_parameters: int,
 ) -> FitGoodnessOfFit:
-    """Assess gross model mismatch from absolute whitened residuals."""
+    """Classify absolute agreement with shot-noise-whitened residuals."""
     residual = np.asarray(whitened_residual, dtype=np.float64).reshape(-1)
     degrees_of_freedom = int(residual.size - n_parameters)
     if residual.size == 0 or not np.all(np.isfinite(residual)):
         return FitGoodnessOfFit(
-            degrees_of_freedom,
-            None,
-            float("nan"),
-            False,
-            "No finite whitened residuals were available.",
+            degrees_of_freedom=degrees_of_freedom,
+            reduced_chi_squared=float("nan"),
+            chi_squared_p_value=None,
+            maximum_absolute_whitened_residual=float("nan"),
+            quality=CrDissipationFitQuality.NOT_ASSESSED,
+            reason="No finite whitened residuals were available.",
         )
     chi_squared = float(residual @ residual)
     maximum = float(np.max(np.abs(residual)))
     if degrees_of_freedom <= 0:
         return FitGoodnessOfFit(
-            degrees_of_freedom,
-            None,
-            maximum,
-            False,
-            "Absolute goodness-of-fit requires positive residual degrees of freedom.",
+            degrees_of_freedom=degrees_of_freedom,
+            reduced_chi_squared=float("nan"),
+            chi_squared_p_value=None,
+            maximum_absolute_whitened_residual=maximum,
+            quality=CrDissipationFitQuality.NOT_ASSESSED,
+            reason=(
+                "Absolute goodness-of-fit requires positive residual degrees "
+                "of freedom."
+            ),
         )
     reduced = chi_squared / degrees_of_freedom
     p_value = float(chi2.sf(chi_squared, degrees_of_freedom))
@@ -203,11 +208,16 @@ def assess_goodness_of_fit(
             f"(reduced chi-squared={reduced:.3g}, max |r|={maximum:.3g})."
         )
     return FitGoodnessOfFit(
-        degrees_of_freedom,
-        p_value,
-        maximum,
-        accepted,
-        reason,
+        degrees_of_freedom=degrees_of_freedom,
+        reduced_chi_squared=reduced,
+        chi_squared_p_value=p_value,
+        maximum_absolute_whitened_residual=maximum,
+        quality=(
+            CrDissipationFitQuality.ACCEPTED
+            if accepted
+            else CrDissipationFitQuality.STATISTICAL_MISMATCH
+        ),
+        reason=reason,
     )
 
 

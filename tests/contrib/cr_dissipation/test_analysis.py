@@ -18,6 +18,7 @@ from qubex.contrib.experiment._cr_dissipation.analysis import (
     _fit_idle_target_exchange,
     _fit_idle_target_t1rho,
     _pure_dephasing_component,
+    _selected_rate_status,
     computational_polarization,
     control_population_trajectory,
     fit_control_populations,
@@ -48,8 +49,11 @@ from qubex.contrib.experiment._cr_dissipation.simulation import (
 )
 from qubex.contrib.experiment._cr_dissipation.types import (
     CandidateFit,
+    CrDissipationFidelityStatus,
+    CrDissipationFitQuality,
     CrDissipationProtocolData,
     CrDissipationRateStatus,
+    FitGoodnessOfFit,
     GefPopulationSeries,
     IdleNoiseParameters,
 )
@@ -193,7 +197,30 @@ def test_gls_candidate_records_absolute_goodness_of_fit() -> None:
 
     assert candidate.goodness_of_fit is not None
     assert not candidate.goodness_of_fit.accepted
+    assert candidate.goodness_of_fit.quality == (
+        CrDissipationFitQuality.STATISTICAL_MISMATCH
+    )
+    assert candidate.goodness_of_fit.reduced_chi_squared == 100.0
     assert candidate.goodness_of_fit.maximum_absolute_whitened_residual == 10.0
+
+
+def test_rate_resolution_is_independent_of_statistical_fit_quality() -> None:
+    """A finite resolved rate remains resolved when absolute GOF is poor."""
+    candidate = replace(
+        _candidate("free", ("rate",), (1e-5,), (1e-6,), 0.0),
+        goodness_of_fit=FitGoodnessOfFit(
+            degrees_of_freedom=8,
+            reduced_chi_squared=10.0,
+            chi_squared_p_value=0.0,
+            maximum_absolute_whitened_residual=9.0,
+            quality=CrDissipationFitQuality.STATISTICAL_MISMATCH,
+            reason="synthetic mismatch",
+        ),
+    )
+
+    assert _selected_rate_status(candidate, "rate") == (
+        CrDissipationRateStatus.RESOLVED
+    )
 
 
 @pytest.mark.parametrize(
@@ -322,22 +349,27 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
         "Fidelity uncertainty calculation was disabled."
     )
 
-    mismatch_statuses = dict(statuses)
-    mismatch_statuses["target_t1rho"] = CrDissipationRateStatus.MODEL_MISMATCH
     blocked, _ = _fidelity_limits(
         descriptor(),
         IdleNoiseParameters(float("inf"), float("inf")),
         IdleNoiseParameters(float("inf"), float("inf")),
         nominal,
-        mismatch_statuses,
+        statuses,
         covariance,
         primitive_order,
         compute_uncertainty=False,
+        statistically_mismatched_rates=("target_t1rho",),
     )
     assert blocked.idle_coherence_limited.available
-    assert not blocked.cr_on_coherence_limited.available
-    assert not blocked.cr_on_dissipative_limited.available
-    assert "model mismatch" in str(blocked.cr_on_coherence_limited.message)
+    assert blocked.cr_on_coherence_limited.available
+    assert blocked.cr_on_dissipative_limited.available
+    assert np.isfinite(blocked.cr_on_coherence_limited.value)
+    assert (
+        blocked.cr_on_coherence_limited.status
+        == CrDissipationFidelityStatus.CONDITIONAL_STATISTICAL_MISMATCH
+    )
+    assert blocked.cr_on_coherence_limited.standard_error is None
+    assert "statistically mismatched" in str(blocked.cr_on_coherence_limited.message)
 
 
 def test_pure_dephasing_component_uses_both_longitudinal_directions() -> None:
@@ -693,8 +725,17 @@ def test_ab_target_x_uses_fixed_positive_y90_analyzer_convention() -> None:
     assert np.all(np.isfinite(errors))
 
 
-def test_joint_control_fit_recovers_rates_and_fits_initial_populations() -> None:
+def test_joint_control_fit_recovers_rates_and_fits_initial_populations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The A/B joint GLS fit includes n=0 as a latent-state observation."""
+    # Multi-start selection has a focused test above. Using one start here keeps
+    # this model-recovery test from repeating that optimization for every model.
+    monkeypatch.setattr(
+        fit_module,
+        "_rate_multistart_initials",
+        lambda *_args, **_kwargs: (),
+    )
     counts = np.array([0, 1, 3, 8, 13], dtype=np.int64)
     desc = descriptor()
     idle = IdleNoiseParameters(50_000.0, 40_000.0)
@@ -760,7 +801,7 @@ def test_joint_control_fit_recovers_rates_and_fits_initial_populations() -> None
     selected = fitted.candidates[fitted.selected_model]
     assert selected.n_observations == 2 * 2 * counts.size
     assert selected.n_parameters == 8
-    assert selected.n_initializations > 1
+    assert selected.n_initializations == 1
     np.testing.assert_allclose(
         fitted.initial_populations[PROTOCOL_A], [0.98, 0.02, 0.0], atol=2e-6
     )

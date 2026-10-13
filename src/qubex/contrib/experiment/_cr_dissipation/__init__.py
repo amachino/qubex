@@ -8,7 +8,8 @@ Modules are organized by responsibility and follow the execution flow:
 - `pulses`: calibrated hardware schedules, diagnostic references, and matching
   semantic operations used by the simulator.
 - `analysis`: observable reconstruction, latent-initial A/B fits, physical C/D
-  fits, non-recursive idle baselines, rate/status assembly, and fidelity limits.
+  fits, non-recursive idle baselines, rate/status and fit-quality assembly, and
+  fidelity limits.
 - `fit`: generic GLS, C/D variable-projection fitting, and covariance helpers.
 - `simulation`: cached semantic two-qutrit channels, observables, leakage-aware
   fidelity, and optional sigma-point uncertainty propagation.

@@ -19,15 +19,30 @@ from numpy.typing import NDArray
 
 
 class CrDissipationRateStatus(str, Enum):
-    """Represent the resolution status of one reported rate."""
+    """Represent whether one reported rate was resolved by its estimator."""
 
     RESOLVED = "resolved"
     NOMINAL_ZERO_UNRESOLVED = "nominal_zero_unresolved"
     PARTIALLY_UNRESOLVED = "partially_unresolved"
     CONSISTENT_WITH_ZERO = "consistent_with_zero"
     INCONSISTENT_RATE_DECOMPOSITION = "inconsistent_rate_decomposition"
-    MODEL_MISMATCH = "model_mismatch"
     FIT_FAILED = "fit_failed"
+
+
+class CrDissipationFitQuality(str, Enum):
+    """Represent statistical agreement between observations and one fit."""
+
+    ACCEPTED = "accepted"
+    STATISTICAL_MISMATCH = "statistical_mismatch"
+    NOT_ASSESSED = "not_assessed"
+
+
+class CrDissipationFidelityStatus(str, Enum):
+    """Represent whether a fidelity is validated, conditional, or unavailable."""
+
+    VALIDATED = "validated"
+    CONDITIONAL_STATISTICAL_MISMATCH = "conditional_statistical_mismatch"
+    UNAVAILABLE = "unavailable"
 
 
 @dataclass(frozen=True)
@@ -128,13 +143,19 @@ class CrDissipationMeasurements:
 
 @dataclass(frozen=True)
 class FitGoodnessOfFit:
-    """Store an absolute diagnostic for one whitened least-squares fit."""
+    """Store fit quality assessed against the supplied shot-noise covariance."""
 
     degrees_of_freedom: int
+    reduced_chi_squared: float
     chi_squared_p_value: float | None
     maximum_absolute_whitened_residual: float
-    accepted: bool
+    quality: CrDissipationFitQuality
     reason: str | None = None
+
+    @property
+    def accepted(self) -> bool:
+        """Return whether the residual diagnostic passed both thresholds."""
+        return self.quality == CrDissipationFitQuality.ACCEPTED
 
 
 @dataclass(frozen=True)
@@ -268,13 +289,14 @@ class CrDissipationRateEstimate:
 
 @dataclass(frozen=True)
 class CrDissipationFidelityEstimate:
-    """Store one dissipative fidelity limit and uncertainty."""
+    """Store one fidelity limit, including its validation status."""
 
     value: float
     standard_error: float | None
     available: bool
     uncertainty_type: str | None
     message: str | None = None
+    status: CrDissipationFidelityStatus = CrDissipationFidelityStatus.VALIDATED
 
 
 @dataclass(frozen=True)

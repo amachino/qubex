@@ -461,15 +461,17 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
         np.sqrt(np.diagonal(covariance, axis1=1, axis2=2)),
         population,
     )
+    target_x_standard_error = np.full(counts.size, 0.02)
+    primary_standard_error = np.full(counts.size, 0.02)
     ab_data = health.CrDissipationProtocolData(
         control_gef=series,
         target_gef=series,
         target_x_comp=np.linspace(1.0, 0.4, counts.size),
-        target_x_comp_standard_error=np.full(counts.size, 0.02),
+        target_x_comp_standard_error=target_x_standard_error,
     )
     cd_data = health.CrDissipationProtocolData(
         primary_expectation=np.linspace(1.0, 0.3, counts.size),
-        primary_standard_error=np.full(counts.size, 0.02),
+        primary_standard_error=primary_standard_error,
     )
 
     orthogonal = health.CrDissipationPauliData(
@@ -503,7 +505,12 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     measurements = health.CrDissipationMeasurements(
         counts,
         4 * counts,
-        measured(ab_data, 100.0, with_orthogonal=True),
+        measured(
+            ab_data,
+            100.0,
+            with_orthogonal=True,
+            with_reference=True,
+        ),
         measured(ab_data, 100.0),
         measured(cd_data, 200.0, with_reference=True),
         measured(cd_data, 300.0, with_reference=True),
@@ -567,6 +574,15 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     assert len(a_traces["fit Pg"].x) == 400
     assert a_traces["actual Pg"].marker.color == a_traces["fit Pg"].line.color
     assert a_traces["fit Pg"].line.color == a_traces["idle-only Pg"].line.color
+    assert tuple(a_traces["reference Pg"].error_y.array) == pytest.approx(
+        tuple(series.standard_error[:, 0])
+    )
+    assert tuple(a_traces["reference Xcomp"].error_y.array) == pytest.approx(
+        tuple(target_x_standard_error)
+    )
+    assert tuple(a_traces["reference target Pf"].error_y.array) == pytest.approx(
+        tuple(series.standard_error[:, 2])
+    )
     assert a_traces["Q0:Y"].yaxis == "y2"
     assert a_traces["actual Xcomp"].yaxis == "y3"
     assert a_traces["actual target Pf"].yaxis == "y4"
@@ -619,6 +635,12 @@ def test_plots_share_axes_state_colors_and_smooth_model_curves() -> None:
     c_traces = tuple(cast(Any, trace) for trace in c_figure.data)
     c_trace_names = {trace.name for trace in c_traces}
     assert "reference idle-only prediction" in c_trace_names
+    reference = next(
+        trace for trace in c_traces if trace.name == "reference (diagnostic)"
+    )
+    assert tuple(reference.error_y.array) == pytest.approx(
+        tuple(primary_standard_error)
+    )
     reference_idle = next(
         trace for trace in c_traces if trace.name == "reference idle-only prediction"
     )

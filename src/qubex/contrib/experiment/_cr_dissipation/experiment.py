@@ -68,6 +68,7 @@ from .pulses import (
 )
 from .types import (
     CrDissipationAnalysis,
+    CrDissipationFidelityStatus,
     CrDissipationMeasurements,
     CrDissipationPauliData,
     CrDissipationProtocolData,
@@ -1181,6 +1182,7 @@ def _plot_cr_dissipation(
                             _marker_trace(
                                 time_us,
                                 reference_control.population[:, index],
+                                error=reference_control.standard_error[:, index],
                                 name=f"reference {state}",
                                 color=_STATE_COLORS[state],
                                 symbol="circle-open",
@@ -1192,6 +1194,7 @@ def _plot_cr_dissipation(
                         _marker_trace(
                             time_us,
                             measured.reference.target_x_comp,
+                            error=measured.reference.target_x_comp_standard_error,
                             name="reference Xcomp",
                             color=_PRIMARY_COLOR,
                             symbol="circle-open",
@@ -1205,6 +1208,7 @@ def _plot_cr_dissipation(
                         _marker_trace(
                             time_us,
                             reference_target.population[:, 2],
+                            error=reference_target.standard_error[:, 2],
                             name="reference target Pf",
                             color=_PF_COLOR,
                             symbol="circle-open",
@@ -1325,6 +1329,7 @@ def _plot_cr_dissipation(
                     _marker_trace(
                         time_us,
                         measured.reference.primary_expectation,
+                        error=measured.reference.primary_standard_error,
                         name="reference (diagnostic)",
                         color=_PRIMARY_COLOR,
                         symbol="circle-open",
@@ -1469,6 +1474,38 @@ def _print_summary(
         "initial-condition correlations are included; selected cross-fit and "
         "cross-protocol covariances are neglected."
     )
+    fit_quality = analysis.metadata.get("fit_quality", {})
+    quality_rows: list[tuple[str, Mapping[str, Any]]] = []
+    control_quality = fit_quality.get("control_population_ab", {})
+    quality_rows.append(
+        ("control population (joint)", control_quality.get("selected", {}))
+    )
+    for protocol, goodness in control_quality.get("by_protocol", {}).items():
+        quality_rows.append((f"control population {protocol}", goodness))
+    for key, label in (
+        ("target_a_t1rho", f"target T1rho {PROTOCOL_A}"),
+        ("target_a_leakage", f"target leakage {PROTOCOL_A}"),
+        ("target_b_t1rho", f"target T1rho {PROTOCOL_B}"),
+        ("target_b_leakage", f"target leakage {PROTOCOL_B}"),
+    ):
+        quality_rows.append((label, fit_quality.get(key, {})))
+    for key, label in (
+        ("control_pure_dephasing_c", f"control pure dephasing {PROTOCOL_C}"),
+        (
+            "target_rotating_frame_pure_dephasing_d",
+            f"target pure dephasing {PROTOCOL_D}",
+        ),
+    ):
+        entry = fit_quality.get(key, {})
+        quality_rows.append((label, entry.get("local", {})))
+    if quality_rows:
+        print("Fit quality (shot-noise covariance):")
+        print("  Fit                              reduced χ²  max |r|  Quality")
+        for label, goodness in quality_rows:
+            reduced = goodness.get("reduced_chi_squared", float("nan"))
+            maximum = goodness.get("maximum_absolute_whitened_residual", float("nan"))
+            quality = goodness.get("quality", "not_assessed")
+            print(f"  {label:<32} {reduced:>10.3g}  {maximum:>7.3g}  {quality}")
     for label, estimate in (
         ("Idle coherence limited", analysis.fidelity.idle_coherence_limited),
         ("CR-on coherence limited", analysis.fidelity.cr_on_coherence_limited),
@@ -1476,6 +1513,14 @@ def _print_summary(
     ):
         if not estimate.available:
             print(f"  {label}: unavailable ({estimate.message})")
+        elif (
+            estimate.status
+            == CrDissipationFidelityStatus.CONDITIONAL_STATISTICAL_MISMATCH
+        ):
+            print(
+                f"  {label}: {estimate.value:.8f} "
+                f"[{estimate.status.value}] ({estimate.message})"
+            )
         elif estimate.standard_error is None:
             print(f"  {label}: {estimate.value:.8f}")
         else:
@@ -1626,8 +1671,10 @@ def characterize_cr_dissipation(
     being fixed as exact initial conditions.
     Rate candidates use deterministic multi-start optimization and global AICc
     competition. Sub-2-sigma free rates retain their fitted central values,
-    while gross absolute residual failures are reported as `model_mismatch` and
-    make dependent fidelity limits unavailable.
+    while absolute shot-noise goodness-of-fit is reported independently from
+    rate resolution. If that diagnostic reports statistical mismatch, central
+    dependent fidelities remain available as conditional values, but their
+    uncertainty is not reported.
     """
     for name, value in (
         ("measure_reference", measure_reference),

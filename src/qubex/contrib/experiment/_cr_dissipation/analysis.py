@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -59,6 +59,8 @@ from .types import (
     CrDissipationAnalysis,
     CrDissipationFidelityEstimate,
     CrDissipationFidelityLimits,
+    CrDissipationFidelityStatus,
+    CrDissipationFitQuality,
     CrDissipationFits,
     CrDissipationIdlePrediction,
     CrDissipationMeasurements,
@@ -116,9 +118,7 @@ def _selected_rate_status(
     candidate: CandidateFit,
     parameter_name: str,
 ) -> CrDissipationRateStatus:
-    """Classify one selected rate without replacing its central estimate."""
-    if candidate.goodness_of_fit is not None and not candidate.goodness_of_fit.accepted:
-        return CrDissipationRateStatus.MODEL_MISMATCH
+    """Classify parameter resolution independently of overall fit quality."""
     if parameter_name not in candidate.parameter_names:
         return CrDissipationRateStatus.NOMINAL_ZERO_UNRESOLVED
     index = candidate.parameter_names.index(parameter_name)
@@ -154,6 +154,48 @@ def _protocol_goodness_of_fit(
             n_parameters=0,
         )
     return output
+
+
+def _selected_goodness_of_fit(
+    fit: ControlPopulationRateFit
+    | DecayRateFit
+    | ExchangeRateFit
+    | PhysicalForwardDephasingFit,
+) -> FitGoodnessOfFit | None:
+    """Return the selected candidate's statistical fit diagnostic."""
+    candidate = fit.candidates.get(fit.selected_model)
+    return None if candidate is None else candidate.goodness_of_fit
+
+
+def _has_statistical_mismatch(
+    fit: ControlPopulationRateFit
+    | DecayRateFit
+    | ExchangeRateFit
+    | PhysicalForwardDephasingFit,
+) -> bool:
+    """Return whether the selected candidate exceeds shot-noise GOF limits."""
+    goodness = _selected_goodness_of_fit(fit)
+    return (
+        goodness is not None
+        and goodness.quality == CrDissipationFitQuality.STATISTICAL_MISMATCH
+    )
+
+
+def _goodness_metadata(goodness: FitGoodnessOfFit | None) -> dict[str, Any]:
+    """Serialize one fit-quality diagnostic for stable result metadata."""
+    if goodness is None:
+        return {"quality": "not_assessed"}
+    return {
+        "quality": goodness.quality.value,
+        "accepted": goodness.accepted,
+        "degrees_of_freedom": goodness.degrees_of_freedom,
+        "reduced_chi_squared": goodness.reduced_chi_squared,
+        "chi_squared_p_value": goodness.chi_squared_p_value,
+        "maximum_absolute_whitened_residual": (
+            goodness.maximum_absolute_whitened_residual
+        ),
+        "reason": goodness.reason,
+    }
 
 
 def _simplex_coordinates(
@@ -1264,11 +1306,7 @@ def fit_physical_dephasing(
     else:
         rate = 0.0
         rate_error = None
-        status = (
-            CrDissipationRateStatus.MODEL_MISMATCH
-            if null.goodness_of_fit is not None and not null.goodness_of_fit.accepted
-            else CrDissipationRateStatus.CONSISTENT_WITH_ZERO
-        )
+        status = CrDissipationRateStatus.CONSISTENT_WITH_ZERO
         amplitude = float(null.parameters[0])
         offset = float(null.parameters[1])
     unconstrained_rate = float(diagnostic.parameters[0]) if diagnostic.success else None
@@ -1287,8 +1325,6 @@ def fit_physical_dephasing(
         rate_error = None
         amplitude = float(null.parameters[0])
         offset = float(null.parameters[1])
-    if selected.goodness_of_fit is not None and not selected.goodness_of_fit.accepted:
-        status = CrDissipationRateStatus.MODEL_MISMATCH
     message = (
         "The signed diagnostic required negative pure dephasing; the reported "
         "physical fit uses the zero-rate candidate."
@@ -1349,8 +1385,6 @@ def _aggregate_status(
     """Combine two protocol statuses into one conservative aggregate status."""
     if CrDissipationRateStatus.FIT_FAILED in (left, right):
         return CrDissipationRateStatus.FIT_FAILED
-    if CrDissipationRateStatus.MODEL_MISMATCH in (left, right):
-        return CrDissipationRateStatus.MODEL_MISMATCH
     if left == right == CrDissipationRateStatus.RESOLVED:
         return CrDissipationRateStatus.RESOLVED
     if left == right == unresolved:
@@ -2030,6 +2064,7 @@ def _fidelity_limits(
     primitive_order: Sequence[str],
     *,
     compute_uncertainty: bool = True,
+    statistically_mismatched_rates: Sequence[str] = (),
 ) -> tuple[CrDissipationFidelityLimits, tuple[CrDissipationWarning, ...]]:
     """Compute idle, CR-on coherence, and CR-on dissipative fidelity limits."""
     operations = semantic_zx90(descriptor)
@@ -2074,7 +2109,14 @@ def _fidelity_limits(
     warnings: list[CrDissipationWarning] = []
 
     def unavailable(message: str) -> CrDissipationFidelityEstimate:
-        return CrDissipationFidelityEstimate(float("nan"), None, False, None, message)
+        return CrDissipationFidelityEstimate(
+            float("nan"),
+            None,
+            False,
+            None,
+            message,
+            CrDissipationFidelityStatus.UNAVAILABLE,
+        )
 
     def rates_from(mapping: Mapping[str, float]) -> CrNoiseRates:
         merged = dict(nominal)
@@ -2110,17 +2152,24 @@ def _fidelity_limits(
         failed = [
             name
             for name in dependencies
-            if statuses.get(name)
-            in (
-                CrDissipationRateStatus.FIT_FAILED,
-                CrDissipationRateStatus.MODEL_MISMATCH,
-            )
+            if statuses.get(name) == CrDissipationRateStatus.FIT_FAILED
         ]
         if failed:
-            return unavailable(
-                "Required rates failed or have model mismatch: " + ", ".join(failed)
-            )
+            return unavailable("Required rates failed: " + ", ".join(failed))
         value = evaluate({}, include_leakage)
+        mismatched = sorted(
+            name for name in dependencies if name in statistically_mismatched_rates
+        )
+        if mismatched:
+            return CrDissipationFidelityEstimate(
+                value,
+                None,
+                True,
+                None,
+                "Diagnostic central fidelity conditional on statistically "
+                "mismatched effective-rate fits: " + ", ".join(mismatched),
+                CrDissipationFidelityStatus.CONDITIONAL_STATISTICAL_MISMATCH,
+            )
         if not compute_uncertainty:
             return CrDissipationFidelityEstimate(
                 value,
@@ -2288,9 +2337,6 @@ def analyze_cr_dissipation(
     dependency_failure = any(
         statuses[name] == CrDissipationRateStatus.FIT_FAILED for name in required_ab
     )
-    dependency_mismatch = any(
-        statuses[name] == CrDissipationRateStatus.MODEL_MISMATCH for name in required_ab
-    )
     counts = measurements.repetition_counts
     c_data = getattr(measurements, PROTOCOL_C).actual
     d_data = getattr(measurements, PROTOCOL_D).actual
@@ -2339,21 +2385,6 @@ def analyze_cr_dissipation(
             fixed_rates=fixed,
             fitted_role="target",
         )
-        if dependency_mismatch:
-            dependency_message = (
-                " A required A/B primitive fit has absolute model mismatch; "
-                "this conditional C/D estimate is diagnostic only."
-            )
-            c_fit = replace(
-                c_fit,
-                status=CrDissipationRateStatus.MODEL_MISMATCH,
-                message=c_fit.message + dependency_message,
-            )
-            d_fit = replace(
-                d_fit,
-                status=CrDissipationRateStatus.MODEL_MISMATCH,
-                message=d_fit.message + dependency_message,
-            )
     nominal["control_pure_dephasing"] = (
         c_fit.rate_per_ns if c_fit.success else float("nan")
     )
@@ -2397,42 +2428,34 @@ def analyze_cr_dissipation(
                 failed_fits,
             )
         )
-    mismatched_fits = tuple(
-        name
-        for name, has_mismatch in (
-            (
-                "control_population_ab",
-                CrDissipationRateStatus.MODEL_MISMATCH in control_fit.statuses.values(),
-            ),
-            ("target_a_t1rho", t1_a.status == CrDissipationRateStatus.MODEL_MISMATCH),
-            (
-                "target_a_leakage",
-                CrDissipationRateStatus.MODEL_MISMATCH
-                in (leak_a.leakage_status, leak_a.seepage_status),
-            ),
-            ("target_b_t1rho", t1_b.status == CrDissipationRateStatus.MODEL_MISMATCH),
-            (
-                "target_b_leakage",
-                CrDissipationRateStatus.MODEL_MISMATCH
-                in (leak_b.leakage_status, leak_b.seepage_status),
-            ),
-            (
-                "control_pure_dephasing_c",
-                c_fit.status == CrDissipationRateStatus.MODEL_MISMATCH,
-            ),
-            (
-                "target_rotating_frame_pure_dephasing_d",
-                d_fit.status == CrDissipationRateStatus.MODEL_MISMATCH,
-            ),
-        )
-        if has_mismatch
-    )
+    fit_mismatch = {
+        "control_population_ab": _has_statistical_mismatch(control_fit),
+        "target_a_t1rho": _has_statistical_mismatch(t1_a),
+        "target_a_leakage": _has_statistical_mismatch(leak_a),
+        "target_b_t1rho": _has_statistical_mismatch(t1_b),
+        "target_b_leakage": _has_statistical_mismatch(leak_b),
+        "control_pure_dephasing_c": _has_statistical_mismatch(c_fit),
+        "target_rotating_frame_pure_dephasing_d": _has_statistical_mismatch(d_fit),
+    }
+    mismatched_fits = tuple(name for name, mismatch in fit_mismatch.items() if mismatch)
+    statistically_mismatched_rates: set[str] = set()
+    if fit_mismatch["control_population_ab"]:
+        statistically_mismatched_rates.update(_CONTROL_RATE_ORDER)
+    if fit_mismatch["target_a_t1rho"] or fit_mismatch["target_b_t1rho"]:
+        statistically_mismatched_rates.add("target_t1rho")
+    if fit_mismatch["target_a_leakage"] or fit_mismatch["target_b_leakage"]:
+        statistically_mismatched_rates.update(("target_leakage", "target_seepage"))
+    if fit_mismatch["control_pure_dephasing_c"]:
+        statistically_mismatched_rates.add("control_pure_dephasing")
+    if fit_mismatch["target_rotating_frame_pure_dephasing_d"]:
+        statistically_mismatched_rates.add("target_rotating_frame_pure_dephasing")
     if mismatched_fits:
         warnings.append(
             CrDissipationWarning(
-                "model_mismatch",
+                "statistical_mismatch",
                 "One or more optimizations converged but failed absolute "
-                "goodness-of-fit limits; dependent fidelity is unavailable.",
+                "shot-noise goodness-of-fit limits. Rate resolution is reported "
+                "separately, and dependent fidelity is conditional.",
                 mismatched_fits,
             )
         )
@@ -2585,6 +2608,7 @@ def analyze_cr_dissipation(
         primitive_covariance,
         primitive_order,
         compute_uncertainty=compute_fidelity_uncertainty,
+        statistically_mismatched_rates=tuple(sorted(statistically_mismatched_rates)),
     )
     warnings.extend(fidelity_warnings)
     fits = CrDissipationFits(control_fit, t1_a, leak_a, t1_b, leak_b, c_fit, d_fit)
@@ -2618,6 +2642,48 @@ def analyze_cr_dissipation(
                     GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT
                 ),
                 "covariance_conditioning": "gef_calibration_fixed",
+            },
+            "fit_quality": {
+                "control_population_ab": {
+                    "selected": _goodness_metadata(
+                        _selected_goodness_of_fit(control_fit)
+                    ),
+                    "by_protocol": {
+                        protocol: _goodness_metadata(goodness)
+                        for protocol, goodness in (
+                            control_fit.goodness_of_fit_by_protocol.items()
+                        )
+                    },
+                },
+                "target_a_t1rho": _goodness_metadata(_selected_goodness_of_fit(t1_a)),
+                "target_a_leakage": _goodness_metadata(
+                    _selected_goodness_of_fit(leak_a)
+                ),
+                "target_b_t1rho": _goodness_metadata(_selected_goodness_of_fit(t1_b)),
+                "target_b_leakage": _goodness_metadata(
+                    _selected_goodness_of_fit(leak_b)
+                ),
+                "control_pure_dephasing_c": {
+                    "local": _goodness_metadata(_selected_goodness_of_fit(c_fit)),
+                    "dependency_statistical_mismatch": bool(
+                        statistically_mismatched_rates.intersection(required_ab)
+                    ),
+                },
+                "target_rotating_frame_pure_dephasing_d": {
+                    "local": _goodness_metadata(_selected_goodness_of_fit(d_fit)),
+                    "dependency_statistical_mismatch": bool(
+                        statistically_mismatched_rates.intersection(required_ab)
+                    ),
+                },
+            },
+            "fidelity_validation": {
+                "idle_coherence_limited": fidelity.idle_coherence_limited.status.value,
+                "cr_on_coherence_limited": (
+                    fidelity.cr_on_coherence_limited.status.value
+                ),
+                "cr_on_dissipative_limited": (
+                    fidelity.cr_on_dissipative_limited.status.value
+                ),
             },
             "cross_protocol_covariance_approximation": "block_diagonal",
             "idle_equivalent_extraction": "non_recursive_synthetic_baseline",
@@ -2656,8 +2722,6 @@ def _derived_status(
     """Combine dependency statuses for a derived transverse rate."""
     if CrDissipationRateStatus.FIT_FAILED in dependencies:
         return CrDissipationRateStatus.FIT_FAILED
-    if CrDissipationRateStatus.MODEL_MISMATCH in dependencies:
-        return CrDissipationRateStatus.MODEL_MISMATCH
     if all(status == CrDissipationRateStatus.RESOLVED for status in dependencies):
         return CrDissipationRateStatus.RESOLVED
     return CrDissipationRateStatus.PARTIALLY_UNRESOLVED
