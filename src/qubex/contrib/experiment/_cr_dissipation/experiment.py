@@ -68,7 +68,9 @@ from .pulses import (
 )
 from .types import (
     CrDissipationAnalysis,
+    CrDissipationFidelityEstimate,
     CrDissipationFidelityStatus,
+    CrDissipationFitQuality,
     CrDissipationMeasurements,
     CrDissipationPauliData,
     CrDissipationProtocolData,
@@ -1410,7 +1412,7 @@ def _print_summary(
     control_idle: IdleNoiseParameters,
     target_idle: IdleNoiseParameters,
 ) -> None:
-    """Print rate and fidelity summaries for an interactive measurement."""
+    """Print the compact rate, fidelity, and diagnostic measurement summary."""
     print("CR dissipation characterization")
     print(
         "Idle inputs [us]: "
@@ -1468,67 +1470,118 @@ def _print_summary(
                 value.ljust(width) for value, width in zip(row, widths, strict=True)
             )
         )
-    print(
-        "± values are conditional statistical 1σ uncertainties with supplied "
-        "idle T1/T2_echo and fitted GEF calibration held fixed. Within-fit "
-        "initial-condition correlations are included; selected cross-fit and "
-        "cross-protocol covariances are neglected."
-    )
-    fit_quality = analysis.metadata.get("fit_quality", {})
-    quality_rows: list[tuple[str, Mapping[str, Any]]] = []
-    control_quality = fit_quality.get("control_population_ab", {})
-    quality_rows.append(
-        ("control population (joint)", control_quality.get("selected", {}))
-    )
-    for protocol, goodness in control_quality.get("by_protocol", {}).items():
-        quality_rows.append((f"control population {protocol}", goodness))
-    for key, label in (
-        ("target_a_t1rho", f"target T1rho {PROTOCOL_A}"),
-        ("target_a_leakage", f"target leakage {PROTOCOL_A}"),
-        ("target_b_t1rho", f"target T1rho {PROTOCOL_B}"),
-        ("target_b_leakage", f"target leakage {PROTOCOL_B}"),
+    quality_entries = _fit_quality_entries(analysis.metadata)
+
+    print("\nFidelity limits")
+    has_conditional_fidelity = False
+    for label, estimate in (
+        ("idle coherence", analysis.fidelity.idle_coherence_limited),
+        ("CR-on coherence", analysis.fidelity.cr_on_coherence_limited),
+        ("CR-on dissipative", analysis.fidelity.cr_on_dissipative_limited),
     ):
-        quality_rows.append((label, fit_quality.get(key, {})))
-    for key, label in (
-        ("control_pure_dephasing_c", f"control pure dephasing {PROTOCOL_C}"),
-        (
-            "target_rotating_frame_pure_dephasing_d",
-            f"target pure dephasing {PROTOCOL_D}",
-        ),
+        value, conditional = _format_fidelity_summary_value(estimate)
+        has_conditional_fidelity |= conditional
+        print(f"  {label:<21} {value}")
+
+    if quality_entries:
+        mismatch_count = sum(
+            entry.get("quality") == CrDissipationFitQuality.STATISTICAL_MISMATCH.value
+            for entry in quality_entries
+        )
+        unassessed_count = sum(
+            entry.get("quality") == CrDissipationFitQuality.NOT_ASSESSED.value
+            for entry in quality_entries
+        )
+        if mismatch_count:
+            suffix = ""
+            if unassessed_count == 1:
+                suffix = "; 1 fit was not assessed"
+            elif unassessed_count > 1:
+                suffix = f"; {unassessed_count} fits were not assessed"
+            print(
+                "\nFit diagnostics: "
+                f"{mismatch_count}/{len(quality_entries)} fits show a "
+                f"statistical mismatch{suffix}."
+            )
+        elif unassessed_count:
+            print(
+                "\nFit diagnostics: "
+                f"{unassessed_count}/{len(quality_entries)} fits were not assessed."
+            )
+        else:
+            print(f"\nFit diagnostics: all {len(quality_entries)} fits accepted.")
+    if analysis.warnings:
+        codes: dict[str, int] = {}
+        for item in analysis.warnings:
+            codes[item.code] = codes.get(item.code, 0) + 1
+        code_text = ", ".join(
+            code.replace("_", " ")
+            if count == 1
+            else f"{code.replace('_', ' ')} ({count})"
+            for code, count in codes.items()
+        )
+        suffix = (
+            "; starred fidelities are conditional" if has_conditional_fidelity else ""
+        )
+        print(f"Warnings: {len(analysis.warnings)} — {code_text}{suffix}.")
+    elif has_conditional_fidelity:
+        print("* Starred fidelities are conditional.")
+
+
+def _fit_quality_entries(
+    metadata: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
+    """Return the fit-quality records represented in the compact summary."""
+    fit_quality = metadata.get("fit_quality")
+    if not isinstance(fit_quality, Mapping):
+        return ()
+    quality_entries: list[Mapping[str, Any]] = []
+    control_quality = fit_quality.get("control_population_ab", {})
+    if isinstance(control_quality, Mapping):
+        selected = control_quality.get("selected")
+        if isinstance(selected, Mapping):
+            quality_entries.append(selected)
+        by_protocol = control_quality.get("by_protocol")
+        if isinstance(by_protocol, Mapping):
+            quality_entries.extend(
+                goodness
+                for goodness in by_protocol.values()
+                if isinstance(goodness, Mapping)
+            )
+    for key in (
+        "target_a_t1rho",
+        "target_a_leakage",
+        "target_b_t1rho",
+        "target_b_leakage",
+    ):
+        goodness = fit_quality.get(key)
+        if isinstance(goodness, Mapping):
+            quality_entries.append(goodness)
+    for key in (
+        "control_pure_dephasing_c",
+        "target_rotating_frame_pure_dephasing_d",
     ):
         entry = fit_quality.get(key, {})
-        quality_rows.append((label, entry.get("local", {})))
-    if quality_rows:
-        print("Fit quality (shot-noise covariance):")
-        print("  Fit                              reduced χ²  max |r|  Quality")
-        for label, goodness in quality_rows:
-            reduced = goodness.get("reduced_chi_squared", float("nan"))
-            maximum = goodness.get("maximum_absolute_whitened_residual", float("nan"))
-            quality = goodness.get("quality", "not_assessed")
-            print(f"  {label:<32} {reduced:>10.3g}  {maximum:>7.3g}  {quality}")
-    for label, estimate in (
-        ("Idle coherence limited", analysis.fidelity.idle_coherence_limited),
-        ("CR-on coherence limited", analysis.fidelity.cr_on_coherence_limited),
-        ("CR-on dissipative limited", analysis.fidelity.cr_on_dissipative_limited),
-    ):
-        if not estimate.available:
-            print(f"  {label}: unavailable ({estimate.message})")
-        elif (
-            estimate.status
-            == CrDissipationFidelityStatus.CONDITIONAL_STATISTICAL_MISMATCH
-        ):
-            print(
-                f"  {label}: {estimate.value:.8f} "
-                f"[{estimate.status.value}] ({estimate.message})"
-            )
-        elif estimate.standard_error is None:
-            print(f"  {label}: {estimate.value:.8f}")
-        else:
-            print(f"  {label}: {estimate.value:.8f} ± {estimate.standard_error:.2g}")
-    if analysis.warnings:
-        print("Warnings:")
-        for item in analysis.warnings:
-            print(f"  [{item.code}] {item.message}")
+        goodness = entry.get("local") if isinstance(entry, Mapping) else None
+        if isinstance(goodness, Mapping):
+            quality_entries.append(goodness)
+    return tuple(quality_entries)
+
+
+def _format_fidelity_summary_value(
+    estimate: CrDissipationFidelityEstimate,
+) -> tuple[str, bool]:
+    """Format one fidelity as a percentage and report conditional status."""
+    if not estimate.available:
+        return "unavailable", False
+    value = f"{estimate.value * 100.0:.2f}"
+    if estimate.standard_error is not None:
+        value += f" ± {estimate.standard_error * 100.0:.2g}"
+    value += " %"
+    conditional = (
+        estimate.status == CrDissipationFidelityStatus.CONDITIONAL_STATISTICAL_MISMATCH
+    )
+    return value + (" *" if conditional else ""), conditional
 
 
 # Public experiment orchestration
@@ -1644,7 +1697,8 @@ def characterize_cr_dissipation(
         than one. Used only when `measure_reference=True`.
     force_reference_ix45_calibration : bool, optional
         Whether to ignore a compatible cached IX45 calibration and recalibrate.
-        Cannot be combined with an explicit `reference_ix45_amplitude`.
+        When `measure_reference=True`, this cannot be combined with an explicit
+        `reference_ix45_amplitude`. It is ignored otherwise.
     compute_fidelity_uncertainty : bool, optional
         Whether to propagate fitted-rate covariance into the two CR-on fidelity
         limits with sigma points. Disable to retain central fidelities while
@@ -1686,22 +1740,26 @@ def characterize_cr_dissipation(
     ):
         if not isinstance(value, bool):
             raise TypeError(f"{name} must be boolean.")
-    if reference_ix45_amplitude is not None:
-        if isinstance(reference_ix45_amplitude, bool) or not isinstance(
-            reference_ix45_amplitude, Real
-        ):
-            raise TypeError("reference_ix45_amplitude must be a real number.")
-        reference_ix45_amplitude = float(reference_ix45_amplitude)
-        if (
-            not np.isfinite(reference_ix45_amplitude)
-            or not 0.0 < reference_ix45_amplitude <= 1.0
-        ):
-            raise ValueError("reference_ix45_amplitude must be in (0, 1].")
-    if reference_ix45_amplitude is not None and force_reference_ix45_calibration:
-        raise ValueError(
-            "reference_ix45_amplitude and force_reference_ix45_calibration=True "
-            "cannot be specified together."
-        )
+    if measure_reference:
+        if reference_ix45_amplitude is not None:
+            if isinstance(reference_ix45_amplitude, bool) or not isinstance(
+                reference_ix45_amplitude, Real
+            ):
+                raise TypeError("reference_ix45_amplitude must be a real number.")
+            reference_ix45_amplitude = float(reference_ix45_amplitude)
+            if (
+                not np.isfinite(reference_ix45_amplitude)
+                or not 0.0 < reference_ix45_amplitude <= 1.0
+            ):
+                raise ValueError("reference_ix45_amplitude must be in (0, 1].")
+        if reference_ix45_amplitude is not None and force_reference_ix45_calibration:
+            raise ValueError(
+                "reference_ix45_amplitude and force_reference_ix45_calibration=True "
+                "cannot be specified together."
+            )
+    else:
+        reference_ix45_amplitude = None
+        force_reference_ix45_calibration = False
     counts = (
         None
         if repetition_counts is None

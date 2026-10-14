@@ -36,6 +36,106 @@ def test_optional_diagnostics_default_on_and_fidelity_uncertainty_off() -> None:
     assert defaults["compute_fidelity_uncertainty"] is False
 
 
+def test_summary_compacts_fit_quality_and_warning_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Interactive output summarizes diagnostics without a per-fit table."""
+
+    def goodness(quality: str) -> dict[str, str]:
+        return {"quality": quality}
+
+    rate = SimpleNamespace(
+        rate_per_ns=2.3e-4,
+        rate_standard_error_per_ns=1.24e-5,
+        lifetime_ns=4_350.0,
+        lifetime_interval_1sigma_ns=(4_130.0, 4_600.0),
+        idle_equivalent_lifetime_ns=36_400.0,
+        status=health.CrDissipationRateStatus.RESOLVED,
+    )
+    fidelity = SimpleNamespace(
+        idle_coherence_limited=SimpleNamespace(
+            available=True,
+            value=0.9869,
+            standard_error=None,
+            status=health.CrDissipationFidelityStatus.VALIDATED,
+        ),
+        cr_on_coherence_limited=SimpleNamespace(
+            available=True,
+            value=0.7801,
+            standard_error=None,
+            status=(
+                health.CrDissipationFidelityStatus.CONDITIONAL_STATISTICAL_MISMATCH
+            ),
+        ),
+        cr_on_dissipative_limited=SimpleNamespace(
+            available=True,
+            value=0.7381,
+            standard_error=None,
+            status=(
+                health.CrDissipationFidelityStatus.CONDITIONAL_STATISTICAL_MISMATCH
+            ),
+        ),
+    )
+    analysis = cast(
+        health.CrDissipationAnalysis,
+        SimpleNamespace(
+            rates={"control_e_to_g": rate},
+            fidelity=fidelity,
+            metadata={
+                "fit_quality": {
+                    "control_population_ab": {
+                        "selected": goodness("statistical_mismatch"),
+                        "by_protocol": {
+                            health.PROTOCOL_A: goodness("accepted"),
+                            health.PROTOCOL_B: goodness("statistical_mismatch"),
+                        },
+                    },
+                    "target_a_t1rho": goodness("accepted"),
+                    "target_a_leakage": goodness("accepted"),
+                    "target_b_t1rho": goodness("statistical_mismatch"),
+                    "target_b_leakage": goodness("accepted"),
+                    "control_pure_dephasing_c": {
+                        "local": goodness("statistical_mismatch")
+                    },
+                    "target_rotating_frame_pure_dephasing_d": {
+                        "local": goodness("accepted")
+                    },
+                }
+            },
+            warnings=(
+                SimpleNamespace(
+                    code="statistical_mismatch",
+                    message="synthetic",
+                    affected_outputs=(),
+                ),
+            ),
+        ),
+    )
+
+    health._print_summary(
+        analysis,
+        health.IdleNoiseParameters(36_400.0, 42_400.0),
+        health.IdleNoiseParameters(40_300.0, 46_300.0),
+    )
+
+    output = capsys.readouterr().out
+    assert "Fidelity limits" in output
+    assert "idle coherence" in output
+    assert "98.69 %" in output
+    assert "CR-on coherence" in output
+    assert "78.01 % *" in output
+    assert "CR-on dissipative" in output
+    assert "73.81 % *" in output
+    assert "Fit diagnostics: 4/9 fits show a statistical mismatch." in output
+    assert (
+        "Warnings: 1 — statistical mismatch; starred fidelities are conditional."
+        in output
+    )
+    assert "Fit quality (shot-noise covariance)" not in output
+    assert "reduced χ²" not in output
+    assert "± values are conditional" not in output
+
+
 class _Experiment:
     def __init__(self) -> None:
         self.ctx = _Context()
@@ -90,6 +190,22 @@ def test_missing_idle_coherence_fails_before_pulse_resolution() -> None:
             _fake_experiment(),
             "Q0",
             "Q1",
+            idle_t1={"Q0": 30_000.0},
+            idle_t2_echo={"Q0": 20_000.0, "Q1": 20_000.0},
+            plot=False,
+        )
+
+
+def test_disabled_reference_ignores_calibration_overrides() -> None:
+    """Unused reference calibration overrides do not block primary validation."""
+    with pytest.raises(ValueError, match="missing for qubit Q1"):
+        health.characterize_cr_dissipation(
+            _fake_experiment(),
+            "Q0",
+            "Q1",
+            measure_reference=False,
+            reference_ix45_amplitude=0.5,
+            force_reference_ix45_calibration=True,
             idle_t1={"Q0": 30_000.0},
             idle_t2_echo={"Q0": 20_000.0, "Q1": 20_000.0},
             plot=False,

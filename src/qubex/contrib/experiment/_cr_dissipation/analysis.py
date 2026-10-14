@@ -253,11 +253,11 @@ def computational_polarization(
     series: GefPopulationSeries,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
-    Return target X after the fixed A/B ``+Y90`` analysis rotation.
+    Return target X after the fixed A/B `+Y90` analysis rotation.
 
-    Qubex prepares target ``+X`` with ``+Y90`` and A/B applies another
-    ``+Y90`` before the GEF readout.  Consequently positive target X maps to
-    negative measured Z, so the fixed observable is ``(Pe-Pg)/(Pg+Pe)``.
+    Qubex prepares target `+X` with `+Y90` and A/B applies another
+    `+Y90` before the GEF readout. Consequently positive target X maps to
+    negative measured Z, so the fixed observable is `(Pe-Pg)/(Pg+Pe)`.
     """
     population = np.asarray(series.population, dtype=np.float64)
     covariance = np.asarray(series.covariance, dtype=np.float64)
@@ -286,8 +286,8 @@ def nonnormalized_ge_expectation(
     """
     Return a fixed non-normalized GE expectation and its covariance-based SE.
 
-    ``g_minus_e`` is direct Z readout. ``e_minus_g`` is the X expectation
-    produced by the fixed ``+Y90`` analyzer used by protocol C. The convention
+    `g_minus_e` is direct Z readout. `e_minus_g` is the X expectation
+    produced by the fixed `+Y90` analyzer used by protocol C. The convention
     is determined by the pulse sequence and never inferred from measured data.
     """
     population = np.asarray(series.population, dtype=np.float64)
