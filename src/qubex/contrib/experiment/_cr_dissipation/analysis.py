@@ -84,6 +84,7 @@ BOUNDARY_FRACTION_CHANGE_THRESHOLD = 0.25
 PSD_RELATIVE_TOLERANCE = 1e-10
 CD_NONNEGATIVE_RATE_START_FRACTIONS = (0.5,)
 CD_SIGNED_RATE_START_FRACTIONS = (0.25,)
+CD_SIGNED_DIAGNOSTIC_POLICY = "conditional_when_null_selected_or_free_rate_unresolved"
 
 _CONTROL_RATE_ORDER = (
     "control_e_to_g",
@@ -1201,7 +1202,14 @@ def fit_physical_dephasing(
     fitted_role: Literal["control", "target"],
     force_free: bool = False,
 ) -> PhysicalForwardDephasingFit:
-    """Fit C/D total CR-active pure dephasing with affine SPAM terms."""
+    """
+    Fit C/D total CR-active pure dephasing with affine SPAM terms.
+
+    The nonnegative free and zero-rate candidates always participate in AICc
+    selection. The costlier signed diagnostic runs only when the zero-rate
+    candidate is selected or the free rate is unresolved. `force_free` is
+    reserved for the non-recursive synthetic idle baseline.
+    """
     maximum_count = max(1, int(np.max(repetition_counts)))
     duration = (
         sum(
@@ -1294,8 +1302,7 @@ def fit_physical_dephasing(
             "Free constrained estimator used for non-recursive idle baseline.",
         )
     null = make_candidate("zero_total_dephasing", free_rate=False)
-    diagnostic = make_candidate("signed_diagnostic", free_rate=True, signed=True)
-    candidates = {null.name: null, free.name: free, diagnostic.name: diagnostic}
+    candidates = {null.name: null, free.name: free}
     if not null.success or not free.success:
         return _failed_physical_fit(candidates, values.size)
     selected = select_aicc_candidate(
@@ -1304,10 +1311,21 @@ def fit_physical_dephasing(
     )
     if selected is None:
         return _failed_physical_fit(candidates, values.size)
+    free_status = _selected_rate_status(free, "pure_dephasing_rate_per_ns")
+    run_signed_diagnostic = (
+        selected.name == null.name or free_status != CrDissipationRateStatus.RESOLVED
+    )
+    diagnostic = (
+        make_candidate("signed_diagnostic", free_rate=True, signed=True)
+        if run_signed_diagnostic
+        else None
+    )
+    if diagnostic is not None:
+        candidates[diagnostic.name] = diagnostic
     if selected.name == free.name:
         rate = float(free.parameters[0])
         rate_error: float | None = float(free.standard_errors[0])
-        status = _selected_rate_status(free, "pure_dephasing_rate_per_ns")
+        status = free_status
         amplitude = float(free.parameters[1])
         offset = float(free.parameters[2])
     else:
@@ -1316,9 +1334,15 @@ def fit_physical_dephasing(
         status = CrDissipationRateStatus.CONSISTENT_WITH_ZERO
         amplitude = float(null.parameters[0])
         offset = float(null.parameters[1])
-    unconstrained_rate = float(diagnostic.parameters[0]) if diagnostic.success else None
+    unconstrained_rate = (
+        float(diagnostic.parameters[0])
+        if diagnostic is not None and diagnostic.success
+        else None
+    )
     unconstrained_error = (
-        float(diagnostic.standard_errors[0]) if diagnostic.success else None
+        float(diagnostic.standard_errors[0])
+        if diagnostic is not None and diagnostic.success
+        else None
     )
     if (
         unconstrained_rate is not None
@@ -1332,13 +1356,21 @@ def fit_physical_dephasing(
         rate_error = None
         amplitude = float(null.parameters[0])
         offset = float(null.parameters[1])
-    message = (
-        "The signed diagnostic required negative pure dephasing; the reported "
-        "physical fit uses the zero-rate candidate."
-        if status == CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION
-        else f"`{PROTOCOL_A}`/`{PROTOCOL_B}` nominal dissipation was fixed while "
-        "total CR-active pure dephasing was tested."
-    )
+    if status == CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION:
+        message = (
+            "The signed diagnostic required negative pure dephasing; the reported "
+            "physical fit uses the zero-rate candidate."
+        )
+    elif diagnostic is None:
+        message = (
+            "The signed diagnostic was skipped because the constrained fit "
+            "resolved a positive pure-dephasing rate."
+        )
+    else:
+        message = (
+            f"`{PROTOCOL_A}`/`{PROTOCOL_B}` nominal dissipation was fixed while "
+            "total CR-active pure dephasing was tested."
+        )
     return PhysicalForwardDephasingFit(
         True,
         selected.name,
@@ -2643,6 +2675,7 @@ def analyze_cr_dissipation(
             "initial_condition_treatment": "latent_nuisance_with_n0_observation",
             "model_selection": "simplest_candidate_within_global_delta_aicc_6",
             "rate_optimization": "deterministic_multistart",
+            "c_d_signed_diagnostic": CD_SIGNED_DIAGNOSTIC_POLICY,
             "absolute_goodness_of_fit_limits": {
                 "reduced_chi_squared": GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
                 "maximum_absolute_whitened_residual": (

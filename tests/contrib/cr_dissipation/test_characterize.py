@@ -448,6 +448,9 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
         "signed": (0.25,),
     }
     assert result.data["analysis_options"]["c_d_rate_optimizer_maximum_starts"] == 2
+    assert result.data["analysis_options"]["c_d_signed_diagnostic"] == (
+        "conditional_when_null_selected_or_free_rate_unresolved"
+    )
     assert bootstrap_calls == [
         {
             "n_resamples": 12,

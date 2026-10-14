@@ -1153,8 +1153,10 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
     assert [call.get("rate_start_fractions") for call in profiled_calls] == [
         (0.5,),
         None,
-        (0.25,),
     ]
+    assert "signed_diagnostic" not in fit.candidates
+    assert fit.unconstrained_rate_per_ns is None
+    assert "skipped" in fit.message
 
 
 def test_physical_forward_fit_selects_zero_total_pure_dephasing(
@@ -1172,8 +1174,11 @@ def test_physical_forward_fit_selects_zero_total_pure_dephasing(
         ),
     )
 
+    candidate_names: list[str] = []
+
     def fake_profiled_fit(**kwargs: Any) -> CandidateFit:
         name = str(kwargs["name"])
+        candidate_names.append(name)
         names = (
             ("spam_amplitude", "spam_offset")
             if kwargs.get("fixed_rate") is not None
@@ -1218,6 +1223,11 @@ def test_physical_forward_fit_selects_zero_total_pure_dephasing(
     assert fit.selected_model == "zero_total_dephasing"
     assert fit.status == CrDissipationRateStatus.CONSISTENT_WITH_ZERO
     assert fit.rate_per_ns == 0.0
+    assert candidate_names == [
+        "free_nonnegative",
+        "zero_total_dephasing",
+        "signed_diagnostic",
+    ]
 
 
 def test_negative_signed_diagnostic_projects_to_the_zero_candidate(
@@ -1253,7 +1263,7 @@ def test_negative_signed_diagnostic_projects_to_the_zero_candidate(
                     "spam_amplitude",
                     "spam_offset",
                 ),
-                (1e-3, 1.2, 0.2),
+                (0.0, 1.2, 0.2),
                 (1e-4, 0.01, 0.01),
                 0.0,
             )

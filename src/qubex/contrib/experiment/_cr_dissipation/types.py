@@ -240,7 +240,12 @@ class ExchangeRateFit:
 
 @dataclass(frozen=True)
 class PhysicalForwardDephasingFit:
-    """Store one C/D physical-forward pure-dephasing fit."""
+    """
+    Store one C/D physical-forward pure-dephasing fit.
+
+    The unconstrained fields are `None` when the conditional signed
+    diagnostic was skipped or did not converge.
+    """
 
     success: bool
     selected_model: str

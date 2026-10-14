@@ -39,6 +39,7 @@ from qubex.pulse import FlatTop, PulseSchedule, Waveform
 from .analysis import (
     BOUNDARY_FRACTION_CHANGE_THRESHOLD,
     CD_NONNEGATIVE_RATE_START_FRACTIONS,
+    CD_SIGNED_DIAGNOSTIC_POLICY,
     CD_SIGNED_RATE_START_FRACTIONS,
     CHANGE_SIGMA_THRESHOLD,
     LEAKAGE_MINIMUM_CHANGE,
@@ -1730,7 +1731,8 @@ def characterize_cr_dissipation(
     while absolute shot-noise goodness-of-fit is reported independently from
     rate resolution. If that diagnostic reports statistical mismatch, central
     dependent fidelities remain available as conditional values, but their
-    uncertainty is not reported.
+    uncertainty is not reported. The costly signed C/D diagnostic runs only
+    when the null model is selected or the nonnegative free rate is unresolved.
     """
     for name, value in (
         ("measure_reference", measure_reference),
@@ -2131,6 +2133,7 @@ def characterize_cr_dissipation(
             len(CD_NONNEGATIVE_RATE_START_FRACTIONS),
             len(CD_SIGNED_RATE_START_FRACTIONS),
         ),
+        "c_d_signed_diagnostic": CD_SIGNED_DIAGNOSTIC_POLICY,
         "goodness_of_fit_reduced_chi_squared_limit": (
             GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT
         ),
