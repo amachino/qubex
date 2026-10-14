@@ -80,6 +80,65 @@ def test_segment_superoperator_cache_reuses_matrix_exponential(
     assert calls == 1
 
 
+def test_repeated_observable_matches_independent_channel_powers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shared binary powers preserve arbitrary repeated-count predictions."""
+    idle = IdleNoiseParameters(40_000.0, 50_000.0)
+    operations = (
+        SemanticSegment(
+            20.0,
+            np.zeros((9, 9), dtype=np.complex128),
+            True,
+            "CR",
+        ),
+    )
+    rates = CrNoiseRates(control_e_to_g=2e-5, target_t1rho=3e-5)
+    initial = state_density("+x", "+x")
+    counts = np.array([5, 0, 2, 5], dtype=np.int64)
+    channel = compose_channel(
+        operations,
+        control_idle=idle,
+        target_idle=idle,
+        cr_rates=rates,
+        include_leakage=True,
+    )
+    expected = np.array(
+        [
+            np.real(
+                np.trace(
+                    simulation_module.apply_channel(
+                        np.linalg.matrix_power(channel, int(count)),
+                        initial,
+                    )
+                    @ X_CONTROL
+                )
+            )
+            for count in counts
+        ]
+    )
+    monkeypatch.setattr(
+        simulation_module.np.linalg,
+        "matrix_power",
+        lambda *_args, **_kwargs: pytest.fail(
+            "repeated-observable simulation rebuilt an independent matrix power"
+        ),
+    )
+
+    actual = simulate_repeated_observable(
+        operations,
+        counts,
+        initial,
+        X_CONTROL,
+        control_idle=idle,
+        target_idle=idle,
+        cr_rates=rates,
+        include_leakage=True,
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-13)
+
+
 def _echoed_zx90() -> CrossResonance:
     """Build an echoed CR gate with a nonzero internal-pulse margin."""
     return CrossResonance(

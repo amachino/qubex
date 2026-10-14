@@ -433,9 +433,16 @@ def fit_profiled_affine_candidate(
     fixed_rate: float | None = None,
     initial_rate: float | None = None,
     rate_bounds: tuple[float, float] | None = None,
+    rate_start_fractions: Sequence[float] = (0.1, 0.5, 0.9),
     max_nfev: int = 300,
 ) -> CandidateFit:
-    """Fit one nonlinear rate after profiling affine amplitude and offset."""
+    """
+    Fit one nonlinear rate after profiling affine amplitude and offset.
+
+    The free-rate search starts from `initial_rate` and from each fractional
+    position in `rate_start_fractions` across the bounded interval. Duplicate
+    starts are removed while preserving order.
+    """
     observed = np.asarray(values, dtype=np.float64)
     errors = np.asarray(standard_errors, dtype=np.float64)
     if observed.ndim != 1 or errors.shape != observed.shape:
@@ -501,6 +508,9 @@ def fit_profiled_affine_candidate(
         if not np.isfinite(lower) or not np.isfinite(upper) or lower >= upper:
             raise ValueError("rate_bounds must be finite and strictly increasing.")
         initial = float(np.clip(initial_rate, lower, upper))
+        fractions = tuple(float(value) for value in rate_start_fractions)
+        if any(not np.isfinite(value) or not 0.0 < value < 1.0 for value in fractions):
+            raise ValueError("rate_start_fractions must contain values in (0, 1).")
 
         def residual(rate_array: NDArray[np.float64]) -> NDArray[np.float64]:
             return profile(float(rate_array[0]))[3]
@@ -511,9 +521,7 @@ def fit_profiled_affine_candidate(
             dict.fromkeys(
                 (
                     initial,
-                    lower + 0.1 * (upper - lower),
-                    lower + 0.5 * (upper - lower),
-                    lower + 0.9 * (upper - lower),
+                    *(lower + fraction * (upper - lower) for fraction in fractions),
                 )
             )
         )

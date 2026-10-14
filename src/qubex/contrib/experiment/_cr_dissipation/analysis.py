@@ -82,6 +82,8 @@ MODEL_SELECTION_DELTA_AICC = 6.0
 PARAMETER_SIGNIFICANCE_THRESHOLD = 2.0
 BOUNDARY_FRACTION_CHANGE_THRESHOLD = 0.25
 PSD_RELATIVE_TOLERANCE = 1e-10
+CD_NONNEGATIVE_RATE_START_FRACTIONS = (0.5,)
+CD_SIGNED_RATE_START_FRACTIONS = (0.25,)
 
 _CONTROL_RATE_ORDER = (
     "control_e_to_g",
@@ -1256,6 +1258,11 @@ def fit_physical_dephasing(
                 standard_errors=standard_errors,
                 initial_rate=min(1e-5, upper / 10.0),
                 rate_bounds=(lower_rate, upper),
+                rate_start_fractions=(
+                    CD_SIGNED_RATE_START_FRACTIONS
+                    if signed
+                    else CD_NONNEGATIVE_RATE_START_FRACTIONS
+                ),
                 max_nfev=300,
             )
         return fit_profiled_affine_candidate(

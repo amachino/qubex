@@ -38,6 +38,8 @@ from qubex.pulse import FlatTop, PulseSchedule, Waveform
 
 from .analysis import (
     BOUNDARY_FRACTION_CHANGE_THRESHOLD,
+    CD_NONNEGATIVE_RATE_START_FRACTIONS,
+    CD_SIGNED_RATE_START_FRACTIONS,
     CHANGE_SIGMA_THRESHOLD,
     LEAKAGE_MINIMUM_CHANGE,
     MODEL_SELECTION_DELTA_AICC,
@@ -2119,6 +2121,16 @@ def characterize_cr_dissipation(
         "model_selection_statistic": "gaussian_gls_aicc",
         "model_selection_rule": "simplest_within_global_delta_aicc",
         "rate_optimizer_initialization": "deterministic_multistart",
+        "c_d_rate_optimizer_initialization": "initial_guess_plus_interval_fractions",
+        "c_d_rate_start_fractions": {
+            "nonnegative": CD_NONNEGATIVE_RATE_START_FRACTIONS,
+            "signed": CD_SIGNED_RATE_START_FRACTIONS,
+        },
+        "c_d_rate_optimizer_maximum_starts": 1
+        + max(
+            len(CD_NONNEGATIVE_RATE_START_FRACTIONS),
+            len(CD_SIGNED_RATE_START_FRACTIONS),
+        ),
         "goodness_of_fit_reduced_chi_squared_limit": (
             GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT
         ),

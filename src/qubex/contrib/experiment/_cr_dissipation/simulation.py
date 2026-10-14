@@ -466,7 +466,7 @@ def simulate_repeated_observable(
     signed_target_pure_dephasing: float | None = None,
     cache: SuperoperatorCache | None = None,
 ) -> NDArray[np.float64]:
-    """Simulate an expectation after integer powers of one protocol block."""
+    """Simulate expectations using shared binary powers of one protocol block."""
     block_channel = compose_channel(
         block_operations,
         control_idle=control_idle,
@@ -477,13 +477,29 @@ def simulate_repeated_observable(
         signed_target_pure_dephasing=signed_target_pure_dephasing,
         cache=cache,
     )
-    values = []
     counts = np.asarray(repetition_counts, dtype=np.int64).reshape(-1)
+    if np.any(counts < 0):
+        raise ValueError("repetition_counts must be nonnegative.")
+    maximum_count = int(np.max(counts)) if counts.size else 0
+    channel_powers: list[NDArray[np.complex128]] = (
+        [block_channel] if maximum_count else []
+    )
+    while 1 << len(channel_powers) <= maximum_count:
+        power = channel_powers[-1]
+        channel_powers.append(power @ power)
+
+    initial_vector = np.asarray(initial_density, dtype=_COMPLEX).reshape(-1, order="F")
+    values = []
     for count in counts:
-        state = apply_channel(
-            np.linalg.matrix_power(block_channel, int(count)),
-            initial_density,
-        )
+        vector = initial_vector
+        remaining = int(count)
+        bit = 0
+        while remaining:
+            if remaining & 1:
+                vector = channel_powers[bit] @ vector
+            remaining >>= 1
+            bit += 1
+        state = vector.reshape((_DIMENSION, _DIMENSION), order="F")
         values.append(float(np.real(np.trace(state @ observable))))
     return np.asarray(values, dtype=np.float64)
 

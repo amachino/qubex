@@ -32,6 +32,7 @@ from qubex.contrib.experiment._cr_dissipation.analysis import (
 )
 from qubex.contrib.experiment._cr_dissipation.fit import (
     fit_gls_candidate,
+    fit_profiled_affine_candidate,
     select_aicc_candidate,
 )
 from qubex.contrib.experiment._cr_dissipation.pulses import (
@@ -179,6 +180,42 @@ def test_gls_multistart_selects_the_lowest_chi_squared_solution(
 
     assert candidate.success
     assert candidate.parameters == pytest.approx([4.0])
+    assert candidate.n_initializations == 2
+    assert candidate.n_successful_initializations == 2
+
+
+def test_profiled_fit_accepts_a_reduced_rate_start_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C/D can limit the rate search to the initial guess and one midpoint."""
+
+    def stationary_result(
+        _residual: Any,
+        initial: np.ndarray,
+        _bounds: Any,
+        **_kwargs: Any,
+    ) -> Any:
+        return SimpleNamespace(
+            x=initial.copy(),
+            success=True,
+            jac=np.ones((5, 1)),
+            message="synthetic",
+        )
+
+    monkeypatch.setattr(fit_module, "_run_least_squares", stationary_result)
+    sample_positions = np.arange(5, dtype=np.float64) / 10.0
+    candidate = fit_profiled_affine_candidate(
+        name="reduced_multistart",
+        simulator=lambda rate: np.exp(-rate * sample_positions),
+        values=np.exp(-5.0 * sample_positions),
+        standard_errors=np.ones(5),
+        initial_rate=1.0,
+        rate_bounds=(0.0, 10.0),
+        rate_start_fractions=(0.5,),
+    )
+
+    assert candidate.success
+    assert candidate.parameters[0] == pytest.approx(5.0)
     assert candidate.n_initializations == 2
     assert candidate.n_successful_initializations == 2
 
@@ -1044,8 +1081,10 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
 
     true_rate = 7e-4
     fixed_rates = CrNoiseRates(control_e_to_g=2e-5)
+    profiled_calls: list[dict[str, Any]] = []
 
     def fake_profiled_fit(**kwargs: Any) -> CandidateFit:
+        profiled_calls.append(kwargs)
         name = str(kwargs["name"])
         parameter_names = (
             ("spam_amplitude", "spam_offset")
@@ -1111,6 +1150,11 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
     assert fit.status == CrDissipationRateStatus.RESOLVED
     assert fit.rate_per_ns == pytest.approx(true_rate)
     assert fit.rate_standard_error_per_ns == pytest.approx(5e-5)
+    assert [call.get("rate_start_fractions") for call in profiled_calls] == [
+        (0.5,),
+        None,
+        (0.25,),
+    ]
 
 
 def test_physical_forward_fit_selects_zero_total_pure_dephasing(

@@ -443,6 +443,11 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     assert result.data["analysis_options"]["rate_optimizer_initialization"] == (
         "deterministic_multistart"
     )
+    assert result.data["analysis_options"]["c_d_rate_start_fractions"] == {
+        "nonnegative": (0.5,),
+        "signed": (0.25,),
+    }
+    assert result.data["analysis_options"]["c_d_rate_optimizer_maximum_starts"] == 2
     assert bootstrap_calls == [
         {
             "n_resamples": 12,
