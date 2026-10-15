@@ -33,8 +33,12 @@ from qubex.backend.quel3.infra.quelware_imports import (
     QuelwareExecutionApi,
     load_quelware_execution_api,
 )
+from qubex.backend.quel3.infra.resource_reader import Quel3ResourceReader
 from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
-from qubex.backend.quel3.instrument_cache import InstrumentCache
+from qubex.backend.quel3.instrument_cache import (
+    INSTRUMENT_RECOVERY_HINT,
+    InstrumentCache,
+)
 from qubex.backend.quel3.interfaces import (
     DirectiveProtocol,
     InstrumentDriverProtocol,
@@ -43,9 +47,13 @@ from qubex.backend.quel3.interfaces import (
     ResultContainerProtocol,
     SessionProtocol,
 )
+from qubex.backend.quel3.managers.configuration_manager import Quel3ConfigurationManager
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_EXTEND_TTL_MS,
+    QuelwareSessionError,
+    is_resource_not_found_error,
+    quelware_exception_summary,
     run_with_session_request_retry,
 )
 from qubex.backend.quel3.models import (
@@ -97,7 +105,13 @@ class _PayloadExecutionSession:
 
 
 class Quel3ExecutionManager:
-    """Handle backend execution entrypoints for QuEL-3 controller."""
+    """
+    Handle backend execution entrypoints for QuEL-3 controller.
+
+    An optional `resource_reader` supplies stale-instrument recovery readback;
+    `configuration_manager` owns cache refresh. Defaults
+    share the execution manager's runtime settings.
+    """
 
     def __init__(
         self,
@@ -107,6 +121,8 @@ class Quel3ExecutionManager:
         capture_decimation_factor: int,
         session_manager: Quel3SessionManager | None = None,
         execution_options: Quel3ExecutionOptions | None = None,
+        resource_reader: Quel3ResourceReader | None = None,
+        configuration_manager: Quel3ConfigurationManager | None = None,
     ) -> None:
         self.execution_options = execution_options or Quel3ExecutionOptions()
         self._analyzer = Quel3PayloadAnalyzer(
@@ -115,6 +131,16 @@ class Quel3ExecutionManager:
         self._planner = Quel3ExecutionPlanner()
         self._payload_builder = Quel3ExecutionPayloadBuilder()
         self._runtime_config = runtime_config or Quel3RuntimeConfig()
+        self._resource_reader = (
+            resource_reader
+            if resource_reader is not None
+            else Quel3ResourceReader(runtime_config=self._runtime_config)
+        )
+        self._configuration_manager = (
+            configuration_manager
+            if configuration_manager is not None
+            else Quel3ConfigurationManager(runtime_config=self._runtime_config)
+        )
         self._sampling_period_ns = sampling_period_ns
         self._capture_decimation_factor = capture_decimation_factor
         self._cable_delay_ns: dict[str, dict[str, float]] | None = None
@@ -211,31 +237,89 @@ class Quel3ExecutionManager:
         parallel: bool = True,
         execution_options: Quel3ExecutionOptions | None = None,
     ) -> list[Quel3BackendExecutionResult]:
-        """Validate all cached instruments and execute a batch of QuEL-3 requests."""
-        analyses = self._analyze_requests(requests, instrument_cache)
-        plan = self._planner.plan(
-            tuple(analysis.planning for analysis in analyses),
-            options=execution_options or self.execution_options,
-        )
-        executions = self._payload_builder.build_all(analyses, plan)
-        if not executions:
-            return []
-        instruments = instrument_cache.snapshot()
+        """
+        Execute a batch, refreshing missing instruments and retrying once.
 
-        try:
-            quelware_api = self._load_quelware_api()
-        except (ModuleNotFoundError, SyntaxError) as exc:
-            raise RuntimeError(
-                "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
-            ) from exc
-
-        return await self._execute_built_payloads(
-            analyses=analyses,
-            executions=executions,
-            instruments=instruments,
-            quelware_api=quelware_api,
-            parallel=parallel,
-        )
+        Recovery requires every requested alias to retain its port. Replanning
+        uses current instrument settings and restarts the entire batch,
+        including any executions that already completed.
+        """
+        requests = tuple(requests)
+        options = execution_options or self.execution_options
+        recovery_message = f"QuEL-3 automatic instrument cache recovery failed. {INSTRUMENT_RECOVERY_HINT}"
+        session_id = "<unavailable>"
+        for attempt in range(2):
+            try:
+                analyses = self._analyze_requests(requests, instrument_cache)
+                plan = self._planner.plan(
+                    tuple(analysis.planning for analysis in analyses),
+                    options=options,
+                )
+                executions = self._payload_builder.build_all(analyses, plan)
+                if not executions:
+                    return []
+                instruments = instrument_cache.snapshot()
+                try:
+                    quelware_api = self._load_quelware_api()
+                except (ModuleNotFoundError, SyntaxError) as exc:
+                    raise RuntimeError(
+                        "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
+                    ) from exc
+                return await self._execute_built_payloads(
+                    analyses=analyses,
+                    executions=executions,
+                    instruments=instruments,
+                    quelware_api=quelware_api,
+                    parallel=parallel,
+                )
+            except QuelwareSessionError as exc:  # noqa: PERF203 - Replanning and IO need a bounded retry loop.
+                if attempt or not is_resource_not_found_error(exc):
+                    raise
+                # TODO: Resume from the failed execution instead of replaying the whole batch.
+                expected_ports = {
+                    alias: instruments[alias].port_id
+                    for analysis in analyses
+                    for alias in analysis.payload.fixed_timelines
+                }
+                unit_labels = tuple(
+                    sorted({port.partition(":")[0] for port in expected_ports.values()})
+                )
+                session_id = exc.session_token
+                logger.warning(
+                    "QuEL-3 instruments are missing; refreshing the cache and retrying the whole batch once; cause=%s",
+                    quelware_exception_summary(exc),
+                )
+                try:
+                    refreshed = await asyncio.to_thread(
+                        self._configuration_manager.refresh_instrument_cache,
+                        instrument_cache=instrument_cache,
+                        resource_reader=self._resource_reader,
+                        unit_labels=unit_labels,
+                        parallel=parallel,
+                    )
+                    for alias, expected_port in expected_ports.items():
+                        info = refreshed.get(alias)
+                        observed_port = info.port_id if info is not None else None
+                        if observed_port != expected_port:
+                            raise ValueError(  # noqa: TRY301 - Wrap binding failures with the same recovery context.
+                                f"Instrument `{alias}` expected on port `{expected_port}`; "
+                                f"observed {observed_port!r}."
+                            )
+                except Exception as recovery_error:
+                    raise QuelwareSessionError(
+                        recovery_message,
+                        session_token=session_id,
+                        cause=recovery_error,
+                    ) from recovery_error
+            except Exception as retry_error:
+                if not attempt:
+                    raise
+                raise QuelwareSessionError(
+                    recovery_message,
+                    session_token=session_id,
+                    cause=retry_error,
+                ) from retry_error
+        raise RuntimeError("unreachable QuEL-3 instrument recovery state")
 
     async def execute(
         self,
