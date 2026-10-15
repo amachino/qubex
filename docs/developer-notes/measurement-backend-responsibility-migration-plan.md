@@ -81,12 +81,13 @@ Migrate the current implementation to the target architecture defined in `measur
   - Delegate `classifiers`, `update_classifiers`,
     `get_confusion_matrix`, and `get_inverse_confusion_matrix` from
     `Measurement` to `MeasurementClassificationService`.
-  - Delegate `apply_dc_voltages` from `Measurement` to
+  - Delegate `apply_optimal_voltages` from `Measurement` to
     `MeasurementAmplificationService`.
   - Keep `MeasurementExecutionService` classifier mapping shared from
     `MeasurementClassificationService`.
 - Behavior-preserving guardrails
-  - Keep `Measurement` public method names/signatures/return types unchanged.
+  - Keep the released `apply_dc_voltages` name as a deprecated compatibility
+    alias.
   - Preserve confusion-matrix normalization and Kronecker-product semantics.
   - Preserve target-to-mux-to-voltage resolution behavior for temporary DC operations.
 - Verification

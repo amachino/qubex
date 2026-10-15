@@ -14,10 +14,16 @@ conventions. Prefer one focused PR and make verification explicit.
 
 1. Inspect current context.
    - Read `git status --short`, the current branch name, and a concise diff summary.
-   - If the branch already exists, keep it unless the user asks for a rename.
+   - Check the current branch against
+     `docs/developer-guide/development-flow.md#branching`.
+   - If an existing branch violates the repository convention, flag it instead
+     of silently carrying the invalid name into a pull request.
 2. Suggest branch naming.
-   - Choose `fix`, `feature`, `docs`, or `refactor` based on the dominant change.
-   - Suggest `codex/<type>/<short-slug>` for new agent-created branches.
+   - Follow the semantic prefixes defined in the repository development flow:
+     `feature`, `fix`, `docs`, `refactor`, `test`, or `chore`.
+   - Use `<type>/<short-slug>`, such as
+     `docs/experiment-task-api-design`.
+   - Do not prepend `codex/` or another agent or tool namespace.
 3. Draft the PR title.
    - Use a concise prefix such as `fix:`, `docs:`, `refactor:`, or `test:`.
    - Keep the title aligned with the smallest coherent user-visible change.

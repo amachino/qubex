@@ -38,6 +38,10 @@ from .experiment.gf_calibration import (
     gf_ramsey_experiment,
     obtain_gf_rabi_params,
 )
+from .experiment.mcm_randomized_benchmarking import (
+    mcm_randomized_benchmarking,
+    mcm_rb_sequence,
+)
 from .experiment.measure_efh_chevron_pattern import (
     estimate_ef_frequency_from_chevron,
     estimate_ef_frequency_from_chevron_adaptive,
@@ -72,6 +76,11 @@ from .experiment.multipartite_entanglement import (
     partial_transpose,
     visualize_graph,
 )
+from .experiment.paired_interleaved_randomized_benchmarking import (
+    analyze_paired_irb,
+    measure_paired_irb,
+    paired_interleaved_randomized_benchmarking,
+)
 from .experiment.purity_benchmarking import (
     interleaved_purity_benchmarking,
     ipb_experiment,
@@ -101,6 +110,10 @@ from .experiment.simultaneous_coherence_measurement import (
 from .experiment.simultaneous_qubit_spectroscopy import (
     simultaneous_qubit_spectroscopy,
 )
+from .experiment.spin_lock_spectroscopy import (
+    spin_lock_sequence,
+    spin_lock_spectroscopy,
+)
 from .experiment.stark_characterization import (
     stark_ramsey_experiment,
     stark_t1_experiment,
@@ -115,6 +128,7 @@ from .experiment.thermal_excitation_characterization import (
 
 __all__ = [
     "analyze_chevron_matched_transform",
+    "analyze_paired_irb",
     "calibrate_cr_pi_pulse",
     "calibrate_gf_hpi_pulse",
     "calibrate_gf_pi_pulse",
@@ -156,6 +170,8 @@ __all__ = [
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",
     "ipb_experiment",
+    "mcm_randomized_benchmarking",
+    "mcm_rb_sequence",
     "measure_1d_cluster_state",
     "measure_bell_state_fidelities",
     "measure_bell_states",
@@ -163,6 +179,7 @@ __all__ = [
     "measure_cr_crosstalk",
     "measure_ghz_state",
     "measure_graph_state",
+    "measure_paired_irb",
     "measure_thermal_excitation",
     "measurement_induced_decay_experiment",
     "measurement_induced_dephasing",
@@ -170,6 +187,7 @@ __all__ = [
     "mqc_experiment",
     "obtain_anharmonicity_with_cr",
     "obtain_gf_rabi_params",
+    "paired_interleaved_randomized_benchmarking",
     "parity_oscillation",
     "partial_transpose",
     "pb_experiment_1q",
@@ -185,6 +203,8 @@ __all__ = [
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
     "simultaneous_qubit_spectroscopy",
+    "spin_lock_sequence",
+    "spin_lock_spectroscopy",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
     "sweep_readout_snr",

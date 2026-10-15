@@ -7,11 +7,13 @@ DEFAULT_RAWDATA_DIR: Final = ".rawdata"
 
 CHIP_FILE: Final = "chip.yaml"
 SYSTEM_FILE: Final = "system.yaml"
+EXTERNAL_DEVICES_FILE: Final = "external_devices.yaml"
 BOX_FILE: Final = "box.yaml"
 WIRING_FILE: Final = "wiring.yaml"
 PROPS_FILE: Final = "props.yaml"  # legacy
 PARAMS_FILE: Final = "params.yaml"  # legacy
 MEASUREMENT_DEFAULTS_FILE: Final = "measurement_defaults.yaml"
+CABLE_DELAY_FILE: Final = "cable_delay.yaml"
 
 MUX_SIZE: Final = 4
 

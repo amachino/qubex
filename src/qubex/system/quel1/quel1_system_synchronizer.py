@@ -276,11 +276,15 @@ class Quel1SystemSynchronizer:
                 ):
                     logger.warning(
                         "Skipping backend port sync for %s:%s due to fnco count mismatch "
-                        "(expected=%s, actual=%s).",
+                        "(expected=%s, actual=%s). Verify that the 'type' and 'options' "
+                        "entries of %s in box.yaml match its active hardware "
+                        "configuration. For further details, see "
+                        "https://amachino.github.io/qubex/user-guide/getting-started/system-configuration/#boxyaml",
                         box_id,
                         port_number,
                         expected_fnco_count,
                         len(fnco_freqs_hz),
+                        box_id,
                     )
                     continue
                 updates.append(

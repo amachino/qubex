@@ -286,7 +286,7 @@ Concrete classes (`Quel1BackendController`, `Quel3BackendController`) must provi
 | `run_measurement_schedule`, `execute`, `measure`, `measure_noise` | `MeasurementExecutionService` |
 | `create_measurement_config`, `build_measurement_schedule` | `MeasurementExecutionService` |
 | `sampling_period`, `constraint_profile` | `MeasurementExecutionService` |
-| `apply_dc_voltages` | `MeasurementAmplificationService` |
+| `apply_optimal_voltages` | `MeasurementAmplificationService` |
 | `chip_id`, `targets`, `control_params` | `MeasurementContext` |
 | `nco_frequencies`, `awg_frequencies`, `get_awg_frequency`, `get_diff_frequency` | `MeasurementContext` |
 | `experiment_system` and other ExperimentSystem-derived context queries | `MeasurementContext` |

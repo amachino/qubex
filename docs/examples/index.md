@@ -54,6 +54,8 @@ If you are new to Qubex, start with [Choose where to start](../user-guide/gettin
 - [CR dynamics](simulator/7_cr_dynamics.ipynb)
 - [CR calibration](simulator/8_cr_calibration.ipynb)
 - [Jazz](simulator/9_jazz.ipynb)
+- [Virtual Z frame shifts](simulator/10_virtual_z.ipynb)
+- [Cosine transmon model](simulator/11_cosine_model.ipynb)
 
 ## Pulse
 

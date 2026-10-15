@@ -27,6 +27,32 @@ QuEL-1 / QuEL-3 の具体実装を定義するモジュールです。低レベ�
 [`measurement`](../measurement/index.md) から始めるのが適切です。
 `backend` を直接使うのは、controller レベルの挙動そのものが主題のときに限るのが適切です。
 
+## QuEL-3 の実行セッション
+
+実行ログには、session を開いた時点の session ID とリクエストの試行番号を
+`INFO` で記録します。リトライと後始末の失敗は `WARNING`、最終的なリクエストの
+失敗は session ID と traceback 付きの `ERROR` で記録します。
+
+原因候補は `qubex.backend.quel3.managers.session_workarounds` の
+`QUELWARE_EXCEPTION_HINTS` に追加できます。キーにはモジュール名を含む例外クラス名
+（例: `quelware_client.core.exceptions.LockConflictError`）、値には表示したい文面を
+指定します。LockConflictError には、他の利用者による使用や未解放セッションを候補として
+登録しています。登録した文面は失敗ログに `possible cause` として表示し、
+サブクラスや明示的に連鎖した原因例外にも適用します。リトライの判断や例外は変更しません。
+
+HTTP ステータス別の候補は、同じモジュールの `QUELWARE_HTTP_STATUS_HINTS` で編集できます。
+gRPC 経由で報告される HTTP エラーにも対応します。`"413"` では payload のサイズと
+IQ 配列が 65536 要素を超えていないかの確認、`"5xx"` では QuEL サーバーのバグの可能性と
+サーバー・プロキシのログ確認を案内します。`"503"` などの個別登録は `"5xx"` より優先します。
+これらは診断の候補であり、配列サイズの検証や原因の断定は行いません。
+
+session 作成では、既知の resource / unit 利用不可を待機時間を延ばしながら最大4回
+試行します。外側では `Exception` が発生した payload を client / session を作り直して
+最大4回試行し、その各試行で session 作成の試行枠を使います。キャンセルは再試行しません。
+trigger 後の失敗では同じ payload が実機で再実行される場合があります。
+正常な client はバッチ内で再利用し、最後の後始末の失敗は結果や元の例外を上書きせず
+ログに記録します。
+
 ## 推奨する進み方
 
 1. [低レベル API 概要](../low-level-apis/index.md) で全体像を確認する

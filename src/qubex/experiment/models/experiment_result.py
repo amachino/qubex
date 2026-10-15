@@ -131,6 +131,8 @@ class RabiData(TargetData):
         Centers of the states.
     """
 
+    data: NDArray[np.complexfloating[Any, Any]]
+
     time_range: NDArray
     rabi_param: RabiParam
     state_centers: dict[int, complex] | None = None
@@ -298,6 +300,8 @@ class SweepData(TargetData):
     yaxis_type : str, optional
         Type of the y-axis.
     """
+
+    data: NDArray[np.complexfloating[Any, Any]]
 
     sweep_range: NDArray
     rabi_param: RabiParam | None = None

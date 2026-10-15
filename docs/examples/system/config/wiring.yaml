@@ -111,10 +111,10 @@
 
 144Q-LF-Q3:
   - mux: 0
-    ctrl: [QT1:4, QT1:2, QT1:11, QT1:9]
-    read_out: QT1:1
-    read_in: QT1:0
+    ctrl: [quel3-02-a01:4, quel3-02-a01:2, quel3-02-a01:11, quel3-02-a01:9]
+    read_out: quel3-02-a01:1
+    read_in: quel3-02-a01:0
   - mux: 1
-    ctrl: [QT1:16, QT1:14, QT1:17, QT1:15]
-    read_out: QT1:8
-    read_in: QT1:7
+    ctrl: [quel3-02-a01:16, quel3-02-a01:14, quel3-02-a01:17, quel3-02-a01:15]
+    read_out: quel3-02-a01:8
+    read_in: quel3-02-a01:7

@@ -33,6 +33,7 @@ qubex-config/
     box.yaml
     system.yaml
     wiring.yaml
+    external_devices.yaml  # when using external instruments
     skew.yaml  # for QuEL-1/QuBE
   params/
     SYSTEM_A/
@@ -51,6 +52,8 @@ qubex-config/
 - `config/` stores the shared system configuration files.
 - Each file under `params/<system_id>/` stores one parameter family.
 - `calibration/<system_id>/calib_note.json` is the default calibration file location.
+- `external_devices.yaml` is optional and configures instruments outside the
+  QuEL control system, such as a DC voltage source used for JPA bias control.
 - `skew.yaml` is optional, but it is required for synchronized experiments that use multiple QuEL-1 control units.
 
 ## Define shared configuration files
@@ -98,9 +101,165 @@ entries, they are required.
 `options` is optional and accepts a list of backend option labels for that box.
 Use it when a box needs a non-default hardware profile.
 
-For example, `quel1se-riken8` accepts an AWG profile label such as
-`se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113`. When no AWG
-profile is specified, Qubex uses `se8_mxfe1_awg2222`.
+For example, `quel1se-riken8` accepts an AWG options label such as
+`se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113`. Here, the last
+four digits refer to the number of FNCOs for each control port defined during
+the link-up procedure. When no AWG options label is specified, Qubex uses
+`se8_mxfe1_awg2222`.
+
+### `external_devices.yaml`
+
+The file mirrors the main system configuration: `devices` declares each
+external instrument like `box.yaml`, `wiring` connects muxes to device
+outputs like `wiring.yaml`, and `settings` holds the control policy.
+
+```yaml
+devices:
+  ONS1:
+    driver: ons61797
+    channels: [1, 2]
+    params:
+      port: /dev/ttyACM0
+
+wiring:
+  - mux: 6
+    bias: ONS1-1
+  - mux: 7
+    bias: ONS1-2
+
+settings:
+  ramp:
+    rate_v_per_s: 0.1
+    step_size_v: 0.01
+    wait_s: 0.1
+  readback:
+    tolerance_v: 0.001
+    max_attempts: 3
+  reset_voltage: 0.0
+  overrides:
+    - mux: 7
+      ramp:
+        rate_v_per_s: 0.05
+```
+
+- `devices` — `driver` selects the adapter and `channels` lists the device
+  outputs. Everything under `params` is driver-specific and validated by
+  the selected driver (ONS61797: `port` for serial or `ip_address` for
+  network, not both). Qubex limits ONS61797 writes to 0 V through 4 V and
+  channels 1 through 16, and requires its independent output mode (`OMD 0`);
+  the Qblox driver accepts -4 V through 4 V.
+- `wiring` — each entry names a role (`bias`) and references an output as
+  `DEVICE-CHANNEL` (`ONS1-2` = channel 2 of device `ONS1`, one-based).
+  Only wired outputs can be driven: an unwired mux or an unlisted channel
+  raises an error instead of guessing.
+- `settings` — the body sets the defaults for every wired mux and
+  `overrides` adjusts them per mux. All outputs of one `settings` (role
+  `bias` by default, changeable with `role`) must be on the same device.
+
+The idle voltage — where each output remains while DC bias is not in use — is a
+calibrated per-mux value: `idle_voltage` in `jpa_params.yaml`, falling back
+to `reset_voltage` for uncalibrated muxes. A DC voltage context holds one
+device connection across its voltage applications, sweeps, and readbacks,
+then ramps back to the idle voltage and closes the connection on exit.
+The direct `ons61797` driver owns the instrument connection exclusively for
+that context. Do not open another context or process for a different channel
+on the same instrument concurrently. A future server-backed NF driver is the
+planned multi-client path.
+
+To control a Qblox SPI Rack through a server process that owns its USB
+connection, use the `qblox_backend` driver. Qubex connects to that server as a
+TCP client. Because a single process keeps ownership of the serial device,
+this is the recommended configuration when multiple systems use the same
+instrument.
+
+```yaml
+devices:
+  Qblox1:
+    driver: qblox_backend
+    channels: [1, 2]
+    params:
+      host: "<qblox-backend-host>"
+      port: <qblox-backend-port>
+      timeout_s: 1200
+
+wiring:
+  - mux: 6
+    bias: Qblox1-1
+
+settings:
+  ramp:
+    rate_v_per_s: 0.1
+    step_size_v: 0.01
+    wait_s: 0.1
+  readback:
+    tolerance_v: 0.001
+    max_attempts: 3
+  reset_voltage: 0.0
+```
+
+The server names each output `<device name>-<channel>`, so name the device
+exactly as the backend reports it (`Qblox1` → `Qblox1-15`); for irregular
+names use `device_names: {channel: name}` in `params`. Ramps run as one
+server-side sweep — no other client can interleave setpoints, but other
+channels may wait until a sweep finishes. Do not expose the unauthenticated
+socket outside a trusted network.
+
+The D5a module has no per-channel output switch and its standard bipolar
+span is -4 V to 4 V: `idle` and `shutdown` only ramp to their configured
+voltages without electrically disconnecting the output, and the reported
+voltage is the module's stored setting, not an independent measurement.
+
+The `ramp` values use the backend sweep's own vocabulary and are passed to
+it verbatim: `rate_v_per_s` sets the overall speed (duration ≈ |dV| / rate),
+`step_size_v` the setpoint spacing, and `wait_s` the minimum dwell per
+setpoint. A setpoint succeeds when its readback error is within
+`readback.tolerance_v`, retried up to `readback.max_attempts` times.
+Qblox-specific rate, step, and wait limits are checked while loading the
+configuration, before any channel is changed. Software-generated ONS61797
+ramps avoid a readback round trip at each intermediate setpoint and verify
+the final target instead.
+
+`apply_voltage()` ramps an enabled output from its current voltage to the
+target; an off output raises instead of being switched on implicitly. DC
+voltage operations are scoped to a context; exiting it ramps back to the
+idle voltage.
+
+```python
+with experiment.external_devices.dc_voltage(mux=6) as dc:
+    dc.apply_voltage(0.27)
+    state = dc.state
+```
+
+Applying a voltage requires the output to be on already — nothing switches
+it implicitly. Use `reset_dc_voltages()` to initialize selected outputs at
+`reset_voltage` (default 0 V), then ramp them to idle or an operating point.
+For maintenance or a deliberate safe stop, use `shutdown_dc_voltages()` to
+ramp selected outputs back to `reset_voltage` and switch them off when the
+device supports it. Normal experiment contexts return to idle instead.
+`get_dc_voltage_states()` reads every active wired mux on one connection;
+`reset_dc_voltages()` brings muxes to their reset voltages with the outputs
+on, `apply_optimal_voltages()` ramps calibrated muxes to their optimal voltages,
+`apply_idle_voltages()` ramps them back to idle, and
+`shutdown_dc_voltages()` switches them off when supported. Like box operations,
+these methods take an optional `muxes` selection (indices or labels; all active
+wired muxes when omitted), and all writes prompt for confirmation, like a box
+push.
+Each bulk write and its resulting readback share one device connection.
+Unlike context-scoped operations, bulk writes leave their resulting voltage
+and output states in effect after the method returns. Call
+`apply_idle_voltages()` to return selected muxes from their optimal voltages to
+idle.
+An empty selection or a declined confirmation returns `{}` without opening a
+device connection.
+
+To bias every active wired mux with a calibrated `optimal_voltage` outside a
+temporary context, use the bulk operation.
+
+```python
+experiment.external_devices.apply_optimal_voltages()
+```
+
+`sweep()` ramps through each supplied target using the same profile.
 
 ### Control Layout Resolution
 
@@ -132,26 +291,85 @@ Create one entry per runnable setup. Multiple systems may point to the same
 ```yaml
 SYSTEM_A:
   chip_id: CHIP_A
-  backend: quel3
-  quel3:
-    endpoint: localhost
-    port: 50051
+  backend: quel1
+  quel1:
+    clock_master: 10.0.0.10
 ```
 
 - The top-level key is the `system_id`.
 - `backend` selects the backend family for this system.
 - The backend-specific section uses the same name as `backend`.
 
-For QuEL-1 systems that need skew measurement or clock synchronization, define
-`quel1.clock_master`.
+For a QuEL-1 system that uses skew measurement or clock synchronization, set
+the clock master IP address in `quel1.clock_master`.
+
+#### Using QuEL-3
+
+To use QuEL-3, set `backend` to `quel3` and define the endpoint connection in
+the `quel3` section.
 
 ```yaml
-SYSTEM_B:
+SYSTEM_QUEL3:
   chip_id: CHIP_A
-  backend: quel1
-  quel1:
-    clock_master: 10.0.0.10
+  backend: quel3
+  quel3:
+    endpoint: localhost
+    port: 50051
+    transport: grpc
 ```
+
+QuEL-3 uses native gRPC when `transport` is omitted or set to `grpc`.
+
+#### Connecting to a cloud-hosted QuEL-3
+
+To connect to a QuEL-3 endpoint hosted in the cloud and protected by
+Cloudflare Access, set `transport` to `https`. Map each secret header to its
+mounted secret file, and do not store the header values directly in `system.yaml`.
+
+```yaml
+SYSTEM_CLOUDFLARE:
+  chip_id: CHIP_A
+  backend: quel3
+  quel3:
+    endpoint: api.example.com
+    # port: 443
+    transport: https
+    http_transport:
+      # base_path: /your-api-base-path
+      default_timeout_seconds: 30.0
+      proxy:
+        url_path: /run/secrets/quelware-proxy-url
+      secret_header_paths:
+        CF-Access-Client-Id: /run/secrets/cf-access-client-id
+        CF-Access-Client-Secret: /run/secrets/cf-access-client-secret
+```
+
+For the `https` transport, omit `port` to use `443`. Requests target the
+endpoint root unless `http_transport.base_path` is set.
+`http_transport.default_timeout_seconds` limits the complete HTTP request and
+response-body read in seconds; omit it when no transport-wide default is
+needed.
+
+`secret_header_paths` is valid only for HTTPS. Each key is an HTTP header name,
+and each value is a file containing that header's secret value. The transport
+sends the configured headers on every request. For Cloudflare Access, configure
+the application with a matching Service Auth policy. HTTPS certificates are
+validated against the system trust store. Redirects are followed only within
+the same scheme, host, and effective port. A cross-origin redirect fails before
+request credentials are sent to the redirect target.
+
+The `https` transport uses the standard `HTTP_PROXY`, `HTTPS_PROXY`,
+and `NO_PROXY` environment variables when `proxy` is omitted. To set a proxy
+for one system explicitly, write its complete HTTP URL to the file named by
+`proxy.url_path`. The explicit URL takes precedence over `HTTP_PROXY` or
+`HTTPS_PROXY`, while `NO_PROXY` still bypasses it for matching endpoints.
+
+For a Basic-authenticated proxy, use a file containing a URL such as
+`http://user:password@proxy.example.com:3128`. Percent-encode reserved
+characters in the username or password, protect the file as a secret, and do
+not put the URL directly in `system.yaml`. SOCKS, NTLM, and Kerberos proxy
+authentication and HTTPS proxy URLs are not supported. A private CA used by a
+TLS-inspecting proxy must be installed in the system trust store.
 
 ### `wiring.yaml`
 

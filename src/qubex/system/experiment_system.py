@@ -459,6 +459,7 @@ class ExperimentSystem:
             gen_channel.port.cnco_freq,
             gen_channel.fnco_freq,
         )
+        cap_channel = None
         try:
             gen_channel.port.lo_freq = lo_freq
             gen_channel.port.cnco_freq = cnco_freq
@@ -475,7 +476,7 @@ class ExperimentSystem:
                 gen_channel.port.cnco_freq,
                 gen_channel.fnco_freq,
             ) = original_values
-            if target.is_read:
+            if cap_channel is not None:
                 (
                     cap_channel.port.lo_freq,
                     cap_channel.port.cnco_freq,

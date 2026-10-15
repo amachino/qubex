@@ -10,7 +10,7 @@ import warnings
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -68,6 +68,7 @@ from qubex.typing import (
 )
 
 from .experiment_context import ExperimentContext
+from .external_devices import ExternalDevices
 from .models.calibration_note import CalibrationNote
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
@@ -82,7 +83,6 @@ from .models.experiment_result import (
     T1Data,
     T2Data,
 )
-from .models.experiment_task import ExperimentTask, ExperimentTaskResult
 from .models.rabi_param import RabiParam
 from .models.result import Result
 from .services import (
@@ -94,8 +94,6 @@ from .services import (
     PulseService,
     SessionService,
 )
-
-T = TypeVar("T", bound=ExperimentTaskResult)
 
 
 class Experiment:
@@ -256,24 +254,6 @@ class Experiment:
     def ctx(self) -> ExperimentContext:
         """Return the experiment context."""
         return self._experiment_context
-
-    def run(self, task: ExperimentTask[T]) -> T:
-        """
-        Run an experiment task.
-
-        Parameters
-        ----------
-        task : ExperimentTask[T]
-            Experiment task to run.
-
-
-        Returns
-        -------
-        T
-            Experiment result.
-
-        """
-        return task.execute(self)
 
     @classmethod
     def _resolve_deprecated_option(
@@ -658,6 +638,23 @@ class Experiment:
         """Load the calibration data from a given path or the default calibration note file."""
         return self.ctx.load_calib_note(path=path)
 
+    def load_classifier(self, path: Path | str | None = None) -> None:
+        """
+        Load state classifiers from a given path or the default classifier directory.
+
+        Parameters
+        ----------
+        path : Path | str | None, optional
+            Directory containing `<qubit>.pkl` files. Defaults to
+            `<classifier_dir>/<chip_id>`.
+
+        Notes
+        -----
+        Loaded classifiers are merged into the active classifier mapping.
+        Classifiers without a corresponding file remain unchanged.
+        """
+        return self.ctx.load_classifier(path=path)
+
     def get_qubit_label(self, index: int) -> str:
         """Get the qubit label from the given qubit index."""
         return self.ctx.get_qubit_label(index)
@@ -888,6 +885,11 @@ class Experiment:
         with self.ctx.modified_frequencies(frequencies):
             yield
 
+    @property
+    def external_devices(self) -> ExternalDevices:
+        """Return operations for external devices (DC voltage sources)."""
+        return ExternalDevices(context=self.ctx)
+
     def save_calib_note(
         self,
         file_path: Path | str | None = None,
@@ -1004,7 +1006,21 @@ class Experiment:
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool | None = None,
     ) -> dict[str, float]:
-        """Calculate control amplitudes for available targets."""
+        """
+        Calculate control amplitudes corresponding to a given target Rabi rate.
+
+        The calculation is done for all available targets.
+
+        Parameters
+        ----------
+        rabi_rate : float | None, optional
+            Target Rabi frequency to use for all targets in GHz. If None, uses
+            `qubex.experiment.experiment_constants.DEFAULT_RABI_FREQUENCY`.
+        current_rabi_params : dict[str, RabiParam] | None, optional
+            Dictionary that maps qubit label to existing Rabi parameters to use
+            for the calculation. If None, uses the values in
+            `self.pulse.rabi_params`.
+        """
         return self.pulse.calc_control_amplitudes(
             rabi_rate,
             current_amplitudes=current_amplitudes,
@@ -2078,6 +2094,7 @@ class Experiment:
         mode: MeasurementMode | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        time_integration: bool | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -2099,6 +2116,9 @@ class Experiment:
             Number of shots.
         shot_interval : float, optional
             Interval between shots in ns.
+        time_integration : bool, optional
+            Whether to integrate captured waveforms over time. Defaults to True when
+            omitted or None.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
         readout_duration : float, optional
@@ -2132,6 +2152,7 @@ class Experiment:
             mode=mode,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            time_integration=time_integration,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -2258,6 +2279,7 @@ class Experiment:
         readout_post_margin: float | None = None,
         plot: bool | None = None,
         enable_tqdm: bool | None = None,
+        sweep_execution: Literal["sequential", "batch"] | None = None,
         title: str | None = None,
         xlabel: str | None = None,
         ylabel: str | None = None,
@@ -2298,6 +2320,11 @@ class Experiment:
             Whether to plot the measured signals. Defaults to True.
         enable_tqdm : bool, optional
             Whether to show a progress bar. Defaults to False.
+        sweep_execution : Literal["sequential", "batch"], optional
+            Sweep execution mode. `"sequential"` measures one sweep point at a
+            time, and `"batch"` runs sweep points through batch-capable
+            measurement APIs. Defaults to `system.yaml`
+            `experiment.sweep_execution`, or `"sequential"`.
         title : str, optional
             Title of the plot. Defaults to "Sweep result".
         xlabel : str, optional
@@ -2339,6 +2366,7 @@ class Experiment:
             readout_post_margin=readout_post_margin,
             plot=plot,
             enable_tqdm=enable_tqdm,
+            sweep_execution=sweep_execution,
             title=title,
             xlabel=xlabel,
             ylabel=ylabel,
@@ -2410,7 +2438,32 @@ class Experiment:
         simultaneous: bool | None = None,
         **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
-        """Obtain Rabi parameters for target qubits."""
+        """
+        Obtain Rabi parameters for target qubits by sweeping pulse duration.
+
+        Optionally stores the found Rabi parameters in `self.ctx` so that they
+        can be accessed via `self.pulse.rabi_params`.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to calibrate.
+        time_range : ArrayLike | None, optional
+            Pulse durations to sweep in ns. If None, uses
+            `qubex.experiment.experiment_constants.DEFAULT_RABI_TIME_RANGE`.
+        amplitudes : dict[str, float] | None, optional
+            Dictionary that maps qubit label to qubit drive amplitude. If None,
+            uses the values from `self.params.control_amplitude`.
+        store_params : bool | None, optional
+            If True, update `self.ctx` with the acquired Rabi parameters. If
+            None, defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[RabiData]
+            Result object containing result of Rabi fitting. The Rabi parameters
+            can be accessed with `result.data[qubit].rabi_param`.
+        """
         return self.measurement_service.obtain_rabi_params(
             targets=targets,
             time_range=time_range,
@@ -4730,7 +4783,24 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Scan resonator frequencies to find peaks."""
+        """
+        Scan resonator frequencies to find peaks.
+
+        Parameters
+        ----------
+        target : str | None, optional
+            Target qubit label.
+        frequency_range : ArrayLike | None, optional
+            Frequency values to scan in GHz. If None, uses values in
+            `self.experiment_system.get_readout_box_for_qubit(target).traits` to
+            determine the sweep values.
+        electrical_delay : float | None, optional
+            Electrical delay used for phase correction in ns. If None,
+            determined automatically using
+            `self.characterization_service.measure_electrical_delay`.
+        shot_interval : float | None, optional
+            Idle time between measurements in ns.
+        """
         return self.characterization_service.scan_resonator_frequencies(
             target=target,
             frequency_range=frequency_range,
@@ -4784,7 +4854,25 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Measure reflection coefficient around a center frequency."""
+        """
+        Measure reflection coefficient around a center frequency.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit label.
+        center_frequency : float | None, optional
+            Center frequency around which to measure in GHz. If None, uses the
+            readout frequency corresponding to the target qubit from
+            `self.targets`, which in turn is determined by
+            `readout_frequency.yaml` or `resonator_frequency.yaml`.
+        df : float | None, optional
+            Frequency sweep step size in GHz. If None, uses 0.5 MHz step size by
+            default.
+        frequency_width : float | None, optional
+            Total width of the frequency sweep range in GHz. If None, uses 50
+            MHz by default.
+        """
         return self.characterization_service.measure_reflection_coefficient(
             target=target,
             center_frequency=center_frequency,
@@ -4814,11 +4902,30 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
-        """Scan qubit frequencies to locate resonances."""
+        """
+        Scan qubit frequencies to locate resonances.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit label.
+        frequency_range : ArrayLike | None, optional
+            Control frequency values to scan in GHz. If None, uses values in
+            `self.experiment_system.get_control_box_for_qubit(target).traits` to
+            determine the sweep values.
+        control_amplitude : float | None, optional
+            Amplitude of the control pulse. If None, uses the value in
+            `self.params.control_amplitude`.
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
+        """
         return self.characterization_service.scan_qubit_frequencies(
             target=target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             readout_frequency=readout_frequency,
@@ -4843,11 +4950,21 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
-        """Estimate control amplitude from a resonance scan."""
+        """
+        Estimate control amplitude from a resonance scan.
+
+        Parameters
+        ----------
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
+        """
         return self.characterization_service.estimate_control_amplitude(
             target=target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             target_rabi_rate=target_rabi_rate,
@@ -4869,11 +4986,21 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
-        """Measure qubit resonance over a frequency sweep."""
+        """
+        Measure qubit resonance over a frequency sweep.
+
+        Parameters
+        ----------
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
+        """
         return self.characterization_service.measure_qubit_resonance(
             target=target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             target_rabi_rate=target_rabi_rate,
@@ -4894,11 +5021,22 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        *,
+        simultaneous_drive: bool | None = None,
     ) -> Result:
-        """Run qubit spectroscopy over frequency and power."""
+        """
+        Run qubit spectroscopy over frequency and power.
+
+        Parameters
+        ----------
+        simultaneous_drive : bool | None, optional
+            Whether control and readout pulses start together. False starts
+            readout after the control pulse ends. None defaults to True.
+        """
         return self.characterization_service.qubit_spectroscopy(
             target=target,
             frequency_range=frequency_range,
+            simultaneous_drive=simultaneous_drive,
             power_range=power_range,
             readout_amplitude=readout_amplitude,
             readout_frequency=readout_frequency,
@@ -5164,7 +5302,15 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Run randomized benchmarking for the specified targets."""
+        """
+        Run randomized benchmarking for the specified targets.
+
+        Notes
+        -----
+        Calibrate the gate pulses and readout before running this experiment.
+        Two-qubit RB estimates the joint ground-state probability using state
+        classifiers registered for both the control and target qubits.
+        """
         return self.benchmarking_service.randomized_benchmarking(
             targets=targets,
             n_cliffords_range=n_cliffords_range,

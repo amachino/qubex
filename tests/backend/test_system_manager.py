@@ -7,12 +7,25 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
 from qubex.backend.quel1 import Quel1BackendController
-from qubex.backend.quel3 import Quel3BackendController
+from qubex.backend.quel3 import (
+    Quel3BackendController,
+    Quel3HttpTransportConfig,
+    Quel3RuntimeConfig,
+)
+from qubex.external_devices import (
+    DCVoltageConfig,
+    DCVoltageControllerConfig,
+    DCVoltageProfile,
+    ExternalDevicesConfig,
+    ExternalDevicesController,
+)
+from qubex.external_devices.dc_voltage.config import DCVoltageProfileOverride
 from qubex.system.control_system import PortType
 from qubex.system.system_manager import BackendSettings, SystemManager
 
@@ -393,6 +406,148 @@ def test_is_synced_has_no_side_effect_on_backend_settings(
 
     assert not result
     assert manager._backend_settings == {"stale": {"ports": {}}}  # noqa: SLF001
+
+
+def test_quel3_is_synced_preserves_live_instrument_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A QuEL-3 synchronization check should preserve cached configuration and identities."""
+    manager = SystemManager.shared()
+    controller = Quel3BackendController()
+    _set_backend_controller(manager, monkeypatch, controller)
+    info = SimpleNamespace(
+        id="unit-a:live",
+        port_id="unit-a:tx_p01",
+        definition=SimpleNamespace(
+            alias="Q00",
+            role="TRANSMITTER",
+            mode="FIXED_TIMELINE",
+            profile=SimpleNamespace(
+                frequency_range_min=4.0e9, frequency_range_max=4.2e9
+            ),
+        ),
+        config=SimpleNamespace(sampling_period_fs=400_000),
+    )
+    monkeypatch.setattr(
+        controller.resource_reader, "read_instrument_infos", lambda **_: (info,)
+    )
+    controller.refresh_instrument_cache()
+    previous_configuration = controller.get_instrument_configuration()
+    previous_hash = controller.hash
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            hash=0, get_box=lambda box_id: SimpleNamespace(id=box_id, name=box_id)
+        ),
+    )
+    settings = BackendSettings(
+        {"unit-a": {"instruments": {"Q00": {"resource_id": "unit-a:live"}}}}
+    )
+    monkeypatch.setattr(manager, "_backend_settings", settings)
+    previous_state = manager.current_state
+    monkeypatch.setattr(manager, "_cached_state", previous_state)
+    fetch_calls: list[tuple[str, ...]] = []
+
+    def fetch_settings(
+        *, experiment_system: object, box_ids: Sequence[str], parallel: bool | None
+    ) -> dict[str, dict]:
+        del parallel
+        fetch_calls.append(tuple(box_ids))
+        return {"unit-a": {"instruments": {"Q00": {"resource_id": "unit-a:new"}}}}
+
+    monkeypatch.setattr(
+        manager._resolve_system_synchronizer(),  # noqa: SLF001
+        "fetch_backend_settings_from_hardware",
+        fetch_settings,
+    )
+
+    with pytest.warns(UserWarning, match="backend settings are different"):
+        assert manager.is_synced(box_ids=["unit-a"]) is False
+
+    assert fetch_calls == [("unit-a",)]
+    assert controller.get_instrument_configuration() == previous_configuration
+    assert controller.hash == previous_hash
+    assert manager.backend_settings is settings
+    assert manager.cached_state is previous_state
+
+
+@pytest.mark.parametrize("populate_cache", [False, True])
+def test_quel3_pull_updates_only_backend_settings_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    populate_cache: bool,
+) -> None:
+    """QuEL-3 pull should update snapshot settings without acquiring runtime instruments."""
+    manager = SystemManager.shared()
+    controller = Quel3BackendController()
+    _set_backend_controller(manager, monkeypatch, controller)
+    info = SimpleNamespace(
+        id="unit-a:live",
+        port_id="unit-a:tx_p01",
+        definition=SimpleNamespace(
+            alias="Q00",
+            role="TRANSMITTER",
+            mode="FIXED_TIMELINE",
+            profile=SimpleNamespace(
+                frequency_range_min=4.0e9, frequency_range_max=4.2e9
+            ),
+        ),
+        config=SimpleNamespace(sampling_period_fs=400_000),
+    )
+    if populate_cache:
+        monkeypatch.setattr(
+            controller.resource_reader,
+            "read_instrument_infos",
+            lambda **_: (info,),
+        )
+        controller.refresh_instrument_cache()
+    previous_configuration = controller.get_instrument_configuration()
+    previous_hash = controller.hash
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            hash=0, get_box=lambda box_id: SimpleNamespace(id=box_id, name=box_id)
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_backend_settings",
+        BackendSettings(
+            {"unit-b": {"instruments": {"Q01": {"resource_id": "unit-b:old"}}}}
+        ),
+    )
+    snapshot = {"unit-a": {"instruments": {"Q00": {"resource_id": "unit-a:snapshot"}}}}
+    fetch_calls: list[tuple[str, ...]] = []
+
+    def fetch_settings(
+        *, experiment_system: object, box_ids: Sequence[str], parallel: bool | None
+    ) -> dict[str, dict]:
+        assert parallel is False
+        fetch_calls.append(tuple(box_ids))
+        return snapshot
+
+    def reject_runtime_read(**_: object) -> None:
+        pytest.fail("Snapshot pull must not acquire executable instrument information.")
+
+    monkeypatch.setattr(
+        manager._resolve_system_synchronizer(),  # noqa: SLF001
+        "fetch_backend_settings_from_hardware",
+        fetch_settings,
+    )
+    monkeypatch.setattr(
+        controller.resource_reader, "read_instrument_infos", reject_runtime_read
+    )
+
+    manager.pull(["unit-a"], parallel=False)
+
+    assert fetch_calls == [("unit-a",)]
+    assert manager.backend_settings["unit-a"] == snapshot["unit-a"]
+    assert manager.backend_settings["unit-b"] == {
+        "instruments": {"Q01": {"resource_id": "unit-b:old"}}
+    }
+    assert controller.get_instrument_configuration() == previous_configuration
+    assert controller.hash == previous_hash
 
 
 def test_pull_merges_partial_backend_settings(
@@ -785,6 +940,80 @@ def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
     assert backend_controller.get_box_config_cache() == backend_settings
 
 
+@pytest.mark.parametrize("populate_cache", [False, True])
+def test_quel3_canceled_push_does_not_restore_instruments_from_saved_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    populate_cache: bool,
+) -> None:
+    """A canceled QuEL-3 push should preserve live configuration without restoring JSON."""
+    manager = SystemManager.shared()
+    controller = Quel3BackendController()
+    _set_backend_controller(manager, monkeypatch, controller)
+    info = SimpleNamespace(
+        id="unit-a:live",
+        port_id="unit-a:tx_p01",
+        definition=SimpleNamespace(
+            alias="Q00",
+            role="TRANSMITTER",
+            mode="FIXED_TIMELINE",
+            profile=SimpleNamespace(
+                frequency_range_min=4.0e9, frequency_range_max=4.2e9
+            ),
+        ),
+        config=SimpleNamespace(sampling_period_fs=400_000),
+    )
+    if populate_cache:
+        monkeypatch.setattr(
+            controller.resource_reader,
+            "read_instrument_infos",
+            lambda **_: (info,),
+        )
+        controller.refresh_instrument_cache()
+    previous_configuration = controller.get_instrument_configuration()
+    previous_hash = controller.hash
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            hash=0, get_box=lambda box_id: SimpleNamespace(id=box_id, name=box_id)
+        ),
+    )
+    settings = BackendSettings(
+        {
+            "unit-a": {
+                "instruments": {
+                    "Q00": {
+                        "resource_id": "unit-a:saved",
+                        "port_id": "unit-a:tx_p01",
+                        "role": "TRANSMITTER",
+                    }
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(manager, "_backend_settings", settings)
+    monkeypatch.setattr("qubex.system.system_manager.Confirm.ask", lambda _: False)
+
+    def reject_hardware_call(**_: object) -> None:
+        pytest.fail("Canceled push should not access hardware.")
+
+    monkeypatch.setattr(controller, "deploy_instruments", reject_hardware_call)
+    monkeypatch.setattr(
+        controller.resource_reader, "read_instrument_infos", reject_hardware_call
+    )
+    monkeypatch.setattr(
+        manager._resolve_system_synchronizer(),  # noqa: SLF001
+        "fetch_backend_settings_from_hardware",
+        reject_hardware_call,
+    )
+
+    manager.push(["unit-a"], confirm=True)
+
+    assert controller.get_instrument_configuration() == previous_configuration
+    assert controller.hash == previous_hash
+    assert manager.backend_settings is settings
+
+
 def test_push_does_not_reconfigure_ports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -967,7 +1196,7 @@ def test_pull_applies_snapshot_sync_without_mutable_box_cache(
                     "instruments": {
                         "Q00": {
                             "resource_id": "inst-q00",
-                            "port_id": "quel3-02-a01:tx_p04",
+                            "port_id": "A:tx_p04",
                             "role": "TRANSMITTER",
                         }
                     }
@@ -998,7 +1227,7 @@ def test_pull_applies_snapshot_sync_without_mutable_box_cache(
             "instruments": {
                 "Q00": {
                     "resource_id": "inst-q00",
-                    "port_id": "quel3-02-a01:tx_p04",
+                    "port_id": "A:tx_p04",
                     "role": "TRANSMITTER",
                 }
             }
@@ -1153,6 +1382,138 @@ def test_load_uses_config_loader_backend_kind_when_backend_kind_is_omitted(
     assert captured_load_kwargs["backend_kind"] is None
 
 
+def test_resolve_dc_voltage_profile_overlays_calibrated_idle_voltage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A calibrated jpa_params idle voltage should override the reset fallback."""
+    manager = SystemManager.shared()
+    config = DCVoltageControllerConfig(
+        voltage_defaults=DCVoltageProfile(channel=1, reset_voltage_v=0.1),
+        muxes={6: DCVoltageProfileOverride(channel=1)},
+    )
+    monkeypatch.setattr(
+        manager,
+        "_external_devices_controller",
+        ExternalDevicesController(
+            ExternalDevicesConfig(dc_voltage=DCVoltageConfig(controller=config))
+        ),
+    )
+
+    class _ControlParams:
+        def get_idle_voltage(self, mux: int) -> float | None:
+            return {6: 0.05}.get(mux)
+
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(control_params=_ControlParams()),
+    )
+    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(0.05)
+
+    monkeypatch.setattr(manager, "_experiment_system", SimpleNamespace())
+    # Without calibration data, the idle voltage falls back to the reset voltage.
+    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(0.1)
+
+
+def test_resolve_dc_voltage_profile_rejects_invalid_calibrated_idle_voltage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An invalid calibrated idle voltage should fail before device access."""
+    manager = SystemManager.shared()
+    config = DCVoltageControllerConfig(
+        voltage_defaults=DCVoltageProfile(channel=1),
+        muxes={6: DCVoltageProfileOverride(channel=1)},
+    )
+    monkeypatch.setattr(
+        manager,
+        "_external_devices_controller",
+        ExternalDevicesController(
+            ExternalDevicesConfig(dc_voltage=DCVoltageConfig(controller=config))
+        ),
+    )
+
+    class _ControlParams:
+        def get_idle_voltage(self, mux: int) -> float | None:
+            return {6: -0.05}.get(mux)
+
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(control_params=_ControlParams()),
+    )
+
+    with pytest.raises(ValueError, match="ONS61797 voltage"):
+        manager.resolve_dc_voltage_profile(6)
+
+
+def test_load_creates_dc_voltage_controller_from_config_loader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given DC controller config, manager load should install configured controller."""
+    manager = SystemManager.shared()
+    created_configs: list[DCVoltageControllerConfig] = []
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL1
+
+        @property
+        def external_devices_config(self) -> ExternalDevicesConfig:
+            return ExternalDevicesConfig(
+                dc_voltage=DCVoltageConfig(
+                    controller=DCVoltageControllerConfig(
+                        driver="ons61797",
+                        params={"port": "/dev/system-dc"},
+                        voltage_defaults=DCVoltageProfile(channel=1),
+                        muxes={6: DCVoltageProfileOverride(channel=1)},
+                    )
+                )
+            )
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_create_dc_voltage_controller(
+        config: DCVoltageControllerConfig,
+    ) -> object:
+        created_configs.append(config)
+        return SimpleNamespace(config=config, validate_voltage=lambda _: None)
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(
+        "qubex.external_devices.controller.create_dc_voltage_controller",
+        _fake_create_dc_voltage_controller,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_sync_experiment_system_to_backend_controller",
+        lambda: None,
+    )
+
+    manager.load(chip_id="TEST", mock_mode=False)
+
+    assert created_configs == [
+        DCVoltageControllerConfig(
+            driver="ons61797",
+            params={"port": "/dev/system-dc"},
+            voltage_defaults=DCVoltageProfile(channel=1),
+            muxes={6: DCVoltageProfileOverride(channel=1)},
+        ),
+    ]
+    installed_controller = cast(Any, manager.dc_voltage_controller)
+    assert installed_controller.config == created_configs[0]
+    assert manager.resolve_dc_voltage_channel(6) == 1
+    with pytest.raises(ValueError, match="Mux 7 has no DC voltage wiring"):
+        manager.resolve_dc_voltage_channel(7)
+
+
 def test_load_does_not_pass_wiring_file_to_config_loader(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1281,10 +1642,7 @@ def test_load_uses_provided_backend_controller(
 ) -> None:
     """Given an injected backend controller, load should keep that controller instance."""
     manager = SystemManager.shared()
-    injected_controller = Quel3BackendController(
-        client_mode="standalone",
-        standalone_unit_label="quel3-02-a01",
-    )
+    injected_controller = Quel3BackendController()
 
     class _FakeConfigLoader:
         def __init__(self, **_: object) -> None:
@@ -1309,6 +1667,114 @@ def test_load_uses_provided_backend_controller(
     )
 
     assert manager.backend_controller is injected_controller
+
+
+def test_load_creates_quel3_controller_from_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quel3 runtime config, when loading without injected controller, then SystemManager configures the controller."""
+    manager = SystemManager.shared()
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        @property
+        def backend_runtime_config(self) -> dict[str, object]:
+            return {
+                "endpoint": "192.0.2.10",
+                "port": 443,
+                "client_mode": "server",
+                "pat_path": "/run/secrets/quelware-pat",
+                "transport": "https",
+                "http_transport": {
+                    "base_path": "/quelware",
+                    "default_timeout_seconds": 30.0,
+                    "proxy": {
+                        "url_path": "/run/secrets/quelware-proxy-url",
+                    },
+                    "secret_header_paths": {
+                        "CF-Access-Client-Id": "/run/secrets/cf-access-client-id",
+                        "CF-Access-Client-Secret": "/run/secrets/cf-access-client-secret",
+                    },
+                },
+            }
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    manager.load(
+        chip_id="TEST",
+        mock_mode=True,
+    )
+
+    controller = manager.backend_controller
+    assert isinstance(controller, Quel3BackendController)
+    assert controller.quelware_endpoint == "192.0.2.10"
+    assert controller.quelware_port == 443
+    assert controller.client_mode == "server"
+    assert controller.quelware_pat_path == "/run/secrets/quelware-pat"
+    assert controller.runtime_config == Quel3RuntimeConfig(
+        endpoint="192.0.2.10",
+        port=443,
+        client_mode="server",
+        pat_path="/run/secrets/quelware-pat",
+        transport="https",
+        http_transport=Quel3HttpTransportConfig(
+            base_path="/quelware",
+            default_timeout_seconds=30.0,
+            proxy_url_path="/run/secrets/quelware-proxy-url",
+            secret_header_paths={
+                "CF-Access-Client-Id": "/run/secrets/cf-access-client-id",
+                "CF-Access-Client-Secret": "/run/secrets/cf-access-client-secret",
+            },
+        ),
+    )
+
+
+def test_load_rejects_removed_quel3_standalone_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given standalone runtime config, SystemManager load should reject it."""
+    manager = SystemManager.shared()
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        @property
+        def backend_runtime_config(self) -> dict[str, object]:
+            return {
+                "client_mode": "standalone",
+                "standalone_unit_label": "quel3-02-a01",
+            }
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    with pytest.raises(ValueError, match="standalone_unit_label"):
+        manager.load(
+            chip_id="TEST",
+            mock_mode=True,
+        )
 
 
 def test_load_defaults_to_quel1_when_system_backend_is_missing(
@@ -1672,3 +2138,93 @@ def test_load_preserves_backend_kind_when_experiment_system_resolution_fails(
     assert manager.backend_kind == BACKEND_KIND_QUEL1
     assert manager.backend_controller is previous_controller
     assert manager.__dict__["_config_loader"] is previous_loader
+
+
+def test_load_preserves_state_when_dc_controller_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid DC driver settings should fail before manager state is updated."""
+    manager = SystemManager.shared()
+    manager.__dict__["_backend_kind"] = BACKEND_KIND_QUEL1
+    previous_loader = object()
+    previous_dc_controller = object()
+    previous_external_controller = SimpleNamespace(
+        dc_voltage=previous_dc_controller,
+        config=ExternalDevicesConfig(),
+    )
+    manager.__dict__["_config_loader"] = previous_loader
+    manager.__dict__["_external_devices_controller"] = previous_external_controller
+    selected: list[str] = []
+
+    class _InvalidDCConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        @property
+        def external_devices_config(self) -> ExternalDevicesConfig:
+            return ExternalDevicesConfig(
+                dc_voltage=DCVoltageConfig(
+                    controller=DCVoltageControllerConfig(driver="unsupported")
+                )
+            )
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+
+    monkeypatch.setattr(
+        "qubex.system.system_manager.ConfigLoader",
+        _InvalidDCConfigLoader,
+    )
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    with pytest.raises(ValueError, match="Unsupported DC voltage controller driver"):
+        manager.load(chip_id="TEST", mock_mode=True)
+
+    assert selected == []
+    assert manager.backend_kind == BACKEND_KIND_QUEL1
+    assert manager.__dict__["_config_loader"] is previous_loader
+    assert manager.dc_voltage_controller is previous_dc_controller
+    assert (
+        manager.__dict__["_external_devices_controller"] is previous_external_controller
+    )
+
+
+def test_load_applies_cable_delay_to_quel3_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Loaded cable delays should reach an explicitly supplied controller."""
+
+    class TimingLoader:
+        backend_kind = BACKEND_KIND_QUEL3
+
+        @property
+        def backend_runtime_config(self) -> dict[str, object]:
+            return {"cable_delay_ns": {"unit": {"tx": 20.0}}}
+
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=1)
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", TimingLoader)
+    controller = Quel3BackendController()
+    manager = SystemManager.shared()
+    manager.load(system_id="TEST", mock_mode=True, backend_controller=controller)
+    loaded_controller = manager.backend_controller
+    assert isinstance(loaded_controller, Quel3BackendController)
+    assert loaded_controller is controller
+    assert dict(loaded_controller.cable_delay_ns) == {"unit": {"tx": 20.0}}

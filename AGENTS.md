@@ -10,7 +10,6 @@
 - Repo-local skills live under `.agents/skills/`.
 - Before editing runtime behavior or public APIs that may affect compatibility boundaries, use `implementation-strategy`.
 - If runtime code, tests, examples, or build/test behavior changes, run `code-change-verification` and do not mark the work complete until it passes.
-- If the work touches OpenAI API or platform integrations, use `openai-knowledge`.
 - When wrapping up a moderate-or-larger change that touched runtime code, tests, build config, or docs with behavior impact, use `pr-draft-summary`.
 
 ## Report-first skills

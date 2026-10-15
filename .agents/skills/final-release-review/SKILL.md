@@ -20,7 +20,10 @@ letting the script resolve the comparison range and diff summary.
 2. Select comparison tags.
    - Prefer the bundled script:
      `uv run python .agents/skills/final-release-review/scripts/collect_release_diff.py`
-   - Compare against the immediate predecessor tag first.
+   - Compare an exact release tag against its immediate predecessor in version
+     order.
+   - For an untagged target, compare against the highest version tag reachable
+     from that target.
    - If the candidate starts a new stable line, also compare against the latest
      stable predecessor.
 3. Gather the diff summary.
@@ -30,6 +33,7 @@ letting the script resolve the comparison range and diff summary.
 4. Check release gates.
    - `make check-release-version`
    - `make check`
+   - `make test`
    - For release packaging work, `make build-all`
    - For docs-heavy release work, `uv run mkdocs build`
 5. Check release artifacts.
@@ -49,6 +53,8 @@ letting the script resolve the comparison range and diff summary.
 Use this script for deterministic release-review mechanics:
 
 - resolve the previous release tag automatically
+- order release tags by version rather than tag creation time
+- keep untagged branch comparisons within tags reachable from the target
 - print the compare range
 - collect `git log --oneline` and `git diff --stat`
 

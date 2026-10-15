@@ -52,10 +52,6 @@ If you only want to use the simulator, you do not need either extra.
 uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
 ```
 
-`quel3` requires `quelware-client`. Depending on the release timing, you may
-need an additional package index or an internal distribution channel for that
-dependency.
-
 ### Install specific version
 
 ```bash

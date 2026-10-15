@@ -383,7 +383,7 @@ def pb_experiment_1q(
             sweep_range.append(n_clifford)
 
             trial_data = defaultdict(list)
-            for seed in seeds:
+            for seed in np.asarray(seeds):
                 seed = int(seed)
                 result = exp.measurement_service.measure(
                     sequence=pb_sequence(
@@ -609,7 +609,7 @@ def pb_experiment_2q(
             sweep_range.append(n_clifford)
 
             trial_data = defaultdict(list)
-            for seed in seeds:
+            for seed in np.asarray(seeds):
                 seed = int(seed)
                 result = exp.measurement_service.measure(
                     sequence=pb_sequence(

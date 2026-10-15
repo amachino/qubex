@@ -23,7 +23,7 @@ class RabiParam:
     amplitude : float
         Amplitude of the Rabi oscillation.
     frequency : float
-        Frequency of the Rabi oscillation.
+        Frequency of the Rabi oscillation in GHz.
     phase : float
         Phase of the Rabi oscillation in radians.
     offset : float

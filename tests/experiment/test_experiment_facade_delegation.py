@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, cast
+from unittest.mock import Mock
 
 import pytest
 
 from qubex.experiment.experiment import Experiment
+from qubex.experiment.external_devices import ExternalDevices
+from qubex.experiment.models.dc_voltage_state import DCVoltageState
 
 
 class _CalibrationServiceStub:
@@ -26,6 +29,14 @@ class _CalibrationServiceStub:
 class _BenchmarkingServiceStub:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def randomized_benchmarking(self, **kwargs: Any) -> str:
+        self.calls.append(("randomized_benchmarking", kwargs))
+        return "randomized_benchmarking_result"
+
+    def interleaved_randomized_benchmarking(self, **kwargs: Any) -> str:
+        self.calls.append(("interleaved_randomized_benchmarking", kwargs))
+        return "interleaved_randomized_benchmarking_result"
 
     def benchmark_1q(self, **kwargs: Any) -> None:
         self.calls.append(("benchmark_1q", kwargs))
@@ -62,6 +73,10 @@ class _MeasurementServiceStub:
     def measure(self, sequence: object, **kwargs: Any) -> str:
         self.calls.append(("measure", {"sequence": sequence, **kwargs}))
         return "measure_result"
+
+    def measure_state(self, states: object, **kwargs: Any) -> str:
+        self.calls.append(("measure_state", {"states": states, **kwargs}))
+        return "measure_state_result"
 
     def capture_loopback(self, schedule: object, **kwargs: Any) -> str:
         self.calls.append(("capture_loopback", {"schedule": schedule, **kwargs}))
@@ -128,8 +143,45 @@ class _ExperimentContextStub:
     def reload(self) -> None:
         self.calls.append(("reload", {}))
 
+    def load_classifier(self, path: object = None) -> None:
+        self.calls.append(("load_classifier", {"path": path}))
+
     def register_custom_target(self, **kwargs: Any) -> None:
         self.calls.append(("register_custom_target", kwargs))
+
+    def get_dc_voltage_state(self, **kwargs: Any) -> DCVoltageState:
+        self.calls.append(("get_dc_voltage_state", kwargs))
+        return DCVoltageState(
+            mux_label="MUX06",
+            mux_index=6,
+            channel=1,
+            voltage=0.54,
+            output="on",
+        )
+
+    def shutdown_dc_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
+        self.calls.append(("shutdown_dc_voltages", kwargs))
+        return {6: self.get_dc_voltage_state(mux=6)}
+
+    def apply_optimal_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
+        self.calls.append(("apply_optimal_voltages", kwargs))
+        return {6: self.get_dc_voltage_state(mux=6)}
+
+    def apply_idle_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
+        self.calls.append(("apply_idle_voltages", kwargs))
+        return {6: self.get_dc_voltage_state(mux=6)}
+
+    def dc_voltage_control(self, **kwargs: Any):
+        self.calls.append(("dc_voltage_control", {"enter": kwargs}))
+
+        class _Context:
+            def __enter__(_self) -> object:
+                return self
+
+            def __exit__(_self, *_: object) -> None:
+                self.calls.append(("dc_voltage_control", {"exit": kwargs}))
+
+        return _Context()
 
 
 class _SessionServiceStub:
@@ -295,6 +347,34 @@ def test_benchmark_2q_delegates_to_benchmarking_service() -> None:
     ]
 
 
+def test_randomized_benchmarking_delegates_to_sync_service() -> None:
+    """Randomized benchmarking should delegate to its synchronous service."""
+    exp = object.__new__(Experiment)
+    benchmarking_stub = _BenchmarkingServiceStub()
+    exp.__dict__["_benchmarking_service"] = benchmarking_stub
+
+    result = exp.randomized_benchmarking(targets="Q00", plot=False)
+
+    assert result == "randomized_benchmarking_result"
+    assert benchmarking_stub.calls[0][0] == "randomized_benchmarking"
+
+
+def test_interleaved_randomized_benchmarking_delegates_to_sync_service() -> None:
+    """Interleaved randomized benchmarking should use its synchronous service."""
+    exp = object.__new__(Experiment)
+    benchmarking_stub = _BenchmarkingServiceStub()
+    exp.__dict__["_benchmarking_service"] = benchmarking_stub
+
+    result = exp.interleaved_randomized_benchmarking(
+        targets="Q00",
+        interleaved_clifford="X90",
+        plot=False,
+    )
+
+    assert result == "interleaved_randomized_benchmarking_result"
+    assert benchmarking_stub.calls[0][0] == "interleaved_randomized_benchmarking"
+
+
 def test_characterize_2q_delegates_in_same_mux_to_characterization_service() -> None:
     """Given in_same_mux, when characterize_2q is called, then it delegates to characterization service."""
     exp = object.__new__(Experiment)
@@ -398,20 +478,15 @@ def test_print_boxes_delegates_to_context() -> None:
     assert context_stub.calls == [("print_boxes", {})]
 
 
-def test_run_executes_task_with_experiment_instance() -> None:
-    """Given experiment task, when run is called, then task executes with the experiment instance."""
+def test_load_classifier_delegates_to_context() -> None:
+    """Given a classifier path, when loading, then it delegates to experiment context."""
     exp = object.__new__(Experiment)
-    called: dict[str, object] = {}
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
 
-    class _Task:
-        def execute(self, exp: Experiment) -> str:
-            called["experiment"] = exp
-            return "task_result"
+    exp.load_classifier(path="custom-classifiers")
 
-    result = exp.run(_Task())
-
-    assert result == "task_result"
-    assert called["experiment"] is exp
+    assert context_stub.calls == [("load_classifier", {"path": "custom-classifiers"})]
 
 
 def test_clifford_generator_property_delegates_to_benchmarking_service() -> None:
@@ -660,6 +735,32 @@ def test_measure_delegates_time_integration_to_measurement_service() -> None:
             },
         )
     ]
+
+
+def test_measure_state_delegates_unset_time_integration_by_default() -> None:
+    """Given no integration option, measure_state should delegate it as unset."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+
+    result = exp.measure_state(states={"Q00": "g"})
+
+    assert result == "measure_state_result"
+    assert measurement_stub.calls[0][0] == "measure_state"
+    assert measurement_stub.calls[0][1]["time_integration"] is None
+
+
+def test_measure_state_delegates_disabled_time_integration() -> None:
+    """Given integration disabled, measure_state should delegate the waveform opt-out."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+
+    result = exp.measure_state(states={"Q00": "g"}, time_integration=False)
+
+    assert result == "measure_state_result"
+    assert measurement_stub.calls[0][0] == "measure_state"
+    assert measurement_stub.calls[0][1]["time_integration"] is False
 
 
 def test_build_measurement_schedule_delegates_to_measurement_service() -> None:
@@ -989,6 +1090,7 @@ def test_sweep_parameter_delegates_legacy_shot_arguments_to_measurement_service(
                 "readout_post_margin": None,
                 "plot": None,
                 "enable_tqdm": None,
+                "sweep_execution": None,
                 "title": None,
                 "xlabel": None,
                 "ylabel": None,
@@ -996,6 +1098,49 @@ def test_sweep_parameter_delegates_legacy_shot_arguments_to_measurement_service(
                 "yaxis_type": None,
                 "shots": 32,
                 "interval": 44.0,
+            },
+        )
+    ]
+
+
+def test_sweep_parameter_delegates_sweep_execution_to_measurement_service() -> None:
+    """Given batch sweep execution, when sweep_parameter is called, then the option is delegated."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sequence = cast(Any, lambda value: {"Q00": [value + 0.0j]})
+
+    result = exp.sweep_parameter(
+        sequence=sequence,
+        sweep_range=[0.1, 0.2],
+        sweep_execution="batch",
+    )
+
+    assert result == "sweep_parameter_result"
+    assert measurement_stub.calls == [
+        (
+            "sweep_parameter",
+            {
+                "sequence": sequence,
+                "sweep_range": [0.1, 0.2],
+                "repetitions": None,
+                "frequencies": None,
+                "initial_states": None,
+                "rabi_level": None,
+                "n_shots": None,
+                "shot_interval": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "plot": None,
+                "enable_tqdm": None,
+                "sweep_execution": "batch",
+                "title": None,
+                "xlabel": None,
+                "ylabel": None,
+                "xaxis_type": None,
+                "yaxis_type": None,
             },
         )
     ]
@@ -1105,3 +1250,154 @@ def test_register_custom_target_delegates_legacy_update_lsi_to_context() -> None
             },
         )
     ]
+
+
+def test_dc_voltage_delegates_to_context() -> None:
+    """Given a mux, the DC voltage context should delegate and yield its control."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    with exp.external_devices.dc_voltage(mux=6) as dc:
+        assert dc is context_stub
+
+    assert context_stub.calls == [
+        (
+            "dc_voltage_control",
+            {"enter": {"mux": 6}},
+        ),
+        (
+            "dc_voltage_control",
+            {"exit": {"mux": 6}},
+        ),
+    ]
+
+
+def test_external_devices_property_returns_named_facade() -> None:
+    """The external-devices property should return the dedicated facade."""
+    exp = object.__new__(Experiment)
+    exp.__dict__["_experiment_context"] = _ExperimentContextStub()
+
+    assert isinstance(exp.external_devices, ExternalDevices)
+
+
+def test_shutdown_dc_voltages_delegates_to_context() -> None:
+    """Shutdown should delegate the selected muxes and confirmation setting."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    states = external_devices.shutdown_dc_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "shutdown_dc_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_apply_optimal_voltages_delegates_to_context() -> None:
+    """Optimal-voltage application should delegate muxes and confirmation."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    states = external_devices.apply_optimal_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_optimal_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_bias_dc_voltages_warns_and_uses_optimal_voltage_api() -> None:
+    """The released bias name should warn and preserve its behavior."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    with pytest.warns(DeprecationWarning, match="apply_optimal_voltages"):
+        states = external_devices.bias_dc_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_optimal_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_apply_idle_voltages_delegates_to_context() -> None:
+    """Idle-voltage application should delegate muxes and confirmation."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    states = external_devices.apply_idle_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_idle_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_idle_dc_voltages_warns_and_uses_idle_voltage_api() -> None:
+    """The released idle name should warn and preserve its behavior."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    with pytest.warns(DeprecationWarning, match="apply_idle_voltages"):
+        states = external_devices.idle_dc_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "apply_idle_voltages",
+        {"muxes": [6], "confirm": False},
+    )
+
+
+def test_get_dc_voltage_state_delegates_to_context() -> None:
+    """Given a mux, DC state retrieval should delegate without a control context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    state = exp.external_devices.get_dc_voltage_state(mux=6)
+
+    assert state == DCVoltageState(
+        mux_label="MUX06",
+        mux_index=6,
+        channel=1,
+        voltage=0.54,
+        output="on",
+    )
+    assert context_stub.calls == [("get_dc_voltage_state", {"mux": 6})]
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "scan_qubit_frequencies",
+        "qubit_spectroscopy",
+        "measure_qubit_resonance",
+        "estimate_control_amplitude",
+    ],
+)
+@pytest.mark.parametrize("simultaneous_drive", [None, True, False])
+def test_spectroscopy_delegates_drive_timing(method, simultaneous_drive) -> None:
+    """Experiment should forward drive timing and shot settings to characterization."""
+    exp = object.__new__(Experiment)
+    service = Mock()
+    exp.__dict__["_characterization_service"] = service
+    delegate = getattr(service, method)
+
+    result = getattr(exp, method)(
+        "Q00",
+        frequency_range=[5.0, 5.01],
+        simultaneous_drive=simultaneous_drive,
+        n_shots=32,
+        shot_interval=100.0,
+    )
+
+    assert result is delegate.return_value
+    delegate.assert_called_once()
+    assert delegate.call_args.kwargs["simultaneous_drive"] is simultaneous_drive
+    assert delegate.call_args.kwargs["shots"] == 32
+    assert delegate.call_args.kwargs["interval"] == 100.0

@@ -57,10 +57,6 @@ QuEL-3 の runtime support を使う予定なら、この構成を使ってく�
 uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
 ```
 
-`quel3` は `quelware-client` に依存します。これが PyPI に公開されていない
-場合は、利用する環境で指定された package source や index から追加で
-インストールしてください。
-
 ### 特定バージョンをインストールする
 
 再現性のためにバージョンを固定したい場合はこちらを使ってください。

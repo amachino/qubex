@@ -25,7 +25,6 @@ from qubex.system.quel1.quel1_system_constants import (
 )
 from qubex.system.quel3.quel3_control_parameter_defaults import (
     DEFAULT_CONTROL_AMPLITUDE as DEFAULT_QUEL3_CONTROL_AMPLITUDE,
-    DEFAULT_DC_VOLTAGE as DEFAULT_QUEL3_DC_VOLTAGE,
     DEFAULT_PUMP_FREQUENCY_GHZ as DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ,
     DEFAULT_READOUT_AMPLITUDE as DEFAULT_QUEL3_READOUT_AMPLITUDE,
 )
@@ -119,7 +118,12 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
         {
             "meta": {},
             "data": {
-                0: {"pump_frequency": 12.3, "pump_amplitude": 0.1, "dc_voltage": 0.2},
+                0: {
+                    "pump_frequency": 12.3,
+                    "pump_amplitude": 0.1,
+                    "optimal_voltage": 0.2,
+                    "idle_voltage": -0.05,
+                },
                 1: None,
             },
         },
@@ -554,13 +558,19 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert cp.jpa_params.get(0) == {
         "pump_frequency": 12.3,
         "pump_amplitude": 0.1,
-        "dc_voltage": 0.2,
+        "optimal_voltage": 0.2,
+        "idle_voltage": -0.05,
     }
     assert cp.jpa_params.get(1) == {
         "pump_frequency": DEFAULT_PUMP_FREQUENCY_GHZ,
         "pump_amplitude": 0.0,
-        "dc_voltage": 0.0,
     }
+    assert cp.has_optimal_voltage(0) is True
+    assert cp.has_optimal_voltage(1) is False
+    assert cp.get_idle_voltage(0) == pytest.approx(-0.05)
+    assert cp.get_idle_voltage(1) is None
+    with pytest.raises(ValueError, match="no calibrated `optimal_voltage`"):
+        cp.get_optimal_voltage(1)
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(
         cp.get_pump_frequency(1),
@@ -573,6 +583,40 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert math.isclose(
         cp.get_frequency_margin("CTRL_GE"), 0.1, rel_tol=0, abs_tol=1e-12
     )
+
+
+def test_legacy_dc_voltage_name_warns_and_maps_to_optimal_voltage(
+    tmp_path: Path,
+) -> None:
+    """Legacy dc_voltage should warn and remain available as optimal_voltage."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "jpa_params.yaml",
+        {
+            "meta": {},
+            "data": {0: {"dc_voltage": 0.2}},
+        },
+    )
+
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"`dc_voltage`.*`optimal_voltage`",
+    ) as config_warnings:
+        loader = ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+    assert "v1.6.0" not in str(config_warnings[0].message)
+
+    control_parameters = loader.get_experiment_system().control_params
+    assert control_parameters.get_optimal_voltage(0) == pytest.approx(0.2)
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"get_dc_voltage.*get_optimal_voltage",
+    ) as api_warnings:
+        assert control_parameters.get_dc_voltage(0) == pytest.approx(0.2)
+    assert "v1.6.0" not in str(api_warnings[0].message)
 
 
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):
@@ -1285,6 +1329,333 @@ def test_load_uses_wiring_yaml_for_quel3_backend(tmp_path: Path) -> None:
     assert loader.wiring_file == "wiring.yaml"
 
 
+def test_backend_runtime_config_returns_selected_backend_section(
+    tmp_path: Path,
+) -> None:
+    """Given backend runtime settings, when loading, then ConfigLoader exposes that section."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    runtime_config = {
+        "endpoint": "192.0.2.10",
+        "port": 50052,
+        "client_mode": "server",
+    }
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            BACKEND_KIND_QUEL3: runtime_config,
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    loaded_config = loader.backend_runtime_config
+    loaded_config["endpoint"] = "mutated"
+
+    assert loaded_config != loader.backend_runtime_config
+    assert loader.backend_runtime_config == runtime_config
+
+
+def test_backend_runtime_config_excludes_scoped_app_configs(
+    tmp_path: Path,
+) -> None:
+    """Given backend app configs, when loading, then runtime config omits them."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    runtime_config = {
+        "endpoint": "192.0.2.10",
+        "port": 50052,
+        "experiment": {"sweep_execution": "batch"},
+        "measurement": {"schedule_packing": {"enabled": True}},
+    }
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            BACKEND_KIND_QUEL3: runtime_config,
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.backend_runtime_config == {
+        "endpoint": "192.0.2.10",
+        "port": 50052,
+    }
+
+
+def test_experiment_config_returns_top_level_experiment_section(
+    tmp_path: Path,
+) -> None:
+    """Given experiment settings, when loading, then ConfigLoader exposes that section."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    experiment_config = {"sweep_execution": "batch"}
+
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL1,
+            "experiment": experiment_config,
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    loaded_config = loader.experiment_config
+    loaded_config["sweep_execution"] = "sequential"
+
+    assert loaded_config != loader.experiment_config
+    assert loader.experiment_config == experiment_config
+    assert loader.backend_runtime_config == {}
+
+
+def test_experiment_config_merges_selected_backend_section(
+    tmp_path: Path,
+) -> None:
+    """Given backend experiment settings, ConfigLoader should merge them last."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            "experiment": {
+                "sweep_execution": "sequential",
+                "analysis": {"enabled": True, "mode": "quick"},
+            },
+            BACKEND_KIND_QUEL3: {
+                "experiment": {
+                    "sweep_execution": "batch",
+                    "analysis": {"mode": "full"},
+                }
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.experiment_config == {
+        "sweep_execution": "batch",
+        "analysis": {"enabled": True, "mode": "full"},
+    }
+
+
+def test_measurement_config_rejects_non_mapping_config(
+    tmp_path: Path,
+) -> None:
+    """Given non-mapping measurement config, ConfigLoader should reject it."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            "measurement": True,
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    with pytest.raises(TypeError):
+        _ = loader.measurement_config
+
+
+def test_measurement_config_rejects_non_mapping_backend_config(
+    tmp_path: Path,
+) -> None:
+    """Given non-mapping backend measurement config, ConfigLoader should reject it."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            BACKEND_KIND_QUEL3: {"measurement": True},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    with pytest.raises(TypeError, match="quel3\\.measurement"):
+        _ = loader.measurement_config
+
+
+def test_measurement_config_returns_top_level_measurement_section(
+    tmp_path: Path,
+) -> None:
+    """Given measurement config, ConfigLoader should expose a copy of it."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    measurement_config = {
+        "schedule_packing": {
+            "enabled": True,
+            "max_repeated_timeline_duration_ns": 20_000_000_000,
+        }
+    }
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            "measurement": measurement_config,
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    loaded_config = loader.measurement_config
+    loaded_config["schedule_packing"] = {}
+
+    assert loaded_config != loader.measurement_config
+    assert loader.measurement_config == measurement_config
+
+
+def test_measurement_config_merges_selected_backend_section(
+    tmp_path: Path,
+) -> None:
+    """Given backend measurement settings, ConfigLoader should merge them last."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            "measurement": {
+                "schedule_packing": {
+                    "enabled": True,
+                    "max_repeated_timeline_duration_ns": 20_000_000_000,
+                },
+                "export": {"enabled": True},
+            },
+            BACKEND_KIND_QUEL3: {
+                "measurement": {
+                    "schedule_packing": {
+                        "enabled": False,
+                    }
+                }
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.measurement_config == {
+        "schedule_packing": {
+            "enabled": False,
+            "max_repeated_timeline_duration_ns": 20_000_000_000,
+        },
+        "export": {"enabled": True},
+    }
+
+
 def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
     """Given quel3 backend, when loading, then readout ports are configured without LO."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
@@ -1422,9 +1793,7 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     assert control_parameters.get_pump_frequency(1) == pytest.approx(
         DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ
     )
-    assert control_parameters.get_dc_voltage(1) == pytest.approx(
-        DEFAULT_QUEL3_DC_VOLTAGE
-    )
+    assert control_parameters.has_optimal_voltage(1) is False
 
 
 def test_load_preserves_quel3_capture_delay_ns_without_ndelay_side_effect(
@@ -2269,3 +2638,314 @@ def test_load_uses_quel1_system_loader_when_backend_is_unset(
     loader.load()
 
     assert called == ["clock", "control", "wiring"]
+
+
+def test_external_devices_config_loads_dc_controller_profiles(
+    tmp_path: Path,
+) -> None:
+    """External device settings should expose resolved DC voltage profiles."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {
+            chip_id: {
+                "name": "Test Chip",
+                "n_qubits": 16,
+                "clock_master": "10.0.0.1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {
+            "devices": {
+                "ONS1": {
+                    "driver": "ons61797",
+                    "params": {"port": "/dev/system-dc"},
+                    "channels": [1, 2],
+                },
+            },
+            "wiring": [
+                {"mux": 0, "bias": "ONS1-1"},
+                {"mux": 1, "bias": "ONS1-2"},
+            ],
+            "settings": {
+                "ramp": {
+                    "rate_v_per_s": 0.1,
+                    "step_size_v": 0.01,
+                    "wait_s": 0.1,
+                },
+                "readback": {
+                    "tolerance_v": 0.001,
+                    "max_attempts": 5,
+                },
+                "overrides": [
+                    {
+                        "mux": 1,
+                        "ramp": {"rate_v_per_s": 0.05},
+                        "readback": {"tolerance_v": 0.002},
+                    },
+                ],
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    controller = loader.external_devices_config.dc_voltage.controller
+    assert controller.driver == "ons61797"
+    assert controller.params == {"port": "/dev/system-dc"}
+    assert controller.device_id == "ONS1"
+    assert controller.resolve_voltage_profile(0).channel == 1
+    assert controller.resolve_voltage_profile(0).ramp_rate_v_per_s == pytest.approx(0.1)
+    assert controller.resolve_voltage_profile(0).readback_tolerance_v == pytest.approx(
+        0.001
+    )
+    assert controller.resolve_voltage_profile(0).max_set_attempts == 5
+    assert controller.resolve_voltage_profile(1).channel == 2
+    assert controller.resolve_voltage_profile(1).ramp_rate_v_per_s == pytest.approx(
+        0.05
+    )
+    assert controller.resolve_voltage_profile(1).readback_tolerance_v == pytest.approx(
+        0.002
+    )
+
+
+def test_external_devices_config_defaults_when_missing(
+    tmp_path: Path,
+) -> None:
+    """Missing external device settings should expose a default JPA controller."""
+    config_dir, params_dir, _ = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        chip_id="TESTCHIP",
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    controller = loader.external_devices_config.dc_voltage.controller
+    assert controller.driver == "ons61797"
+    assert controller.params == {}
+    with pytest.raises(ValueError, match=r"Mux 6 has no DC voltage wiring"):
+        controller.resolve_voltage_profile(6)
+
+
+def test_external_devices_config_rejects_unknown_mux(tmp_path: Path) -> None:
+    """External device wiring should reference a mux in the quantum system."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {
+            "devices": {"ONS1": {"driver": "ons61797"}},
+            "wiring": [{"mux": 99, "bias": "ONS1-1"}],
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"External device wiring references unknown mux 99",
+    ):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "match"),
+    [
+        (("ramp", "rate_v_per_s"), 0.0, "rate_v_per_s.*positive"),
+        (("ramp", "rate_v_per_s"), float("nan"), "rate_v_per_s.*finite"),
+        (("ramp", "step_size_v"), float("inf"), "step_size_v.*finite"),
+        (("ramp", "wait_s"), float("-inf"), "wait_s.*finite"),
+        (("reset_voltage",), float("inf"), "reset_voltage.*finite"),
+        (("readback", "tolerance_v"), -0.1, "tolerance_v.*non-negative"),
+        (("readback", "tolerance_v"), float("inf"), "tolerance_v.*finite"),
+        (("readback", "max_attempts"), 0, "max_attempts.*positive"),
+    ],
+)
+def test_external_devices_config_rejects_invalid_control_values(
+    tmp_path: Path,
+    path: tuple[str, ...],
+    value: object,
+    match: str,
+) -> None:
+    """Invalid nested DC control values should be rejected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    controller: dict[str, object] = {}
+    current = controller
+    for key in path[:-1]:
+        child: dict[str, object] = {}
+        current[key] = child
+        current = child
+    current[path[-1]] = value
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {"settings": controller},
+    )
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_external_devices_config_rejects_non_string_driver(
+    tmp_path: Path,
+) -> None:
+    """A non-string external DC device driver should be rejected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {"devices": {"ONS1": {"driver": 123}}},
+    )
+
+    with pytest.raises(ValueError, match=r"driver.*string"):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("wiring", "match"),
+    [
+        ([{"mux": 6, "bias": "ONS1-one"}], "DEVICE-CHANNEL"),
+        (
+            [{"mux": 6, "bias": "ONS1-1"}, {"mux": 7, "bias": "ONS1-1"}],
+            "more than once",
+        ),
+        (
+            [{"mux": 6, "bias": "ONS1-1"}, {"mux": 6, "bias": "ONS1-2"}],
+            "lists mux 6 twice",
+        ),
+        ([{"mux": "MUX06", "bias": "ONS1-1"}], "integer `mux`"),
+        ({6: {"bias": "ONS1-1"}}, "must be a list of entries"),
+    ],
+)
+def test_external_devices_config_rejects_invalid_wiring_entries(
+    tmp_path: Path,
+    wiring: object,
+    match: str,
+) -> None:
+    """Invalid external DC wiring entries should be rejected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {
+            "devices": {"ONS1": {"driver": "ons61797"}},
+            "wiring": wiring,
+        },
+    )
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_quel3_example_deploy_uses_unit_labels_as_box_ids() -> None:
+    """The QuEL-3 example should deploy wired targets using configured unit labels."""
+    from qubex.system.quel3 import Quel3TargetDeployPlanner
+
+    example_dir = Path(__file__).resolve().parents[2] / "docs/examples/system"
+    loader = ConfigLoader(
+        system_id="144Q-LF-Q3",
+        config_dir=example_dir / "config",
+        params_dir=example_dir / "params" / "144Q-LF-Q3",
+    )
+    system = loader.get_experiment_system()
+    box = system.get_box("quel3-02-a01")
+    assert box.id == box.name == "quel3-02-a01"
+
+    configuration = Quel3TargetDeployPlanner().build_configuration(
+        experiment_system=system,
+        box_ids=[box.id],
+    )
+
+    assert configuration.instruments
+    assert all(
+        spec.port_id.startswith("quel3-02-a01:") for spec in configuration.instruments
+    )
+    assert {spec.role for spec in configuration.instruments} == {
+        "TRANSMITTER",
+        "TRANSCEIVER",
+    }
+
+
+@pytest.mark.parametrize("file_present", [False, True])
+def test_cable_delay_file_is_automatically_loaded_for_quel3(
+    tmp_path: Path,
+    file_present: bool,
+) -> None:
+    """Optional cable delay files should configure a controller through runtime settings."""
+    from qubex.backend.quel3 import Quel3BackendController
+
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(config_dir / "box.yaml", {"BOX1": {"name": "BOX1", "type": "quel3"}})
+    timing = {
+        "unit-a": {"tx_p04": 20.0, "trx_p00p01": 80.0},
+        "unit-b": {"tx_p04": 40.0},
+    }
+    if file_present:
+        _write_yaml(config_dir / "cable_delay.yaml", timing)
+    loader = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir, autoload=False
+    )
+    loader.load(backend_kind=BACKEND_KIND_QUEL3)
+    controller = Quel3BackendController.from_config_mapping(
+        loader.backend_runtime_config
+    )
+    if file_present:
+        assert controller.cable_delay_ns == {
+            "unit-a": {"tx_p04": 20.0, "trx_p00p01": 80.0},
+            "unit-b": {"tx_p04": 40.0},
+        }
+    else:
+        assert "cable_delay_ns" not in loader.backend_runtime_config
+        assert controller.cable_delay_ns == {}
+
+
+def test_cable_delay_file_overrides_inline_settings_and_reloads(tmp_path: Path) -> None:
+    """File settings should replace inline settings and be refreshed only on load."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(config_dir / "box.yaml", {"BOX1": {"name": "BOX1", "type": "quel3"}})
+    inline = {"unit": {"tx": 10.0}}
+    file_settings = {"unit": {"tx": 20.0}}
+    _write_yaml(
+        config_dir / "system.yaml",
+        {chip_id: {"chip_id": chip_id, "quel3": {"cable_delay_ns": inline}}},
+    )
+    path = config_dir / "cable_delay.yaml"
+    _write_yaml(path, file_settings)
+    loader = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir, autoload=False
+    )
+    loader.load(backend_kind=BACKEND_KIND_QUEL3)
+    assert loader.backend_runtime_config["cable_delay_ns"] == {"unit": {"tx": 20.0}}
+    loaded = loader.backend_runtime_config
+    loaded["cable_delay_ns"]["unit"].clear()
+    path.unlink()
+    assert loader.backend_runtime_config["cable_delay_ns"] == {"unit": {"tx": 20.0}}
+    loader.load(backend_kind=BACKEND_KIND_QUEL3)
+    assert loader.backend_runtime_config["cable_delay_ns"] == inline
+
+
+def test_quel1_does_not_load_quel3_cable_delay_file(tmp_path: Path) -> None:
+    """Other backends should retain their existing configuration-loading behavior."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    (config_dir / "cable_delay.yaml").write_text("unit: [", encoding="utf-8")
+    loader = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir
+    )
+    assert "cable_delay_ns" not in loader.backend_runtime_config

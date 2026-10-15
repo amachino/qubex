@@ -27,6 +27,7 @@ qubex-config/
     box.yaml
     system.yaml
     wiring.yaml
+    external_devices.yaml  # 外部計測器を使う場合
     skew.yaml  # QuEL-1/QuBE 向け
   params/
     SYSTEM_A/
@@ -45,6 +46,7 @@ qubex-config/
 - `config/` には共有のシステム設定ファイルを置きます。
 - `params/<system_id>/` の各ファイルは、1 つのパラメータファミリを表します。
 - `calibration/<system_id>/calib_note.json` は既定の較正ファイルの保存先です。
+- `external_devices.yaml` は任意で、JPA バイアス用 DC 電圧源など、QuEL 制御系の外にある計測器を設定します。
 - `skew.yaml` は任意ですが、複数の QuEL-1 制御装置を用いた同期実験を行う場合に必要になります。
 
 ## 共有設定ファイルを定義する
@@ -92,6 +94,107 @@ QuEL-3 のエントリでは `address` と `adapter` は任意です。QuBE と 
 
 例えば `quel1se-riken8` は `se8_mxfe1_awg1331`、`se8_mxfe1_awg2222`、`se8_mxfe1_awg3113` のような AWG プロファイルラベルを受け取れます。AWG プロファイルが指定されない場合、Qubex は `se8_mxfe1_awg2222` を使います。
 
+### `external_devices.yaml`
+
+このファイルはシステム設定本体と同じ構成です: `devices` が `box.yaml` と同じ発想でデバイスを定義し、`wiring` が `wiring.yaml` と同じ発想で mux とデバイス出力を接続し、`settings` が制御ポリシーを持ちます。
+
+```yaml
+devices:
+  ONS1:
+    driver: ons61797
+    channels: [1, 2]
+    params:
+      port: /dev/ttyACM0
+
+wiring:
+  - mux: 6
+    bias: ONS1-1
+  - mux: 7
+    bias: ONS1-2
+
+settings:
+  ramp:
+    rate_v_per_s: 0.1
+    step_size_v: 0.01
+    wait_s: 0.1
+  readback:
+    tolerance_v: 0.001
+    max_attempts: 3
+  reset_voltage: 0.0
+  overrides:
+    - mux: 7
+      ramp:
+        rate_v_per_s: 0.05
+```
+
+- `devices` — `driver` が adapter を選び、`channels` がデバイスの出力を列挙します。`params` の中身は driver 固有で、選択した driver 自身が検証します (ONS61797: serial は `port`、network は `ip_address`。両方は不可)。Qubex は ONS61797 の書き込みを 0 V〜4 V、channel を 1〜16 に制限し、独立制御モード (`OMD 0`) を必須とします。Qblox driver は -4 V〜4 V を許可します。
+- `wiring` — 各エントリは役割名 (`bias`) と `デバイス名-チャンネル` 形式の出力参照 (`ONS1-2` = デバイス `ONS1` の channel 2、1 始まり) を持ちます。操作できるのは配線済みの出力だけで、未配線の mux や `channels` 外のチャンネルは推測せず明示エラーになります。
+- `settings` — 直下の値が配線済み全 mux の既定値、`overrides` が mux 単位の上書きです。1 つの `settings` (役割は既定 `bias`、`role` で変更可) が拾う出力はすべて同じデバイスにある必要があります。
+
+アイドル電圧 (DC bias を使用していない間、各出力を保持する電圧) は較正値で、`jpa_params.yaml` の `idle_voltage` に置きます (未較正の mux は `reset_voltage` へフォールバック)。DC 電圧 context は電圧印加・sweep・readbackの間に1つのデバイス接続を保持し、終了時に必ずアイドル電圧まで ramp してから接続を閉じます。出力スイッチは電圧印加時に暗黙には切り替わらず、`reset_dc_voltages()` と `shutdown_dc_voltages()` で明示的に管理します。
+
+直接接続の `ons61797` driverはcontextの間、装置接続を排他的に所有します。
+同じ装置の別channelを別contextや別processから同時に開かないでください。
+複数clientでの利用は、将来追加するNF向けserver driverで対応する予定です。
+
+Qblox SPI Rackを、USB接続を所有するserver processを経由して制御する場合は、
+`qblox_backend` driverを使用します。QubexはこのserverへTCP clientとして
+接続します。serial deviceを開くprocessを一つに保てるため、複数のシステムが
+同じ装置を利用する環境ではこの構成を推奨します。
+
+```yaml
+devices:
+  Qblox1:
+    driver: qblox_backend
+    channels: [1, 2]
+    params:
+      host: "<qblox-backend-host>"
+      port: <qblox-backend-port>
+      timeout_s: 1200
+
+wiring:
+  - mux: 6
+    bias: Qblox1-1
+
+settings:
+  ramp:
+    rate_v_per_s: 0.1
+    step_size_v: 0.01
+    wait_s: 0.1
+  readback:
+    tolerance_v: 0.001
+    max_attempts: 3
+  reset_voltage: 0.0
+```
+
+serverは各出力を `<デバイス名>-<channel>` で識別するため、デバイス名はbackendの報告名に合わせます (`Qblox1` → `Qblox1-15`)。命名が規則的でない場合は `params` の `device_names: {channel: 名前}` で対応します。rampはserver側で一括実行されるため他clientは割り込めませんが、完了まで他channelの操作が待つことがあります。認証のないsocketを信頼できないnetworkへ公開しないでください。
+
+D5a moduleにはchannelごとの出力スイッチがなく、標準bipolar spanは-4 V〜4 Vです: `idle` と `shutdown` は指定電圧までのrampのみで電気的には切断されず、読み出される電圧はmoduleの保持値であり実測値ではありません。
+
+`ramp` の各値は backend sweep と同じ語彙で、そのまま backend へ渡されます: `rate_v_per_s` が全体の速さ (所要時間 ≈ |ΔV| / rate)、`step_size_v` が setpoint の電圧刻み、`wait_s` が 1 setpoint の最小滞在時間です。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `readback.max_attempts` 回まで再設定します。
+
+Qblox固有のrate・step・wait制約は、channelを変更する前の設定load時に検証します。ソフトウェア生成するONS61797のrampは、中間setpointごとの通信を避け、最終目標だけreadback検証します。
+
+`apply_voltage()` は ON 状態の出力を現在値から目標値まで ramp します (OFF なら暗黙に ON 化せずエラー)。DC電圧操作は context に紐づき、抜けるとアイドル電圧まで ramp します。
+
+```python
+with experiment.external_devices.dc_voltage(mux=6) as dc:
+    dc.apply_voltage(0.27)
+    state = dc.state
+```
+
+電圧印加は出力が ON であることが前提で、OFF なら暗黙に ON 化せずエラーになります。`reset_dc_voltages()` は選択した mux を「出力 ON・リセット電圧」の既知状態に揃えます。保守・チップ交換・安全停止時に使う `shutdown_dc_voltages()` はリセット電圧まで ramp して、対応機器では物理出力を OFF にします。通常の実験contextはshutdownせずidleへ戻ります。`get_dc_voltage_states()` はactiveな配線済み全muxを1接続でまとめて読み、`apply_optimal_voltages()` は較正済み mux を最適電圧へ、`apply_idle_voltages()` はアイドル電圧へ ramp します。box 系 API と同じく任意の `muxes` 引数 (index またはラベル、省略時はactiveな配線済み全mux) で対象を絞れます。いずれも書き込み操作なので、box への push と同様に実行前へ確認プロンプトが出ます。各一括書き込みと、その直後のreadbackは1つのデバイス接続を共有します。contextに紐づく操作とは異なり、一括書き込み後の電圧と出力状態はメソッド終了後も維持されます。最適電圧からidleへ戻すには、対象のmuxに対して `apply_idle_voltages()` を呼びます。
+
+選択が空、または確認を拒否した場合は、装置へ接続せず `{}` を返します。
+
+一時的な context を使わず、較正済みのactiveな配線済み全muxを bias 電圧へ設定する場合は一括操作を使います。
+
+```python
+experiment.external_devices.apply_optimal_voltages()
+```
+
+`sweep()` は同じ設定を使って各目標電圧まで順番に ramp します。
+
 ### 制御レイアウトの解決規則
 
 `configuration_mode` は固定の channel 数を保証する指定ではなく、優先順を表します。
@@ -119,25 +222,86 @@ QuEL-3 のエントリでは `address` と `adapter` は任意です。QuBE と 
 ```yaml
 SYSTEM_A:
   chip_id: CHIP_A
-  backend: quel3
-  quel3:
-    endpoint: localhost
-    port: 50051
+  backend: quel1
+  quel1:
+    clock_master: 10.0.0.10
 ```
 
 - トップレベルのキーが `system_id` です。
 - `backend` で、この system が使うバックエンド種別を選びます。
 - バックエンド固有セクションの名前は `backend` と同じにします。
 
-skew 測定やクロック同期を使う QuEL-1 system では、`quel1.clock_master` を定義してください。
+skew 測定やクロック同期を使う QuEL-1 system では、
+`quel1.clock_master` に clock master の IP address を指定してください。
+
+#### QuEL-3 を使用する場合
+
+QuEL-3 を使用する場合は、`backend` に `quel3` を指定し、`quel3` セクションに
+endpoint の接続情報を定義します。
 
 ```yaml
-SYSTEM_B:
+SYSTEM_QUEL3:
   chip_id: CHIP_A
-  backend: quel1
-  quel1:
-    clock_master: 10.0.0.10
+  backend: quel3
+  quel3:
+    endpoint: localhost
+    port: 50051
+    transport: grpc
 ```
+
+QuEL-3 では、`transport` を省略するか `grpc` にすると native gRPC を使います。
+
+#### クラウド公開された QuEL-3 に接続する場合
+
+さらに、Cloudflare Access で保護してクラウド公開した QuEL-3 に接続する場合は、
+`transport` に `https` を指定します。secret header ごとに mount した secret file
+の path を指定し、header の値を `system.yaml` に直接保存しないでください。
+
+```yaml
+SYSTEM_CLOUDFLARE:
+  chip_id: CHIP_A
+  backend: quel3
+  quel3:
+    endpoint: api.example.com
+    # port: 443
+    transport: https
+    http_transport:
+      # base_path: /your-api-base-path
+      default_timeout_seconds: 30.0
+      proxy:
+        url_path: /run/secrets/quelware-proxy-url
+      secret_header_paths:
+        CF-Access-Client-Id: /run/secrets/cf-access-client-id
+        CF-Access-Client-Secret: /run/secrets/cf-access-client-secret
+```
+
+`https` transport では、`port` を省略すると `443` を使用します。
+`http_transport.base_path` を指定しない場合、request は endpoint のルートへ
+送信されます。`http_transport.default_timeout_seconds` は HTTP request の開始から
+response body の読み取り完了までを秒単位で制限します。transport 全体の
+デフォルト値が不要なら省略してください。
+
+`secret_header_paths` は HTTPS でのみ使用できます。key には HTTP header 名、
+value にはその header の secret 値を保存した file の path を指定します。
+transport は指定された header を request ごとに送信します。Cloudflare Access を
+使用する場合は、application 側に対応する Service Auth policy を設定してください。
+HTTPS certificate は system trust store を使って検証されます。redirect は
+scheme、host、実効 port が同じ場合にのみ追跡されます。cross-origin redirect は、
+request credential を redirect 先へ送信する前に失敗します。
+
+`proxy` を省略した場合、`https` transport は標準の `HTTP_PROXY`、
+`HTTPS_PROXY`、`NO_PROXY` 環境変数を使用します。system ごとに proxy を明示
+する場合は、完全な HTTP URL を `proxy.url_path` で指定したファイルへ保存
+してください。明示 URL は `HTTP_PROXY` または `HTTPS_PROXY` より優先されます
+が、endpoint が `NO_PROXY` に一致する場合は直接接続します。
+
+Basic 認証付き proxy では、
+`http://user:password@proxy.example.com:3128` のような URL をファイルへ保存
+します。username や password の予約文字は percent-encode し、ファイルを
+secret として保護してください。URL を `system.yaml` へ直接書かないでください。
+SOCKS、NTLM、Kerberos proxy 認証および HTTPS proxy URL には対応しません。
+TLS を検査する proxy が private CA を使う場合は、その CA を system trust
+store へインストールしてください。
 
 ### `wiring.yaml`
 

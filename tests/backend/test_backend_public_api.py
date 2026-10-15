@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import subprocess
 import sys
 from typing import get_args
+
+import pytest
 
 import qubex.backend as backend
 from qubex.backend.quel1 import (
@@ -64,6 +67,63 @@ def test_backend_quel3_module_hides_migrated_system_defaults() -> None:
     import qubex.backend.quel3 as quel3
 
     assert not hasattr(quel3, "DEFAULT_PUMP_FREQUENCY_GHZ")
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "qubex.backend.quel3.managers.hardware_state_reader",
+        "qubex.backend.quel3.tools.hardware_state_reader",
+        "qubex.backend.quel3.models.hardware_state",
+    ],
+)
+def test_quel3_legacy_resource_modules_are_removed(module_name: str) -> None:
+    """Legacy resource modules should require migration to the new import paths."""
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        importlib.import_module(module_name)
+    assert exc_info.value.name == module_name
+
+
+def test_quel3_resource_imports_and_controller_init_in_fresh_process() -> None:
+    """QuEL-3 resources should share concrete classes without loading quelware."""
+    code = """
+import sys
+
+from qubex.backend.quel3.infra import Quel3RuntimeConfig, Quel3HttpTransportConfig
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig as ConcreteConfig
+from qubex.backend.quel3.managers.configuration_manager import Quel3ConfigurationManager
+from qubex.backend.quel3.infra import Quel3ResourceReader
+from qubex.backend.quel3.tools import Quel3MonitorTool
+from qubex.backend.quel3.infra.resource_reader import Quel3ResourceReader as ConcreteReader
+from qubex.backend.quel3.tools.monitor_tool import Quel3MonitorTool as ConcreteMonitor
+from qubex.backend.quel3 import Quel3BackendController, Quel3ResourceReader as PublicReader
+
+from qubex.backend.quel3.models import Quel3ResourceSnapshot
+from qubex.backend.quel3.models.resource_snapshot import Quel3ResourceSnapshot as ConcreteSnapshot
+from qubex.backend.quel3 import Quel3ResourceSnapshot as PublicSnapshot
+
+assert Quel3ResourceSnapshot is ConcreteSnapshot is PublicSnapshot
+assert Quel3ResourceReader is ConcreteReader is PublicReader
+assert Quel3MonitorTool is ConcreteMonitor
+assert ConcreteReader.__module__ == "qubex.backend.quel3.infra.resource_reader"
+
+config = Quel3RuntimeConfig(transport="https", http_transport=Quel3HttpTransportConfig())
+controller = Quel3BackendController(runtime_config=config)
+assert Quel3RuntimeConfig is ConcreteConfig
+assert controller.runtime_config is config
+assert isinstance(controller.configuration_manager, Quel3ConfigurationManager)
+assert isinstance(controller.resource_reader, ConcreteReader)
+assert controller.resource_reader.runtime_config is controller.runtime_config
+assert not any(name.startswith(("quelware_client", "quelware_core")) for name in sys.modules)
+"""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_experiment_import_does_not_load_backend_driver_dependencies() -> None:

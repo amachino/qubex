@@ -23,7 +23,6 @@ Compute the fidelity between two states.
 
 Parameters
 ----------
-
 state_a : NDArray
     First state vector.
 state_b : NDArray
@@ -31,7 +30,6 @@ state_b : NDArray
 
 Returns
 -------
-
 float
     Fidelity in [0, 1].
 """
@@ -80,13 +78,11 @@ One‑sentence summary.
 
 Parameters
 ----------
-
 arg1 : type
     Description.
 
 Returns
 -------
-
 type
     Description.
 """

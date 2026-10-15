@@ -3,100 +3,45 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
-from collections import defaultdict
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import Protocol, TypeVar
+import logging
+from collections import Counter, defaultdict
+from collections.abc import Awaitable, Callable, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import (
     Quel3ClientMode,
-    load_quelware_client_factory,
-    validate_quelware_client_runtime,
+    QuelwareInstrumentEntities,
+    load_quelware_instrument_entities,
 )
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
+from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import (
     InstrumentDefinitionProtocol,
     InstrumentInfoProtocol,
     QuelwareClientFactory,
-    QuelwareClientProtocol,
-    ResourceInfoProtocol,
     SessionProtocol,
 )
-from qubex.backend.quel3.models import InstrumentDeployRequest
+from qubex.backend.quel3.managers.session_workarounds import (
+    QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
+    QuelwareSessionError,
+    enter_quelware_session_with_resource_retry,
+    quelware_exception_summary,
+    quelware_session_token,
+)
+from qubex.backend.quel3.models import (
+    InstrumentConfiguration,
+    InstrumentSpec,
+)
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
+
+if TYPE_CHECKING:
+    from qubex.backend.quel3.infra.resource_reader import Quel3ResourceReader
 
 T = TypeVar("T")
 
-
-class _FixedTimelineProfileFactory(Protocol):
-    """Factory protocol for fixed-timeline profile entities."""
-
-    def __call__(
-        self,
-        *,
-        frequency_range_min: float,
-        frequency_range_max: float,
-    ) -> object:
-        """Create one fixed-timeline profile."""
-        ...
-
-
-class _InstrumentDefinitionFactory(Protocol):
-    """Factory protocol for instrument-definition entities."""
-
-    def __call__(
-        self,
-        *,
-        alias: str,
-        mode: object,
-        role: object,
-        profile: object,
-    ) -> InstrumentDefinitionProtocol:
-        """Create one instrument definition."""
-        ...
-
-
-class _EnumNamespace(Protocol):
-    """Protocol for enum-like namespaces loaded from quelware."""
-
-    def __getattr__(self, name: str) -> object:
-        """Return one enum-like member by attribute name."""
-        ...
-
-
-@dataclass(frozen=True)
-class _CachedFixedTimelineProfile:
-    """Cached fixed-timeline profile restored from hardware snapshot."""
-
-    frequency_range_min: float | None = None
-    frequency_range_max: float | None = None
-
-
-@dataclass(frozen=True)
-class _CachedInstrumentDefinition:
-    """Cached instrument definition restored from hardware snapshot."""
-
-    alias: str
-    role: str
-    mode: str | None = None
-    profile: _CachedFixedTimelineProfile | None = None
-
-
-@dataclass(frozen=True)
-class _CachedInstrumentInfo:
-    """Cached instrument info restored from hardware snapshot."""
-
-    id: str
-    port_id: str
-    definition: _CachedInstrumentDefinition
-
-
-@dataclass(frozen=True)
-class _PortDeployResult:
-    """Deployment result for one port batch."""
-
-    deployed: dict[str, tuple[InstrumentInfoProtocol, ...]]
-    target_alias_map: dict[str, str]
+logger = logging.getLogger(__name__)
+_MONITOR_MODE_CONTROL_KEY = "quel3.monitor.mode"
 
 
 def _run_async(
@@ -110,462 +55,623 @@ def _run_async(
 
 
 class Quel3ConfigurationManager:
-    """Deploy QuEL-3 instruments through quelware configuration APIs."""
+    """Deploy instrument configurations and refresh the supplied runtime cache."""
 
     def __init__(
         self,
         *,
-        quelware_endpoint: str,
-        quelware_port: int,
-        client_mode: Quel3ClientMode = "server",
-        standalone_unit_label: str | None = None,
+        runtime_config: Quel3RuntimeConfig | None = None,
     ) -> None:
-        normalized_client_mode = validate_quelware_client_runtime(
-            client_mode=client_mode,
-            standalone_unit_label=standalone_unit_label,
-        )
-        self._quelware_endpoint = quelware_endpoint
-        self._quelware_port = quelware_port
-        self._client_mode: Quel3ClientMode = normalized_client_mode
-        self._standalone_unit_label = standalone_unit_label
-        self._last_deployed_instrument_infos: dict[
-            str, tuple[InstrumentInfoProtocol, ...]
-        ] = {}
-        self._target_alias_map: dict[str, str] = {}
+        self._runtime_config = runtime_config or Quel3RuntimeConfig()
+
+    @property
+    def runtime_config(self) -> Quel3RuntimeConfig:
+        """Return the shared quelware runtime config."""
+        return self._runtime_config
 
     @property
     def quelware_endpoint(self) -> str:
         """Return quelware endpoint used for deployment."""
-        return self._quelware_endpoint
+        return self._runtime_config.endpoint
 
     @property
-    def quelware_port(self) -> int:
+    def quelware_port(self) -> int | None:
         """Return quelware port used for deployment."""
-        return self._quelware_port
+        return self._runtime_config.port
 
     @property
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
-        return self._client_mode
+        return self._runtime_config.client_mode_value
 
     @property
-    def standalone_unit_label(self) -> str | None:
-        """Return configured standalone unit label."""
-        return self._standalone_unit_label
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._runtime_config.pat_path
 
-    @property
-    def last_deployed_instrument_infos(
-        self,
-    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
-        """Return last deployed instrument infos keyed by alias."""
-        return dict(self._last_deployed_instrument_infos)
-
-    @property
-    def target_alias_map(self) -> dict[str, str]:
-        """Return last deployed target-to-alias mapping."""
-        return dict(self._target_alias_map)
-
-    def deploy_instruments(
+    def configure_monitor_mode(
         self,
         *,
-        requests: Sequence[InstrumentDeployRequest],
-        parallel: bool = True,
-    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
-        """Deploy instruments for the provided QuEL-3 requests."""
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        mode: Literal["open", "loopback"] = "open",
+        clear_instruments: bool = False,
+    ) -> str:
+        """
+        Configure one unit's monitor mode before instruments are deployed.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact label of the QuEL-3 unit.
+        instrument_cache : InstrumentCache
+            Shared cache to check and invalidate when instruments are deleted.
+        mode : {"open", "loopback"}, default="open"
+            Normal external output or monitor loopback mode.
+        clear_instruments : bool, default=False
+            Delete every instrument on this unit before configuring the mode.
+
+        Returns
+        -------
+        str
+            Applied monitor mode reported by quelware.
+
+        Raises
+        ------
+        RuntimeError
+            Cached instruments remain and `clear_instruments` is false.
+
+        Notes
+        -----
+        Quelware requires a lock on every port of the unit and no deployed
+        instruments when changing a unit control. Validate the live control
+        before deleting instruments. Deletion and configuration share one
+        all-port session. Deleted instruments are not restored; failures after
+        deletion leave the unit's cache invalidated. Other units are retained.
+        """
+        if not unit_label.strip():
+            raise ValueError("Unit label must not be empty.")
+        if mode not in ("open", "loopback"):
+            raise ValueError("Monitor mode must be 'open' or 'loopback'.")
+        if not clear_instruments and any(
+            info.port_id.partition(":")[0] == unit_label
+            for info in instrument_cache.snapshot().values()
+        ):
+            raise RuntimeError(
+                "Clear deployed instruments with clear_instruments() before "
+                "changing QuEL-3 monitor mode, or pass clear_instruments=True."
+            )
         return _run_async(
-            lambda: self._deploy_instruments(
-                requests=tuple(requests),
+            lambda: self._configure_monitor_mode(
+                unit_label=unit_label,
+                instrument_cache=instrument_cache,
+                mode=mode,
+                clear_instruments=clear_instruments,
+            )
+        )
+
+    def get_monitor_mode(self, *, unit_label: str) -> Literal["open", "loopback"]:
+        """Read the current monitor mode of one discovered unit."""
+        if not unit_label.strip():
+            raise ValueError("Unit label must not be empty.")
+        return _run_async(lambda: self._get_monitor_mode(unit_label=unit_label))
+
+    async def _get_monitor_mode(
+        self, *, unit_label: str
+    ) -> Literal["open", "loopback"]:
+        """Read the live monitor control before changing instrument state."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if unit_label not in client.list_unit_labels():
+                raise ValueError(f"QuEL-3 unit was not discovered: {unit_label!r}.")
+            configuration = await client.get_unit_configuration(unit_label)
+            control = next(
+                (
+                    spec
+                    for spec in configuration.supported
+                    if spec.key == _MONITOR_MODE_CONTROL_KEY
+                ),
+                None,
+            )
+            if control is None:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} does not support monitor mode."
+                )
+            mode = control.current_value
+            if mode == "open" or mode == "loopback":
+                return mode
+            raise ValueError(f"Unsupported QuEL-3 monitor mode readback: {mode!r}.")
+
+    async def _configure_monitor_mode(
+        self,
+        *,
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        mode: Literal["open", "loopback"],
+        clear_instruments: bool,
+    ) -> str:
+        """Validate the live control and apply it under an all-port session."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if unit_label not in client.list_unit_labels():
+                raise ValueError(f"QuEL-3 unit was not discovered: {unit_label!r}.")
+            configuration = await client.get_unit_configuration(unit_label)
+            control = next(
+                (
+                    spec
+                    for spec in configuration.supported
+                    if spec.key == _MONITOR_MODE_CONTROL_KEY
+                ),
+                None,
+            )
+            if control is None:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} does not support monitor mode."
+                )
+            if mode not in control.allowed_values:
+                raise ValueError(
+                    f"Monitor mode {mode!r} is not supported; "
+                    f"allowed values: {control.allowed_values}."
+                )
+            if control.current_value == mode and not clear_instruments:
+                return mode
+            resources = await client.list_resource_infos()
+            port_ids = tuple(
+                dict.fromkeys(
+                    resource.id
+                    for resource in resources
+                    if str(
+                        getattr(resource.category, "name", resource.category)
+                    ).rsplit(".", maxsplit=1)[-1]
+                    == "PORT"
+                    and resource.id.startswith(f"{unit_label}:")
+                )
+            )
+            if not port_ids:
+                raise RuntimeError(
+                    f"QuEL-3 unit {unit_label!r} has no discovered ports to lock."
+                )
+            async with client.create_session(port_ids) as session:
+                if clear_instruments:
+                    instrument_cache.replace_units(
+                        unit_labels=(unit_label,), instrument_infos=()
+                    )
+                    await self._discard_instruments(
+                        session=session, port_ids=port_ids, parallel=True
+                    )
+                values = await session.configure_unit(
+                    unit_label, {_MONITOR_MODE_CONTROL_KEY: mode}
+                )
+            applied = values.get(_MONITOR_MODE_CONTROL_KEY)
+            if applied != mode:
+                raise RuntimeError(
+                    f"QuEL-3 monitor mode readback was {applied!r}; expected {mode!r}."
+                )
+            return mode
+
+    def clear_instruments(
+        self,
+        *,
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        parallel: bool = True,
+    ) -> None:
+        """
+        Delete all instruments on one unit and invalidate that unit's cache.
+
+        Parameters
+        ----------
+        unit_label : str
+            Exact label of a discovered unit. Required; no all-unit default.
+        instrument_cache : InstrumentCache
+            Controller-owned cache whose selected unit should be invalidated.
+        parallel : bool, default=True
+            Whether to discard instruments on different ports concurrently.
+
+        Raises
+        ------
+        ValueError
+            The unit label is empty or was not discovered.
+
+        Notes
+        -----
+        Discover ports independently of the cache. Invalidate only the selected
+        unit before writing, even if it has no ports. Other units are retained.
+        Session acquisition and deletion requests are not retried by this
+        manager. Errors propagate unchanged and partial deletions are not
+        rolled back. A failed write leaves the selected unit uncached.
+        """
+        if not unit_label.strip():
+            raise ValueError("Unit label must not be empty.")
+        _run_async(
+            lambda: self._clear_instruments(
+                unit_label=unit_label,
+                instrument_cache=instrument_cache,
                 parallel=parallel,
             )
         )
 
-    def refresh_instrument_cache(self) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
-        """Refresh cached alias mappings from existing quelware instruments."""
-        return _run_async(self._refresh_instrument_cache)
-
-    def fetch_backend_settings_from_hardware(
+    async def _clear_instruments(
         self,
         *,
-        unit_labels_by_box_id: Mapping[str, str],
-        parallel: bool | None = None,
-    ) -> dict[str, dict]:
-        """Fetch normalized QuEL-3 instrument snapshots keyed by box ID."""
-        return _run_async(
-            lambda: self._fetch_backend_settings_from_hardware(
-                unit_labels_by_box_id=dict(unit_labels_by_box_id),
-                parallel=True if parallel is None else parallel,
+        unit_label: str,
+        instrument_cache: InstrumentCache,
+        parallel: bool,
+    ) -> None:
+        """Discover one unit's ports and discard their instruments in one session."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if unit_label not in client.list_unit_labels():
+                raise ValueError(f"QuEL-3 unit was not discovered: {unit_label!r}.")
+            resources = await client.list_resource_infos()
+            port_ids = tuple(
+                dict.fromkeys(
+                    resource.id
+                    for resource in resources
+                    if str(
+                        getattr(resource.category, "name", resource.category)
+                    ).rsplit(".", maxsplit=1)[-1]
+                    == "PORT"
+                    and resource.id.startswith(f"{unit_label}:")
+                )
             )
+            instrument_cache.replace_units(
+                unit_labels=(unit_label,), instrument_infos=()
+            )
+            if not port_ids:
+                return
+            async with client.create_session(port_ids) as session:
+                await self._discard_instruments(
+                    session=session, port_ids=port_ids, parallel=parallel
+                )
+
+    @staticmethod
+    async def _discard_instruments(
+        *, session: SessionProtocol, port_ids: tuple[str, ...], parallel: bool
+    ) -> None:
+        """Finish every discard request before leaving the shared port session."""
+        if parallel:
+            results = await asyncio.gather(
+                *(session.discard_instruments(port_id) for port_id in port_ids),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+        else:
+            for port_id in port_ids:
+                await session.discard_instruments(port_id)
+
+    def deploy_instruments(
+        self,
+        *,
+        configuration: InstrumentConfiguration,
+        instrument_cache: InstrumentCache,
+        resource_reader: Quel3ResourceReader,
+        parallel: bool = True,
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """
+        Replace configured ports and cache their complete hardware readback.
+
+        Notes
+        -----
+        Old identities on listed ports are discarded before hardware writes.
+        Failed deployment or readback leaves those ports absent from the cache.
+        Other ports are retained, and an empty configuration performs no work.
+        """
+        return self._deploy_and_refresh(
+            specifications=configuration.instruments,
+            instrument_cache=instrument_cache,
+            resource_reader=resource_reader,
+            append=False,
+            parallel=parallel,
         )
 
-    def sync_backend_settings_to_cache(
+    def deploy_instrument(
         self,
         *,
-        backend_settings: Mapping[str, dict],
-    ) -> None:
-        """Restore instrument alias caches from normalized backend settings."""
-        deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[str, str] = {}
+        instrument: InstrumentSpec,
+        instrument_cache: InstrumentCache,
+        resource_reader: Quel3ResourceReader,
+        append: bool = True,
+        parallel: bool = True,
+    ) -> InstrumentInfoProtocol:
+        """
+        Deploy one instrument and return its complete hardware readback.
 
-        for box_config in backend_settings.values():
-            instruments = box_config.get("instruments")
-            if not isinstance(instruments, dict):
-                continue
-            for alias, instrument_config in instruments.items():
-                if not isinstance(alias, str) or not isinstance(
-                    instrument_config, dict
-                ):
-                    continue
-                resource_id = instrument_config.get("resource_id")
-                port_id = instrument_config.get("port_id")
-                role = instrument_config.get("role")
-                if not isinstance(resource_id, str) or not isinstance(port_id, str):
-                    continue
-                definition = self._build_cached_definition(
-                    alias=alias,
-                    role=role,
-                    definition_config=instrument_config.get("definition"),
-                )
-                deployed[alias] = (
-                    _CachedInstrumentInfo(
-                        id=resource_id,
-                        port_id=port_id,
-                        definition=definition,
-                    ),
-                )
-                target_alias_map[alias] = alias
+        Parameters
+        ----------
+        instrument : InstrumentSpec
+            Instrument definition and its unit-qualified port ID.
+        instrument_cache : InstrumentCache
+            Controller-owned cache to update after deployment.
+        resource_reader : Quel3ResourceReader
+            Reader for complete port readback after deployment.
+        append : bool, default=True
+            Add or replace this alias while preserving the port's other
+            instruments. If false, replace every instrument on the port
+            with this one.
+        parallel : bool, default=True
+            Whether hardware reads may run concurrently.
 
-        self._last_deployed_instrument_infos = deployed
-        self._target_alias_map = target_alias_map
+        Raises
+        ------
+        ValueError
+            Hardware readback is invalid.
+
+        Notes
+        -----
+        Alias replacement is handled by quelware without a pre-deployment read.
+        Append does not retry the deployment request. After either operation,
+        read the entire port into the cache. Write or readback failure leaves
+        that port uncached.
+        """
+        instrument_infos = self._deploy_and_refresh(
+            specifications=(instrument,),
+            instrument_cache=instrument_cache,
+            resource_reader=resource_reader,
+            append=append,
+            parallel=parallel,
+        )
+        return instrument_infos[instrument.alias]
+
+    def _deploy_and_refresh(
+        self,
+        *,
+        specifications: tuple[InstrumentSpec, ...],
+        instrument_cache: InstrumentCache,
+        resource_reader: Quel3ResourceReader,
+        append: bool,
+        parallel: bool,
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """Invalidate touched ports, deploy definitions, and publish complete readback."""
+        if not specifications:
+            return {}
+        port_ids = tuple(dict.fromkeys(spec.port_id for spec in specifications))
+        instrument_cache.replace_ports(port_ids=port_ids, instrument_infos=())
+        _run_async(
+            lambda: self._deploy_instruments(
+                specifications=specifications,
+                append=append,
+                parallel=parallel,
+            )
+        )
+        instrument_infos = resource_reader.read_instrument_infos(
+            port_ids=port_ids,
+            parallel=parallel,
+        )
+        readback_counts = Counter(
+            (InstrumentCache.alias_for(info), info.port_id) for info in instrument_infos
+        )
+        for specification in specifications:
+            if readback_counts[specification.alias, specification.port_id] != 1:
+                raise ValueError(
+                    "Hardware readback did not return exactly one instrument "
+                    f"for alias `{specification.alias}` on port `{specification.port_id}`."
+                )
+        instrument_cache.replace_ports(
+            port_ids=port_ids, instrument_infos=instrument_infos
+        )
+        return {InstrumentCache.alias_for(info): info for info in instrument_infos}
+
+    def refresh_instrument_cache(
+        self,
+        *,
+        instrument_cache: InstrumentCache,
+        resource_reader: Quel3ResourceReader,
+        unit_labels: Sequence[str] | None = None,
+        parallel: bool = True,
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """
+        Refresh complete hardware information for all or selected units.
+
+        `None` selects all units; an empty sequence performs no work. Replace
+        the selected scope only after successful acquisition and validation.
+        Return the instruments acquired by this call.
+        """
+        if unit_labels is not None and not unit_labels:
+            return {}
+        instrument_infos = resource_reader.read_instrument_infos(
+            unit_labels=() if unit_labels is None else tuple(unit_labels),
+            parallel=parallel,
+        )
+        if unit_labels is None:
+            instrument_cache.replace_all(instrument_infos=instrument_infos)
+        else:
+            instrument_cache.replace_units(
+                unit_labels=unit_labels, instrument_infos=instrument_infos
+            )
+        return {InstrumentCache.alias_for(info): info for info in instrument_infos}
+
+    @staticmethod
+    def get_instrument_configuration(
+        *, instrument_cache: InstrumentCache
+    ) -> InstrumentConfiguration:
+        """Export deployable specifications from the supplied live cache."""
+        return instrument_cache.export_configuration()
+
+    def save_instrument_configuration(
+        self, path: str | Path, *, instrument_cache: InstrumentCache
+    ) -> Path:
+        """Save cached deployable specifications as YAML without reading hardware."""
+        configuration = self.get_instrument_configuration(
+            instrument_cache=instrument_cache
+        )
+        return configuration.save_yaml(path)
+
+    @staticmethod
+    def load_instrument_configuration(path: str | Path) -> InstrumentConfiguration:
+        """Load deployable specifications from YAML without changing hardware or cache."""
+        return InstrumentConfiguration.load_yaml(path)
 
     async def _deploy_instruments(
         self,
         *,
-        requests: tuple[InstrumentDeployRequest, ...],
+        specifications: tuple[InstrumentSpec, ...],
+        append: bool = False,
         parallel: bool = True,
-    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
+    ) -> None:
         """Deploy instruments through quelware session APIs."""
-        if len(requests) == 0:
-            self._last_deployed_instrument_infos = {}
-            self._target_alias_map = {}
-            return {}
+        if not specifications:
+            return
 
         client_factory = self._load_quelware_client_factory()
-        (
-            fixed_timeline_profile_cls,
-            instrument_definition_cls,
-            instrument_mode,
-            instrument_role,
-        ) = self._load_instrument_entities()
+        instrument_entities = self._load_instrument_entities()
 
-        deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[str, str] = {}
-        requests_by_port: dict[str, list[InstrumentDeployRequest]] = defaultdict(list)
-        for request in requests:
-            requests_by_port[request.port_id].append(request)
-        port_request_batches = tuple(
-            (port_id, tuple(port_requests))
-            for port_id, port_requests in requests_by_port.items()
+        specifications_by_port: dict[str, list[InstrumentSpec]] = defaultdict(list)
+        for specification in specifications:
+            specifications_by_port[specification.port_id].append(specification)
+        port_batches = tuple(
+            (port_id, tuple(port_specifications))
+            for port_id, port_specifications in specifications_by_port.items()
         )
-        async with client_factory(
-            self._quelware_endpoint,
-            self._quelware_port,
-        ) as client:
-            session_resource_ids = [port_id for port_id, _ in port_request_batches]
-            async with client.create_session(session_resource_ids) as session:
-                deploy_coroutines = [
-                    self._deploy_port_batch(
-                        session=session,
-                        port_id=port_id,
-                        port_requests=port_requests,
-                        fixed_timeline_profile_cls=fixed_timeline_profile_cls,
-                        instrument_definition_cls=instrument_definition_cls,
-                        instrument_mode=instrument_mode,
-                        instrument_role=instrument_role,
-                    )
-                    for port_id, port_requests in port_request_batches
-                ]
-                port_results = (
-                    await asyncio.gather(*deploy_coroutines)
-                    if parallel
-                    else [await coro for coro in deploy_coroutines]
+        max_attempts = 1 if append else QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS
+        for attempt in range(max_attempts):
+            try:
+                await self._deploy_port_batches(
+                    client_factory=client_factory,
+                    port_batches=port_batches,
+                    instrument_entities=instrument_entities,
+                    append=append,
+                    parallel=parallel,
+                    attempt=attempt + 1,
+                    max_attempts=max_attempts,
                 )
+                break
+            except Exception as exc:
+                if attempt + 1 >= max_attempts:
+                    if isinstance(exc, QuelwareSessionError):
+                        raise
+                    missing_session_id = "<unavailable>"
+                    raise QuelwareSessionError(
+                        "QuEL-3 quelware append request failed without retry"
+                        if append
+                        else "QuEL-3 quelware deploy request failed after retries",
+                        session_token=missing_session_id,
+                        cause=exc,
+                    ) from exc
 
-        for port_result in port_results:
-            deployed.update(port_result.deployed)
-            target_alias_map.update(port_result.target_alias_map)
-
-        # Temporary limitation:
-        # quelware `append=True` is currently broken, so QuEL-3 deploy uses
-        # per-request replacement semantics. Until quelware is fixed, keep the
-        # local alias/instrument cache aligned with the explicit deploy subset.
-        self._last_deployed_instrument_infos = dict(deployed)
-        self._target_alias_map = target_alias_map
-        return deployed
+    async def _deploy_port_batches(
+        self,
+        *,
+        client_factory: QuelwareClientFactory,
+        port_batches: tuple[tuple[str, tuple[InstrumentSpec, ...]], ...],
+        instrument_entities: QuelwareInstrumentEntities,
+        append: bool,
+        parallel: bool,
+        attempt: int,
+        max_attempts: int,
+    ) -> None:
+        """Deploy port batches in one quelware client/session context."""
+        async with client_factory(
+            self._runtime_config.endpoint,
+            self._runtime_config.port,
+        ) as client:
+            session_resource_ids = [port_id for port_id, _ in port_batches]
+            session_cm, session = await enter_quelware_session_with_resource_retry(
+                client=client,
+                resource_ids=session_resource_ids,
+            )
+            session_token = quelware_session_token(session)
+            try:
+                if parallel:
+                    # Finish every port before closing or retrying this session.
+                    results = await asyncio.gather(
+                        *(
+                            self._deploy_port_batch(
+                                session=session,
+                                port_id=port_id,
+                                port_specifications=port_specifications,
+                                instrument_entities=instrument_entities,
+                                append=append,
+                            )
+                            for port_id, port_specifications in port_batches
+                        ),
+                        return_exceptions=True,
+                    )
+                    for result in results:
+                        if isinstance(result, BaseException):
+                            raise result  # noqa: TRY301
+                else:
+                    for port_id, port_specifications in port_batches:
+                        await self._deploy_port_batch(
+                            session=session,
+                            port_id=port_id,
+                            port_specifications=port_specifications,
+                            instrument_entities=instrument_entities,
+                            append=append,
+                        )
+            except Exception as exc:
+                if attempt >= max_attempts:
+                    raise QuelwareSessionError(
+                        "QuEL-3 quelware append request failed without retry"
+                        if append
+                        else "QuEL-3 quelware deploy request failed after retries",
+                        session_token=session_token,
+                        cause=exc,
+                    ) from exc
+                logger.warning(
+                    "QuEL-3 quelware deploy request failed; session_token=%s; "
+                    "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                    session_token,
+                    attempt,
+                    max_attempts,
+                    quelware_exception_summary(exc),
+                )
+                raise
+            finally:
+                try:
+                    await session_cm.__aexit__(None, None, None)
+                except Exception as exc:
+                    logger.warning(
+                        "QuEL-3 quelware deploy session cleanup failed; "
+                        "session_token=%s; cause=%s",
+                        session_token,
+                        quelware_exception_summary(exc),
+                    )
 
     async def _deploy_port_batch(
         self,
         *,
         session: SessionProtocol,
         port_id: str,
-        port_requests: tuple[InstrumentDeployRequest, ...],
-        fixed_timeline_profile_cls: _FixedTimelineProfileFactory,
-        instrument_definition_cls: _InstrumentDefinitionFactory,
-        instrument_mode: _EnumNamespace,
-        instrument_role: _EnumNamespace,
-    ) -> _PortDeployResult:
+        port_specifications: tuple[InstrumentSpec, ...],
+        instrument_entities: QuelwareInstrumentEntities,
+        append: bool,
+    ) -> None:
         """Deploy one port batch through the active quelware session."""
         definitions: list[InstrumentDefinitionProtocol] = []
-        for request in port_requests:
-            profile = fixed_timeline_profile_cls(
-                frequency_range_min=request.frequency_range_min_hz,
-                frequency_range_max=request.frequency_range_max_hz,
+        for specification in port_specifications:
+            profile = instrument_entities.fixed_timeline_profile_factory(
+                frequency_range_min=specification.frequency_range_min_hz,
+                frequency_range_max=specification.frequency_range_max_hz,
             )
             definitions.append(
-                instrument_definition_cls(
-                    alias=request.alias,
-                    mode=instrument_mode.FIXED_TIMELINE,
-                    role=getattr(instrument_role, request.role),
+                instrument_entities.instrument_definition_factory(
+                    alias=specification.alias,
+                    mode=instrument_entities.instrument_mode_namespace.FIXED_TIMELINE,
+                    role=instrument_entities.role_value(specification.role),
                     profile=profile,
                 )
             )
 
-        inst_infos = await session.deploy_instruments(
+        await session.deploy_instruments(
             port_id,
             definitions=definitions,
-            append=True,
+            append=append,
         )
-        infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = defaultdict(list)
-        for inst_info in inst_infos:
-            infos_by_alias[inst_info.definition.alias].append(inst_info)
-
-        deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[str, str] = {}
-        for request in port_requests:
-            matched_infos = tuple(infos_by_alias.get(request.alias, ()))
-            if len(matched_infos) != 1:
-                raise ValueError(
-                    "quelware did not return the deployed instrument info for one request."
-                )
-            deployed[request.alias] = matched_infos
-            for target_label in request.target_labels:
-                target_alias_map[target_label] = request.alias
-        return _PortDeployResult(
-            deployed=deployed,
-            target_alias_map=target_alias_map,
-        )
-
-    async def _refresh_instrument_cache(
-        self,
-    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
-        """Load existing fixed-timeline instruments into local alias caches."""
-        client_factory = self._load_quelware_client_factory()
-        async with client_factory(
-            self._quelware_endpoint,
-            self._quelware_port,
-        ) as client:
-            instrument_infos = await self._list_instrument_infos(
-                client=client,
-                parallel=True,
-            )
-
-        deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[str, str] = {}
-        for instrument_info in instrument_infos:
-            alias = instrument_info.definition.alias
-            if len(alias.strip()) == 0:
-                continue
-            normalized_alias = alias.strip()
-            deployed[normalized_alias] = (instrument_info,)
-            target_alias_map[normalized_alias] = normalized_alias
-
-        self._last_deployed_instrument_infos = deployed
-        self._target_alias_map = target_alias_map
-        return dict(deployed)
-
-    async def _fetch_backend_settings_from_hardware(
-        self,
-        *,
-        unit_labels_by_box_id: dict[str, str],
-        parallel: bool,
-    ) -> dict[str, dict]:
-        """Fetch normalized instrument snapshots for selected QuEL-3 boxes."""
-        box_id_by_unit_label = {
-            unit_label: box_id for box_id, unit_label in unit_labels_by_box_id.items()
-        }
-        fetched: dict[str, dict] = {
-            box_id: {"instruments": {}} for box_id in unit_labels_by_box_id
-        }
-        if len(unit_labels_by_box_id) == 0:
-            return fetched
-
-        client_factory = self._load_quelware_client_factory()
-        async with client_factory(
-            self._quelware_endpoint,
-            self._quelware_port,
-        ) as client:
-            instrument_infos = await self._list_instrument_infos(
-                client=client,
-                parallel=parallel,
-            )
-
-        for instrument_info in instrument_infos:
-            unit_label = self._extract_unit_label(str(instrument_info.port_id))
-            box_id = box_id_by_unit_label.get(unit_label)
-            if box_id is None:
-                continue
-            alias = instrument_info.definition.alias.strip()
-            if len(alias) == 0:
-                continue
-            definition = self._serialize_instrument_definition(
-                instrument_info.definition,
-            )
-            fetched[box_id]["instruments"][alias] = {
-                "resource_id": str(instrument_info.id),
-                "port_id": str(instrument_info.port_id),
-                "role": self._normalize_role_name(instrument_info.definition.role),
-                "definition": definition,
-            }
-        return fetched
 
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
-        return load_quelware_client_factory(
-            client_mode=self._client_mode,
-            standalone_unit_label=self._standalone_unit_label,
-        )
+        return self._runtime_config.load_client_factory()
 
     @staticmethod
-    def _is_instrument_resource(resource_info: ResourceInfoProtocol) -> bool:
-        """Return whether one listed resource info represents an instrument."""
-        category = resource_info.category
-        category_name = getattr(category, "name", None)
-        if isinstance(category_name, str):
-            return category_name == "INSTRUMENT"
-        return str(category) == "INSTRUMENT"
-
-    async def _list_instrument_infos(
-        self,
-        *,
-        client: QuelwareClientProtocol,
-        parallel: bool,
-    ) -> list[InstrumentInfoProtocol]:
-        """List instrument infos from one quelware client session."""
-        resource_infos = await client.list_resource_infos()
-        instrument_resource_ids = [
-            resource_info.id
-            for resource_info in resource_infos
-            if self._is_instrument_resource(resource_info)
-        ]
-        if parallel:
-            return list(
-                await asyncio.gather(
-                    *(
-                        client.get_instrument_info(resource_id)
-                        for resource_id in instrument_resource_ids
-                    )
-                )
-            )
-        return [
-            await client.get_instrument_info(resource_id)
-            for resource_id in instrument_resource_ids
-        ]
-
-    @staticmethod
-    def _extract_unit_label(resource_id: str) -> str:
-        """Extract unit label prefix from one quelware resource ID."""
-        return resource_id.split(":", maxsplit=1)[0]
-
-    @staticmethod
-    def _normalize_role_name(role: object) -> str:
-        """Normalize one runtime instrument role value to a comparable string."""
-        role_name = getattr(role, "name", role)
-        if isinstance(role_name, str):
-            return role_name
-        return str(role_name)
-
-    @classmethod
-    def _normalize_enum_name(cls, value: object) -> str:
-        """Normalize one enum-like runtime value to a comparable string."""
-        return cls._normalize_role_name(value)
-
-    @classmethod
-    def _serialize_instrument_definition(cls, definition: object) -> dict[str, object]:
-        """Serialize stable instrument-definition fields into plain data."""
-        serialized = {
-            "alias": getattr(definition, "alias", ""),
-            "role": cls._normalize_enum_name(getattr(definition, "role", None)),
-        }
-        mode = getattr(definition, "mode", None)
-        if mode is not None:
-            serialized["mode"] = cls._normalize_enum_name(mode)
-        profile = cls._serialize_profile(getattr(definition, "profile", None))
-        if profile:
-            serialized["profile"] = profile
-        return serialized
-
-    @staticmethod
-    def _serialize_profile(profile: object) -> dict[str, object]:
-        """Serialize stable fixed-timeline profile fields into plain data."""
-        if profile is None:
-            return {}
-        serialized: dict[str, object] = {}
-        for attr in ("frequency_range_min", "frequency_range_max"):
-            value = getattr(profile, attr, None)
-            if isinstance(value, int | float):
-                serialized[attr] = float(value)
-        return serialized
-
-    @classmethod
-    def _build_cached_definition(
-        cls,
-        *,
-        alias: str,
-        role: object,
-        definition_config: object,
-    ) -> _CachedInstrumentDefinition:
-        """Build cached instrument-definition object from one backend snapshot."""
-        role_name = cls._normalize_role_name(role)
-        if not isinstance(definition_config, Mapping):
-            return _CachedInstrumentDefinition(alias=alias, role=role_name)
-
-        mode = definition_config.get("mode")
-        mode_name = None
-        if mode is not None:
-            mode_name = cls._normalize_enum_name(mode)
-
-        profile = None
-        profile_config = definition_config.get("profile")
-        if isinstance(profile_config, Mapping):
-            freq_min = profile_config.get("frequency_range_min")
-            freq_max = profile_config.get("frequency_range_max")
-            profile = _CachedFixedTimelineProfile(
-                frequency_range_min=(
-                    float(freq_min) if isinstance(freq_min, int | float) else None
-                ),
-                frequency_range_max=(
-                    float(freq_max) if isinstance(freq_max, int | float) else None
-                ),
-            )
-
-        return _CachedInstrumentDefinition(
-            alias=alias,
-            role=role_name,
-            mode=mode_name,
-            profile=profile,
-        )
-
-    @staticmethod
-    def _load_instrument_entities() -> tuple[
-        _FixedTimelineProfileFactory,
-        _InstrumentDefinitionFactory,
-        _EnumNamespace,
-        _EnumNamespace,
-    ]:
-        """Import instrument entities lazily from quelware core package."""
-        instrument_module = importlib.import_module("quelware_core.entities.instrument")
-        return (
-            instrument_module.FixedTimelineProfile,
-            instrument_module.InstrumentDefinition,
-            instrument_module.InstrumentMode,
-            instrument_module.InstrumentRole,
-        )
+    def _load_instrument_entities() -> QuelwareInstrumentEntities:
+        """Load the quelware deployment dependencies."""
+        return load_quelware_instrument_entities()

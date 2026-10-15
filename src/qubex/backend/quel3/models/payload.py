@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
@@ -38,11 +38,16 @@ class Quel3Waveform:
 
 @dataclass(frozen=True)
 class Quel3FixedTimeline:
-    """Fixed-timeline definition for one target in QuEL-3 execution."""
+    """
+    Fixed-timeline definition for one target in QuEL-3 execution.
+
+    An omitted frequency uses the instrument's frequency range center.
+    """
 
     events: tuple[Quel3WaveformEvent, ...]
     capture_windows: tuple[Quel3CaptureWindow, ...]
     length_ns: float
+    frequency_hz: float | None = None
 
 
 class Quel3CaptureMode(str, Enum):
@@ -57,12 +62,19 @@ class Quel3CaptureMode(str, Enum):
 
 @dataclass(frozen=True)
 class Quel3ExecutionPayload:
-    """Execution payload for translating measurement requests to fixed timeline."""
+    """
+    Execution payload with fixed timelines keyed by target/instrument alias.
+
+    `cable_delay_ns` maps unit names to local port IDs and cable delays in ns.
+    When provided, it replaces the execution manager's defaults without merging.
+    None uses those defaults; an empty dictionary explicitly applies zero offsets.
+    Effective delays must be finite and nonnegative and are copied and validated
+    when execution starts.
+    """
 
     waveform_library: dict[str, Quel3Waveform]
     fixed_timelines: dict[str, Quel3FixedTimeline]
     n_iterations: int
     shot_interval_ns: float
     capture_mode: Quel3CaptureMode
-    instrument_bindings: dict[str, str] = field(default_factory=dict)
-    capture_port_bindings: dict[str, str] = field(default_factory=dict)
+    cable_delay_ns: dict[str, dict[str, float]] | None = None

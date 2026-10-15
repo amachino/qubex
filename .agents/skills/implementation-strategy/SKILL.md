@@ -16,6 +16,8 @@ compatibility handling in this repository depends on release status.
 1. Decide release status first.
    - Inspect tags, release notes, migration guides, and public docs to see
      whether the current surface has shipped.
+   - Treat behavior published in an alpha, beta, or release-candidate tag as
+     released. Code that exists only on an untagged branch is not released.
    - If the surface is not released yet, prefer the clean implementation over
      compatibility shims.
    - If the surface is already released, preserve compatibility unless the user

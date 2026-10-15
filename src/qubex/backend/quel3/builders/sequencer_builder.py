@@ -2,36 +2,33 @@
 
 from __future__ import annotations
 
-import math
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import TypeVar
 
-from qubex.backend.quel3.interfaces import SequencerProtocol
+import numpy as np
+
+from qubex.backend.quel3 import quel3_backend_constants
+from qubex.backend.quel3.execution.timing import normalize_payload_timing
+from qubex.backend.quel3.interfaces import (
+    SequencerFactoryProtocol,
+    SequencerProtocol,
+)
 from qubex.backend.quel3.models import Quel3ExecutionPayload
 
 T = TypeVar("T", bound=SequencerProtocol)
 
-_QUEL3_CLOCK_FREQUENCY_HZ = 312_500_000
-_TRIGGER_GRID_TICKS = 32
-_TRIGGER_GRID_NS = _TRIGGER_GRID_TICKS * (1e9 / _QUEL3_CLOCK_FREQUENCY_HZ)
-_MIN_SHOT_INTERVAL_NS = 1_024.0
+# Well below one LSB (~3e-5) for normalized signed 16-bit DSP amplitudes.
+_WAVEFORM_AMPLITUDE_ATOL = 1e-7
 
 
 class Quel3SequencerBuilder:
     """Build sequencer events and waveforms from `Quel3ExecutionPayload`."""
 
-    @staticmethod
-    def _resolve_effective_shot_interval_ns(shot_interval_ns: float) -> float:
-        effective_shot_interval_ns = max(shot_interval_ns, _MIN_SHOT_INTERVAL_NS)
-        return (
-            math.ceil(effective_shot_interval_ns / _TRIGGER_GRID_NS) * _TRIGGER_GRID_NS
-        )
-
     def build(
         self,
         *,
         payload: Quel3ExecutionPayload,
-        sequencer_factory: Callable[..., T],
+        sequencer_factory: SequencerFactoryProtocol[T],
         default_sampling_period_ns: float,
         alias_bindings: Mapping[str, tuple[int, int]],
     ) -> T:
@@ -42,8 +39,8 @@ class Quel3SequencerBuilder:
         ----------
         payload : Quel3ExecutionPayload
             QuEL-3 execution payload from measurement adapter.
-        sequencer_factory : Callable[..., T]
-            Sequencer class or factory compatible with quelware `Sequencer`.
+        sequencer_factory : SequencerFactoryProtocol[T]
+            Quelware-compatible sequencer factory.
         default_sampling_period_ns : float
             Sequencer default sampling period in ns.
         alias_bindings : Mapping[str, tuple[int, int]]
@@ -53,19 +50,61 @@ class Quel3SequencerBuilder:
         -------
         T
             Built sequencer instance.
+
+        Raises
+        ------
+        ValueError
+            If waveform samples are nonfinite or their complex magnitude exceeds
+            `1 + 1e-7`.
+
+        Notes
+        -----
+        Standalone builds round offsets and capture lengths to sampling grids
+        before constructing the sequencer. Backend execution uses `build_prepared`
+        to forward the payload analyzer's timing without a second normalization.
+
+        Waveforms exceeding unit magnitude by at most `1e-7` are uniformly
+        scaled just below one to accommodate floating-point roundoff. Input
+        waveforms and event gains are not modified.
+        """
+        prepared = normalize_payload_timing(
+            payload, alias_bindings, default_sampling_period_ns
+        )
+        return self.build_prepared(
+            payload=prepared,
+            sequencer_factory=sequencer_factory,
+            default_sampling_period_ns=default_sampling_period_ns,
+            alias_bindings=alias_bindings,
+        )
+
+    def build_prepared(
+        self,
+        *,
+        payload: Quel3ExecutionPayload,
+        sequencer_factory: SequencerFactoryProtocol[T],
+        default_sampling_period_ns: float,
+        alias_bindings: Mapping[str, tuple[int, int]],
+    ) -> T:
+        """
+        Forward a prepared payload to a new sequencer without rounding its timing.
+
+        Events and captures must already lie on their alias sampling grids.
+        Each timeline's declared length must contain all of its content.
+        The payload analyzer and execution payload builder guarantee these
+        conditions for backend execution. Standalone callers can use `build`
+        to normalize an unprepared payload first.
         """
         sequencer = sequencer_factory(
-            default_sampling_period_ns=default_sampling_period_ns
+            default_sampling_period_ns=default_sampling_period_ns,
         )
         sequencer.set_iterations(payload.n_iterations)
 
         for instrument_alias in payload.fixed_timelines:
-            binding = alias_bindings.get(instrument_alias)
-            if binding is None:
+            if instrument_alias not in alias_bindings:
                 raise ValueError(
                     f"Missing sequencer binding for alias: {instrument_alias}."
                 )
-            sampling_period_fs, timeline_step_samples = binding
+            sampling_period_fs, timeline_step_samples = alias_bindings[instrument_alias]
             sequencer.bind(
                 instrument_alias,
                 sampling_period_fs=sampling_period_fs,
@@ -73,37 +112,49 @@ class Quel3SequencerBuilder:
             )
 
         for waveform_name, waveform_def in payload.waveform_library.items():
+            # Convert the registered shape to quelware IQ coordinates.
+            iq_array = np.conj(waveform_def.iq_array)
+            if not np.all(np.isfinite(iq_array)):
+                raise ValueError(
+                    f"Waveform {waveform_name!r} IQ values must be finite."
+                )
+            peak = float(np.max(np.abs(iq_array), initial=0.0))
+            if peak > 1.0 + _WAVEFORM_AMPLITUDE_ATOL:
+                raise ValueError(
+                    f"Waveform {waveform_name!r} peak magnitude {peak:.17g} exceeds "
+                    f"1 + {_WAVEFORM_AMPLITUDE_ATOL:g}."
+                )
+            if peak > 1.0:
+                # Leave room for rounding in complex scaling and abs evaluation.
+                target_peak = 1.0 - 4 * np.finfo(np.float64).eps
+                iq_array *= target_peak / peak
             sequencer.register_waveform(
                 waveform_name,
-                waveform_def.iq_array,
+                iq_array,
                 sampling_period_ns=waveform_def.sampling_period_ns,
             )
 
+        timeline_length_ns = max(
+            (timeline.length_ns for timeline in payload.fixed_timelines.values()),
+            default=0.0,
+        )
+        # Set the declared span before adding content; quelware retains its maximum.
+        sequencer.extend_length_ns(timeline_length_ns + payload.shot_interval_ns)
         for instrument_alias, timeline in payload.fixed_timelines.items():
             for event in timeline.events:
-                if event.waveform_name not in payload.waveform_library:
-                    raise ValueError(
-                        f"Unknown waveform name in event: {event.waveform_name}."
-                    )
                 sequencer.add_event(
                     instrument_alias,
                     event.waveform_name,
                     start_offset_ns=event.start_offset_ns,
-                    gain=event.gain,
-                    phase_offset_deg=event.phase_offset_deg,
+                    gain=event.gain * quel3_backend_constants.EVENT_GAIN_SCALE,
+                    # Complete the conjugation for the per-event phase.
+                    phase_offset_deg=-event.phase_offset_deg,
                 )
-
-            for capture_window in timeline.capture_windows:
+            for window in timeline.capture_windows:
                 sequencer.add_capture_window(
                     instrument_alias,
-                    capture_window.name,
-                    start_offset_ns=capture_window.start_offset_ns,
-                    length_ns=capture_window.length_ns,
+                    window.name,
+                    start_offset_ns=window.start_offset_ns,
+                    length_ns=window.length_ns,
                 )
-
-        if payload.shot_interval_ns > 0:
-            sequencer.extend_length_ns(
-                self._resolve_effective_shot_interval_ns(payload.shot_interval_ns)
-            )
-
         return sequencer

@@ -1116,6 +1116,8 @@ class CalibrationService:
             n_turns = 1
         if n_iterations is None:
             n_iterations = 2
+        if n_iterations <= 0:
+            raise ValueError("n_iterations must be positive.")
         if degree is None:
             degree = 3
         if r2_threshold is None:
@@ -1240,6 +1242,8 @@ class CalibrationService:
             n_turns = 1
         if n_iterations is None:
             n_iterations = 2
+        if n_iterations <= 0:
+            raise ValueError("n_iterations must be positive.")
         if degree is None:
             degree = 3
         if r2_threshold is None:
@@ -2112,6 +2116,8 @@ class CalibrationService:
         """Obtain CR parameters for a qubit pair."""
         if n_iterations is None:
             n_iterations = 4
+        if n_iterations <= 0:
+            raise ValueError("n_iterations must be positive.")
         if n_cycles is None:
             n_cycles = 2
         if n_points_per_cycle is None:
@@ -2178,6 +2184,8 @@ class CalibrationService:
             if time_range is None:
                 time_range = DEFAULT_CR_TIME_RANGE
             time_range = np.array(time_range, dtype=float)
+            if len(time_range) < 4:
+                raise ValueError("time_range must contain at least 4 time points.")
 
         params_history = [
             {
@@ -2195,6 +2203,12 @@ class CalibrationService:
         for i in range(n_iterations):
             print(f"Iteration {i + 1}/{n_iterations}")
             params = params_history[-1]
+            if len(params["time_range"]) < 4:
+                raise RuntimeError(
+                    f"CR calibration failed for {cr_label} at iteration {i + 1}: "
+                    f"generated time range has only {len(params['time_range'])} time points; "
+                    "at least 4 are required for rotation fitting."
+                )
 
             result = self.update_cr_params(
                 control_qubit=control_qubit,
@@ -2547,17 +2561,18 @@ class CalibrationService:
             calibrated_cr_amplitude / cr_amplitude * rotary_amplitude
         )
 
-        if calibrated_cr_amplitude is not None and store_params:
-            if use_drag:
-                f_control = self.ctx.qubits[control_qubit].frequency
-                f_target = self.ctx.qubits[target_qubit].frequency
-                Delta_ct = 2 * np.pi * (f_control - f_target)
-                cr_beta = -1 / Delta_ct
-                # cancel_beta = -1 / self.ctx.qubits[target_qubit].alpha
-                cancel_beta = 0.0
-            else:
-                cr_beta = 0.0
-                cancel_beta = 0.0
+        if use_drag:
+            f_control = self.ctx.qubits[control_qubit].frequency
+            f_target = self.ctx.qubits[target_qubit].frequency
+            Delta_ct = 2 * np.pi * (f_control - f_target)
+            cr_beta = -1 / Delta_ct
+            # cancel_beta = -1 / self.ctx.qubits[target_qubit].alpha
+            cancel_beta = 0.0
+        else:
+            cr_beta = 0.0
+            cancel_beta = 0.0
+
+        if store_params:
             self.ctx.calib_note.update_cr_param(
                 cr_label,
                 {

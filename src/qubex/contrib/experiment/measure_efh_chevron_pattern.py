@@ -1126,8 +1126,8 @@ def _measure_and_analyze_fh_chevron(
     )
 
     omega_q_range = np.linspace(
-        frequency + 2 * np.min(detuning_range),
-        frequency + 2 * np.max(detuning_range),
+        frequency + 2 * np.min(np.asarray(detuning_range)),
+        frequency + 2 * np.max(np.asarray(detuning_range)),
         1024,
     )
 
@@ -1177,8 +1177,8 @@ def _measure_and_analyze_ef_chevron(
     )
 
     omega_q_range = np.linspace(
-        frequency + 2 * np.min(detuning_range),
-        frequency + 2 * np.max(detuning_range),
+        frequency + 2 * np.min(np.asarray(detuning_range)),
+        frequency + 2 * np.max(np.asarray(detuning_range)),
         1024,
     )
 

@@ -1,0 +1,837 @@
+"""Tests for QuEL-3 resource snapshot collection."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, cast
+from unittest.mock import AsyncMock
+
+import pytest
+
+from qubex.backend.quel3 import Quel3BackendController
+from qubex.backend.quel3.infra import Quel3ResourceReader
+from qubex.backend.quel3.interfaces import QuelwareClientFactory
+from qubex.backend.quel3.models import Quel3ResourceLevel
+from qubex.system.quel3 import Quel3SystemSynchronizer
+
+
+@dataclass(frozen=True)
+class _Category:
+    name: str
+
+
+@dataclass(frozen=True)
+class _Role:
+    name: str
+
+
+@dataclass(frozen=True)
+class _Mode:
+    name: str
+
+
+@dataclass(frozen=True)
+class _Profile:
+    frequency_range_min: float | None = None
+    frequency_range_max: float | None = None
+
+
+@dataclass(frozen=True)
+class _Config:
+    sampling_period_fs: int | None = None
+    bitdepth: int | None = None
+    timeline_step_samples: int | None = None
+    samples_per_tick: int | None = None
+
+
+@dataclass(frozen=True)
+class _Definition:
+    alias: str
+    role: object
+    mode: object | None = None
+    profile: object | None = None
+
+
+@dataclass(frozen=True)
+class _ResourceInfo:
+    id: str
+    category: object
+
+
+@dataclass(frozen=True)
+class _PortInfo:
+    id: str
+    role: object
+    depends_on: list[str]
+
+
+@dataclass(frozen=True)
+class _UnitControlSpec:
+    key: str
+    allowed_values: tuple[str, ...]
+    current_value: str
+
+
+@dataclass(frozen=True)
+class _UnitConfiguration:
+    supported: tuple[_UnitControlSpec, ...]
+
+    def values(self) -> dict[str, str]:
+        return {spec.key: spec.current_value for spec in self.supported}
+
+
+@dataclass(frozen=True)
+class _InstrumentInfo:
+    id: str
+    port_id: str
+    definition: _Definition
+    config: _Config
+
+
+class _FakeClient:
+    async def __aenter__(self) -> _FakeClient:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object | None,
+    ) -> None:
+        _ = (exc_type, exc, tb)
+
+    def list_unit_labels(self) -> list[str]:
+        return ["unit-a", "unit-b"]
+
+    async def list_resource_infos(self) -> list[_ResourceInfo]:
+        return [
+            _ResourceInfo("unit-a:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-a:inst-q00", _Category("INSTRUMENT")),
+            _ResourceInfo("unit-b:inst-q01", _Category("INSTRUMENT")),
+        ]
+
+    async def get_port_info(self, resource_id: str) -> _PortInfo:
+        if resource_id != "unit-a:tx_p01":
+            raise KeyError(resource_id)
+        return _PortInfo(
+            id="unit-a:tx_p01",
+            role=_Role("TX"),
+            depends_on=["unit-a:clock"],
+        )
+
+    async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+        if resource_id == "unit-a:inst-q00":
+            return _InstrumentInfo(
+                id="unit-a:inst-q00",
+                port_id="unit-a:tx_p01",
+                definition=_Definition(
+                    alias="unit-a:Q00",
+                    role=_Role("TRANSMITTER"),
+                    mode=_Mode("FIXED_TIMELINE"),
+                    profile=_Profile(
+                        frequency_range_min=4.1e9,
+                        frequency_range_max=4.3e9,
+                    ),
+                ),
+                config=_Config(
+                    sampling_period_fs=400_000,
+                    bitdepth=16,
+                    timeline_step_samples=4,
+                    samples_per_tick=2,
+                ),
+            )
+        return _InstrumentInfo(
+            id="unit-b:inst-q01",
+            port_id="unit-b:tx_p02",
+            definition=_Definition(
+                alias="Q01",
+                role=_Role("TRANSMITTER"),
+                mode=_Mode("FIXED_TIMELINE"),
+                profile=_Profile(
+                    frequency_range_min=5.0e9,
+                    frequency_range_max=5.2e9,
+                ),
+            ),
+            config=_Config(),
+        )
+
+    async def dump_port_state(self, port_id: str) -> str:
+        return f"state: {port_id}"
+
+    async def get_unit_configuration(self, unit_label: str) -> _UnitConfiguration:
+        return _UnitConfiguration(
+            supported=(
+                _UnitControlSpec(
+                    key="quel3.monitor.mode",
+                    allowed_values=("disabled", "loopback"),
+                    current_value=(
+                        "loopback" if unit_label == "unit-a" else "disabled"
+                    ),
+                ),
+            )
+        )
+
+
+class _UnqualifiedInstrumentResourceClient(_FakeClient):
+    async def list_resource_infos(self) -> list[_ResourceInfo]:
+        return [
+            _ResourceInfo("unit-a:tx_p01", _Category("PORT")),
+            _ResourceInfo("inst-q00", _Category("INSTRUMENT")),
+        ]
+
+    async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+        return _InstrumentInfo(
+            id="inst-q00",
+            port_id="unit-a:tx_p01",
+            definition=_Definition(
+                alias="Q00",
+                role=_Role("TRANSMITTER"),
+                mode=_Mode("FIXED_TIMELINE"),
+                profile=_Profile(
+                    frequency_range_min=4.1e9,
+                    frequency_range_max=4.3e9,
+                ),
+            ),
+            config=_Config(),
+        )
+
+
+class _UnqualifiedOtherUnitResourceClient(_FakeClient):
+    async def list_resource_infos(self) -> list[_ResourceInfo]:
+        return [
+            _ResourceInfo("unit-a:tx_p01", _Category("PORT")),
+            _ResourceInfo("port-other", _Category("PORT")),
+            _ResourceInfo("inst-other", _Category("INSTRUMENT")),
+        ]
+
+    async def get_port_info(self, resource_id: str) -> _PortInfo:
+        if resource_id == "unit-a:tx_p01":
+            return await super().get_port_info(resource_id)
+        return _PortInfo(
+            id="unit-b:tx_p02",
+            role=_Role("TX"),
+            depends_on=[],
+        )
+
+    async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+        return _InstrumentInfo(
+            id=resource_id,
+            port_id="unit-b:tx_p02",
+            definition=_Definition(
+                alias="Q00",
+                role=_Role("TRANSMITTER"),
+                mode=_Mode("FIXED_TIMELINE"),
+                profile=_Profile(
+                    frequency_range_min=5.0e9,
+                    frequency_range_max=5.2e9,
+                ),
+            ),
+            config=_Config(),
+        )
+
+
+class _BoxLocalAliasClient(_FakeClient):
+    async def list_resource_infos(self) -> list[_ResourceInfo]:
+        return [
+            _ResourceInfo("unit-a:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-b:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-a:inst-q00", _Category("INSTRUMENT")),
+            _ResourceInfo("unit-b:inst-q00", _Category("INSTRUMENT")),
+        ]
+
+    async def get_port_info(self, resource_id: str) -> _PortInfo:
+        return _PortInfo(
+            id=resource_id,
+            role=_Role("TX"),
+            depends_on=[],
+        )
+
+    async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+        unit_label = resource_id.split(":", maxsplit=1)[0]
+        return _InstrumentInfo(
+            id=resource_id,
+            port_id=f"{unit_label}:tx_p01",
+            definition=_Definition(
+                alias="Q00",
+                role=_Role("TRANSMITTER"),
+                mode=_Mode("FIXED_TIMELINE"),
+                profile=_Profile(
+                    frequency_range_min=4.1e9,
+                    frequency_range_max=4.3e9,
+                ),
+            ),
+            config=_Config(),
+        )
+
+
+class _MultiInstrumentClient(_FakeClient):
+    async def list_resource_infos(self) -> list[_ResourceInfo]:
+        return [
+            _ResourceInfo("unit-a:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-a:rx_p02", _Category("PORT")),
+            _ResourceInfo("unit-b:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-a:inst-q00", _Category("INSTRUMENT")),
+            _ResourceInfo("unit-a:inst-q01", _Category("INSTRUMENT")),
+            _ResourceInfo("unit-b:inst-q00", _Category("INSTRUMENT")),
+        ]
+
+    async def get_port_info(self, resource_id: str) -> _PortInfo:
+        return _PortInfo(
+            id=resource_id,
+            role=_Role("TX") if "tx_" in resource_id else _Role("RX"),
+            depends_on=[],
+        )
+
+    async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+        definitions = {
+            "unit-a:inst-q00": ("unit-a:tx_p01", "unit-a:Q00"),
+            "unit-a:inst-q01": ("unit-a:rx_p02", "Q01"),
+            "unit-b:inst-q00": ("unit-b:tx_p01", "Q00"),
+        }
+        port_id, alias = definitions[resource_id]
+        return _InstrumentInfo(
+            id=resource_id,
+            port_id=port_id,
+            definition=_Definition(
+                alias=alias,
+                role=_Role("TRANSMITTER"),
+                mode=_Mode("FIXED_TIMELINE"),
+                profile=_Profile(
+                    frequency_range_min=4.1e9,
+                    frequency_range_max=4.3e9,
+                ),
+            ),
+            config=_Config(),
+        )
+
+
+class _MonitorPortClient(_FakeClient):
+    def __init__(self) -> None:
+        self.get_port_info_calls: list[str] = []
+
+    async def list_resource_infos(self) -> list[_ResourceInfo]:
+        return [
+            _ResourceInfo("unit-a:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-a:mon", _Category("PORT")),
+        ]
+
+    async def get_port_info(self, resource_id: str) -> _PortInfo:
+        self.get_port_info_calls.append(resource_id)
+        if resource_id == "unit-a:mon":
+            raise RuntimeError("monitor port does not support get_port_info")
+        return await super().get_port_info(resource_id)
+
+
+class _FakeResourceReader(Quel3ResourceReader):
+    def __init__(self, client: _FakeClient) -> None:
+        super().__init__()
+        self._client = client
+
+    def _load_quelware_client_factory(self) -> QuelwareClientFactory:
+        """Return a fake quelware client factory for tests."""
+        return cast(QuelwareClientFactory, lambda endpoint, port: self._client)
+
+
+def _make_reader(client: _FakeClient) -> Quel3ResourceReader:
+    return _FakeResourceReader(client)
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_read_instrument_infos_preserves_raw_objects_and_scopes_ports(
+    parallel: bool,
+) -> None:
+    """Cache acquisition should return original hardware objects for selected ports."""
+
+    class Client(_FakeClient):
+        def __init__(self) -> None:
+            self.fetched: list[_InstrumentInfo] = []
+            self.requested_ids: list[str] = []
+
+        async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+            self.requested_ids.append(resource_id)
+            info = await super().get_instrument_info(resource_id)
+            self.fetched.append(info)
+            return info
+
+    client = Client()
+    reader = _make_reader(client)
+    infos = reader.read_instrument_infos(port_ids=("unit-a:tx_p01",), parallel=parallel)
+
+    assert len(infos) == 1
+    assert infos[0] is client.fetched[0]
+    assert infos[0].id == "unit-a:inst-q00"
+    assert client.requested_ids == ["unit-a:inst-q00"]
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_read_instrument_infos_does_not_hide_partial_read_failures(
+    parallel: bool,
+) -> None:
+    """Cache acquisition should fail instead of publishing a partial instrument list."""
+
+    class Client(_FakeClient):
+        async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+            if resource_id == "unit-b:inst-q01":
+                raise RuntimeError("instrument unavailable")
+            return await super().get_instrument_info(resource_id)
+
+    with pytest.raises(RuntimeError, match="instrument unavailable"):
+        _make_reader(Client()).read_instrument_infos(parallel=parallel)
+
+
+def test_read_instrument_infos_filters_unqualified_ids_by_actual_port() -> None:
+    """An unqualified resource ID should be scoped using its returned port ID."""
+    reader = _make_reader(_UnqualifiedOtherUnitResourceClient())
+    assert reader.read_instrument_infos(unit_labels=("unit-a",)) == ()
+
+
+def test_collect_snapshot_normalizes_units_ports_and_instruments() -> None:
+    """Given quelware resources, resource snapshot should expose normalized Qubex data."""
+    client = _FakeClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
+
+    assert [unit.label for unit in state.units] == ["unit-a"]
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
+    assert state.ports[0].role == "TX"
+    assert state.ports[0].depends_on == ("unit-a:clock",)
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
+    instrument = state.instruments[0]
+    assert instrument.alias == "unit-a:Q00"
+    assert instrument.normalized_alias == "Q00"
+    assert instrument.role == "TRANSMITTER"
+    assert instrument.mode == "FIXED_TIMELINE"
+    assert instrument.frequency_range_min_hz == pytest.approx(4.1e9)
+    assert instrument.frequency_range_max_hz == pytest.approx(4.3e9)
+    assert instrument.sampling_period_fs == 400_000
+    assert [issue.code for issue in state.issues].count("UNKNOWN_PORT_DEPENDENCY") == 1
+
+
+def test_collect_snapshot_normalizes_unit_configuration_controls() -> None:
+    """Given unit configuration, resource snapshot should expose supported controls."""
+    reader = _make_reader(_FakeClient())
+
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
+
+    assert [unit.label for unit in state.units] == ["unit-a"]
+    assert [
+        (control.key, control.current_value, control.allowed_values)
+        for control in state.units[0].controls
+    ] == [
+        (
+            "quel3.monitor.mode",
+            "loopback",
+            ("disabled", "loopback"),
+        )
+    ]
+
+
+def test_collect_snapshot_records_unit_configuration_fetch_errors() -> None:
+    """Given failed unit configuration fetch, resource snapshot should keep an issue."""
+    client = _FakeClient()
+
+    async def _fail_unit_configuration(unit_label: str) -> _UnitConfiguration:
+        raise RuntimeError(f"failed {unit_label}")
+
+    client.get_unit_configuration = _fail_unit_configuration  # type: ignore[method-assign]
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
+
+    assert state.units[0].controls == ()
+    assert any(
+        issue.code == "RESOURCE_FETCH_ERROR"
+        and issue.message == "get_unit_configuration failed."
+        and issue.resource_id == "unit-a"
+        for issue in state.issues
+    )
+
+
+def test_collect_snapshot_keeps_monitor_port_without_fetching_port_info() -> None:
+    """Given a monitor port, resource snapshot should not request unsupported port info."""
+    client = _MonitorPortClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
+
+    assert [port.id for port in state.ports] == ["unit-a:mon", "unit-a:tx_p01"]
+    assert state.ports[0].role is None
+    assert client.get_port_info_calls == ["unit-a:tx_p01"]
+    assert not any(
+        issue.code == "RESOURCE_FETCH_ERROR" and issue.resource_id == "unit-a:mon"
+        for issue in state.issues
+    )
+
+
+def test_collect_snapshot_records_fetch_errors_without_raising() -> None:
+    """Given a failed resource fetch, resource snapshot should keep an issue."""
+    client = _FakeClient()
+
+    async def _fail_instrument(resource_id: str) -> _InstrumentInfo:
+        raise RuntimeError(f"failed {resource_id}")
+
+    client.get_instrument_info = _fail_instrument  # type: ignore[method-assign]
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=True)
+
+    assert state.instruments == ()
+    assert any(issue.code == "RESOURCE_FETCH_ERROR" for issue in state.issues)
+    assert any(issue.resource_id == "unit-a:inst-q00" for issue in state.issues)
+
+
+def test_collect_snapshot_defaults_to_instruments_without_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default collection should include units, ports, and instruments without diagnostic reads."""
+    client = _FakeClient()
+    dump = AsyncMock(wraps=client.dump_port_state)
+    monkeypatch.setattr(client, "dump_port_state", dump)
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(unit_labels=("unit-a",))
+
+    assert state.units[0].controls
+    assert state.ports
+    assert state.instruments
+    assert state.diagnostics == ()
+    dump.assert_not_called()
+
+    state_with_diagnostics = reader.collect_snapshot(
+        unit_labels=("unit-a",),
+        level="diagnosis",
+    )
+
+    assert state_with_diagnostics.diagnostics[0].text == "state: unit-a:tx_p01"
+
+
+def test_collect_snapshot_filters_local_port_after_unit_scoping() -> None:
+    """Given selected unit and local port ID, state should keep that unit port."""
+    client = _BoxLocalAliasClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(
+        unit_labels=("unit-a",),
+        port_ids=("tx_p01",),
+        parallel=False,
+    )
+
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
+
+
+def test_collect_snapshot_matches_local_port_across_selected_units() -> None:
+    """Given local port ID without unit selection, state should keep all matches."""
+    client = _BoxLocalAliasClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(port_ids=("tx_p01",), parallel=False)
+
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01", "unit-b:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == [
+        "unit-a:inst-q00",
+        "unit-b:inst-q00",
+    ]
+
+
+def test_collect_snapshot_filters_alias_related_ports_and_diagnostics() -> None:
+    """Given local alias filter, state should keep matched instruments and ports."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(
+        unit_labels=("unit-a",),
+        instrument_aliases=("Q00",),
+        level="diagnosis",
+        parallel=False,
+    )
+
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
+    assert [diagnostic.port_id for diagnostic in state.diagnostics] == ["unit-a:tx_p01"]
+
+
+def test_collect_snapshot_matches_unit_qualified_alias() -> None:
+    """Given unit-qualified alias, state should keep only that unit match."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(
+        instrument_aliases=("unit-b:Q00",),
+        parallel=False,
+    )
+
+    assert [port.id for port in state.ports] == ["unit-b:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == ["unit-b:inst-q00"]
+
+
+def test_collect_snapshot_intersects_port_and_alias_filters() -> None:
+    """Given port and alias filters, state should keep only their intersection."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(
+        port_ids=("unit-a:rx_p02",),
+        instrument_aliases=("Q00",),
+        level="diagnosis",
+        parallel=False,
+    )
+
+    assert state.ports == ()
+    assert state.instruments == ()
+    assert state.diagnostics == ()
+
+
+def test_collect_snapshot_unit_level_returns_only_units() -> None:
+    """Unit level should return units without port or instrument data."""
+    client = _FakeClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(unit_labels=("unit-a",), level="unit")
+
+    assert [unit.label for unit in state.units] == ["unit-a"]
+    assert state.ports == ()
+    assert state.instruments == ()
+
+
+def test_collect_snapshot_port_level_returns_selected_ports() -> None:
+    """Port level should return units and the selected ports."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(
+        unit_labels=("unit-a",),
+        port_ids=("rx_p02",),
+        level="port",
+    )
+
+    assert [port.id for port in state.ports] == ["unit-a:rx_p02"]
+    assert state.instruments == ()
+
+
+def test_collect_snapshot_instrument_level_respects_alias_filter() -> None:
+    """Instrument level should include units and ports while filtering instruments."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(
+        unit_labels=("unit-a",),
+        instrument_aliases=("Q00",),
+        level="instrument",
+    )
+
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
+    assert not any(issue.code == "ORPHAN_INSTRUMENT" for issue in state.issues)
+
+
+def test_collect_snapshot_diagnostics_follow_port_selection() -> None:
+    """Diagnostics should be limited to the selected ports."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(
+        unit_labels=("unit-a",),
+        port_ids=("rx_p02",),
+        level="diagnosis",
+    )
+
+    assert [diagnostic.port_id for diagnostic in state.diagnostics] == ["unit-a:rx_p02"]
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q01"]
+
+
+def test_collect_snapshot_rejects_old_filter_kwargs() -> None:
+    """Given removed resource snapshot filter kwargs, reader raises TypeError."""
+    reader = _make_reader(_FakeClient())
+
+    with pytest.raises(TypeError, match="instrument_port_ids"):
+        cast(Any, reader).collect_snapshot(instrument_port_ids=("unit-a:tx_p01",))
+    with pytest.raises(TypeError, match="diagnostic_port_ids"):
+        cast(Any, reader).collect_snapshot(diagnostic_port_ids=("unit-a:tx_p01",))
+
+
+def test_backend_settings_projection_uses_resource_snapshot_instruments() -> None:
+    """Given resource snapshot, backend settings projection should keep deploy cache fields."""
+    client = _FakeClient()
+    configuration_calls: list[str] = []
+    get_unit_configuration = client.get_unit_configuration
+
+    async def _track_unit_configuration(unit_label: str) -> _UnitConfiguration:
+        configuration_calls.append(unit_label)
+        return await get_unit_configuration(unit_label)
+
+    client.get_unit_configuration = _track_unit_configuration  # type: ignore[method-assign]
+    reader = _make_reader(client)
+
+    settings = _fetch_settings(
+        reader,
+        box_ids=("unit-a", "unit-c"),
+        parallel=False,
+    )
+
+    assert settings == {
+        "unit-a": {
+            "instruments": {
+                "Q00": {
+                    "resource_id": "unit-a:inst-q00",
+                    "port_id": "unit-a:tx_p01",
+                    "role": "TRANSMITTER",
+                    "definition": {
+                        "alias": "unit-a:Q00",
+                        "role": "TRANSMITTER",
+                        "mode": "FIXED_TIMELINE",
+                        "profile": {
+                            "frequency_range_min": 4.1e9,
+                            "frequency_range_max": 4.3e9,
+                        },
+                    },
+                }
+            }
+        },
+        "unit-c": {"instruments": {}},
+    }
+    assert configuration_calls == ["unit-a"]
+
+
+def test_backend_settings_fetch_keeps_unqualified_instrument_resources() -> None:
+    """Backend settings fetch should keep unqualified instrument resources."""
+    client = _UnqualifiedInstrumentResourceClient()
+    reader = _make_reader(client)
+
+    settings = _fetch_settings(
+        reader,
+        box_ids=("unit-a",),
+        parallel=False,
+    )
+
+    assert settings["unit-a"]["instruments"]["Q00"]["resource_id"] == "inst-q00"
+    assert settings["unit-a"]["instruments"]["Q00"]["port_id"] == "unit-a:tx_p01"
+
+
+def test_collect_snapshot_filters_unqualified_resources_by_resolved_unit() -> None:
+    """Selected-unit collection should filter unqualified resources after fetch."""
+    client = _UnqualifiedOtherUnitResourceClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(unit_labels=("unit-a",), parallel=False)
+
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
+    assert state.instruments == ()
+
+
+def test_collect_snapshot_scopes_duplicate_aliases_by_unit() -> None:
+    """Multi-unit collection should allow box-local normalized aliases."""
+    client = _BoxLocalAliasClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_snapshot(parallel=False)
+
+    assert [instrument.normalized_alias for instrument in state.instruments] == [
+        "Q00",
+        "Q00",
+    ]
+    assert not any(issue.code == "DUPLICATE_INSTRUMENT_ALIAS" for issue in state.issues)
+
+
+def _fetch_settings(
+    reader: Quel3ResourceReader, *, box_ids: tuple[str, ...], parallel: bool
+) -> dict[str, dict]:
+    synchronizer = Quel3SystemSynchronizer(
+        backend_controller=Quel3BackendController(resource_reader=reader)
+    )
+    return synchronizer.fetch_backend_settings_from_hardware(
+        experiment_system=cast(Any, None), box_ids=box_ids, parallel=parallel
+    )
+
+
+@pytest.mark.parametrize(
+    ("level", "expected_reads"),
+    [
+        ("unit", {"get_unit_configuration"}),
+        ("port", {"get_unit_configuration", "list_resource_infos", "get_port_info"}),
+        (
+            "instrument",
+            {
+                "get_unit_configuration",
+                "list_resource_infos",
+                "get_port_info",
+                "get_instrument_info",
+            },
+        ),
+        (
+            "diagnosis",
+            {
+                "get_unit_configuration",
+                "list_resource_infos",
+                "get_port_info",
+                "get_instrument_info",
+                "dump_port_state",
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize("parallel", [False, True])
+def test_collect_snapshot_levels_are_cumulative(
+    level: Quel3ResourceLevel,
+    expected_reads: set[str],
+    parallel: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each level should include all lower-level data without reading higher-level data."""
+    client = _FakeClient()
+    spies = {}
+    for method in (
+        "get_unit_configuration",
+        "list_resource_infos",
+        "get_port_info",
+        "get_instrument_info",
+        "dump_port_state",
+    ):
+        spies[method] = AsyncMock(wraps=getattr(client, method))
+        monkeypatch.setattr(client, method, spies[method])
+
+    snapshot = _make_reader(client).collect_snapshot(
+        unit_labels=("unit-a",),
+        level=level,
+        parallel=parallel,
+    )
+
+    assert {method for method, spy in spies.items() if spy.call_count} == expected_reads
+    assert [unit.label for unit in snapshot.units] == ["unit-a"]
+    assert snapshot.units[0].controls[0].current_value == "loopback"
+    assert [port.id for port in snapshot.ports] == (
+        ["unit-a:tx_p01"] if level != "unit" else []
+    )
+    assert [instrument.id for instrument in snapshot.instruments] == (
+        ["unit-a:inst-q00"] if level in ("instrument", "diagnosis") else []
+    )
+    assert [item.port_id for item in snapshot.diagnostics] == (
+        ["unit-a:tx_p01"] if level == "diagnosis" else []
+    )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"level": "invalid"}, "level"),
+        ({"level": "unit", "port_ids": ("tx_p01",)}, "port_ids"),
+        ({"level": "unit", "instrument_aliases": ("Q00",)}, "instrument_aliases"),
+        ({"level": "port", "instrument_aliases": ("Q00",)}, "instrument_aliases"),
+    ],
+)
+def test_collect_snapshot_rejects_invalid_level_or_filter_before_client_creation(
+    kwargs: dict[str, Any],
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid levels and filters requiring higher-level reads should fail before client creation."""
+    reader = Quel3ResourceReader()
+    monkeypatch.setattr(
+        type(reader.runtime_config),
+        "load_client_factory",
+        lambda self: pytest.fail("Invalid requests must not create a client."),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        reader.collect_snapshot(**kwargs)
