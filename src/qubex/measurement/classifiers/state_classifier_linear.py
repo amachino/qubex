@@ -36,9 +36,11 @@ class StateClassifierLinear(StateClassifier):
     """
     Classify normalized Qubex I/Q points with linear decision boundaries.
 
-    Each line uses ``a * I + b * Q + c = 0`` and produces ``True`` on its
-    negative side. ``state_map`` maps the resulting boolean tuple to a logical
-    state; patterns not present in the map produce the negative rejection state.
+    Input samples are normalized as ``data * scale * exp(-1j * phase)``. Each
+    line is defined in that normalized coordinate system, uses
+    ``a * I + b * Q + c = 0``, and produces ``True`` on its negative side.
+    ``state_map`` maps the resulting boolean tuple to a logical state; patterns
+    not present in the map produce the negative rejection state.
     """
 
     lines: tuple[LinearClassificationLine, ...]
@@ -52,11 +54,20 @@ class StateClassifierLinear(StateClassifier):
         state_map: Mapping[DecisionPattern, int],
         rejection_state: int = -1,
         confusion_matrix: NDArray[Any] | None = None,
+        scale: float = 1.0,
+        phase: float = 0.0,
     ) -> None:
         """Create a classifier from lines and line-decision-to-state mappings."""
         normalized_lines = tuple(_normalize_line(line) for line in lines)
         if not normalized_lines:
             raise ValueError("At least one classification line is required.")
+
+        scale = float(scale)
+        phase = float(phase)
+        if not math.isfinite(scale) or scale <= 0.0:
+            raise ValueError("scale must be a positive finite value.")
+        if not math.isfinite(phase):
+            raise ValueError("phase must be finite.")
 
         normalized_state_map: dict[DecisionPattern, int] = {}
         for pattern, state in state_map.items():
@@ -111,8 +122,8 @@ class StateClassifierLinear(StateClassifier):
             for pattern, state in normalized_state_map.items()
         }
         self.confusion_matrix = normalized_confusion_matrix
-        self.scale = 1.0
-        self.phase = 0.0
+        self.scale = scale
+        self.phase = phase
         self.created_at = datetime.now().isoformat()
         self.lines = normalized_lines
         self.state_map = normalized_state_map
@@ -147,6 +158,20 @@ class StateClassifierLinear(StateClassifier):
     def weights(self) -> dict[int, float]:
         """Linear classifiers do not define mixture weights."""
         raise NotImplementedError
+
+    @property
+    def input_lines(self) -> tuple[LinearClassificationLine, ...]:
+        """Return decision boundaries in the unnormalized input I/Q coordinates."""
+        cos_phase = math.cos(self.phase)
+        sin_phase = math.sin(self.phase)
+        return tuple(
+            (
+                a * cos_phase - b * sin_phase,
+                a * sin_phase + b * cos_phase,
+                c / self.scale,
+            )
+            for a, b, c in self.lines
+        )
 
     @classmethod
     def fit(
@@ -187,8 +212,12 @@ class StateClassifierLinear(StateClassifier):
     def predict(self, data: NDArray) -> NDArray[np.int64]:
         """Classify complex I/Q samples using the configured linear decisions."""
         samples = np.asarray(data).reshape(-1)
+        normalized_samples = samples * self.scale * np.exp(-1j * self.phase)
         decisions = np.column_stack(
-            [a * samples.real + b * samples.imag + c < 0.0 for a, b, c in self.lines]
+            [
+                a * normalized_samples.real + b * normalized_samples.imag + c < 0.0
+                for a, b, c in self.lines
+            ]
         )
         return self.classify_decisions(decisions)
 
@@ -218,7 +247,7 @@ class StateClassifierLinear(StateClassifier):
             target=target,
             data=data,
             labels=labels,
-            lines=self.lines,
+            lines=self.input_lines,
             n_samples=n_samples,
         )
         viz.show_figure(

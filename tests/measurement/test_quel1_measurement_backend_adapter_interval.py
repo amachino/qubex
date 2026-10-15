@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
+import numpy as np
 import pytest
 from qxpulse import Blank, PulseSchedule
 
@@ -314,6 +315,31 @@ def test_build_execution_request_scales_linear_classifier_without_demodulation(
         -3.0,
         -(1 << 31),
     )
+
+
+def test_build_execution_request_applies_classifier_scale_and_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backend lines should represent normalized classifier lines in input I/Q."""
+    classifier = StateClassifierLinear(
+        lines=((1.0, 0.0, 0.0), (1.0, 0.0, -1.0)),
+        state_map={(False, False): 0, (True, True): 1},
+        scale=2.0,
+        phase=np.pi / 2,
+    )
+    _, adapter, schedule = _make_capture_request_context(
+        monkeypatch,
+        classifiers={"Q00": classifier},
+    )
+
+    request = adapter.build_execution_request(
+        schedule=schedule,
+        config=_make_classification_config(),
+    )
+
+    line_set = request.payload.classification_lines["RQ00"]
+    assert line_set.line0 == pytest.approx((0.0, 1.0, 0.0), abs=1e-15)
+    assert line_set.line1 == pytest.approx((0.0, 1.0, -(1 << 17)), abs=1e-15)
 
 
 @pytest.mark.parametrize(

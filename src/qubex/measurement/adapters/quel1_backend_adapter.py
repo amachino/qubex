@@ -152,7 +152,7 @@ class Quel1MeasurementBackendAdapter:
         classification_lines: dict[str, Any] = {}
         for target in capture_targets:
             classifier = self._resolve_linear_classifier(target)
-            line0, line1 = classifier.lines
+            line0, line1 = classifier.input_lines
             classification_lines[target] = ClassificationLineSet(
                 line0=self._convert_classification_line_to_backend_iq(
                     target=target,

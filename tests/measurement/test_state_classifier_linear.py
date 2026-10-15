@@ -24,6 +24,29 @@ def test_predict_maps_line_decisions_and_rejects_unmapped_patterns() -> None:
     assert classifier.n_states == 2
 
 
+def test_predict_applies_scale_and_phase() -> None:
+    """Linear prediction should use the same normalization as other classifiers."""
+    scale = 2.0
+    phase = np.pi / 2
+    normalized_samples = np.array([-1.0 + 0.0j, 0.5 + 0.0j, 2.0 + 0.0j])
+    input_samples = normalized_samples * np.exp(1j * phase) / scale
+    classifier = StateClassifierLinear(
+        lines=((1.0, 0.0, 0.0), (1.0, 0.0, -1.0)),
+        state_map={(True, True): 0, (False, False): 1},
+        scale=scale,
+        phase=phase,
+    )
+
+    labels = classifier.predict(input_samples)
+
+    assert labels.tolist() == [0, -1, 1]
+    np.testing.assert_allclose(
+        classifier.input_lines,
+        ((0.0, 1.0, 0.0), (0.0, 1.0, -0.5)),
+        atol=1e-15,
+    )
+
+
 def test_classify_decisions_preserves_leading_shape() -> None:
     """Decision arrays should retain all axes except the line-decision axis."""
     classifier = StateClassifierLinear(
@@ -79,7 +102,7 @@ def test_classify_with_plot_shows_data_and_linear_boundaries(
         cast(np.ndarray, captured["labels"]),
         np.array([0, -1, 1]),
     )
-    assert captured["lines"] == classifier.lines
+    assert captured["lines"] == classifier.input_lines
     assert captured["shown_figure"] is figure
     assert captured["filename"] == "state_classification_Q00"
 
@@ -128,6 +151,24 @@ def test_linear_classification_figure_contains_shots_and_boundaries() -> None:
             },
             ValueError,
             "must be negative",
+        ),
+        (
+            {
+                "lines": ((1.0, 0.0, 0.0),),
+                "state_map": {(False,): 0},
+                "scale": 0.0,
+            },
+            ValueError,
+            "scale must be a positive finite value",
+        ),
+        (
+            {
+                "lines": ((1.0, 0.0, 0.0),),
+                "state_map": {(False,): 0},
+                "phase": np.inf,
+            },
+            ValueError,
+            "phase must be finite",
         ),
     ],
 )
