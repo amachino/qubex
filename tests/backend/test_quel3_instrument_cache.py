@@ -134,8 +134,10 @@ def test_port_replacement_rejects_out_of_scope_info() -> None:
 
 def test_missing_alias_explains_explicit_refresh() -> None:
     """An uncached alias should explain how to populate the cache before execution."""
-    with pytest.raises(ValueError, match=r"Q00.*deploy.*refresh"):
+    with pytest.raises(ValueError, match=r"Q00.*deploy.*refresh") as error:
         InstrumentCache().get("Q00")
+    assert "exp.configure()" in str(error.value)
+    assert "exp.backend_controller.get_resource_snapshot()" in str(error.value)
 
 
 def test_hash_changes_when_same_alias_gets_new_resource_id() -> None:

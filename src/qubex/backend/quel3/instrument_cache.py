@@ -10,6 +10,13 @@ from qubex.backend.quel3.models import InstrumentConfiguration, InstrumentSpec
 
 logger = logging.getLogger(__name__)
 
+INSTRUMENT_RECOVERY_HINT = (
+    "The instrument may be missing or may have been reconfigured by another user. "
+    "Call exp.configure() to configure the experiment's instruments. "
+    "Inspect currently deployed instruments with "
+    "exp.backend_controller.get_resource_snapshot()."
+)
+
 
 class InstrumentCache:
     """
@@ -53,7 +60,7 @@ class InstrumentCache:
         except KeyError as exc:
             raise ValueError(
                 f"Instrument `{alias}` is not cached; deploy or refresh "
-                "instruments before execution."
+                f"instruments before execution. {INSTRUMENT_RECOVERY_HINT}"
             ) from exc
 
     def snapshot(self) -> dict[str, InstrumentInfoProtocol]:
