@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import plotly.graph_objects as go
@@ -160,6 +160,49 @@ def make_classification_figure(
     return fig
 
 
+def make_linear_classification_figure(
+    *,
+    target: str,
+    data: NDArray,
+    labels: NDArray,
+    lines: Sequence[tuple[float, float, float]],
+    n_samples: int = 1000,
+) -> go.Figure:
+    """Build a classified I/Q scatter figure with linear decision boundaries."""
+    plot_data = np.asarray(data).reshape(-1)
+    plot_labels = np.asarray(labels).reshape(-1)
+    fig = make_classification_figure(
+        target=target,
+        data=plot_data,
+        labels=plot_labels,
+        centers={},
+        n_samples=n_samples,
+    )
+    sampled_data = plot_data[:n_samples]
+    max_val = float(np.max(np.abs(sampled_data))) if sampled_data.size else 1.0
+    if max_val == 0.0:
+        max_val = 1.0
+    line_min, line_max = -1.1 * max_val, 1.1 * max_val
+
+    for index, (a, b, c) in enumerate(lines):
+        if np.isclose(b, 0.0):
+            x = [-c / a, -c / a]
+            y = [line_min, line_max]
+        else:
+            x = [line_min, line_max]
+            y = [(-a * value - c) / b for value in x]
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=y,
+                mode="lines",
+                name=f"line {index}",
+                line=dict(width=2),
+            )
+        )
+    return fig
+
+
 __all__ = [
     "DEFAULT_IMAGES_DIR",
     "make_bloch_vectors_figure",
@@ -167,6 +210,7 @@ __all__ = [
     "make_classification_figure",
     "make_fft_figure",
     "make_iq_scatter_figure",
+    "make_linear_classification_figure",
     "make_plot_figure",
     "make_waveform_figure",
     "plot",

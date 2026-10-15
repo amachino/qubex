@@ -57,7 +57,6 @@ def _make_classification_config() -> MeasurementConfig:
         shot_averaging=False,
         time_integration=True,
         state_classification=True,
-        backend_kind="quel1",
     )
 
 
@@ -341,5 +340,37 @@ def test_build_execution_request_rejects_unsupported_dsp_classifier_before_io(
             schedule=schedule,
             config=_make_classification_config(),
         )
+
+    assert backend.targets == []
+
+
+@pytest.mark.parametrize(
+    ("shot_averaging", "time_integration", "match"),
+    [
+        (True, True, "requires shot_averaging=False"),
+        (False, False, "requires time_integration=True"),
+    ],
+)
+def test_build_execution_request_rejects_invalid_dsp_capture_mode_before_io(
+    monkeypatch: pytest.MonkeyPatch,
+    shot_averaging: bool,
+    time_integration: bool,
+    match: str,
+) -> None:
+    """QuEL-1 should validate its DSP capture mode before backend lookup."""
+    backend, adapter, schedule = _make_capture_request_context(
+        monkeypatch,
+        classifiers={"Q00": _linear_classifier()},
+    )
+    config = MeasurementConfig(
+        n_shots=1,
+        shot_interval=0.0,
+        shot_averaging=shot_averaging,
+        time_integration=time_integration,
+        state_classification=True,
+    )
+
+    with pytest.raises(ValueError, match=match):
+        adapter.build_execution_request(schedule=schedule, config=config)
 
     assert backend.targets == []

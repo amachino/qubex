@@ -165,7 +165,7 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
         n_shots=2,
         shot_interval=100.0,
         shot_averaging=False,
-        time_integration=False,
+        time_integration=True,
         state_classification=True,
     )
     result = MeasurementResult(
@@ -173,7 +173,7 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
             "Q00": [
                 _make_capture(
                     target="Q00",
-                    raw=np.array([[1.0 + 0.0j], [2.0 + 0.0j]]),
+                    raw=np.array([0, 1], dtype=np.int64),
                     measurement_config=config,
                     sampling_period=0.4,
                 )
@@ -181,7 +181,7 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
             "Q01": [
                 _make_capture(
                     target="Q01",
-                    raw=np.array([[3.0 + 0.0j], [4.0 + 0.0j]]),
+                    raw=np.array([1, 0], dtype=np.int64),
                     measurement_config=config,
                     sampling_period=0.4,
                 )
@@ -195,7 +195,7 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
     assert "targets=[Q00, Q01]" in text
     assert "captures=2" in text
     assert "shot_averaging=False" in text
-    assert "time_integration=False" in text
+    assert "time_integration=True" in text
     assert "state_classification=True" in text
 
 
@@ -229,15 +229,14 @@ def test_to_measure_result_propagates_sampling_period() -> None:
     assert np.array_equal(single.data["Q00"].times, np.array([0.0]))
 
 
-def test_converter_marks_state_series_as_preclassified(dummy_classifier) -> None:
-    """State-series conversion should retain metadata without CPU classification."""
+def test_converter_rejects_state_series_for_legacy_results(dummy_classifier) -> None:
+    """Legacy result conversion should reject canonical classified states."""
     config = MeasurementConfig(
         n_shots=4,
         shot_interval=100.0,
         shot_averaging=False,
         time_integration=True,
         state_classification=True,
-        backend_kind="quel1",
     )
     result = MeasurementResult(
         data={
@@ -253,24 +252,16 @@ def test_converter_marks_state_series_as_preclassified(dummy_classifier) -> None
         measurement_config=config,
     )
 
-    multiple = MeasurementResultConverter.to_multiple_measure_result(
-        result,
-        classifiers={"Q00": dummy_classifier},
-    )
-    single = MeasurementResultConverter.to_measure_result(
-        result,
-        classifiers={"Q00": dummy_classifier},
-    )
-
-    assert multiple.data["Q00"][0].classifier is dummy_classifier
-    assert single.data["Q00"].classifier is dummy_classifier
-    assert multiple.data["Q00"][0].preclassified is True
-    assert single.data["Q00"].preclassified is True
-    assert multiple.data["Q00"][0].raw.tolist() == [0, -1, -1, 1]
-    assert single.data["Q00"].classified.tolist() == [0, -1, -1, 1]
-    assert single.data["Q00"].counts == {"0": 1, "1": 1}
-    assert multiple.get_counts() == {"0": 1, "1": 1}
-    assert single.get_counts() == {"0": 1, "1": 1}
+    with pytest.raises(ValueError, match="run_measurement"):
+        MeasurementResultConverter.to_multiple_measure_result(
+            result,
+            classifiers={"Q00": dummy_classifier},
+        )
+    with pytest.raises(ValueError, match="run_measurement"):
+        MeasurementResultConverter.to_measure_result(
+            result,
+            classifiers={"Q00": dummy_classifier},
+        )
 
 
 def test_json_roundtrip_preserves_capture_data() -> None:
@@ -366,6 +357,45 @@ def test_netcdf_roundtrip_preserves_capture_data(tmp_path) -> None:
     )
     assert restored.data["Q00"][0].sampling_period == pytest.approx(2.0)
     assert restored.data["Q01"][0].sampling_period == pytest.approx(1.0)
+
+
+def test_netcdf_roundtrip_preserves_classification_decisions(tmp_path) -> None:
+    """NetCDF round-trip should preserve states and pre-rejection decisions."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    decisions = np.array(
+        [[0, 0], [1, 0], [0, 1], [1, 1]],
+        dtype=np.uint8,
+    )
+    original = MeasurementResult(
+        data={
+            "Q00": [
+                CaptureData.from_primary_data(
+                    target="Q00",
+                    data=np.array([0, -1, -1, 1], dtype=np.int64),
+                    config=config,
+                    sampling_period=2.0,
+                    classification_decisions=decisions,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+
+    restored = MeasurementResult.load(
+        original.save(tmp_path / "classification_result.nc")
+    )
+    capture = restored.data["Q00"][0]
+
+    assert capture.state_series is not None
+    assert capture.classification_decisions is not None
+    assert capture.state_series.tolist() == [0, -1, -1, 1]
+    assert np.array_equal(capture.classification_decisions, decisions)
 
 
 def test_netcdf_writes_nested_capture_payload_as_variables(tmp_path) -> None:
@@ -772,7 +802,6 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
         shot_averaging=False,
         time_integration=True,
         state_classification=True,
-        backend_kind="quel1",
         return_items=(ReturnItem.STATE_SERIES, ReturnItem.IQ_SERIES),
     )
     raw = np.array([0, 1], dtype=np.uint8)
@@ -788,6 +817,63 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
     assert np.array_equal(capture.payload.state_series, raw)
     assert capture.payload.iq_series is None
     assert np.array_equal(capture.data, raw)
+
+
+def test_capture_data_preserves_classification_decisions_and_counts() -> None:
+    """State captures should expose logical counts and pre-rejection decisions."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    decisions = np.array(
+        [[0, 0], [1, 0], [0, 1], [1, 1]],
+        dtype=np.uint8,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([0, -1, -1, 1], dtype=np.int64),
+        config=config,
+        sampling_period=0.4,
+        classification_decisions=decisions,
+    )
+
+    assert capture.classification_decisions is not None
+    assert np.array_equal(capture.classification_decisions, decisions)
+    assert capture.get_state_counts() == {0: 1, 1: 1}
+    assert capture.get_state_counts(include_rejected=True) == {-1: 2, 0: 1, 1: 1}
+
+
+def test_measurement_result_aggregates_state_counts() -> None:
+    """MeasurementResult should aggregate state counts for every capture."""
+    config = MeasurementConfig(
+        n_shots=3,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([0, -1, 1], dtype=np.int64),
+        config=config,
+        sampling_period=0.4,
+        classification_decisions=np.array(
+            [[0, 0], [1, 0], [1, 1]],
+            dtype=np.uint8,
+        ),
+    )
+    result = MeasurementResult(
+        data={"Q00": [capture]},
+        measurement_config=config,
+    )
+
+    assert result.get_state_counts() == {"Q00": [{0: 1, 1: 1}]}
+    assert result.get_state_counts(include_rejected=True) == {
+        "Q00": [{-1: 1, 0: 1, 1: 1}]
+    }
 
 
 def test_capture_data_state_series_returns_payload_when_available() -> None:
@@ -821,8 +907,8 @@ def test_capture_data_state_series_returns_none_when_not_provided() -> None:
         shot_interval=100.0,
         shot_averaging=False,
         time_integration=False,
-        state_classification=True,
-        return_items=(ReturnItem.WAVEFORM_SERIES, ReturnItem.STATE_SERIES),
+        state_classification=False,
+        return_items=(ReturnItem.WAVEFORM_SERIES,),
     )
     capture = CaptureData.from_primary_data(
         target="Q00",

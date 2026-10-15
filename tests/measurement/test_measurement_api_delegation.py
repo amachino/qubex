@@ -22,7 +22,6 @@ from qubex.measurement.models import (
     MeasurementSchedule,
     NDSweepMeasurementResult,
     Quel1MeasurementOptions,
-    ReturnItem,
     SweepMeasurementResult,
     SweepPoint,
     SweepValue,
@@ -1329,8 +1328,8 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
-def test_measure_preserves_default_time_integration_for_dsp_classification() -> None:
-    """DSP classification should let execute resolve an unspecified integration flag."""
+def test_measure_rejects_dsp_classification_before_execute() -> None:
+    """Legacy measure should direct DSP users to canonical run_measurement."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1357,23 +1356,22 @@ def test_measure_preserves_default_time_integration_for_dsp_classification() -> 
         backend_kind="quel1",
     )
 
-    measurement.measure(
-        waveforms={"Q00": np.array([0.0 + 0.0j])},
-        state_classification=True,
-    )
+    with pytest.raises(ValueError, match="run_measurement"):
+        measurement.measure(
+            waveforms={"Q00": np.array([0.0 + 0.0j])},
+            state_classification=True,
+        )
+    with pytest.raises(ValueError, match="run_measurement"):
+        measurement.measure(
+            waveforms={"Q00": np.array([0.0 + 0.0j])},
+            enable_dsp_classification=True,
+        )
 
-    assert called["kwargs"]["time_integration"] is None
-
-    measurement.measure(
-        waveforms={"Q00": np.array([0.0 + 0.0j])},
-        enable_dsp_classification=True,
-    )
-
-    assert called["kwargs"]["time_integration"] is None
+    assert "kwargs" not in called
 
 
-def test_execute_rejects_disabled_quel1_dsp_time_integration() -> None:
-    """QuEL-1 DSP classification should reject explicit time integration disablement."""
+def test_execute_rejects_dsp_classification_for_legacy_result() -> None:
+    """Legacy execute should reject DSP output regardless of capture options."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1387,7 +1385,7 @@ def test_execute_rejects_disabled_quel1_dsp_time_integration() -> None:
         backend_kind="quel1",
     )
 
-    with pytest.raises(ValueError, match="requires time_integration=True"):
+    with pytest.raises(ValueError, match="run_measurement"):
         measurement.execute(
             schedule={"Q00": np.array([0.0 + 0.0j])},
             time_integration=False,
@@ -1545,10 +1543,10 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
     assert called["run_quel1_options"] is None
 
 
-def test_execute_normalizes_optional_flags_with_execute_defaults(
+def test_execute_initializes_optional_flags_with_execute_defaults(
     monkeypatch,
 ) -> None:
-    """Execute defaults should preserve regular mode and normalize manual DSP mode."""
+    """Given None optional flags, execute should apply regular defaults."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1627,41 +1625,6 @@ def test_execute_normalizes_optional_flags_with_execute_defaults(
     assert config.time_integration is True
     assert config.state_classification is False
     assert called["run_quel1_options"] is None
-
-    measurement.execute(
-        schedule=pulse_schedule,
-        state_classification=True,
-    )
-
-    config = called["config"]
-    assert config.shot_averaging is False
-    assert config.time_integration is True
-    assert config.state_classification is True
-    assert config.primary_return_item == ReturnItem.STATE_SERIES
-    assert called["run_quel1_options"] is None
-
-
-def test_execute_rejects_averaged_quel1_dsp_classification() -> None:
-    """QuEL-1 DSP classification should reject an explicitly averaged mode."""
-    measurement = Measurement(
-        chip_id="TEST",
-        qubits=["Q00"],
-        load_configs=False,
-        connect_devices=False,
-    )
-    _bind_runtime(
-        measurement,
-        backend_controller=object(),
-        experiment_system=object(),
-        backend_kind="quel1",
-    )
-
-    with pytest.raises(ValueError, match="requires shot_averaging=False"):
-        measurement.execute(
-            schedule={"Q00": np.array([0.0 + 0.0j])},
-            shot_averaging=True,
-            state_classification=True,
-        )
 
 
 def test_run_measurement_delegates_to_executor(

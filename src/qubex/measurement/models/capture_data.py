@@ -17,6 +17,7 @@ from .measurement_config import MeasurementConfig, ReturnItem
 WaveformSeries: TypeAlias = NDArray[np.complexfloating[Any, Any]]
 IQSeries: TypeAlias = NDArray[np.complexfloating[Any, Any]]
 StateSeries: TypeAlias = NDArray[np.integer[Any]]
+ClassificationDecisions: TypeAlias = NDArray[np.uint8]
 AveragedWaveform: TypeAlias = NDArray[np.complexfloating[Any, Any]]
 AveragedIQ: TypeAlias = NDArray[np.complexfloating[Any, Any]]
 
@@ -88,6 +89,8 @@ def _normalize_payload_array(
                 )
             if squeezed.shape[0] != n_shots:
                 raise ValueError("state_series length must match config.n_shots.")
+            if not np.issubdtype(squeezed.dtype, np.integer):
+                raise TypeError("state_series must contain integer state labels.")
             return squeezed
 
         case ReturnItem.AVERAGED_WAVEFORM:
@@ -103,6 +106,32 @@ def _normalize_payload_array(
             if squeezed.size != 1:
                 raise ValueError("averaged_iq must contain exactly one complex value.")
             return squeezed.reshape(())
+
+
+def _normalize_classification_decisions(
+    data: NDArray[Any],
+    *,
+    n_shots: int,
+) -> ClassificationDecisions:
+    """Normalize per-shot line decisions to a two-dimensional uint8 array."""
+    decisions = np.asarray(data)
+    if decisions.ndim == 1:
+        if n_shots != 1:
+            raise ValueError("classification_decisions must include one row per shot.")
+        decisions = decisions.reshape(1, -1)
+    if decisions.ndim != 2:
+        raise ValueError("classification_decisions must be a two-dimensional array.")
+    if decisions.shape[0] != n_shots:
+        raise ValueError(
+            "classification_decisions first-axis length must match config.n_shots."
+        )
+    if decisions.shape[1] == 0:
+        raise ValueError(
+            "classification_decisions must include at least one decision per shot."
+        )
+    if not np.all((decisions == 0) | (decisions == 1)):
+        raise ValueError("classification_decisions must contain only 0 or 1.")
+    return decisions.astype(np.uint8, copy=False)
 
 
 class CapturePayload(DataModel):
@@ -135,6 +164,9 @@ class CaptureData(DataModel):
         Must be positive.
     classifier_ref : ClassifierRef | None, default=None
         Optional classifier reference metadata for downstream classification.
+    classification_decisions : ClassificationDecisions | None, default=None
+        Optional pre-rejection linear-boundary decisions associated with
+        `state_series`.
 
     Notes
     -----
@@ -145,6 +177,7 @@ class CaptureData(DataModel):
       `waveform_series -> (n_shots, capture_length)`,
       `iq_series -> (n_shots,)`,
       `state_series -> (n_shots,)`,
+      `classification_decisions -> (n_shots, n_decisions)`,
       `averaged_waveform -> (capture_length,)`,
       `averaged_iq -> ()`.
     - The `data` property returns the primary payload selected by
@@ -156,6 +189,7 @@ class CaptureData(DataModel):
     payload: CapturePayload
     sampling_period: float
     classifier_ref: ClassifierRef | None = None
+    classification_decisions: ClassificationDecisions | None = None
 
     def __repr__(self) -> str:
         """Return a compact representation for notebook-friendly display."""
@@ -179,6 +213,7 @@ class CaptureData(DataModel):
         config: MeasurementConfig,
         sampling_period: float,
         classifier_ref: ClassifierRef | None = None,
+        classification_decisions: ClassificationDecisions | None = None,
     ) -> CaptureData:
         """Create capture data by placing data into the config-primary field."""
         primary_item = config.primary_return_item
@@ -198,6 +233,7 @@ class CaptureData(DataModel):
             config=config,
             payload=payload,
             classifier_ref=classifier_ref,
+            classification_decisions=classification_decisions,
             sampling_period=sampling_period,
         )
 
@@ -221,6 +257,21 @@ class CaptureData(DataModel):
             payload_items.add(ReturnItem.AVERAGED_IQ)
         if not payload_items:
             raise ValueError("At least one capture payload field must be set.")
+
+        decisions = self.classification_decisions
+        if decisions is not None:
+            if self.payload.state_series is None:
+                raise ValueError(
+                    "classification_decisions requires a state_series payload."
+                )
+            object.__setattr__(
+                self,
+                "classification_decisions",
+                _normalize_classification_decisions(
+                    decisions,
+                    n_shots=self.config.n_shots,
+                ),
+            )
 
         config = self.config
         unexpected_items = sorted(
@@ -316,6 +367,18 @@ class CaptureData(DataModel):
     def state_series(self) -> StateSeries | None:
         """Return per-shot classified state payload."""
         return self.payload.state_series
+
+    def get_state_counts(self, *, include_rejected: bool = False) -> dict[int, int]:
+        """Return logical-state counts from the classified state payload."""
+        if self.state_series is None:
+            raise ValueError("state_series is not available for this capture.")
+        states = np.asarray(self.state_series, dtype=np.int64).reshape(-1)
+        if not include_rejected:
+            states = states[states >= 0]
+        labels, counts = np.unique(states, return_counts=True)
+        return {
+            int(label): int(count) for label, count in zip(labels, counts, strict=True)
+        }
 
     @property
     def averaged_waveform(self) -> AveragedWaveform | None:

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 
+import qubex.visualization as viz
 from qubex.measurement.classifiers import StateClassifierLinear
 
 
@@ -38,6 +41,64 @@ def test_classify_decisions_preserves_leading_shape() -> None:
     labels = classifier.classify_decisions(decisions)
 
     assert labels.tolist() == [[0, -2], [1, -2]]
+
+
+def test_classify_with_plot_shows_data_and_linear_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """classify(plot=True) should show classified I/Q data and configured lines."""
+    classifier = StateClassifierLinear(
+        lines=((1.0, 0.0, 0.0), (1.0, 0.0, -1.0)),
+        state_map={(True, True): 0, (False, False): 1},
+    )
+    data = np.array([-1.0 + 0.0j, 0.5 + 0.0j, 2.0 + 0.0j])
+    figure = object()
+    captured: dict[str, object] = {}
+
+    def fake_make_linear_classification_figure(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return figure
+
+    def fake_show_figure(shown_figure: object, *, filename: str) -> None:
+        captured["shown_figure"] = shown_figure
+        captured["filename"] = filename
+
+    monkeypatch.setattr(
+        viz,
+        "make_linear_classification_figure",
+        fake_make_linear_classification_figure,
+    )
+    monkeypatch.setattr(viz, "show_figure", fake_show_figure)
+
+    counts = classifier.classify("Q00", data, plot=True)
+
+    assert counts == {0: 1, 1: 1}
+    assert captured["target"] == "Q00"
+    assert np.array_equal(cast(np.ndarray, captured["data"]), data)
+    assert np.array_equal(
+        cast(np.ndarray, captured["labels"]),
+        np.array([0, -1, 1]),
+    )
+    assert captured["lines"] == classifier.lines
+    assert captured["shown_figure"] is figure
+    assert captured["filename"] == "state_classification_Q00"
+
+
+def test_linear_classification_figure_contains_shots_and_boundaries() -> None:
+    """The linear-classification figure should retain both I/Q shots and lines."""
+    figure = viz.make_linear_classification_figure(
+        target="Q00",
+        data=np.array([-1.0 - 0.5j, 0.5 + 0.0j, 2.0 + 0.5j]),
+        labels=np.array([0, -1, 1]),
+        lines=((1.0, 0.0, 0.0), (0.0, 1.0, -0.25)),
+    )
+
+    traces = cast(list[dict[str, Any]], figure.to_dict()["data"])
+    marker_traces = [trace for trace in traces if trace.get("mode") == "markers"]
+    line_traces = [trace for trace in traces if trace.get("mode") == "lines"]
+
+    assert sum(len(trace["x"]) for trace in marker_traces) == 3
+    assert len(line_traces) == 2
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,6 @@ from enum import Enum
 
 from pydantic import model_validator
 
-from qubex.backend import BackendKind
 from qubex.core import Model
 
 
@@ -28,7 +27,6 @@ class MeasurementConfig(Model):
     shot_averaging: bool
     time_integration: bool
     state_classification: bool
-    backend_kind: BackendKind | None = None
     return_items: tuple[ReturnItem, ...] = ()
 
     @model_validator(mode="after")
@@ -36,16 +34,6 @@ class MeasurementConfig(Model):
         """Validate mode invariants and `return_items` consistency."""
         if self.n_shots <= 0:
             raise ValueError("n_shots must be positive.")
-
-        if self.backend_kind == "quel1" and self.state_classification:
-            if self.shot_averaging:
-                raise ValueError(
-                    "QuEL-1 DSP classification requires shot_averaging=False."
-                )
-            if not self.time_integration:
-                raise ValueError(
-                    "QuEL-1 DSP classification requires time_integration=True."
-                )
 
         return_items = tuple(self.return_items)
         if len(return_items) == 0:
@@ -65,11 +53,6 @@ class MeasurementConfig(Model):
             )
 
         required = {self._primary_return_item()}
-        if (
-            self.state_classification
-            and self._primary_return_item() != ReturnItem.STATE_SERIES
-        ):
-            required.add(ReturnItem.STATE_SERIES)
         missing = [item for item in required if item not in return_items]
         if missing:
             joined = ", ".join(item.value for item in missing)
@@ -85,7 +68,7 @@ class MeasurementConfig(Model):
 
     def _primary_return_item(self) -> ReturnItem:
         """Return the primary return item inferred from legacy mode flags."""
-        if self._uses_dsp_state_series():
+        if self.state_classification:
             return ReturnItem.STATE_SERIES
         match (self.shot_averaging, self.time_integration):
             case (True, True):
@@ -99,11 +82,7 @@ class MeasurementConfig(Model):
 
     def _infer_return_items(self) -> tuple[ReturnItem, ...]:
         """Infer default return items from legacy flags."""
-        primary = self._primary_return_item()
-        items: list[ReturnItem] = [primary]
-        if self.state_classification and primary != ReturnItem.STATE_SERIES:
-            items.append(ReturnItem.STATE_SERIES)
-        return tuple(items)
+        return (self._primary_return_item(),)
 
     def _allowed_return_items(self) -> set[ReturnItem]:
         """Return allowed return-item set for the configured mode."""
@@ -120,12 +99,3 @@ class MeasurementConfig(Model):
         if self.state_classification:
             allowed.add(ReturnItem.STATE_SERIES)
         return allowed
-
-    def _uses_dsp_state_series(self) -> bool:
-        """Return whether the backend primary payload is DSP-classified states."""
-        return (
-            self.backend_kind == "quel1"
-            and self.state_classification
-            and not self.shot_averaging
-            and self.time_integration
-        )

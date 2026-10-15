@@ -246,7 +246,6 @@ def test_build_measurement_result_maps_dsp_decisions_to_state_series() -> None:
         shot_averaging=False,
         time_integration=True,
         state_classification=True,
-        backend_kind="quel1",
     )
 
     result = adapter.build_measurement_result(
@@ -260,3 +259,10 @@ def test_build_measurement_result_maps_dsp_decisions_to_state_series() -> None:
     assert result.measurement_config.primary_return_item == ReturnItem.STATE_SERIES
     assert capture.state_series is not None
     assert capture.data.tolist() == [0, -1, -1, 1]
+    assert capture.classification_decisions is not None
+    assert capture.classification_decisions.tolist() == [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+    ]

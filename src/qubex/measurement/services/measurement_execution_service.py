@@ -30,7 +30,10 @@ from qubex.measurement.measurement_constraint_profile import (
 )
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
-from qubex.measurement.measurement_result_converter import MeasurementResultConverter
+from qubex.measurement.measurement_result_converter import (
+    MeasurementResultConverter,
+    reject_legacy_state_classification_request,
+)
 from qubex.measurement.measurement_schedule_builder import (
     CapturePlacement,
     MeasurementScheduleBuilder,
@@ -172,7 +175,6 @@ class MeasurementExecutionService:
         """Return a measurement-config factory."""
         return MeasurementConfigFactory(
             experiment_system=self.experiment_system,
-            backend_kind=getattr(self.system_manager, "backend_kind", None),
         )
 
     @property
@@ -879,7 +881,8 @@ class MeasurementExecutionService:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -912,16 +915,15 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
-        quel1_dsp_classification = getattr(
-            self.system_manager, "backend_kind", None
-        ) == "quel1" and (
-            state_classification is True
-            or deprecated_options.get("enable_dsp_classification") is True
+        reject_legacy_state_classification_request(
+            state_classification=state_classification,
+            enable_dsp_classification=deprecated_options.get(
+                "enable_dsp_classification"
+            ),
         )
         if (
             time_integration is None
             and deprecated_options.get("enable_dsp_sum") is None
-            and not quel1_dsp_classification
         ):
             time_integration = False
 
@@ -991,7 +993,8 @@ class MeasurementExecutionService:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -1028,7 +1031,12 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
-        explicit_time_integration = time_integration
+        reject_legacy_state_classification_request(
+            state_classification=state_classification,
+            enable_dsp_classification=deprecated_options.get(
+                "enable_dsp_classification"
+            ),
+        )
         legacy_options: dict[str, Any] = dict(deprecated_options)
         legacy_keys = {
             "mode",
@@ -1113,22 +1121,18 @@ class MeasurementExecutionService:
                     "remove this argument or pass None."
                 )
 
-        legacy_enable_dsp_sum = legacy_options.pop("enable_dsp_sum", None)
         time_integration = self._resolve_deprecated_alias(
             new_value=time_integration,
-            old_value=legacy_enable_dsp_sum,
+            old_value=legacy_options.pop("enable_dsp_sum", None),
             old_name="enable_dsp_sum",
             new_name="time_integration",
         )
         if time_integration is None:
             time_integration = True
 
-        legacy_enable_dsp_classification = legacy_options.pop(
-            "enable_dsp_classification", None
-        )
         state_classification = self._resolve_deprecated_alias(
             new_value=state_classification,
-            old_value=legacy_enable_dsp_classification,
+            old_value=legacy_options.pop("enable_dsp_classification", None),
             old_name="enable_dsp_classification",
             new_name="state_classification",
         )
@@ -1136,22 +1140,6 @@ class MeasurementExecutionService:
             state_classification = False
         if plot is None:
             plot = False
-
-        if (
-            getattr(self.system_manager, "backend_kind", None) == "quel1"
-            and state_classification
-        ):
-            if shot_averaging is None:
-                shot_averaging = False
-            if shot_averaging:
-                raise ValueError(
-                    "QuEL-1 DSP classification requires shot_averaging=False."
-                )
-            if explicit_time_integration is False or legacy_enable_dsp_sum is False:
-                raise ValueError(
-                    "QuEL-1 DSP classification requires time_integration=True."
-                )
-            time_integration = True
 
         if shot_averaging is None:
             shot_averaging = True

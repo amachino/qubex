@@ -1886,7 +1886,8 @@ class Experiment:
         enable_dsp_sum : bool | None, optional
             Whether to enable DSP summation. Defaults to None.
         enable_dsp_classification : bool, optional
-            Whether to enable DSP classification. Defaults to False
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -2022,7 +2023,8 @@ class Experiment:
         enable_dsp_sum : bool | None, optional
             Whether to enable DSP summation. Defaults to None.
         enable_dsp_classification : bool, optional
-            Whether to enable DSP classification. Defaults to False.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         reset_awg_and_capunits : bool, optional
             Whether to reset the AWG and capture units before the experiment. Defaults to False.
         plot : bool, optional

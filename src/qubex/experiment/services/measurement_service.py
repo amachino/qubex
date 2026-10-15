@@ -78,6 +78,9 @@ from qubex.measurement import (
     SweepPoint,
     SweepValue,
 )
+from qubex.measurement.measurement_result_converter import (
+    reject_legacy_state_classification_request,
+)
 from qubex.measurement.measurement_schedule_builder import CapturePlacement
 from qubex.system import TargetRegistry
 from qubex.typing import (
@@ -626,7 +629,8 @@ class MeasurementService:
         time_integration
             Whether to integrate captured waveforms over time.
         state_classification
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         frequencies
             Temporary frequency overrides keyed by target label.
         readout_amplitudes
@@ -654,6 +658,12 @@ class MeasurementService:
         **deprecated_options
             Deprecated aliases forwarded to the measurement layer.
         """
+        reject_legacy_state_classification_request(
+            state_classification=state_classification,
+            enable_dsp_classification=deprecated_options.get(
+                "enable_dsp_classification"
+            ),
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = False
         if plot is None:
@@ -748,7 +758,8 @@ class MeasurementService:
         time_integration
             Whether to integrate captured waveforms over time.
         state_classification
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         frequencies
             Temporary frequency overrides keyed by target label.
         readout_amplitudes
@@ -774,6 +785,12 @@ class MeasurementService:
         **deprecated_options
             Deprecated aliases forwarded to the measurement layer.
         """
+        reject_legacy_state_classification_request(
+            state_classification=state_classification,
+            enable_dsp_classification=deprecated_options.get(
+                "enable_dsp_classification"
+            ),
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = False
         if plot is None:

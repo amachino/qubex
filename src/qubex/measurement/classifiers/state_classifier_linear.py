@@ -11,6 +11,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+import qubex.visualization as viz
+
 from .state_classifier import StateClassifier
 
 LinearClassificationLine = tuple[float, float, float]
@@ -197,12 +199,9 @@ class StateClassifierLinear(StateClassifier):
         plot: bool = True,
     ) -> dict[int, int]:
         """Return counts for accepted states; rejected samples are omitted."""
-        del target
-        if plot:
-            raise NotImplementedError(
-                "Plotting is not implemented for StateClassifierLinear."
-            )
         labels = self.predict(data)
+        if plot:
+            self.plot(target, data, labels)
         accepted = labels[labels >= 0]
         counts = np.bincount(accepted, minlength=self.n_states)
         return {state: int(counts[state]) for state in range(self.n_states)}
@@ -214,9 +213,18 @@ class StateClassifierLinear(StateClassifier):
         labels: NDArray,
         n_samples: int = 1000,
     ) -> None:
-        """Linear classifier plotting is not part of the core classifier API."""
-        del target, data, labels, n_samples
-        raise NotImplementedError
+        """Plot classified I/Q data with the configured linear boundaries."""
+        fig = viz.make_linear_classification_figure(
+            target=target,
+            data=data,
+            labels=labels,
+            lines=self.lines,
+            n_samples=n_samples,
+        )
+        viz.show_figure(
+            fig,
+            filename=f"state_classification_{target}",
+        )
 
     def estimate_weights(
         self,

@@ -172,8 +172,8 @@ class Quel1MeasurementBackendAdapter:
         *,
         target: str,
         data: object,
-    ) -> np.ndarray:
-        """Map packed QuEL-1 line decisions to Qubex logical states."""
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Decode packed QuEL-1 decisions and map them to logical states."""
         raw = np.asarray(data)
         if not np.issubdtype(raw.dtype, np.integer):
             raise TypeError("QuEL-1 DSP classification result must be integer data.")
@@ -188,7 +188,20 @@ class Quel1MeasurementBackendAdapter:
                 (packed & 0b10) != 0,
             )
         )
-        return self._resolve_linear_classifier(target).classify_decisions(decisions)
+        states = self._resolve_linear_classifier(target).classify_decisions(decisions)
+        return states, decisions.astype(np.uint8, copy=False)
+
+    @staticmethod
+    def _validate_classification_config(config: MeasurementConfig) -> None:
+        """Validate QuEL-1 capture modes required by DSP classification."""
+        if not config.state_classification:
+            return
+        if config.shot_averaging:
+            raise ValueError("QuEL-1 DSP classification requires shot_averaging=False.")
+        if not config.time_integration:
+            raise ValueError(
+                "QuEL-1 DSP classification requires time_integration=True."
+            )
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate QuEL-1 specific pulse/capture constraints."""
@@ -338,6 +351,7 @@ class Quel1MeasurementBackendAdapter:
         quel1_options: Quel1MeasurementOptions | None = None,
     ) -> BackendExecutionRequest:
         """Build a QuEL backend execution request from measurement inputs."""
+        self._validate_classification_config(config)
         profile = self._constraint_profile
         block_duration = profile.block_duration_ns
         measure_mode = MeasureMode.AVG if config.shot_averaging else MeasureMode.SINGLE
@@ -434,17 +448,17 @@ class Quel1MeasurementBackendAdapter:
                 for index, state in enumerate(states):
                     if skip_extra_capture and index == 0:
                         continue
+                    logical_states, decisions = self._decode_classification_states(
+                        target=target,
+                        data=state,
+                    )
                     values.append(
                         CaptureData.from_primary_data(
                             target=qubit,
-                            data=_as_read_only_array(
-                                self._decode_classification_states(
-                                    target=target,
-                                    data=state,
-                                )
-                            ),
+                            data=_as_read_only_array(logical_states),
                             config=measurement_config,
                             sampling_period=sampling_period,
+                            classification_decisions=_as_read_only_array(decisions),
                         )
                     )
                 measure_data[qubit] = values

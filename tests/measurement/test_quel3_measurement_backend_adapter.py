@@ -26,7 +26,6 @@ from qubex.measurement.models import (
     MeasurementConfig,
     MeasurementResult,
     MeasurementSchedule,
-    ReturnItem,
 )
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.pulse import Arbitrary, PulseArray
@@ -138,15 +137,13 @@ def _make_config(
     mode: MeasurementMode = "avg",
     shots: int = 16,
     time_integration: bool = False,
-    state_classification: bool = False,
 ) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=shots,
         shot_interval=100.0,
         shot_averaging=(mode == "avg"),
         time_integration=time_integration,
-        state_classification=state_classification,
-        backend_kind="quel3",
+        state_classification=False,
     )
 
 
@@ -167,6 +164,28 @@ def _pulse_array(
             )
         ]
     )
+
+
+def test_quel3_adapter_rejects_unsupported_state_classification_before_io() -> None:
+    """QuEL-3 should reject unsupported classified-state output before request build."""
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={},
+    )
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+
+    with pytest.raises(
+        NotImplementedError, match="does not support state classification"
+    ):
+        adapter.build_execution_request(schedule=cast(Any, object()), config=config)
 
 
 def test_quel3_adapter_accepts_relaxed_schedule() -> None:
@@ -903,7 +922,7 @@ def test_quel3_adapter_build_measurement_result_squeezes_avg_mode_waveform() -> 
 
 
 def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> None:
-    """QuEL-3 VALUES_PER_ITER should remain IQ data with classification enabled."""
+    """Given integrated single-shot data, conversion should expose one IQ per shot."""
     target = "RQ00"
     alias = "alias-RQ00"
     schedule = MeasurementSchedule.model_construct(
@@ -926,12 +945,7 @@ def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> 
             ]
         ),
     )
-    config = _make_config(
-        mode="single",
-        shots=2,
-        time_integration=True,
-        state_classification=True,
-    )
+    config = _make_config(mode="single", shots=2, time_integration=True)
     backend_result = Quel3BackendExecutionResult(
         status={},
         data={
@@ -962,7 +976,6 @@ def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> 
         sampling_period=1.0,
     )
 
-    assert result.measurement_config.primary_return_item == ReturnItem.IQ_SERIES
     assert np.array_equal(
         result.data["Q00"][0].data,
         np.array([8.0 + 4.0j, 12.0 + 6.0j], dtype=np.complex128),
