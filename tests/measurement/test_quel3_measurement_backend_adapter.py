@@ -172,7 +172,6 @@ def test_quel3_adapter_rejects_unsupported_state_classification_before_io() -> N
         backend_controller=_make_backend_controller(),
         experiment_system=cast(Any, _FakeExperimentSystem()),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
-        instrument_alias_map={},
     )
     config = MeasurementConfig(
         n_shots=2,
