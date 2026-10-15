@@ -89,8 +89,6 @@ def _normalize_payload_array(
                 )
             if squeezed.shape[0] != n_shots:
                 raise ValueError("state_series length must match config.n_shots.")
-            if not np.issubdtype(squeezed.dtype, np.integer):
-                raise TypeError("state_series must contain integer state labels.")
             return squeezed
 
         case ReturnItem.AVERAGED_WAVEFORM:
@@ -393,7 +391,14 @@ class CaptureData(DataModel):
         """Return logical-state counts from the classified state payload."""
         if self.state_series is None:
             raise ValueError("state_series is not available for this capture.")
-        states = np.asarray(self.state_series, dtype=np.int64).reshape(-1)
+        raw_states = np.asarray(self.state_series).reshape(-1)
+        if (
+            raw_states.dtype.kind not in "iuf"
+            or not np.all(np.isfinite(raw_states))
+            or np.any(raw_states != np.floor(raw_states))
+        ):
+            raise ValueError("state_series must contain finite integer state labels.")
+        states = raw_states.astype(np.int64, copy=False)
         if not include_rejected:
             states = states[states >= 0]
         labels, counts = np.unique(states, return_counts=True)

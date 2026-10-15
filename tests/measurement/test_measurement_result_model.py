@@ -846,6 +846,27 @@ def test_capture_data_preserves_classification_decisions_and_counts() -> None:
     assert capture.get_state_counts(include_rejected=True) == {-1: 2, 0: 1, 1: 1}
 
 
+@pytest.mark.parametrize("state", [0.5, float("nan")])
+def test_capture_data_state_counts_reject_invalid_labels(state: float) -> None:
+    """State counting should reject non-integral and non-finite labels."""
+    config = MeasurementConfig(
+        n_shots=1,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([state]),
+        config=config,
+        sampling_period=0.4,
+    )
+
+    with pytest.raises(ValueError, match="finite integer state labels"):
+        capture.get_state_counts()
+
+
 def test_measurement_result_aggregates_state_counts() -> None:
     """MeasurementResult should aggregate state counts for every capture."""
     config = MeasurementConfig(
