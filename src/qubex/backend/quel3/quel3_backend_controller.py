@@ -121,11 +121,13 @@ class Quel3BackendController(BackendController):
         session_manager : Quel3SessionManager | None, optional
             Injected session manager for testing or customization.
         configuration_manager : Quel3ConfigurationManager | None, optional
-            Injected configuration manager for testing or customization.
+            Injected configuration manager, shared with the default execution
+            manager for automatic instrument cache recovery.
         execution_manager : Quel3ExecutionManager | None, optional
             Injected execution manager for testing or customization.
         resource_reader : Quel3ResourceReader | None, optional
-            Injected resource reader for testing or customization.
+            Injected resource reader for inspection and automatic instrument
+            recovery in the default execution manager.
         execution_options : Quel3ExecutionOptions | None, optional
             Default resource limits and adjacent-job packing settings.
         """
@@ -176,6 +178,13 @@ class Quel3BackendController(BackendController):
                 runtime_config=resolved_runtime_config,
             )
         )
+        self._resource_reader = (
+            resource_reader
+            if resource_reader is not None
+            else Quel3ResourceReader(
+                runtime_config=resolved_runtime_config,
+            )
+        )
         self._execution_manager = (
             execution_manager
             if execution_manager is not None
@@ -185,19 +194,14 @@ class Quel3BackendController(BackendController):
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 session_manager=self._session_manager,
                 execution_options=execution_options,
+                resource_reader=self._resource_reader,
+                configuration_manager=self._configuration_manager,
             )
         )
         if execution_manager is not None and execution_options is not None:
             self.execution_options = execution_options
         if cable_delay_ns is not None:
             self.cable_delay_ns = cable_delay_ns
-        self._resource_reader = (
-            resource_reader
-            if resource_reader is not None
-            else Quel3ResourceReader(
-                runtime_config=resolved_runtime_config,
-            )
-        )
 
         self._monitor_tool = Quel3MonitorTool(
             configuration_manager=self._configuration_manager,
@@ -820,7 +824,13 @@ class Quel3BackendController(BackendController):
         parallel: bool = True,
         execution_options: Quel3ExecutionOptions | None = None,
     ) -> list[BackendExecutionResult]:
-        """Execute multiple backend requests as one resolved QuEL-3 batch."""
+        """
+        Execute multiple backend requests as one resolved QuEL-3 batch.
+
+        Missing resources trigger one cache refresh and complete replanning,
+        provided all aliases retain their ports. Recovery restarts the entire
+        batch, including any executions that already completed.
+        """
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_batch_async(
             requests=tuple(requests),
