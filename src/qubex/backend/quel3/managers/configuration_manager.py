@@ -421,6 +421,58 @@ class Quel3ConfigurationManager:
         )
         return instrument_infos[instrument.alias]
 
+    def replace_instruments(
+        self,
+        *,
+        instrument: InstrumentSpec,
+        instrument_cache: InstrumentCache,
+        resource_reader: Quel3ResourceReader,
+        parallel: bool = True,
+    ) -> InstrumentInfoProtocol:
+        """
+        Replace a cached instrument and read back only its new resource ID.
+
+        Preserve other aliases, including those on the same port. A failed
+        write or readback leaves only the replaced alias absent from the cache.
+        """
+        previous = instrument_cache.get(instrument.alias)
+        if previous.port_id != instrument.port_id:
+            raise ValueError("Instrument redeployment must preserve its port.")
+        instrument_cache.replace_aliases(
+            aliases=(instrument.alias,), instrument_infos=()
+        )
+        deployed = _run_async(
+            lambda: self._deploy_instruments(
+                specifications=(instrument,), append=True, parallel=parallel
+            )
+        )
+        matching = [
+            info
+            for info in deployed
+            if InstrumentCache.alias_for(info) == instrument.alias
+            and info.port_id == instrument.port_id
+        ]
+        if len(matching) != 1:
+            raise ValueError(
+                "Deployment did not return exactly one matching instrument."
+            )
+        infos = resource_reader.read_instrument_infos_by_ids(
+            (matching[0].id,), parallel=parallel
+        )
+        if (
+            len(infos) != 1
+            or infos[0].id != matching[0].id
+            or infos[0].port_id != instrument.port_id
+            or InstrumentCache.alias_for(infos[0]) != instrument.alias
+        ):
+            raise ValueError(
+                "Hardware readback did not match the redeployed instrument."
+            )
+        instrument_cache.replace_aliases(
+            aliases=(instrument.alias,), instrument_infos=infos
+        )
+        return infos[0]
+
     def _deploy_and_refresh(
         self,
         *,
@@ -516,10 +568,10 @@ class Quel3ConfigurationManager:
         specifications: tuple[InstrumentSpec, ...],
         append: bool = False,
         parallel: bool = True,
-    ) -> None:
+    ) -> tuple[InstrumentInfoProtocol, ...]:
         """Deploy instruments through quelware session APIs."""
         if not specifications:
-            return
+            return ()
 
         client_factory = self._load_quelware_client_factory()
         instrument_entities = self._load_instrument_entities()
@@ -532,9 +584,10 @@ class Quel3ConfigurationManager:
             for port_id, port_specifications in specifications_by_port.items()
         )
         max_attempts = 1 if append else QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS
+        instrument_infos: tuple[InstrumentInfoProtocol, ...] = ()
         for attempt in range(max_attempts):
             try:
-                await self._deploy_port_batches(
+                instrument_infos = await self._deploy_port_batches(
                     client_factory=client_factory,
                     port_batches=port_batches,
                     instrument_entities=instrument_entities,
@@ -556,6 +609,7 @@ class Quel3ConfigurationManager:
                         session_token=missing_session_id,
                         cause=exc,
                     ) from exc
+        return instrument_infos
 
     async def _deploy_port_batches(
         self,
@@ -567,7 +621,7 @@ class Quel3ConfigurationManager:
         parallel: bool,
         attempt: int,
         max_attempts: int,
-    ) -> None:
+    ) -> tuple[InstrumentInfoProtocol, ...]:
         """Deploy port batches in one quelware client/session context."""
         async with client_factory(
             self._runtime_config.endpoint,
@@ -595,18 +649,25 @@ class Quel3ConfigurationManager:
                         ),
                         return_exceptions=True,
                     )
+                    infos: list[InstrumentInfoProtocol] = []
                     for result in results:
                         if isinstance(result, BaseException):
                             raise result  # noqa: TRY301
+                        infos.extend(result)
+                    return tuple(infos)
                 else:
+                    infos = []
                     for port_id, port_specifications in port_batches:
-                        await self._deploy_port_batch(
-                            session=session,
-                            port_id=port_id,
-                            port_specifications=port_specifications,
-                            instrument_entities=instrument_entities,
-                            append=append,
+                        infos.extend(
+                            await self._deploy_port_batch(
+                                session=session,
+                                port_id=port_id,
+                                port_specifications=port_specifications,
+                                instrument_entities=instrument_entities,
+                                append=append,
+                            )
                         )
+                    return tuple(infos)
             except Exception as exc:
                 if attempt >= max_attempts:
                     raise QuelwareSessionError(
@@ -644,7 +705,7 @@ class Quel3ConfigurationManager:
         port_specifications: tuple[InstrumentSpec, ...],
         instrument_entities: QuelwareInstrumentEntities,
         append: bool,
-    ) -> None:
+    ) -> tuple[InstrumentInfoProtocol, ...]:
         """Deploy one port batch through the active quelware session."""
         definitions: list[InstrumentDefinitionProtocol] = []
         for specification in port_specifications:
@@ -661,11 +722,12 @@ class Quel3ConfigurationManager:
                 )
             )
 
-        await session.deploy_instruments(
+        infos = await session.deploy_instruments(
             port_id,
             definitions=definitions,
             append=append,
         )
+        return tuple(infos or ())
 
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""

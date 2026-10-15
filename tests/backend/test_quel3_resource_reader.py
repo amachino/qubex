@@ -337,6 +337,61 @@ def _make_reader(client: _FakeClient) -> Quel3ResourceReader:
 
 
 @pytest.mark.parametrize("parallel", [False, True])
+def test_read_instrument_infos_by_ids_skips_discovery(parallel: bool) -> None:
+    """Explicit ID reads should query only requested instruments without discovery."""
+
+    class Client(_FakeClient):
+        def __init__(self) -> None:
+            self.requested: list[str] = []
+
+        def list_unit_labels(self) -> list[str]:
+            raise AssertionError("unit discovery is unnecessary")
+
+        async def list_resource_infos(self) -> list[_ResourceInfo]:
+            raise AssertionError("resource discovery is unnecessary")
+
+        async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+            self.requested.append(resource_id)
+            return await super().get_instrument_info(resource_id)
+
+    client = Client()
+    infos = _make_reader(client).read_instrument_infos_by_ids(
+        ("unit-a:inst-q00", "unit-a:inst-q00"), parallel=parallel
+    )
+
+    assert [info.id for info in infos] == ["unit-a:inst-q00"]
+    assert client.requested == ["unit-a:inst-q00"]
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_read_instrument_infos_by_ids_propagates_failure(parallel: bool) -> None:
+    """Explicit ID acquisition should raise rather than return a partial result."""
+
+    class Client(_FakeClient):
+        async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+            if resource_id == "unit-b:inst-q01":
+                raise RuntimeError("instrument unavailable")
+            return await super().get_instrument_info(resource_id)
+
+    with pytest.raises(RuntimeError, match="instrument unavailable"):
+        _make_reader(Client()).read_instrument_infos_by_ids(
+            ("unit-a:inst-q00", "unit-b:inst-q01"), parallel=parallel
+        )
+
+
+def test_read_instrument_infos_by_ids_skips_client_for_empty_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty explicit selection should not create a hardware client."""
+    reader = Quel3ResourceReader()
+    factory = AsyncMock(side_effect=AssertionError("client is unnecessary"))
+    monkeypatch.setattr(reader, "_load_quelware_client_factory", factory)
+
+    assert reader.read_instrument_infos_by_ids(()) == ()
+    factory.assert_not_called()
+
+
+@pytest.mark.parametrize("parallel", [False, True])
 def test_read_instrument_infos_preserves_raw_objects_and_scopes_ports(
     parallel: bool,
 ) -> None:
