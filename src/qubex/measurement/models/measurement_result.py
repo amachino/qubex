@@ -39,6 +39,20 @@ class MeasurementResult(DataModel):
             f"state_classification={config.state_classification})"
         )
 
+    def get_state_counts(
+        self,
+        *,
+        include_rejected: bool = False,
+    ) -> dict[str, list[dict[int, int]]]:
+        """Return logical-state counts for every target and capture."""
+        return {
+            target: [
+                capture.get_state_counts(include_rejected=include_rejected)
+                for capture in captures
+            ]
+            for target, captures in self.data.items()
+        }
+
     @model_validator(mode="after")
     def _validate_classifier_refs(self) -> MeasurementResult:
         """Validate classifier-ref keys and infer mapping from capture metadata."""
