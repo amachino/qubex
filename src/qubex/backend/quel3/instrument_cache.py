@@ -124,6 +124,19 @@ class InstrumentCache:
             includes=lambda info: info.port_id in selected,
         )
 
+    def replace_aliases(
+        self,
+        *,
+        aliases: Sequence[str],
+        instrument_infos: Iterable[InstrumentInfoProtocol],
+    ) -> None:
+        """Replace selected aliases while retaining every other cached instrument."""
+        selected = set(aliases)
+        self._replace_scope(
+            instrument_infos=instrument_infos,
+            includes=lambda info: self.alias_for(info) in selected,
+        )
+
     def replace_units(
         self,
         *,
