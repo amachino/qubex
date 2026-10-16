@@ -403,7 +403,8 @@ class Quel3ConfigurationManager:
         Raises
         ------
         ValueError
-            Hardware readback is invalid.
+            Hardware readback is invalid, or the alias is already cached on
+            another port. Known cross-port collisions fail before writing.
 
         Notes
         -----
@@ -412,6 +413,12 @@ class Quel3ConfigurationManager:
         read the entire port into the cache. Write or readback failure leaves
         that port uncached.
         """
+        previous = instrument_cache.snapshot().get(instrument.alias)
+        if previous is not None and previous.port_id != instrument.port_id:
+            raise ValueError(
+                f"Instrument alias `{instrument.alias}` is already cached on port "
+                f"`{previous.port_id}`; cannot deploy it on `{instrument.port_id}`."
+            )
         instrument_infos = self._deploy_and_refresh(
             specifications=(instrument,),
             instrument_cache=instrument_cache,
