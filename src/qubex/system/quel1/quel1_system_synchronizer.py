@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
 from qubex.core.parallel_executor import run_parallel, run_parallel_map
-from qubex.system.control_system import PortType
+from qubex.system.control_system import GenPort, PortType
 from qubex.system.quel1.quel1_control_parameter_defaults import DEFAULT_CAPTURE_DELAY
+from qubex.system.quel1.quel1_port_configurator import MixingUtil
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
-    from qubex.system.control_system import Box, CapPort, GenPort
+    from qubex.system.control_system import Box, CapPort, GenChannel
     from qubex.system.experiment_system import ExperimentSystem
+    from qubex.system.target import Target
 
 
 class Quel1SystemSynchronizer:
@@ -38,6 +40,57 @@ class Quel1SystemSynchronizer:
     def supports_mutable_backend_settings_cache(self) -> bool:
         """Return whether QuEL-1 supports mutable backend-settings cache writes."""
         return True
+
+    def resolve_custom_target_channel(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        box_id: str,
+        port_number: int,
+        channel_number: int | None,
+    ) -> GenChannel:
+        """Resolve the logical channel for a custom target."""
+        port = experiment_system.control_system.get_port(box_id, port_number)
+        if not isinstance(port, GenPort):
+            raise TypeError(
+                f"Custom target registration port `{port.id}` must be a GenPort."
+            )
+        if channel_number is None:
+            raise TypeError("channel_number must be provided for QuEL-1.")
+        if channel_number < 0 or channel_number >= len(port.channels):
+            raise IndexError(
+                f"Channel number `{channel_number}` is out of range for port `{port.id}`."
+            )
+        return port.channels[channel_number]
+
+    def register_custom_target(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        target: Target,
+        update_backend_settings: bool = False,
+        push_boxes: Callable[[Sequence[str]], None],
+    ) -> None:
+        """Define and register a target before optional FNCO update and confirmed push."""
+        self._backend_controller.define_target(
+            target_name=target.label,
+            channel_name=target.channel.id,
+            target_frequency_ghz=target.frequency,
+        )
+        experiment_system.add_target(target)
+        if update_backend_settings:
+            port = target.channel.port
+            cnco = port.cnco_freq
+            if cnco is None:
+                raise ValueError("CNCO frequency is not set for the target port.")
+            fnco, _ = MixingUtil.calc_fnco(
+                f=target.frequency * 1e9,
+                ssb=port.sideband,
+                lo=port.lo_freq,
+                cnco=cnco,
+            )
+            target.channel.fnco_freq = fnco
+            push_boxes([port.box_id])
 
     def sync_experiment_system_to_backend_controller(
         self,
@@ -398,3 +451,10 @@ class Quel1SystemSynchronizer:
     def _is_capture_port(port: GenPort | CapPort) -> TypeGuard[CapPort]:
         """Return whether one port should be configured through capture path."""
         return port.type.value in ("READ_IN", "MNTR_IN")
+
+
+def create_system_synchronizer(
+    backend_controller: Quel1BackendController,
+) -> Quel1SystemSynchronizer:
+    """Create a QuEL-1 synchronizer bound to the supplied controller."""
+    return Quel1SystemSynchronizer(backend_controller=backend_controller)

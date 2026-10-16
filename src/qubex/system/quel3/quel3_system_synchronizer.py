@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
+
+from qubex.system.control_system import GenPort
+from qubex.system.target_type import TargetType
 
 from .quel3_target_deploy_planner import Quel3TargetDeployPlanner
 
 if TYPE_CHECKING:
     from qubex.backend.quel3.models import Quel3InstrumentState, Quel3ResourceSnapshot
     from qubex.backend.quel3.quel3_backend_controller import Quel3BackendController
-    from qubex.system.control_system import Box
+    from qubex.system.control_system import Box, GenChannel
     from qubex.system.experiment_system import ExperimentSystem
+    from qubex.system.target import Target
 
 
 class Quel3SystemSynchronizer:
@@ -79,6 +83,81 @@ class Quel3SystemSynchronizer:
             configuration=configuration,
             parallel=True if parallel is None else parallel,
         )
+
+    def resolve_custom_target_channel(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        box_id: str,
+        port_number: int,
+        channel_number: int | None,
+    ) -> GenChannel:
+        """Resolve the logical channel for a custom target."""
+        port = experiment_system.control_system.get_port(box_id, port_number)
+        if not isinstance(port, GenPort):
+            raise TypeError(
+                f"Custom target registration port `{port.id}` must be a GenPort."
+            )
+        if channel_number is None:
+            channel_number = 0
+        if channel_number < 0 or channel_number >= len(port.channels):
+            raise IndexError(
+                f"Channel number `{channel_number}` is out of range for port `{port.id}`."
+            )
+        return port.channels[channel_number]
+
+    def register_custom_target(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        target: Target,
+        update_backend_settings: bool = False,
+        push_boxes: Callable[[Sequence[str]], None],
+    ) -> None:
+        """Validate and optionally deploy a target before publishing it to the registry."""
+        del push_boxes
+        if (
+            not target.label
+            or target.label != target.label.strip()
+            or ":" in target.label
+        ):
+            raise ValueError(
+                "Instrument alias must be nonempty with no ':' or surrounding whitespace."
+            )
+        port = target.channel.port
+        previous = experiment_system.gen_targets.get(target.label)
+        if previous is not None:
+            previous_port = previous.channel.port
+            if (previous_port.box_id, previous_port.number) != (
+                port.box_id,
+                port.number,
+            ):
+                raise ValueError(
+                    f"Target `{target.label}` is already registered on another port."
+                )
+        if target.type == TargetType.READ:
+            mux = experiment_system.get_mux_by_readout_port(port)
+            expected_mux = experiment_system.get_mux_by_qubit(target.qubit)
+            if mux is None or mux.index != expected_mux.index:
+                raise ValueError("Readout port must belong to the target qubit's mux.")
+            inputs = [
+                cap_port
+                for read_mux, cap_port in experiment_system.wiring_info.read_in
+                if read_mux.index == mux.index
+            ]
+            if len(inputs) != 1 or inputs[0].box_id != port.box_id:
+                raise ValueError(
+                    "Readout port requires exactly one read-in pair on the same unit."
+                )
+        specification = self._deploy_planner.build_instrument_spec(
+            experiment_system=experiment_system,
+            target=target,
+        )
+        if update_backend_settings:
+            self._backend_controller.deploy_instrument(
+                instrument=specification, append=True
+            )
+        experiment_system.add_target(target)
 
     def fetch_backend_settings_from_hardware(
         self,
@@ -167,3 +246,10 @@ class Quel3SystemSynchronizer:
     def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
         """Ignore cache replacement because QuEL-3 cache mutation is unsupported."""
         del box_configs
+
+
+def create_system_synchronizer(
+    backend_controller: Quel3BackendController,
+) -> Quel3SystemSynchronizer:
+    """Create a QuEL-3 synchronizer bound to the supplied controller."""
+    return Quel3SystemSynchronizer(backend_controller=backend_controller)
