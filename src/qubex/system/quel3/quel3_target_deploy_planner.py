@@ -57,28 +57,36 @@ class Quel3TargetDeployPlanner:
                     target.frequency,
                 )
                 continue
-            role = self._resolve_instrument_role(target.type)
-            port_id = self._resolve_port_id(
-                experiment_system=experiment_system,
-                target=target,
-            )
-            frequency_hz = self._resolve_target_frequency_hz(target=target)
-            frequency_margin_hz = self._resolve_target_frequency_margin_hz(
-                experiment_system=experiment_system,
-                target=target,
-            )
-            freq_min = frequency_hz - frequency_margin_hz
-            freq_max = frequency_hz + frequency_margin_hz
             instruments.append(
-                InstrumentSpec(
-                    port_id=port_id,
-                    role=role,
-                    frequency_range_min_hz=freq_min,
-                    frequency_range_max_hz=freq_max,
-                    alias=target.label,
+                self.build_instrument_spec(
+                    experiment_system=experiment_system, target=target
                 )
             )
         return InstrumentConfiguration(instruments=tuple(instruments))
+
+    def build_instrument_spec(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        target: Target,
+    ) -> InstrumentSpec:
+        """Build one instrument specification without requiring registry membership."""
+        role = self._resolve_instrument_role(target.type)
+        port_id = self._resolve_port_id(
+            experiment_system=experiment_system, target=target
+        )
+        frequency_hz = self._resolve_target_frequency_hz(target=target)
+        margin_hz = self._resolve_target_frequency_margin_hz(
+            experiment_system=experiment_system,
+            target=target,
+        )
+        return InstrumentSpec(
+            port_id=port_id,
+            role=role,
+            frequency_range_min_hz=frequency_hz - margin_hz,
+            frequency_range_max_hz=frequency_hz + margin_hz,
+            alias=target.label,
+        )
 
     def _resolve_port_id(
         self,
