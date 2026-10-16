@@ -26,7 +26,7 @@ from qxpulse import (
     Waveform,
 )
 from rich.console import Console
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 import qubex.visualization as viz
 from qubex.analysis import FitStatus, IQPlotter, fitting
