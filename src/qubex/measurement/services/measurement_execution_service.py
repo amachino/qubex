@@ -1346,6 +1346,7 @@ class MeasurementExecutionService:
         final_measurement: bool | None = None,
         capture_placement: CapturePlacement | None = None,
         capture_targets: list[str] | None = None,
+        capture_windows: Mapping[str, Sequence[tuple[float, float]]] | None = None,
         plot: bool | None = None,
     ) -> MeasurementSchedule:
         """Build a `MeasurementSchedule` from a pulse schedule and options."""
@@ -1363,6 +1364,7 @@ class MeasurementExecutionService:
             final_measurement=final_measurement,
             capture_placement=capture_placement,
             capture_targets=capture_targets,
+            capture_windows=capture_windows,
             plot=plot,
         )
         return measurement_schedule
