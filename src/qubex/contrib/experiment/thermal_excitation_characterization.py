@@ -19,6 +19,7 @@ def measure_thermal_excitation(
     target: str,
     *,
     n_shots: int = THERMAL_EXCITATION_DEFAULT_SHOTS,
+    shot_interval: float | None = None,
     plot: bool = False,
 ) -> Result:
     """
@@ -31,6 +32,8 @@ def measure_thermal_excitation(
     n_shots : int, optional
         Number of measurement shots per sequence.
         Defaults to 1024 times the value of ``DEFAULT_SHOTS``.
+    shot_interval : float, optional
+        Interval between shots in ns.
     plot : bool, optional
         Whether to plot figures.
     """
@@ -60,6 +63,7 @@ def measure_thermal_excitation(
         sequence=sequence_sig(0),
         mode="avg",
         n_shots=n_shots,
+        shot_interval=shot_interval,
         plot=plot,
     )
 
@@ -67,6 +71,7 @@ def measure_thermal_excitation(
         sequence=sequence_sig(1),
         mode="avg",
         n_shots=n_shots,
+        shot_interval=shot_interval,
         plot=plot,
     )
 
@@ -74,6 +79,7 @@ def measure_thermal_excitation(
         sequence=sequence_ref(0),
         mode="avg",
         n_shots=n_shots,
+        shot_interval=shot_interval,
         plot=plot,
     )
 
@@ -81,6 +87,7 @@ def measure_thermal_excitation(
         sequence=sequence_ref(1),
         mode="avg",
         n_shots=n_shots,
+        shot_interval=shot_interval,
         plot=plot,
     )
 
