@@ -2854,6 +2854,55 @@ def test_external_devices_config_rejects_invalid_wiring_entries(
         )
 
 
+@pytest.mark.parametrize("word", [1, 2, 3, 5, -4, 4.5, True, "4"])
+def test_load_rejects_unaligned_capture_delay_words(tmp_path: Path, word) -> None:
+    """QuEL-1 configuration rejects word offsets outside the non-negative four-word grid."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "capture_delay_word.yaml",
+        {"meta": {"unit": "word"}, "data": {0: word}},
+    )
+    with pytest.raises(ValueError, match=r"MUX0.*multiple of 4 words"):
+        ConfigLoader(system_id=chip_id, config_dir=config_dir, params_dir=params_dir)
+
+
+@pytest.mark.parametrize(
+    "source", ["file", "default", "legacy", "empty_file", "override"]
+)
+@pytest.mark.parametrize("word", [0, 4, 8, 12, 16, 1])
+def test_capture_delay_word_validates_effective_configuration(
+    tmp_path: Path, source, word
+) -> None:
+    """Word alignment is checked after defaults and per-file overrides of legacy values."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    if source in {"legacy", "empty_file", "override"}:
+        _write_yaml(
+            params_dir / "params.yaml",
+            {chip_id: {"capture_delay_word": {0: 1 if source == "override" else word}}},
+        )
+    if source != "legacy":
+        meta = {"unit": "word"}
+        data = {0: word}
+        if source == "default":
+            meta["default"] = word
+            data = {0: None}
+        elif source == "empty_file":
+            data = {}
+        _write_yaml(
+            params_dir / "capture_delay_word.yaml", {"meta": meta, "data": data}
+        )
+    if word % 4:
+        with pytest.raises(ValueError, match=r"MUX0.*multiple of 4 words"):
+            ConfigLoader(
+                system_id=chip_id, config_dir=config_dir, params_dir=params_dir
+            )
+    else:
+        loader = ConfigLoader(
+            system_id=chip_id, config_dir=config_dir, params_dir=params_dir
+        )
+        assert loader.load_param_data("capture_delay_word") == {0: word}
+
+
 def test_quel3_example_deploy_uses_unit_labels_as_box_ids() -> None:
     """The QuEL-3 example should deploy wired targets using configured unit labels."""
     from qubex.system.quel3 import Quel3TargetDeployPlanner
