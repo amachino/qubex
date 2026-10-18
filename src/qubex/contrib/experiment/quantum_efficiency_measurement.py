@@ -32,7 +32,6 @@ import qubex.visualization as viz
 from qubex.analysis import FitResult, FitStatus, fitting
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
-    DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
     SAMPLING_PERIOD,
 )
@@ -40,6 +39,7 @@ from qubex.experiment.models import Result
 from qubex.pulse import PulseSchedule
 
 from ._deprecated_options import resolve_shot_options
+from ._measurement_defaults import resolve_shot_interval
 
 __all__ = [
     "analyze_quantum_efficiency",
@@ -2193,8 +2193,7 @@ def readout_snr(
     )
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     plot, save_image = _resolve_plot_options(plot=plot, save_image=save_image)
     results = {
         target: _readout_snr(
@@ -2240,8 +2239,7 @@ def sweep_readout_snr(
     )
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     plot, save_image = _resolve_plot_options(plot=plot, save_image=save_image)
     results = {
         target: _sweep_readout_snr(
@@ -2292,8 +2290,7 @@ def measurement_induced_dephasing(
     )
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     plot, save_image = _resolve_plot_options(plot=plot, save_image=save_image)
     results = {
         target: _measurement_induced_dephasing(
@@ -2343,8 +2340,7 @@ def measurement_induced_dephasing_experiment(
     )
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     plot, save_image = _resolve_plot_options(plot=plot, save_image=save_image)
     results = {
         target: _measurement_induced_dephasing_experiment(
@@ -2395,8 +2391,7 @@ def quantum_efficiency_measurement(
     )
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     plot, save_image = _resolve_plot_options(plot=plot, save_image=save_image)
     results = {
         target: _quantum_efficiency_measurement(

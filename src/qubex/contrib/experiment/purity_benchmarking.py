@@ -14,7 +14,6 @@ from qubex.analysis import fitting
 from qubex.clifford import Clifford
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
-    DEFAULT_INTERVAL,
     DEFAULT_MAX_N_CLIFFORDS_1Q,
     DEFAULT_MAX_N_CLIFFORDS_2Q,
     DEFAULT_RB_N_TRIALS,
@@ -25,6 +24,7 @@ from qubex.pulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 from qubex.typing import TargetMap
 
 from ._deprecated_options import resolve_shot_options
+from ._measurement_defaults import resolve_shot_interval
 
 
 def purity_sequence_1q(
@@ -325,8 +325,7 @@ def pb_experiment_1q(
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
 
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
 
     if xaxis_type is None:
         xaxis_type = "linear"
@@ -541,8 +540,7 @@ def pb_experiment_2q(
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
 
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
 
     if xaxis_type is None:
         xaxis_type = "linear"

@@ -1196,12 +1196,12 @@ def test_experiment_preserves_large_integer_seed(
     assert result.data["seeds"].tolist() == [seed]
 
 
-@pytest.mark.parametrize("shot_interval", [0.0, -1.0, np.nan, np.inf])
-def test_experiment_rejects_nonpositive_or_nonfinite_shot_interval(
+@pytest.mark.parametrize("shot_interval", [-1.0, np.nan, np.inf])
+def test_experiment_rejects_negative_or_nonfinite_shot_interval(
     fake_experiment: Any,
     shot_interval: float,
 ) -> None:
-    """The workflow should reject a nonpositive or nonfinite shot interval."""
+    """The workflow should reject a negative or nonfinite shot interval."""
     with pytest.raises(ValueError, match="shot_interval"):
         mcm_randomized_benchmarking(
             fake_experiment,

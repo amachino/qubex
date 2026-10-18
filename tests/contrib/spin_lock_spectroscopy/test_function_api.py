@@ -31,7 +31,6 @@ from qubex.contrib.experiment.spin_lock_spectroscopy import (
     _resolve_drive_detuning,
     _resolve_duration_range,
     _resolve_frequency_range,
-    _resolve_nonnegative_finite_float,
     _resolve_positive_integer,
     _resolve_spin_lock_calibration,
     _resolve_spin_lock_parameters_from_calibration,
@@ -915,23 +914,6 @@ def test_resolve_positive_integer_rejects_invalid_values() -> None:
 
     with pytest.raises(TypeError, match="n_shots"):
         _resolve_positive_integer(np.nan, name="n_shots", default=1024)  # type: ignore[arg-type]
-
-
-def test_resolve_nonnegative_finite_float_rejects_invalid_values() -> None:
-    """Given invalid shot intervals, then validation rejects them early."""
-    with pytest.raises(ValueError, match="shot_interval"):
-        _resolve_nonnegative_finite_float(
-            np.nan,
-            name="shot_interval",
-            default=0.0,
-        )
-
-    with pytest.raises(ValueError, match="shot_interval"):
-        _resolve_nonnegative_finite_float(
-            -1.0,
-            name="shot_interval",
-            default=0.0,
-        )
 
 
 def test_resolve_bool_rejects_non_bool_values() -> None:

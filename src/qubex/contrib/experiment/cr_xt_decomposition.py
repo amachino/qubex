@@ -10,11 +10,12 @@ from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_CR_RAMPTIME,
     DEFAULT_CR_TIME_RANGE,
-    DEFAULT_INTERVAL,
 )
 from qubex.experiment.models import Result
 from qubex.pulse import Waveform
 from qubex.typing import TargetMap
+
+from ._measurement_defaults import resolve_shot_interval
 
 
 def decompose_cr_crosstalk(
@@ -111,8 +112,7 @@ def decompose_cr_crosstalk(
         max_amplitude = 1.0
     if shots is None:
         shots = CALIBRATION_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    interval = resolve_shot_interval(exp, interval)
     if reset_awg_and_capunits is None:
         reset_awg_and_capunits = True
     if plot is None:

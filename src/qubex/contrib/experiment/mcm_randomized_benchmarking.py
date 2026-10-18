@@ -20,7 +20,6 @@ import qubex.visualization as viz
 from qubex.analysis import FitResult, FitStatus, fitting
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
-    DEFAULT_INTERVAL,
     DEFAULT_RB_N_TRIALS,
     DEFAULT_SHOTS,
 )
@@ -35,6 +34,8 @@ from qubex.pulse import (
     Waveform,
     set_sampling_period,
 )
+
+from ._measurement_defaults import resolve_shot_interval
 
 console = Console()
 
@@ -2090,8 +2091,8 @@ def mcm_randomized_benchmarking(
     n_shots : int | None
         Number of shots per schedule. Defaults to the experiment default.
     shot_interval : float | None
-        Positive finite interval between shots in ns. Defaults to the
-        experiment default.
+        Finite, nonnegative interval between shots in ns. Defaults to configured
+        `execution.shot_interval_ns`.
     time_integration : bool
         Whether to integrate each capture over time.
     n_bootstrap : int
@@ -2219,10 +2220,7 @@ def mcm_randomized_benchmarking(
         DEFAULT_SHOTS if n_shots is None else n_shots,
         name="n_shots",
     )
-    resolved_shot_interval = _validate_positive_real(
-        DEFAULT_INTERVAL if shot_interval is None else shot_interval,
-        name="shot_interval",
-    )
+    resolved_shot_interval = resolve_shot_interval(exp, shot_interval)
     resolved_n_bootstrap = _validate_nonnegative_integer(
         n_bootstrap,
         name="n_bootstrap",

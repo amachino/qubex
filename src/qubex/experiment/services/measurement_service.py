@@ -49,7 +49,6 @@ from qubex.core.unit_converter import (
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
-    DEFAULT_INTERVAL,
     DEFAULT_RABI_TIME_RANGE,
     DEFAULT_SHOTS,
     HPI_DURATION,
@@ -78,6 +77,7 @@ from qubex.measurement import (
     SweepPoint,
     SweepValue,
 )
+from qubex.measurement.measurement_defaults import resolve_shot_interval_ns
 from qubex.measurement.measurement_schedule_builder import CapturePlacement
 from qubex.system import TargetRegistry
 from qubex.typing import (
@@ -231,16 +231,26 @@ class MeasurementService:
             stacklevel=3,
         )
 
-    @classmethod
+    def resolve_shot_interval(self, shot_interval: object | None) -> float:
+        """Resolve an override through this experiment system's defaults and fallback."""
+        if shot_interval is not None:
+            return resolve_shot_interval_ns(None, shot_interval)
+        experiment_system = getattr(
+            getattr(self, "_ctx", None), "experiment_system", None
+        )
+        return resolve_shot_interval_ns(
+            getattr(experiment_system, "measurement_defaults", None),
+            None,
+        )
+
     def resolve_shot_options(
-        cls,
+        self,
         *,
         n_shots: int | None,
         shot_interval: float | None,
         deprecated_options: dict[str, Any],
         n_shots_default: Any = MISSING,
-        shot_interval_default: Any = MISSING,
-    ) -> tuple[int | None, float | None, dict[str, Any]]:
+    ) -> tuple[int | None, float, dict[str, Any]]:
         """Resolve deprecated shot aliases and preserve unresolved kwargs."""
         normalized, remaining = partition_deprecated_options(
             values={
@@ -254,15 +264,15 @@ class MeasurementService:
                     "n_shots",
                     default=n_shots_default,
                 ),
-                DeprecatedOptionSpec(
-                    "interval",
-                    "shot_interval",
-                    default=shot_interval_default,
-                ),
+                DeprecatedOptionSpec("interval", "shot_interval"),
             ),
             stacklevel=4,
         )
-        return normalized["n_shots"], normalized["shot_interval"], remaining
+        return (
+            normalized["n_shots"],
+            self.resolve_shot_interval(normalized["shot_interval"]),
+            remaining,
+        )
 
     def build_measurement_schedule(
         self,
@@ -1544,7 +1554,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=CALIBRATION_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -1645,7 +1654,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=CALIBRATION_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -1838,7 +1846,7 @@ class MeasurementService:
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots. Defaults to the configured measurement default.
         store_params : bool, optional
             Whether to store the Rabi parameters. Defaults to False.
         plot : bool, optional
@@ -1860,7 +1868,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if store_params is None:
             store_params = False
@@ -1940,7 +1947,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -2097,7 +2103,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -2566,7 +2571,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=CALIBRATION_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
@@ -2669,7 +2673,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
@@ -2821,7 +2824,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
@@ -2943,7 +2945,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if method is None:
             method = "measure"
@@ -3043,7 +3044,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if self.ctx.classifiers is None:
             raise ValueError("Classifiers are not built. Run `build_classifier` first.")
@@ -3112,7 +3112,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if isinstance(params_list[0], int):
             x = params_list
@@ -3225,7 +3224,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -3384,7 +3382,6 @@ class MeasurementService:
             shot_interval=shot_interval,
             deprecated_options=deprecated_options,
             n_shots_default=DEFAULT_SHOTS,
-            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True

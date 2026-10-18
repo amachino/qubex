@@ -23,7 +23,7 @@ from qubex.analysis.state_tomography import (
     plot_ghz_state_tomography,
 )
 from qubex.experiment import Experiment
-from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.experiment.experiment_constants import DEFAULT_SHOTS
 from qubex.experiment.library.graph import (
     find_longest_1d_chain,
     get_max_undirected_weight,
@@ -40,6 +40,7 @@ from qubex.pulse import (
 from qubex.visualization import COLORS
 
 from ._deprecated_options import resolve_shot_options
+from ._measurement_defaults import resolve_shot_interval
 
 
 def create_entangle_sequence(
@@ -346,8 +347,7 @@ def measure_ghz_state(
         decouple_all_zz = False
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if save_image is None:
@@ -547,8 +547,7 @@ def ghz_state_tomography(
         decouple_all_zz = False
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if show_sequence is None:
@@ -854,8 +853,7 @@ def mqc_experiment(
         decouple_all_zz = False
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     qubits: list[str] = []
     source_qubits: list[str] = []
     steps: list[tuple[str, str]] = []
@@ -1108,8 +1106,7 @@ def parity_oscillation(
         readout_mitigation = True
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if initialization_pulse is None:
         initialization_pulse = "Y90"
 
@@ -1465,8 +1462,7 @@ def _measure_1d_cluster_state(
         decouple_all_zz = False
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if method is None:
@@ -1830,8 +1826,7 @@ def measure_1d_cluster_state(
         decouple_all_zz = False
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if method is None:
@@ -2551,8 +2546,7 @@ def _measure_graph_state(
         use_all_spectator_pattern = True
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if method is None:
@@ -3036,8 +3030,7 @@ def measure_graph_state(
         use_all_spectator_pattern = True
     if n_shots is None:
         n_shots = 3000
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if method is None:
@@ -3296,8 +3289,7 @@ def measure_bell_state_fidelities(
         readout_mitigation = True
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = False
     if save_data is None:
@@ -3427,8 +3419,7 @@ def measure_bell_states(
         plot_round = False
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if reset_awg_and_capunits is None:
         reset_awg_and_capunits = True
     if reset_awg_and_capunits_each_time is None:

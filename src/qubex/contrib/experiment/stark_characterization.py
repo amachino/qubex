@@ -13,7 +13,6 @@ from qubex.analysis import FitStatus, fitting
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
-    DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
 )
 from qubex.experiment.models.experiment_result import (
@@ -24,6 +23,7 @@ from qubex.experiment.models.experiment_result import (
 from qubex.pulse import FlatTop, PulseSchedule, VirtualZ
 
 from ._deprecated_options import resolve_shot_options
+from ._measurement_defaults import resolve_shot_interval
 
 
 def _normalize_targets(
@@ -131,8 +131,7 @@ def stark_t1_experiment(
     )
     if n_shots is None:
         n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if plot is None:
         plot = True
     if save_image is None:
@@ -296,8 +295,7 @@ def stark_ramsey_experiment(
     )
     if n_shots is None:
         n_shots = CALIBRATION_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
+    shot_interval = resolve_shot_interval(exp, shot_interval)
     if envelope_region is None:
         envelope_region = "full"
     if plot is None:
