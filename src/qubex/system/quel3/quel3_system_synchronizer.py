@@ -114,8 +114,8 @@ class Quel3SystemSynchronizer:
         update_backend_settings: bool = False,
         push_boxes: Callable[[Sequence[str]], None],
     ) -> None:
-        """Validate and optionally deploy a target before publishing it to the registry."""
-        del push_boxes
+        """Deploy and read back the instrument unconditionally before publishing its target."""
+        del update_backend_settings, push_boxes
         if (
             not target.label
             or target.label != target.label.strip()
@@ -153,10 +153,9 @@ class Quel3SystemSynchronizer:
             experiment_system=experiment_system,
             target=target,
         )
-        if update_backend_settings:
-            self._backend_controller.deploy_instrument(
-                instrument=specification, append=True
-            )
+        self._backend_controller.deploy_instrument(
+            instrument=specification, append=True
+        )
         experiment_system.add_target(target)
 
     def fetch_backend_settings_from_hardware(

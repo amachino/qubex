@@ -586,14 +586,14 @@ def _register_quel3(env: Any, **overrides: Any) -> None:
     env.context.register_custom_target(**options)
 
 
-@pytest.mark.parametrize("update", [False, True])
+@pytest.mark.parametrize("update", [None, False, True])
 @pytest.mark.parametrize(
     "target_type", [kind for kind in TargetType if kind != TargetType.UNKNOWN]
 )
 def test_quel3_custom_target_registration(
-    quel3_registration: Any, target_type: TargetType, update: bool
+    quel3_registration: Any, target_type: TargetType, update: bool | None
 ) -> None:
-    """Custom targets should register offline or append a correctly typed instrument without NCO writes."""
+    """Custom targets should always append an instrument before registration regardless of the update flag."""
     env = quel3_registration
     port_number = (
         1
@@ -611,7 +611,7 @@ def test_quel3_custom_target_registration(
         target_qubit_label="Q01"
         if target_type in (TargetType.CTRL_CR, TargetType.CTRL_2Q)
         else None,
-        update_backend_settings=update,
+        **({} if update is None else {"update_backend_settings": update}),
     )
     target = env.system.get_target("custom")
     assert target.channel is port.channels[0]
@@ -620,31 +620,29 @@ def test_quel3_custom_target_registration(
     assert port.cnco_freq is None
     assert target.channel.fnco_freq is None
     assert env.manager.push_calls == []
-    assert len(env.hardware.calls) == int(update)
-    assert env.hardware.read_count == int(update)
+    assert len(env.hardware.calls) == 1
+    assert env.hardware.read_count == 1
     cache = env.cache.snapshot()
-    assert set(cache) == (
-        {"sibling", "elsewhere", "custom"} if update else {"sibling", "elsewhere"}
+    assert set(cache) == {"sibling", "elsewhere", "custom"}
+    spec = env.hardware.calls[0]
+    assert spec.alias == "custom"
+    assert spec.port_id == (
+        "Q3:trx_p00p01"
+        if target_type == TargetType.READ
+        else f"Q3:tx_p{port_number:02d}"
     )
-    if update:
-        spec = env.hardware.calls[0]
-        assert spec.alias == "custom"
-        assert spec.port_id == (
-            "Q3:trx_p00p01"
-            if target_type == TargetType.READ
-            else f"Q3:tx_p{port_number:02d}"
-        )
-        assert spec.role == (
-            "TRANSCEIVER" if target_type == TargetType.READ else "TRANSMITTER"
-        )
-        assert spec.frequency_range_min_hz == pytest.approx(4.1e9)
-        assert spec.frequency_range_max_hz == pytest.approx(4.3e9)
+    assert spec.role == (
+        "TRANSCEIVER" if target_type == TargetType.READ else "TRANSMITTER"
+    )
+    assert spec.frequency_range_min_hz == pytest.approx(4.1e9)
+    assert spec.frequency_range_max_hz == pytest.approx(4.3e9)
 
 
 @pytest.mark.parametrize("failure", ["write", "read"])
 @pytest.mark.parametrize("replace", [False, True])
+@pytest.mark.parametrize("update", [None, False, True])
 def test_quel3_registration_failure_preserves_registry(
-    quel3_registration: Any, failure: str, replace: bool
+    quel3_registration: Any, failure: str, replace: bool, update: bool | None
 ) -> None:
     """Failed deployment should retain the registry and invalidate only the touched port cache."""
     env = quel3_registration
@@ -653,7 +651,11 @@ def test_quel3_registration_failure_preserves_registry(
     previous = env.system.gen_targets
     env.hardware.failure = failure
     with pytest.raises(RuntimeError, match="failed"):
-        _register_quel3(env, frequency=4.4, update_backend_settings=True)
+        _register_quel3(
+            env,
+            frequency=4.4,
+            **({} if update is None else {"update_backend_settings": update}),
+        )
     assert env.system.gen_targets == previous
     assert set(env.cache.snapshot()) == {"elsewhere"}
 
@@ -701,28 +703,39 @@ def test_quel3_invalid_registration_is_side_effect_free(
     assert env.cache.snapshot() == cache
 
 
-@pytest.mark.parametrize("deployed", [False, True])
+@pytest.mark.parametrize("update", [False, True])
 def test_quel3_rejects_registered_alias_port_move(
-    quel3_registration: Any, deployed: bool
+    quel3_registration: Any, update: bool
 ) -> None:
-    """A registered alias should not move to another port even before its first deployment."""
+    """A registered alias should not move to another port regardless of its original update flag."""
     env = quel3_registration
-    _register_quel3(env, update_backend_settings=deployed)
+    _register_quel3(env, update_backend_settings=update)
     original = env.system.get_target("custom")
     env.context.control_system.port = env.box.get_port(4)
     with pytest.raises(ValueError, match="port"):
         _register_quel3(env, port_number=4, update_backend_settings=True)
     assert env.system.get_target("custom") is original
-    assert len(env.hardware.calls) == int(deployed)
+    assert len(env.hardware.calls) == 1
 
 
-def test_quel3_rejects_cached_alias_port_move(quel3_registration: Any) -> None:
+@pytest.mark.parametrize("update", [None, False, True])
+def test_quel3_rejects_cached_alias_port_move(
+    quel3_registration: Any,
+    update: bool | None,
+) -> None:
     """A cached hardware alias on another port should be rejected before deployment."""
     env = quel3_registration
+    previous_registry = env.system.gen_targets
+    previous_cache = env.cache.snapshot()
     with pytest.raises(ValueError, match="port"):
-        _register_quel3(env, label="elsewhere", update_backend_settings=True)
+        _register_quel3(
+            env,
+            label="elsewhere",
+            **({} if update is None else {"update_backend_settings": update}),
+        )
     assert env.hardware.calls == []
-    assert "elsewhere" not in env.system.gen_targets
+    assert env.system.gen_targets == previous_registry
+    assert env.cache.snapshot() == previous_cache
 
 
 @pytest.mark.parametrize(
@@ -770,10 +783,10 @@ def test_quel1_still_requires_explicit_channel() -> None:
 
 
 @pytest.mark.parametrize("margin", [-0.1, float("nan"), float("inf"), 1.25])
-def test_quel3_registration_validates_margin_offline(
+def test_quel3_registration_validates_margin_before_deployment(
     quel3_registration: Any, margin: float
 ) -> None:
-    """Offline registration should reject invalid instrument frequency margins without publishing a target."""
+    """Invalid instrument frequency margins should fail before deployment or target publication."""
     env = quel3_registration
     env.system.control_params.get_frequency_margin = lambda _: margin
     with pytest.raises(ValueError, match="frequency_margin"):

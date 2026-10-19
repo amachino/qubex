@@ -104,10 +104,11 @@ readout:
   unit-decorated alias, cache insertion strips only the matching unit prefix.
 - A partial deploy replaces every instrument on each touched port. Include all
   targets that must remain on a shared port. Other cached ports are preserved.
-- Custom target registration with `update_backend_settings=True` uses the
-  single-instrument API with `append=True`, preserving other aliases on the
-  touched port. It accepts an integer `port_number`; the QuEL-3 planner derives
-  the native instrument port ID from the logical target and existing wiring.
+- QuEL-3 custom target registration always uses the single-instrument API
+  with `append=True`, regardless of `update_backend_settings`, preserving other
+  aliases on the touched port. It accepts an integer `port_number`; the QuEL-3
+  planner derives the native instrument port ID from the logical target and
+  existing wiring.
   Its optional channel number is a model reference, not an instrument allocation.
   READ targets require their qubit's mux and one same-unit input pair; see [custom target registration](quel3-configuration-design.md#custom-target-registration).
 - Connect acquires all existing instruments, and explicit refresh acquires all

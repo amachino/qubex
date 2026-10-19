@@ -1147,9 +1147,10 @@ class ExperimentContext:
         Resolve a custom target and delegate registration to the system manager.
 
         Frequencies are in GHz. An omitted channel selects channel 0 for
-        QuEL-3; QuEL-1 requires an explicit channel. Hardware updates are opt-in
-        through `update_backend_settings`, with `update_lsi` retained as an
-        alias. See `Experiment.register_custom_target` for lifecycle details.
+        QuEL-3; QuEL-1 requires an explicit channel. QuEL-3 always deploys the
+        instrument. `update_backend_settings` controls hardware updates only
+        for QuEL-1, with `update_lsi` retained as an alias. See
+        `Experiment.register_custom_target` for lifecycle details.
         """
         if target_type is None:
             target_type = TargetType.CTRL_GE

@@ -123,7 +123,6 @@ exp.register_custom_target(
     box_id="quel3-02-a01",
     port_number=2,
     qubit_label="Q00",
-    update_backend_settings=True,
 )
 ```
 
@@ -141,10 +140,13 @@ instrument or limit the number of logical targets. QuEL-1 still requires an
 explicit channel number. Keep instrument frequency ranges and simultaneous
 hardware resource limits separate from logical target registration.
 
-With `update_backend_settings=False` (the default), validate the specification
-and register the target without hardware IO. Register the same target again
-with `True` to deploy it. The system manager delegates registration to the
-active synchronizer through the common `SystemSynchronizer` contract. The
+QuEL-3 always deploys and reads back the instrument before registering the
+target, including when `update_backend_settings` is False or omitted. Offline
+registration is not supported. The option retains its existing meaning for
+QuEL-1 FNCO updates and confirmed box pushes.
+
+The system manager delegates registration to the active synchronizer through
+the common `SystemSynchronizer` contract. The
 QuEL-3 synchronizer validates the planner's specification and calls
 `deploy_instrument(..., append=True)`. This preserves other aliases on the port;
 ordinary `push()` retains its port-replacement semantics. The backend refreshes
@@ -164,12 +166,12 @@ Registered targets cannot move between ports, and deployment rejects aliases
 known to be cached on another port before writing. Unknown external changes
 remain subject to hardware readback validation.
 
-For hardware updates, publish the new target only after deployment and readback
-succeed. A write or readback failure preserves the previous registry and leaves
+Publish the new target only after deployment and readback succeed.
+A write or readback failure preserves the previous registry and leaves
 the touched port uncached; hardware changes are not rolled back. Recover by
-redeploying or explicitly refreshing the instrument cache. Offline registration
-does not make an undeployed target executable. CNCO/FNCO allocation belongs to
-quelware; registration does not change those fields in the logical channel.
+redeploying or explicitly refreshing the instrument cache. CNCO/FNCO allocation
+belongs to quelware; registration does not change those fields in the logical
+channel.
 
 ### Implementation ownership
 

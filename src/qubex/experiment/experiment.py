@@ -878,10 +878,10 @@ class Experiment:
             Generator role, defaulting to CTRL_GE. QuEL-3 supports control,
             PUMP, and READ targets; UNKNOWN is unsupported.
         update_backend_settings : bool | None, optional
-            Defaults to False. QuEL-3 registers offline when false and appends
-            one instrument when true, preserving other aliases on the port.
-            QuEL-1 defines the target and optionally updates FNCO and pushes
-            box settings using the existing confirmation flow.
+            Controls QuEL-1 FNCO updates and confirmed box pushes; defaults
+            to False. QuEL-3 always appends and reads back the instrument,
+            even when this option is False or omitted, preserving other aliases
+            on the port.
         **deprecated_options : Any
             Deprecated `update_lsi` alias for `update_backend_settings`.
 
@@ -893,8 +893,8 @@ class Experiment:
         registering an additional READ target does not change default readout
         selection. Pass its label explicitly in pulse and capture schedules.
 
-        QuEL-3 validates specifications before registration. Hardware updates
-        finish deployment and readback before publishing the target. If either
+        QuEL-3 always validates, deploys, and reads back the instrument before
+        publishing the target; offline registration is not supported. If either
         operation fails, the registry is unchanged and the touched port's
         execution cache is invalidated. Hardware writes are not rolled back. Diagnostic backend
         settings are refreshed separately with `pull()`.
