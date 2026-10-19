@@ -446,3 +446,19 @@ def test_failed_append_readback_does_not_publish_partial_information(
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
     assert cache.snapshot() == {"Q01": untouched}
+
+
+def test_single_deploy_rejects_alias_on_another_cached_port(
+    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
+) -> None:
+    """Cross-port alias collisions should fail before touching hardware or the cache."""
+    manager, hardware, cache = deployment
+    before = cache.snapshot()
+    with pytest.raises(ValueError, match="port"):
+        manager.deploy_instrument(
+            instrument=_spec("Q01"),
+            instrument_cache=cache,
+            resource_reader=cast(Any, hardware),
+        )
+    assert hardware.deploy_calls == []
+    assert cache.snapshot() == before

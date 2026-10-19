@@ -451,7 +451,8 @@ class Quel3BackendController(BackendController):
         Raises
         ------
         ValueError
-            Hardware readback is invalid.
+            Hardware readback is invalid, or the alias is already cached on
+            another port. Known cross-port collisions fail before writing.
 
         Notes
         -----
