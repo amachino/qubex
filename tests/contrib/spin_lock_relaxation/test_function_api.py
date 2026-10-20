@@ -17,6 +17,7 @@ from qubex.contrib.experiment.spin_lock_relaxation import (
     _fit_global_model,
     _normalization_noise,
     _predict_expectations,
+    _print_fit_summary,
     _resolve_drive,
     _resolve_duration_range,
 )
@@ -35,9 +36,9 @@ def test_spin_lock_relaxation_is_exported_from_contrib() -> None:
 @pytest.mark.parametrize(
     ("t1", "t2_echo", "expected_start", "expected_stop", "expected_size"),
     [
-        (10_000.0, 20_000.0, 1_000.0, 100_000.0, 21),
-        (10_000.0, None, 1_000.0, 50_000.0, 21),
-        (None, 500.0, 100.0, 2_500.0, 21),
+        (10_000.0, 20_000.0, 250.0, 400_000.0, 21),
+        (10_000.0, None, 250.0, 200_000.0, 21),
+        (None, 500.0, 100.0, 10_000.0, 21),
         (None, None, 100.0, 200_000.0, 31),
     ],
 )
@@ -86,7 +87,7 @@ def test_default_duration_range_rejects_unmeasurably_short_coherence() -> None:
     class _Loader:
         @staticmethod
         def load_param_data(name: str) -> dict[str, float | None]:
-            return {"Q00": 10.0 if name == "t1" else None}
+            return {"Q00": 1.0 if name == "t1" else None}
 
     exp: Any = SimpleNamespace(
         ctx=SimpleNamespace(
@@ -98,6 +99,30 @@ def test_default_duration_range_rejects_unmeasurably_short_coherence() -> None:
 
     with pytest.raises(ValueError, match="too short"):
         _resolve_duration_range(exp, "Q00", None)
+
+
+def test_duration_range_rejects_zero_after_discretization() -> None:
+    """Durations rounded to zero should fail before measurement."""
+
+    class _Util:
+        @staticmethod
+        def discretize_time_range(
+            values: Any,
+            *,
+            sampling_period: float,
+        ) -> np.ndarray:
+            array = np.asarray(values, dtype=float)
+            return np.round(array / sampling_period) * sampling_period
+
+    exp: Any = SimpleNamespace(
+        ctx=SimpleNamespace(
+            measurement=SimpleNamespace(sampling_period=4.0),
+            util=_Util(),
+        )
+    )
+
+    with pytest.raises(ValueError, match="sampling grid"):
+        _resolve_duration_range(exp, "Q00", [1.0, 4.0, 8.0, 12.0])
 
 
 def test_drive_amplitude_takes_precedence_over_rabi_frequency() -> None:
@@ -272,6 +297,24 @@ def test_global_fit_rejects_nonincreasing_durations() -> None:
         _fit_global_model([100.0, 300.0, 200.0], observations, sigma=0.01)
 
 
+def test_global_fit_rejects_an_unconverged_optimizer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unconverged optimizer should not produce a reported fit."""
+    monkeypatch.setattr(
+        "scipy.optimize.least_squares",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            success=False,
+            message="maximum evaluations exceeded",
+        ),
+    )
+    durations = np.asarray([100.0, 200.0, 300.0])
+    observations = np.zeros((3, 7))
+
+    with pytest.raises(RuntimeError, match="maximum evaluations exceeded"):
+        _fit_global_model(durations, observations, sigma=0.01)
+
+
 def test_normalization_noise_rejects_invalid_calibration() -> None:
     """Invalid Rabi normalization noise should not become a fabricated error bar."""
     exp: Any = SimpleNamespace(
@@ -284,3 +327,38 @@ def test_normalization_noise_rejects_invalid_calibration() -> None:
 
     with pytest.raises(ValueError, match="normalization noise"):
         _normalization_noise(exp, "Q00")
+
+
+def test_fit_summary_is_printed_separately_from_figure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Fit and derived parameters should be written to standard output."""
+    _print_fit_summary(
+        target="Q00",
+        fit={
+            "parameters": {
+                "theta": 0.1,
+                "t1_rho": 10_000.0,
+                "t2_rho": 8_000.0,
+                "p_inf": -0.2,
+            },
+            "errors": {
+                "theta": 0.01,
+                "t1_rho": 500.0,
+                "t2_rho": 400.0,
+                "p_inf": 0.03,
+            },
+        },
+        rabi_frequency=0.02,
+        shift=0.002,
+        shift_error=0.0002,
+        axis_frequency=0.0201,
+        axis_frequency_error=0.0001,
+    )
+
+    output = capsys.readouterr().out
+    assert "Spin-lock relaxation fit: Q00" in output
+    assert "θ = 0.1 ± 0.01 rad" in output
+    assert "T1ρ = 10 ± 0.5 μs" in output
+    assert "shift = 2 ± 0.2 MHz" in output
+    assert "axis rotation frequency = 20.1 ± 0.1 MHz" in output

@@ -92,8 +92,8 @@ def _default_duration_range(exp: Experiment, target: str) -> np.ndarray:
     if not coherence_times:
         return DEFAULT_DURATION_RANGE.copy()
 
-    start = max(MIN_DURATION, 0.1 * min(coherence_times))
-    stop = 5.0 * max(coherence_times)
+    start = max(MIN_DURATION, 0.025 * min(coherence_times))
+    stop = 20.0 * max(coherence_times)
     if stop <= start:
         raise ValueError(
             f"Stored coherence time for `{target}` is too short to build a "
@@ -118,13 +118,21 @@ def _resolve_duration_range(
     if not np.all(np.isfinite(durations)) or np.any(durations <= 0):
         raise ValueError("duration_range must contain positive finite values.")
 
+    sampling_period = float(exp.ctx.measurement.sampling_period)
+    if not np.isfinite(sampling_period) or sampling_period <= 0:
+        raise ValueError("measurement sampling_period must be positive and finite.")
     durations = exp.ctx.util.discretize_time_range(
         durations,
-        sampling_period=exp.ctx.measurement.sampling_period,
+        sampling_period=sampling_period,
     )
     if durations is None:
         raise ValueError("duration_range could not be discretized.")
-    durations = np.unique(np.asarray(durations, dtype=np.float64))
+    durations = np.asarray(durations, dtype=np.float64)
+    if not np.all(np.isfinite(durations)) or np.any(durations <= 0):
+        raise ValueError(
+            "duration_range must remain positive and finite on the sampling grid."
+        )
+    durations = np.unique(durations)
     if durations.size < 3:
         raise ValueError("duration_range must leave at least 3 unique points.")
     return durations
@@ -154,7 +162,7 @@ def _resolve_drive(
             amplitude = float(exp.pulse.calc_control_amplitude(target, requested_rabi))
     if not np.isfinite(amplitude) or abs(amplitude) > 1:
         raise ValueError(
-            f"Drive amplitude for `{target}` must be finite and at most 1."
+            f"Drive amplitude for `{target}` must be finite with magnitude at most 1."
         )
 
     estimated_rabi = float(exp.pulse.calc_rabi_rate(target, amplitude))
@@ -298,6 +306,9 @@ def _fit_global_model(
         bounds=(lower, upper),
         max_nfev=20_000,
     )
+    if not fit.success:
+        raise RuntimeError(f"Spin-lock relaxation fit failed: {fit.message}")
+
     names = ("theta", "t1_rho", "t2_rho", "p_inf", "a0", "b0", "p0")
     dof = max(1, measured.size - fit.x.size)
     reduced_chi_squared = float(2.0 * fit.cost / dof)
@@ -472,11 +483,6 @@ def _make_figure(
     durations: np.ndarray,
     points: Mapping[str, np.ndarray],
     fit: Mapping[str, Any],
-    rabi_frequency: float,
-    shift: float,
-    shift_error: float,
-    axis_frequency: float,
-    axis_frequency_error: float,
 ) -> go.Figure:
     figure = viz.make_figure(width=1200, height=480)
     figure.set_subplots(
@@ -526,34 +532,37 @@ def _make_figure(
         )
         figure.update_yaxes(title_text=name, row=1, col=column)
 
+    figure.update_layout(title=f"Tilted-axis spin-lock relaxation: {target}")
+    return figure
+
+
+def _print_fit_summary(
+    *,
+    target: str,
+    fit: Mapping[str, Any],
+    rabi_frequency: float,
+    shift: float,
+    shift_error: float,
+    axis_frequency: float,
+    axis_frequency_error: float,
+) -> None:
+    parameters = fit["parameters"]
     errors = fit["errors"]
-    summary = (
-        f"θ = {parameters['theta']:.5g} ± {errors['theta']:.2g} rad<br>"
-        f"T<sub>1ρ</sub> = {parameters['t1_rho'] * 1e-3:.5g} ± "
-        f"{errors['t1_rho'] * 1e-3:.2g} μs<br>"
-        f"T<sub>2ρ</sub> = {parameters['t2_rho'] * 1e-3:.5g} ± "
-        f"{errors['t2_rho'] * 1e-3:.2g} μs<br>"
-        f"p<sub>∞</sub> = {parameters['p_inf']:.5g} ± {errors['p_inf']:.2g}<br>"
-        f"Rabi frequency = {rabi_frequency * 1e3:.5g} MHz<br>"
-        f"shift = {shift * 1e3:.5g} ± {shift_error * 1e3:.2g} MHz<br>"
-        f"axis rotation frequency = {axis_frequency * 1e3:.5g} ± "
+    print(f"Spin-lock relaxation fit: {target}")
+    print(f"  θ = {parameters['theta']:.5g} ± {errors['theta']:.2g} rad")
+    print(
+        f"  T1ρ = {parameters['t1_rho'] * 1e-3:.5g} ± {errors['t1_rho'] * 1e-3:.2g} μs"
+    )
+    print(
+        f"  T2ρ = {parameters['t2_rho'] * 1e-3:.5g} ± {errors['t2_rho'] * 1e-3:.2g} μs"
+    )
+    print(f"  p∞ = {parameters['p_inf']:.5g} ± {errors['p_inf']:.2g}")
+    print(f"  Rabi frequency = {rabi_frequency * 1e3:.5g} MHz")
+    print(f"  shift = {shift * 1e3:.5g} ± {shift_error * 1e3:.2g} MHz")
+    print(
+        f"  axis rotation frequency = {axis_frequency * 1e3:.5g} ± "
         f"{axis_frequency_error * 1e3:.2g} MHz"
     )
-    figure.add_annotation(
-        x=1.0,
-        y=1.19,
-        xref="paper",
-        yref="paper",
-        text=summary,
-        align="left",
-        showarrow=False,
-        xanchor="right",
-        yanchor="top",
-    )
-    figure.update_layout(
-        title=f"Tilted-axis spin-lock relaxation: {target}", margin={"t": 155}
-    )
-    return figure
 
 
 def _analyze_target(
@@ -586,6 +595,10 @@ def _analyze_target(
         target=target,
         durations=durations,
         points=points,
+        fit=fit,
+    )
+    _print_fit_summary(
+        target=target,
         fit=fit,
         rabi_frequency=rabi_frequency,
         shift=shift,
@@ -651,8 +664,8 @@ def spin_lock_relaxation(
     duration_range
         Flat-top durations in ns. One explicit range is reused for every target.
         Otherwise, each target gets 21 logarithmic points from
-        `max(100 ns, 0.1 * min(T1, T2_echo))` to
-        `5 * max(T1, T2_echo)`. A single available coherence time is used for
+        `max(100 ns, 0.025 * min(T1, T2_echo))` to
+        `20 * max(T1, T2_echo)`. A single available coherence time is used for
         both limits; if neither is available, 31 points from 100 ns to 200 μs
         are used.
     ramp_duration
@@ -676,8 +689,20 @@ def spin_lock_relaxation(
         frequencies. Durations are in ns and frequencies are in GHz. One
         three-panel figure is stored as `figures["{target}_relaxation"]`.
 
+    Raises
+    ------
+    ValueError
+        If an input, calibration value, duration range, or measured expectation
+        value is invalid.
+    RuntimeError
+        If the global nonlinear fit does not converge.
+
     Notes
     -----
+    This function performs hardware measurements sequentially for each target
+    and prints one fit summary per target. Figures are displayed only when
+    `plot=True` and saved only when `save_image=True`.
+
     Each requested duration is the flat-top duration; the total locking pulse
     lasts `duration + 2 * ramp_duration`. The fit uses all seven expectation
     values directly with one independent rotation phase per duration. Its
@@ -697,17 +722,18 @@ def spin_lock_relaxation(
         raise ValueError("targets must contain at least one target.")
     if not np.isfinite(ramp_duration) or ramp_duration < 0:
         raise ValueError("ramp_duration must be finite and nonnegative.")
-    if n_shots is None:
-        n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
-    if (
-        isinstance(n_shots, bool)
-        or not isinstance(n_shots, (int, np.integer))
-        or n_shots <= 0
+    if n_shots is not None and (
+        isinstance(n_shots, bool) or not isinstance(n_shots, (int, np.integer))
     ):
         raise ValueError("n_shots must be a positive integer.")
-    if not np.isfinite(shot_interval) or shot_interval < 0:
+    resolved_n_shots = int(DEFAULT_SHOTS if n_shots is None else n_shots)
+    if resolved_n_shots <= 0:
+        raise ValueError("n_shots must be a positive integer.")
+
+    resolved_shot_interval = float(
+        DEFAULT_INTERVAL if shot_interval is None else shot_interval
+    )
+    if not np.isfinite(resolved_shot_interval) or resolved_shot_interval < 0:
         raise ValueError("shot_interval must be finite and nonnegative.")
 
     exp.pulse.validate_rabi_params(target_list)
@@ -730,8 +756,8 @@ def spin_lock_relaxation(
             durations=durations,
             drive_amplitude=amplitude,
             ramp_duration=float(ramp_duration),
-            n_shots=int(n_shots),
-            shot_interval=float(shot_interval),
+            n_shots=resolved_n_shots,
+            shot_interval=resolved_shot_interval,
         )
         target_result, figure = _analyze_target(
             exp,
