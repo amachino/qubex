@@ -15,9 +15,12 @@ from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOT
 from qubex.experiment.models.result import Result
 from qubex.pulse import FlatTop, PulseSchedule
 
-__all__ = ["spin_lock_relaxation"]
+__all__ = ["spin_lock_relaxation", "spin_lock_relaxation_spectroscopy"]
 
 DEFAULT_DURATION_RANGE = np.geomspace(100.0, 200e3, 31)
+DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = (
+    0.12 * np.tan(np.pi / 3 * np.linspace(0, 1, 15)) / np.sqrt(3)
+)[1:]
 DEFAULT_RAMP_DURATION = 16.0
 MIN_DURATION = 100.0
 EXPECTATION_LABELS = ("X+", "Z+", "X-", "Z-", "Xi", "Yi", "Zi")
@@ -136,6 +139,25 @@ def _resolve_duration_range(
     if durations.size < 3:
         raise ValueError("duration_range must leave at least 3 unique points.")
     return durations
+
+
+def _resolve_spin_lock_frequency_range(
+    spin_lock_frequency_range: ArrayLike | None,
+) -> np.ndarray:
+    frequencies = np.array(
+        DEFAULT_SPIN_LOCK_FREQUENCY_RANGE
+        if spin_lock_frequency_range is None
+        else spin_lock_frequency_range,
+        dtype=np.float64,
+        copy=True,
+    )
+    if frequencies.ndim != 1 or frequencies.size == 0:
+        raise ValueError("spin_lock_frequency_range must be a non-empty 1D array.")
+    if not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0):
+        raise ValueError(
+            "spin_lock_frequency_range must contain positive finite values."
+        )
+    return frequencies
 
 
 def _resolve_drive(
@@ -427,19 +449,42 @@ def _measure_target(
     n_shots: int,
     shot_interval: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    points: list[tuple[float, str, Literal["X", "Y", "Z"]]] = [
-        (duration, initial_state, basis)
+    raw_data, expectations = _measure_target_grid(
+        exp,
+        target=target,
+        durations=durations,
+        drive_amplitudes=np.asarray([drive_amplitude]),
+        ramp_duration=ramp_duration,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+    )
+    return raw_data[0], expectations[0]
+
+
+def _measure_target_grid(
+    exp: Experiment,
+    *,
+    target: str,
+    durations: np.ndarray,
+    drive_amplitudes: np.ndarray,
+    ramp_duration: float,
+    n_shots: int,
+    shot_interval: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    points: list[tuple[float, float, str, Literal["X", "Y", "Z"]]] = [
+        (amplitude, duration, initial_state, basis)
+        for amplitude in drive_amplitudes
         for duration in durations
         for initial_state, basis in MEASUREMENT_SETTINGS
     ]
 
     def sequence(index: int) -> PulseSchedule:
-        duration, initial_state, basis = points[int(index)]
+        amplitude, duration, initial_state, basis = points[int(index)]
         return _build_sequence(
             exp,
             target=target,
             flat_duration=float(duration),
-            drive_amplitude=drive_amplitude,
+            drive_amplitude=float(amplitude),
             ramp_duration=ramp_duration,
             initial_state=initial_state,
             basis=basis,
@@ -457,11 +502,10 @@ def _measure_target(
             ylabel="Pauli expectation",
         )
     target_data = sweep.data[target]
+    shape = (drive_amplitudes.size, durations.size, len(EXPECTATION_LABELS))
     return (
-        np.asarray(target_data.data).reshape(durations.size, len(EXPECTATION_LABELS)),
-        np.asarray(target_data.normalized, dtype=np.float64).reshape(
-            durations.size, len(EXPECTATION_LABELS)
-        ),
+        np.asarray(target_data.data).reshape(shape),
+        np.asarray(target_data.normalized, dtype=np.float64).reshape(shape),
     )
 
 
@@ -484,7 +528,7 @@ def _make_figure(
     points: Mapping[str, np.ndarray],
     fit: Mapping[str, Any],
 ) -> go.Figure:
-    figure = viz.make_figure(width=1200, height=480)
+    figure = viz.make_figure(width=1200, height=360)
     figure.set_subplots(
         rows=1,
         cols=3,
@@ -577,6 +621,54 @@ def _analyze_target(
     ramp_duration: float,
 ) -> tuple[dict[str, Any], go.Figure]:
     sigma = _normalization_noise(exp, target)
+    analysis = _analyze_expectations(
+        durations=durations,
+        expectations=expectations,
+        sigma=sigma,
+        rabi_frequency=rabi_frequency,
+    )
+    fit = analysis["fit"]
+    points = analysis["point_estimates"]
+    derived = analysis["derived"]
+
+    figure = _make_figure(
+        target=target,
+        durations=durations,
+        points=points,
+        fit=fit,
+    )
+    _print_fit_summary(
+        target=target,
+        fit=fit,
+        rabi_frequency=rabi_frequency,
+        shift=derived["shift"],
+        shift_error=derived["shift_error"],
+        axis_frequency=derived["axis_rotation_frequency"],
+        axis_frequency_error=derived["axis_rotation_frequency_error"],
+    )
+    data = {
+        "duration_range": durations,
+        "total_pulse_duration_range": durations + 2.0 * ramp_duration,
+        "ramp_duration": ramp_duration,
+        "drive_amplitude": drive_amplitude,
+        "rabi_frequency": rabi_frequency,
+        "expectation_labels": EXPECTATION_LABELS,
+        "raw_data": raw_data,
+        "expectations": expectations,
+        "expectation_errors": np.full(expectations.shape, sigma),
+        **analysis,
+        "uncertainty_method": "rabi_normalization_noise_and_fit_covariance",
+    }
+    return data, figure
+
+
+def _analyze_expectations(
+    *,
+    durations: np.ndarray,
+    expectations: np.ndarray,
+    sigma: float,
+    rabi_frequency: float,
+) -> dict[str, Any]:
     fit = _fit_global_model(durations, expectations, sigma=sigma)
     theta = fit["parameters"]["theta"]
     theta_error = fit["errors"]["theta"]
@@ -591,31 +683,7 @@ def _analyze_target(
     diagnostics["a_outside_physical_range"] = (points["a"] < 0) | (points["a"] > 1)
     diagnostics["b_outside_physical_range"] = (points["b"] < 0) | (points["b"] > 1)
 
-    figure = _make_figure(
-        target=target,
-        durations=durations,
-        points=points,
-        fit=fit,
-    )
-    _print_fit_summary(
-        target=target,
-        fit=fit,
-        rabi_frequency=rabi_frequency,
-        shift=shift,
-        shift_error=shift_error,
-        axis_frequency=axis_frequency,
-        axis_frequency_error=axis_frequency_error,
-    )
-    data = {
-        "duration_range": durations,
-        "total_pulse_duration_range": durations + 2.0 * ramp_duration,
-        "ramp_duration": ramp_duration,
-        "drive_amplitude": drive_amplitude,
-        "rabi_frequency": rabi_frequency,
-        "expectation_labels": EXPECTATION_LABELS,
-        "raw_data": raw_data,
-        "expectations": expectations,
-        "expectation_errors": np.full(expectations.shape, sigma),
+    return {
         "point_estimates": points,
         "fit": fit,
         "derived": {
@@ -625,9 +693,263 @@ def _analyze_target(
             "axis_rotation_frequency_error": axis_frequency_error,
         },
         "diagnostics": diagnostics,
+    }
+
+
+def _resolve_frequency_sweep(
+    exp: Experiment,
+    *,
+    target: str,
+    requested_frequencies: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    resolved = [
+        _resolve_drive(
+            exp,
+            target=target,
+            drive_amplitude=None,
+            rabi_frequency=float(frequency),
+        )
+        for frequency in requested_frequencies
+    ]
+    amplitudes, rabi_frequencies = zip(*resolved, strict=True)
+    return np.asarray(amplitudes), np.asarray(rabi_frequencies)
+
+
+def _spectroscopy_sort_indices(axis_frequencies: np.ndarray) -> np.ndarray:
+    finite_indices = np.flatnonzero(np.isfinite(axis_frequencies))
+    return finite_indices[np.argsort(axis_frequencies[finite_indices])]
+
+
+def _make_parameter_heatmaps(
+    *,
+    target: str,
+    durations: np.ndarray,
+    axis_frequencies: np.ndarray,
+    point_estimates: Mapping[str, np.ndarray],
+) -> go.Figure:
+    indices = _spectroscopy_sort_indices(axis_frequencies)
+    frequencies_mhz = axis_frequencies[indices] * 1e3
+    durations_us = durations * 1e-3
+    figure = viz.make_figure(width=1200, height=360)
+    figure.set_subplots(
+        rows=1,
+        cols=3,
+        shared_yaxes=True,
+        subplot_titles=("a(t)", "b(t)", "p(t)"),
+        horizontal_spacing=0.1,
+    )
+    for column, name in enumerate(("a", "b", "p"), start=1):
+        coloraxis = "coloraxis" if name in ("a", "b") else "coloraxis2"
+        figure.add_trace(
+            go.Heatmap(
+                x=frequencies_mhz,
+                y=durations_us,
+                z=point_estimates[name][indices].T,
+                coloraxis=coloraxis,
+                hovertemplate=(
+                    "Axis frequency: %{x:.5g} MHz<br>"
+                    "Duration: %{y:.5g} μs<br>"
+                    f"{name}: %{{z:.5g}}<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=column,
+        )
+        figure.update_xaxes(
+            title_text="Axis rotation frequency (MHz)", row=1, col=column
+        )
+    figure.update_yaxes(title_text="Flattop duration (μs)", type="log", row=1, col=1)
+    figure.update_layout(
+        title=f"Spin-lock relaxation parameters: {target}",
+        coloraxis={
+            "colorscale": "Viridis",
+            "cmin": 0,
+            "cmax": 1,
+            "colorbar": {"title": "a, b", "x": 0.64},
+        },
+        coloraxis2={
+            "colorscale": "RdBu",
+            "cmin": -1,
+            "cmax": 1,
+            "cmid": 0,
+            "colorbar": {"title": "p", "x": 1.02},
+        },
+    )
+    return figure
+
+
+def _make_spectroscopy_summary_figure(
+    *,
+    target: str,
+    axis_frequencies: np.ndarray,
+    t1_rho: np.ndarray,
+    t1_rho_error: np.ndarray,
+    t2_rho: np.ndarray,
+    t2_rho_error: np.ndarray,
+    shift: np.ndarray,
+    shift_error: np.ndarray,
+) -> go.Figure:
+    indices = _spectroscopy_sort_indices(axis_frequencies)
+    frequencies_mhz = axis_frequencies[indices] * 1e3
+    series = (
+        ("T1ρ", t1_rho * 1e-3, t1_rho_error * 1e-3, "T1ρ (μs)"),
+        ("T2ρ", t2_rho * 1e-3, t2_rho_error * 1e-3, "T2ρ (μs)"),
+        ("shift", shift * 1e3, shift_error * 1e3, "Signed shift (MHz)"),
+    )
+    figure = viz.make_figure(width=1200, height=360)
+    figure.set_subplots(
+        rows=1,
+        cols=3,
+        horizontal_spacing=0.08,
+    )
+    for column, (name, values, errors, ylabel) in enumerate(series, start=1):
+        figure.add_trace(
+            go.Scatter(
+                x=frequencies_mhz,
+                y=values[indices],
+                error_y={"type": "data", "array": errors[indices]},
+                mode="markers+lines",
+                name=name,
+                showlegend=False,
+            ),
+            row=1,
+            col=column,
+        )
+        figure.update_xaxes(
+            title_text="Axis rotation frequency (MHz)", row=1, col=column
+        )
+        figure.update_yaxes(title_text=ylabel, row=1, col=column)
+    figure.add_shape(
+        type="line",
+        x0=0,
+        x1=1,
+        y0=0,
+        y1=0,
+        xref="x3 domain",
+        yref="y3",
+        line={"color": "gray", "dash": "dot"},
+    )
+    figure.update_layout(title=f"Spin-lock relaxation spectroscopy: {target}")
+    return figure
+
+
+def _analyze_spectroscopy_target(
+    exp: Experiment,
+    *,
+    target: str,
+    durations: np.ndarray,
+    raw_data: np.ndarray,
+    expectations: np.ndarray,
+    requested_frequencies: np.ndarray,
+    drive_amplitudes: np.ndarray,
+    rabi_frequencies: np.ndarray,
+    ramp_duration: float,
+) -> tuple[dict[str, Any], dict[str, go.Figure]]:
+    sigma = _normalization_noise(exp, target)
+    n_frequencies = rabi_frequencies.size
+    n_durations = durations.size
+    point_estimates = {
+        name: np.full((n_frequencies, n_durations), np.nan)
+        for name in ("a", "a_error", "b", "b_error", "p", "p_error", "k", "q", "phi")
+    }
+    values = {
+        name: np.full(n_frequencies, np.nan)
+        for name in (
+            "theta",
+            "theta_error",
+            "t1_rho",
+            "t1_rho_error",
+            "t2_rho",
+            "t2_rho_error",
+            "p_inf",
+            "p_inf_error",
+            "shift",
+            "shift_error",
+            "axis_rotation_frequency",
+            "axis_rotation_frequency_error",
+        )
+    }
+    fit_results: list[dict[str, Any] | None] = []
+    diagnostics: list[dict[str, Any] | None] = []
+    fit_success = np.zeros(n_frequencies, dtype=bool)
+    fit_messages: list[str] = []
+
+    for index, rabi_frequency in enumerate(rabi_frequencies):
+        try:
+            analysis = _analyze_expectations(
+                durations=durations,
+                expectations=expectations[index],
+                sigma=sigma,
+                rabi_frequency=float(rabi_frequency),
+            )
+        except (
+            ValueError,
+            RuntimeError,
+            np.linalg.LinAlgError,
+            FloatingPointError,
+        ) as exc:
+            fit_results.append(None)
+            diagnostics.append(None)
+            fit_messages.append(str(exc))
+            continue
+
+        fit = analysis["fit"]
+        derived = analysis["derived"]
+        for name, estimates in analysis["point_estimates"].items():
+            point_estimates[name][index] = estimates
+        for name in ("theta", "t1_rho", "t2_rho", "p_inf"):
+            values[name][index] = fit["parameters"][name]
+            values[f"{name}_error"][index] = fit["errors"][name]
+        for name in (
+            "shift",
+            "shift_error",
+            "axis_rotation_frequency",
+            "axis_rotation_frequency_error",
+        ):
+            values[name][index] = derived[name]
+        fit_results.append(fit)
+        diagnostics.append(analysis["diagnostics"])
+        fit_success[index] = True
+        fit_messages.append(str(fit["message"]))
+
+    figures = {
+        f"{target}_parameter_heatmaps": _make_parameter_heatmaps(
+            target=target,
+            durations=durations,
+            axis_frequencies=values["axis_rotation_frequency"],
+            point_estimates=point_estimates,
+        ),
+        f"{target}_relaxation_spectroscopy": _make_spectroscopy_summary_figure(
+            target=target,
+            axis_frequencies=values["axis_rotation_frequency"],
+            t1_rho=values["t1_rho"],
+            t1_rho_error=values["t1_rho_error"],
+            t2_rho=values["t2_rho"],
+            t2_rho_error=values["t2_rho_error"],
+            shift=values["shift"],
+            shift_error=values["shift_error"],
+        ),
+    }
+    data = {
+        "duration_range": durations,
+        "total_pulse_duration_range": durations + 2.0 * ramp_duration,
+        "ramp_duration": ramp_duration,
+        "requested_rabi_frequencies": requested_frequencies,
+        "drive_amplitudes": drive_amplitudes,
+        "rabi_frequencies": rabi_frequencies,
+        "expectation_labels": EXPECTATION_LABELS,
+        "raw_data": raw_data,
+        "expectations": expectations,
+        "expectation_errors": np.full(expectations.shape, sigma),
+        "point_estimates": point_estimates,
+        **values,
+        "fit_results": fit_results,
+        "fit_success": fit_success,
+        "fit_messages": fit_messages,
+        "diagnostics": diagnostics,
         "uncertainty_method": "rabi_normalization_noise_and_fit_covariance",
     }
-    return data, figure
+    return data, figures
 
 
 def spin_lock_relaxation(
@@ -783,5 +1105,172 @@ def spin_lock_relaxation(
             "targets": target_list,
             "results": results,
         },
+        figures=figures,
+    )
+
+
+def spin_lock_relaxation_spectroscopy(
+    exp: Experiment,
+    targets: Collection[str] | str | None = None,
+    *,
+    spin_lock_frequency_range: ArrayLike | None = None,
+    duration_range: ArrayLike | None = None,
+    ramp_duration: float = DEFAULT_RAMP_DURATION,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
+    plot: bool = True,
+    save_image: bool = False,
+) -> Result:
+    """
+    Measure tilted-axis spin-lock relaxation over a Rabi-frequency sweep.
+
+    Parameters
+    ----------
+    exp
+        Experiment used for pulse generation and measurement.
+    targets
+        Target qubits. Targets are measured independently in the given order.
+    spin_lock_frequency_range
+        Requested positive Rabi frequencies in GHz. Defaults to 14 points from
+        approximately 5.2 MHz to 120 MHz, with denser sampling at low
+        frequencies. Zero is excluded because it cannot determine `shift` from
+        `f_R tan(theta)`.
+    duration_range
+        Flat-top durations in ns. One explicit range is reused for every target.
+        When omitted, the same per-target T1/T2-echo defaults as
+        `spin_lock_relaxation()` are used.
+    ramp_duration
+        Duration of each raised-cosine ramp in ns. Defaults to 16 ns.
+    n_shots
+        Number of shots per expectation value. Defaults to `DEFAULT_SHOTS`.
+    shot_interval
+        Interval between shots in seconds. Defaults to `DEFAULT_INTERVAL`.
+    plot
+        Whether to display the parameter heatmaps and spectroscopy summary.
+    save_image
+        Whether to save both figures for each target.
+
+    Returns
+    -------
+    Result
+        The `data["results"][target]` mapping contains frequency and duration
+        axes, seven measured expectations, `a`, `b`, and `p` maps, independent
+        per-frequency global fits, and arrays for `t1_rho`, `t2_rho`, signed
+        `shift`, and axis rotation frequency. Durations are in ns and
+        frequencies are in GHz. Failed frequency fits are represented by NaN
+        values and described by `fit_success` and `fit_messages`.
+
+        Two figures are stored per target as
+        `"{target}_parameter_heatmaps"` and
+        `"{target}_relaxation_spectroscopy"`. Both use axis rotation frequency
+        on the horizontal axis.
+
+    Raises
+    ------
+    ValueError
+        If an input, calibration value, duration range, or requested frequency
+        is invalid.
+
+    Notes
+    -----
+    Each frequency is converted to drive amplitude using the stored Rabi
+    calibration and then converted back to the reported Rabi frequency. No
+    chevron recalibration is performed. The seven-expectation global fit is
+    independent at each frequency, while all durations at one frequency share
+    one fitted `theta`.
+
+    A target uses one flattened hardware sweep containing
+    `n_frequencies * n_durations * 7` measurement points. Multiple targets are
+    measured sequentially. A failed fit does not stop analysis of the remaining
+    frequencies. Frequencies with failed fits remain in the returned raw data
+    but are omitted from figures because their axis rotation frequency is not
+    defined.
+
+    The signed `shift` is the fitted effective Z component, `f_R tan(theta)`;
+    it should only be interpreted as an AC Stark shift when other detuning is
+    negligible. Rabi-frequency calibration uncertainty is not included in the
+    reported shift or axis rotation frequency uncertainty. Expectation-value
+    uncertainty uses the stored Rabi normalization noise, and pointwise error
+    bars condition on the independently fitted `theta` at each frequency.
+    """
+    target_list = _normalize_targets(exp, targets)
+    if not target_list:
+        raise ValueError("targets must contain at least one target.")
+    if not np.isfinite(ramp_duration) or ramp_duration < 0:
+        raise ValueError("ramp_duration must be finite and nonnegative.")
+    if n_shots is not None and (
+        isinstance(n_shots, bool) or not isinstance(n_shots, (int, np.integer))
+    ):
+        raise ValueError("n_shots must be a positive integer.")
+    resolved_n_shots = int(DEFAULT_SHOTS if n_shots is None else n_shots)
+    if resolved_n_shots <= 0:
+        raise ValueError("n_shots must be a positive integer.")
+    resolved_shot_interval = float(
+        DEFAULT_INTERVAL if shot_interval is None else shot_interval
+    )
+    if not np.isfinite(resolved_shot_interval) or resolved_shot_interval < 0:
+        raise ValueError("shot_interval must be finite and nonnegative.")
+
+    requested_frequencies = _resolve_spin_lock_frequency_range(
+        spin_lock_frequency_range
+    )
+    exp.pulse.validate_rabi_params(target_list)
+    results: dict[str, Any] = {}
+    figures: dict[str, go.Figure] = {}
+    for target_index, target in enumerate(target_list, start=1):
+        durations = _resolve_duration_range(exp, target, duration_range)
+        drive_amplitudes, rabi_frequencies = _resolve_frequency_sweep(
+            exp,
+            target=target,
+            requested_frequencies=requested_frequencies,
+        )
+        n_points = requested_frequencies.size * durations.size * len(EXPECTATION_LABELS)
+        print(
+            f"({target_index}/{len(target_list)}) Measuring spin-lock relaxation "
+            f"spectroscopy for {target} ({n_points} points)."
+        )
+        raw_data, expectations = _measure_target_grid(
+            exp,
+            target=target,
+            durations=durations,
+            drive_amplitudes=drive_amplitudes,
+            ramp_duration=float(ramp_duration),
+            n_shots=resolved_n_shots,
+            shot_interval=resolved_shot_interval,
+        )
+        target_result, target_figures = _analyze_spectroscopy_target(
+            exp,
+            target=target,
+            durations=durations,
+            raw_data=raw_data,
+            expectations=expectations,
+            requested_frequencies=requested_frequencies,
+            drive_amplitudes=drive_amplitudes,
+            rabi_frequencies=rabi_frequencies,
+            ramp_duration=float(ramp_duration),
+        )
+        results[target] = target_result
+        figures.update(target_figures)
+
+        failed_indices = np.flatnonzero(~target_result["fit_success"])
+        for frequency_index in failed_indices:
+            frequency_mhz = rabi_frequencies[frequency_index] * 1e3
+            message = target_result["fit_messages"][frequency_index]
+            print(f"  Fit failed at {frequency_mhz:.6g} MHz: {message}")
+
+        for figure_name, figure in target_figures.items():
+            if plot:
+                figure.show(config=viz.get_config(filename=figure_name))
+            if save_image:
+                viz.save_figure(figure, name=figure_name)
+
+    primary_figure = figures.get(f"{target_list[0]}_relaxation_spectroscopy")
+    return Result(
+        data={
+            "targets": target_list,
+            "spin_lock_frequency_range": requested_frequencies,
+            "results": results,
+        },
+        figure=primary_figure,
         figures=figures,
     )
