@@ -98,6 +98,7 @@ from .repeated_coherence_measurement import repeated_coherence_measurement
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
 from .simultaneous_qubit_spectroscopy import simultaneous_qubit_spectroscopy
+from .spin_lock_relaxation import spin_lock_relaxation
 from .spin_lock_spectroscopy import (
     spin_lock_sequence,
     spin_lock_spectroscopy,
@@ -184,6 +185,7 @@ __all__ = [
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
     "simultaneous_qubit_spectroscopy",
+    "spin_lock_relaxation",
     "spin_lock_sequence",
     "spin_lock_spectroscopy",
     "stark_ramsey_experiment",
