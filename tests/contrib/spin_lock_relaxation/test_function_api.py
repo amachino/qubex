@@ -627,6 +627,15 @@ def test_spectroscopy_analysis_recovers_each_frequency_independently() -> None:
     }
     assert len(figures["Q00_parameter_heatmaps"].data) == 3
     assert len(figures["Q00_relaxation_spectroscopy"].data) == 3
+    heatmaps = figures["Q00_parameter_heatmaps"]
+    assert heatmaps.layout.yaxis.type == "log"
+    assert heatmaps.layout.yaxis2.type == "log"
+    assert heatmaps.layout.yaxis3.type == "log"
+    summary = figures["Q00_relaxation_spectroscopy"]
+    assert summary.layout.yaxis.rangemode == "tozero"
+    assert summary.layout.yaxis.minallowed == 0
+    assert summary.layout.yaxis2.rangemode == "tozero"
+    assert summary.layout.yaxis2.minallowed == 0
 
 
 def test_spectroscopy_analysis_continues_after_one_fit_failure() -> None:

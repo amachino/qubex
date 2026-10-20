@@ -758,7 +758,8 @@ def _make_parameter_heatmaps(
         figure.update_xaxes(
             title_text="Axis rotation frequency (MHz)", row=1, col=column
         )
-    figure.update_yaxes(title_text="Flattop duration (μs)", type="log", row=1, col=1)
+        figure.update_yaxes(type="log", row=1, col=column)
+    figure.update_yaxes(title_text="Flattop duration (μs)", row=1, col=1)
     figure.update_layout(
         title=f"Spin-lock relaxation parameters: {target}",
         coloraxis={
@@ -818,7 +819,10 @@ def _make_spectroscopy_summary_figure(
         figure.update_xaxes(
             title_text="Axis rotation frequency (MHz)", row=1, col=column
         )
-        figure.update_yaxes(title_text=ylabel, row=1, col=column)
+        yaxis_options: dict[str, Any] = {"title_text": ylabel}
+        if column < 3:
+            yaxis_options.update(rangemode="tozero", minallowed=0)
+        figure.update_yaxes(row=1, col=column, **yaxis_options)
     figure.add_shape(
         type="line",
         x0=0,
