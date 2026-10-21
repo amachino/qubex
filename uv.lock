@@ -3291,7 +3291,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
     { name = "qubex", extras = ["quel1", "quel3"], marker = "extra == 'backend'" },
-    { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.7.2" },
+    { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.7.3" },
     { name = "quelware-core", marker = "extra == 'quel3'", specifier = ">=0.9.0" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxdriver-quel1", marker = "extra == 'quel1'", editable = "packages/qxdriver-quel1" },
@@ -3358,7 +3358,7 @@ wheels = [
 
 [[package]]
 name = "quelware-client"
-version = "0.7.2"
+version = "0.7.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "betterproto2" },
@@ -3366,9 +3366,9 @@ dependencies = [
     { name = "quelware-core" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/19/b5/4c8257fee2be75a0ada5314ec81e9ba0df29372ef082ffbb415159061aeb/quelware_client-0.7.2.tar.gz", hash = "sha256:32e0fffea5947cee45f8e10c868fbe820a91e7a99f5db8091c711ff13188e593", size = 69275, upload-time = "2026-09-29T08:56:23.048Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/55/9859a66340acdf22b41910cf208c5fafbc520aa8cd599694e1cb7d0bd244/quelware_client-0.7.3.tar.gz", hash = "sha256:378f194a9dc5b60af9d0620ab0179c806807d801838e46c1683baa337af93cef", size = 76003, upload-time = "2026-10-01T06:39:21.876Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/eb/83/fdd2a49bdaa48958070dc51bd81007a84f13409029834ef7e08fba6a5b4c/quelware_client-0.7.2-py3-none-any.whl", hash = "sha256:931331dad9e23b963d55b75184dbb16ca8756535e709b5f7aadc5e4da171f143", size = 48478, upload-time = "2026-09-29T08:56:18.594Z" },
+    { url = "https://files.pythonhosted.org/packages/71/dc/a889491a50040ad2e7b39baee29f2434d9329cfb9e9006840736ba97f1c2/quelware_client-0.7.3-py3-none-any.whl", hash = "sha256:b788b1282deb1cba450cc9af8a1d220729941ac25aa58ea68d4bc11aebbf43ad", size = 50789, upload-time = "2026-10-01T06:39:19.051Z" },
 ]
 
 [[package]]

@@ -1152,7 +1152,6 @@ class _ParallelInstrumentDriver:
         *,
         alias: str,
         value: complex,
-        initialize_barrier: _PhaseBarrier,
         apply_barrier: _PhaseBarrier,
         fetch_barrier: _PhaseBarrier,
     ) -> None:
@@ -1162,7 +1161,6 @@ class _ParallelInstrumentDriver:
         )
         self._alias = alias
         self._value = value
-        self._initialize_barrier = initialize_barrier
         self._apply_barrier = apply_barrier
         self._fetch_barrier = fetch_barrier
         self.apply_calls: list[object] = []
@@ -1170,9 +1168,6 @@ class _ParallelInstrumentDriver:
     async def apply(self, directive: object) -> None:
         self.apply_calls.append(directive)
         await self._apply_barrier.wait()
-
-    async def initialize(self) -> None:
-        await self._initialize_barrier.wait()
 
     async def wait_for_result(self) -> object:
         await self._fetch_barrier.wait()
@@ -1197,7 +1192,6 @@ class _SerialProbeInstrumentDriver:
         *,
         alias: str,
         value: complex,
-        initialize_probe: _ConcurrencyProbe,
         apply_probe: _ConcurrencyProbe,
         fetch_probe: _ConcurrencyProbe,
     ) -> None:
@@ -1207,7 +1201,6 @@ class _SerialProbeInstrumentDriver:
         )
         self._alias = alias
         self._value = value
-        self._initialize_probe = initialize_probe
         self._apply_probe = apply_probe
         self._fetch_probe = fetch_probe
         self.apply_calls: list[object] = []
@@ -1215,9 +1208,6 @@ class _SerialProbeInstrumentDriver:
     async def apply(self, directive: object) -> None:
         self.apply_calls.append(directive)
         await self._apply_probe.step()
-
-    async def initialize(self) -> None:
-        await self._initialize_probe.step()
 
     async def wait_for_result(self) -> object:
         await self._fetch_probe.step()
@@ -1227,6 +1217,7 @@ class _SerialProbeInstrumentDriver:
 class _FakeSession:
     def __init__(self, *, session_id: str = "session-id") -> None:
         self.token = session_id
+        self.initialize_calls: list[tuple[list[str], bool]] = []
         self.trigger_calls: list[list[str]] = []
         self.lifecycle_calls: list[str] = []
         self.drivers: dict[str, Any] = {}
@@ -1241,6 +1232,11 @@ class _FakeSession:
         tb: object,
     ) -> None:
         del exc_type, exc, tb
+
+    async def initialize(
+        self, instrument_ids: list[str], parallel: bool = True
+    ) -> None:
+        self.initialize_calls.append((list(instrument_ids), parallel))
 
     async def trigger(
         self,
@@ -2161,6 +2157,65 @@ def test_execute_batch_retries_only_failed_payload_after_transient_request_failu
     assert sessions[2].trigger_calls == [["alias-rq00"]]
 
 
+@pytest.mark.parametrize("initialize_fails", [False, True])
+def test_execute_initializes_session_before_applying_directives(
+    monkeypatch: pytest.MonkeyPatch,
+    initialize_fails: bool,
+) -> None:
+    """Execution should await session initialization and stop before apply if it fails."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        session_workarounds_module, "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS", 1
+    )
+
+    class Session(_FakeSession):
+        async def initialize(self, instrument_ids, parallel=True):
+            await asyncio.sleep(0)
+            calls.append("initialize")
+            if initialize_fails:
+                raise ValueError("initialization failed")
+            await super().initialize(instrument_ids, parallel)
+
+    class Driver(_FakeInstrumentDriver):
+        async def apply(self, directive):
+            assert calls == ["initialize"]
+            calls.append("apply")
+            await super().apply(directive)
+
+    session = Session()
+    driver = Driver()
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00", _FakeInstrumentDefinition("TRANSCEIVER")
+            )
+        }
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: _FakeClient(session),
+            fixed_timeline_driver_factory=lambda session, info: driver,
+        ),
+    )
+    execution = manager.execute_async(
+        request=BackendExecutionRequest(payload=_make_payload()), instrument_cache=cache
+    )
+    if initialize_fails:
+        with pytest.raises(QuelwareSessionError, match="initialization failed"):
+            asyncio.run(execution)
+        assert calls == ["initialize"]
+        assert driver.apply_calls == []
+        assert session.trigger_calls == []
+    else:
+        asyncio.run(execution)
+        assert calls == ["initialize", "apply"]
+        assert session.trigger_calls == [["alias-rq00"]]
+    assert not driver.initialized
+
+
 def test_execute_batches_capture_mode_with_timeline_directive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2199,7 +2254,8 @@ def test_execute_batches_capture_mode_with_timeline_directive(
         )
     )
 
-    assert driver.initialized is True
+    assert session.initialize_calls == [(["alias-rq00"], True)]
+    assert not driver.initialized
     assert driver.apply_calls == [
         [("capture_mode", _FakeCaptureMode.AVERAGED_VALUE), ("timeline", "alias-rq00")]
     ]
@@ -2389,21 +2445,18 @@ def test_execute_parallelizes_driver_phases(
             ),
         }
     )
-    initialize_barrier = _PhaseBarrier(expected=2)
     apply_barrier = _PhaseBarrier(expected=2)
     fetch_barrier = _PhaseBarrier(expected=2)
     drivers = {
         "alias-rq00": _ParallelInstrumentDriver(
             alias="alias-rq00",
             value=1.0 + 0.0j,
-            initialize_barrier=initialize_barrier,
             apply_barrier=apply_barrier,
             fetch_barrier=fetch_barrier,
         ),
         "alias-rq01": _ParallelInstrumentDriver(
             alias="alias-rq01",
             value=2.0 + 0.0j,
-            initialize_barrier=initialize_barrier,
             apply_barrier=apply_barrier,
             fetch_barrier=fetch_barrier,
         ),
@@ -2434,6 +2487,9 @@ def test_execute_parallelizes_driver_phases(
     ]
     assert drivers["alias-rq01"].apply_calls == [
         [("capture_mode", _FakeCaptureMode.AVERAGED_VALUE), ("timeline", "alias-rq01")]
+    ]
+    assert [ids for ids, _ in session.initialize_calls] == [
+        ["alias-rq00", "alias-rq01"]
     ]
     assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
     assert np.array_equal(
@@ -2505,6 +2561,7 @@ def test_execute_batch_async_reopens_session_per_payload(
         )
     )
     assert create_session_calls == [("alias-rq00",), ("alias-rq00",)]
+    assert session.initialize_calls == [(["alias-rq00"], True)] * 2
     assert len(session.trigger_calls) == 2
     assert len(driver.apply_calls) == 2
     assert len(results) == 2
@@ -2554,6 +2611,11 @@ def test_execute_async_uses_updated_cache_without_discovery(
 
     assert len(clients) == 3
     assert [client.exit_calls for client in clients] == [1, 1, 1]
+    assert [session.initialize_calls for session in sessions] == [
+        [(["first-resource"], True)],
+        [(["first-resource"], True)],
+        [(["second-resource"], True)],
+    ]
     assert [session.trigger_calls for session in sessions] == [
         [["first-resource"]],
         [["first-resource"]],
@@ -2592,21 +2654,18 @@ def test_execute_serializes_driver_phases_when_parallel_disabled(
             ),
         }
     )
-    initialize_probe = _ConcurrencyProbe()
     apply_probe = _ConcurrencyProbe()
     fetch_probe = _ConcurrencyProbe()
     drivers = {
         "alias-rq00": _SerialProbeInstrumentDriver(
             alias="alias-rq00",
             value=1.0 + 0.0j,
-            initialize_probe=initialize_probe,
             apply_probe=apply_probe,
             fetch_probe=fetch_probe,
         ),
         "alias-rq01": _SerialProbeInstrumentDriver(
             alias="alias-rq01",
             value=2.0 + 0.0j,
-            initialize_probe=initialize_probe,
             apply_probe=apply_probe,
             fetch_probe=fetch_probe,
         ),
@@ -2633,9 +2692,12 @@ def test_execute_serializes_driver_phases_when_parallel_disabled(
         )
     )
 
-    assert initialize_probe.max_active == 1
+    assert session.initialize_calls == [(["alias-rq00", "alias-rq01"], False)]
     assert apply_probe.max_active == 1
     assert fetch_probe.max_active == 2
+    assert [ids for ids, _ in session.initialize_calls] == [
+        ["alias-rq00", "alias-rq01"]
+    ]
     assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
     assert np.array_equal(
         result.data["alias-rq00"][0],
@@ -3016,10 +3078,6 @@ def test_execution_phase_timings_measure_hardware_operations(
     caplog.set_level(logging.DEBUG, logger="qubex.backend.quel3")
 
     class Driver(_FakeInstrumentDriver):
-        async def initialize(self):
-            clock.now += 2
-            await super().initialize()
-
         async def apply(self, directive):
             clock.now += 3
             await super().apply(directive)
@@ -3029,6 +3087,10 @@ def test_execution_phase_timings_measure_hardware_operations(
             return await super().wait_for_result()
 
     class Session(_FakeSession):
+        async def initialize(self, instrument_ids, parallel=True):
+            clock.now += 2
+            await super().initialize(instrument_ids, parallel)
+
         async def __aenter__(self):
             clock.now += 1
             return await super().__aenter__()
