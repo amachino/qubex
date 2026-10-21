@@ -1,15 +1,24 @@
-"""Tilted-axis spin-lock relaxation measurement."""
+"""
+Tilted-axis spin-lock relaxation and relaxation-spectroscopy measurements.
+
+Durations are represented in ns and frequencies in GHz throughout the returned
+data. The two public functions measure either one drive condition or a sequence
+of Rabi frequencies; both use the same seven-expectation global-fit model.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike
+from tqdm import tqdm
 
 import qubex.visualization as viz
+from qubex.core.async_bridge import get_shared_async_bridge
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.experiment.models.result import Result
@@ -17,13 +26,31 @@ from qubex.pulse import FlatTop, PulseSchedule
 
 __all__ = ["spin_lock_relaxation", "spin_lock_relaxation_spectroscopy"]
 
-DEFAULT_DURATION_RANGE = np.geomspace(100.0, 200e3, 31)
+DEFAULT_DURATION_RANGE = np.geomspace(100.0, 200e3, 21)
+DEFAULT_DURATION_POINTS = 18
 DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = (
     0.12 * np.tan(np.pi / 3 * np.linspace(0, 1, 15)) / np.sqrt(3)
 )[1:]
 DEFAULT_RAMP_DURATION = 16.0
 MIN_DURATION = 100.0
+POINT_UNCERTAINTY_SAMPLES = 500
+ANALYSIS_EXCEPTIONS = (
+    ValueError,
+    RuntimeError,
+    np.linalg.LinAlgError,
+    FloatingPointError,
+)
 EXPECTATION_LABELS = ("X+", "Z+", "X-", "Z-", "Xi", "Yi", "Zi")
+POINT_DISPLAY_NAMES = {
+    "a": "Longitudinal retention a(t)",
+    "b": "Transverse coherence b(t)",
+    "p": "Longitudinal polarization offset p(t)",
+}
+POINT_SUBPLOT_TITLES = {
+    "a": "a(t)<br><sup>Longitudinal retention (T1ρ)</sup>",
+    "b": "b(t)<br><sup>Transverse coherence (T2ρ)</sup>",
+    "p": "p(t)<br><sup>Longitudinal polarization offset</sup>",
+}
 MEASUREMENT_SETTINGS: tuple[tuple[str, Literal["X", "Y", "Z"]], ...] = (
     ("+", "X"),
     ("+", "Z"),
@@ -35,6 +62,19 @@ MEASUREMENT_SETTINGS: tuple[tuple[str, Literal["X", "Y", "Z"]], ...] = (
 )
 
 
+@dataclass(frozen=True)
+class _MeasurementData:
+    """Processed data from one Rabi frequency."""
+
+    mean_iq: np.ndarray
+    expectations: np.ndarray
+    expectation_errors: np.ndarray
+    measurement_order: np.ndarray
+
+
+# Input resolution
+
+
 def _normalize_targets(
     exp: Experiment,
     targets: Collection[str] | str | None,
@@ -44,6 +84,38 @@ def _normalize_targets(
     if isinstance(targets, str):
         return [targets]
     return list(targets)
+
+
+def _resolve_measurement_options(
+    exp: Experiment,
+    targets: Collection[str] | str | None,
+    *,
+    ramp_duration: float,
+    n_shots: int | None,
+    shot_interval: float | None,
+) -> tuple[list[str], float, int, float]:
+    target_list = _normalize_targets(exp, targets)
+    if not target_list:
+        raise ValueError("targets must contain at least one target.")
+
+    resolved_ramp = float(ramp_duration)
+    if not np.isfinite(resolved_ramp) or resolved_ramp < 0:
+        raise ValueError("ramp_duration must be finite and nonnegative.")
+
+    if n_shots is not None and (
+        isinstance(n_shots, bool) or not isinstance(n_shots, (int, np.integer))
+    ):
+        raise ValueError("n_shots must be an integer of at least 2.")
+    resolved_shots = int(DEFAULT_SHOTS if n_shots is None else n_shots)
+    if resolved_shots < 2:
+        raise ValueError("n_shots must be at least 2 to estimate shot uncertainty.")
+
+    resolved_interval = float(
+        DEFAULT_INTERVAL if shot_interval is None else shot_interval
+    )
+    if not np.isfinite(resolved_interval) or resolved_interval < 0:
+        raise ValueError("shot_interval must be finite and nonnegative.")
+    return target_list, resolved_ramp, resolved_shots, resolved_interval
 
 
 def _mapping_value(
@@ -76,42 +148,87 @@ def _coherence_value(
     return value if np.isfinite(value) and value > 0 else None
 
 
-def _default_duration_range(exp: Experiment, target: str) -> np.ndarray:
+def _load_coherence_value(
+    exp: Experiment,
+    target: str,
+    parameter: Literal["t1", "t2_echo"],
+) -> float | None:
+    """Load one usable coherence time without coupling the two YAML files."""
     try:
-        loader = exp.ctx.system_manager.config_loader
-        t1_values = loader.load_param_data("t1")
-        t2_values = loader.load_param_data("t2_echo")
+        values = exp.ctx.system_manager.config_loader.load_param_data(parameter)
     except (AttributeError, KeyError, RuntimeError):
-        return DEFAULT_DURATION_RANGE.copy()
+        return None
+    if not isinstance(values, Mapping):
+        return None
+    return _coherence_value(values, exp, target)
 
-    coherence_times = [
-        value
-        for value in (
-            _coherence_value(t1_values, exp, target),
-            _coherence_value(t2_values, exp, target),
-        )
-        if value is not None
-    ]
+
+def _default_duration_range(
+    exp: Experiment,
+    target: str,
+    *,
+    t1: float | None,
+    t2_echo: float | None,
+    n_points: int | None,
+) -> np.ndarray:
+    if n_points is not None and (
+        isinstance(n_points, bool)
+        or not isinstance(n_points, (int, np.integer))
+        or n_points < 3
+    ):
+        raise ValueError("n_duration_points must be an integer of at least 3.")
+
+    supplied_coherence_time = t1 is not None or t2_echo is not None
+    if not supplied_coherence_time:
+        t1 = _load_coherence_value(exp, target, "t1")
+        t2_echo = _load_coherence_value(exp, target, "t2_echo")
+
+    coherence_times = []
+    for name, value in (("t1", t1), ("t2_echo", t2_echo)):
+        if value is None:
+            continue
+        resolved = float(value)
+        if not np.isfinite(resolved) or resolved <= 0:
+            raise ValueError(f"{name} for `{target}` must be positive and finite.")
+        coherence_times.append(resolved)
     if not coherence_times:
-        return DEFAULT_DURATION_RANGE.copy()
+        if n_points is None:
+            return DEFAULT_DURATION_RANGE.copy()
+        return np.geomspace(
+            DEFAULT_DURATION_RANGE[0],
+            DEFAULT_DURATION_RANGE[-1],
+            n_points,
+        )
 
     start = max(MIN_DURATION, 0.025 * min(coherence_times))
-    stop = 20.0 * max(coherence_times)
+    stop = 10.0 * max(coherence_times)
     if stop <= start:
         raise ValueError(
-            f"Stored coherence time for `{target}` is too short to build a "
+            f"Coherence time for `{target}` is too short to build a "
             f"default duration range above {MIN_DURATION:g} ns."
         )
-    return np.geomspace(start, stop, 21)
+    return np.geomspace(
+        start, stop, DEFAULT_DURATION_POINTS if n_points is None else n_points
+    )
 
 
 def _resolve_duration_range(
     exp: Experiment,
     target: str,
     duration_range: ArrayLike | None,
+    *,
+    t1: float | None = None,
+    t2_echo: float | None = None,
+    n_points: int | None = None,
 ) -> np.ndarray:
     durations = np.asarray(
-        _default_duration_range(exp, target)
+        _default_duration_range(
+            exp,
+            target,
+            t1=t1,
+            t2_echo=t2_echo,
+            n_points=n_points,
+        )
         if duration_range is None
         else duration_range,
         dtype=np.float64,
@@ -141,6 +258,27 @@ def _resolve_duration_range(
     return durations
 
 
+def _resolve_target_durations(
+    exp: Experiment,
+    target: str,
+    *,
+    duration_range: ArrayLike | None,
+    t1: float | Mapping[str, float] | None,
+    t2_echo: float | Mapping[str, float] | None,
+    n_duration_points: int | None,
+) -> np.ndarray:
+    return _resolve_duration_range(
+        exp,
+        target,
+        duration_range,
+        t1=_mapping_value(t1, target, name="t1") if duration_range is None else None,
+        t2_echo=_mapping_value(t2_echo, target, name="t2_echo")
+        if duration_range is None
+        else None,
+        n_points=n_duration_points,
+    )
+
+
 def _resolve_spin_lock_frequency_range(
     spin_lock_frequency_range: ArrayLike | None,
 ) -> np.ndarray:
@@ -158,6 +296,19 @@ def _resolve_spin_lock_frequency_range(
             "spin_lock_frequency_range must contain positive finite values."
         )
     return frequencies
+
+
+def _resolve_min_initial_amplitude(
+    value: float | None,
+    *,
+    name: str,
+) -> float | None:
+    if value is None:
+        return None
+    resolved = float(value)
+    if not np.isfinite(resolved) or resolved < 0:
+        raise ValueError(f"{name} must be nonnegative and finite, or None.")
+    return resolved
 
 
 def _resolve_drive(
@@ -191,6 +342,28 @@ def _resolve_drive(
     if not np.isfinite(estimated_rabi) or estimated_rabi <= 0:
         raise ValueError(f"Estimated Rabi frequency for `{target}` must be positive.")
     return amplitude, estimated_rabi
+
+
+def _resolve_frequency_sweep(
+    exp: Experiment,
+    *,
+    target: str,
+    requested_frequencies: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    resolved = [
+        _resolve_drive(
+            exp,
+            target=target,
+            drive_amplitude=None,
+            rabi_frequency=float(frequency),
+        )
+        for frequency in requested_frequencies
+    ]
+    amplitudes, rabi_frequencies = zip(*resolved, strict=True)
+    return np.asarray(amplitudes), np.asarray(rabi_frequencies)
+
+
+# Relaxation model and fitting
 
 
 def _design_matrix(theta: float) -> np.ndarray:
@@ -262,12 +435,13 @@ def _fit_global_model(
     durations: ArrayLike,
     observations: ArrayLike,
     *,
-    sigma: float,
+    sigma: ArrayLike,
 ) -> dict[str, Any]:
     from scipy.optimize import least_squares
 
     times = np.asarray(durations, dtype=np.float64)
     measured = np.asarray(observations, dtype=np.float64)
+    uncertainties = np.asarray(sigma, dtype=np.float64)
     if times.ndim != 1 or times.size < 3:
         raise ValueError("durations must be a 1D array with at least 3 points.")
     if not np.all(np.isfinite(times)) or np.any(times <= 0):
@@ -278,8 +452,12 @@ def _fit_global_model(
         raise ValueError("observations must have shape (n_durations, 7).")
     if not np.all(np.isfinite(measured)):
         raise ValueError("observations must contain finite values.")
-    if not np.isfinite(sigma) or sigma <= 0:
-        raise ValueError("sigma must be positive and finite.")
+    try:
+        uncertainties = np.broadcast_to(uncertainties, measured.shape)
+    except ValueError as exc:
+        raise ValueError("sigma must be scalar or match observations.") from exc
+    if not np.all(np.isfinite(uncertainties)) or np.any(uncertainties <= 0):
+        raise ValueError("sigma must contain positive finite values.")
 
     theta0, point0 = _profile_initial_values(measured)
     p_values, a_values, k_values, q_values = point0.T
@@ -290,8 +468,8 @@ def _fit_global_model(
         (
             [
                 theta0,
-                t1_0,
-                t2_0,
+                np.log(t1_0),
+                np.log(t2_0),
                 np.clip(p_values[-1], -1.0, 1.0),
                 np.clip(a_values[0] * np.exp(times[0] / t1_0), 0.01, 1.5),
                 np.clip(b_values[0] * np.exp(times[0] / t2_0), 0.01, 1.5),
@@ -302,25 +480,25 @@ def _fit_global_model(
     )
 
     lower = np.concatenate(
-        ([-1.5, 1e-9, 1e-9, -1.0, 0.0, 0.0, -1.0], np.full(times.size, -np.inf))
+        ([-1.5, -30.0, -30.0, -1.0, 0.0, 0.0, -1.0], np.full(times.size, -np.inf))
     )
     upper = np.concatenate(
-        ([1.5, np.inf, np.inf, 1.0, 1.5, 1.5, 1.0], np.full(times.size, np.inf))
+        ([1.5, 40.0, 40.0, 1.0, 1.5, 1.5, 1.0], np.full(times.size, np.inf))
     )
 
     def residual(vector: np.ndarray) -> np.ndarray:
         predicted = _predict_expectations(
             times,
             theta=vector[0],
-            t1_rho=vector[1],
-            t2_rho=vector[2],
+            t1_rho=np.exp(vector[1]),
+            t2_rho=np.exp(vector[2]),
             p_inf=vector[3],
             a0=vector[4],
             b0=vector[5],
             p0=vector[6],
             phases=vector[7:],
         )
-        return ((predicted - measured) / sigma).ravel()
+        return ((predicted - measured) / uncertainties).ravel()
 
     fit = least_squares(
         residual,
@@ -334,15 +512,42 @@ def _fit_global_model(
     names = ("theta", "t1_rho", "t2_rho", "p_inf", "a0", "b0", "p0")
     dof = max(1, measured.size - fit.x.size)
     reduced_chi_squared = float(2.0 * fit.cost / dof)
-    covariance = np.linalg.pinv(fit.jac.T @ fit.jac)
-    errors = np.sqrt(np.maximum(0.0, np.diag(covariance)))
-    parameters = {name: float(fit.x[index]) for index, name in enumerate(names)}
+    information_inverse = np.linalg.pinv(fit.jac.T @ fit.jac)
+    leverage = np.sum((fit.jac @ information_inverse) * fit.jac, axis=1)
+    adjusted_residuals = fit.fun / np.maximum(1.0 - leverage, 1e-6)
+    robust_covariance_internal = (
+        information_inverse
+        @ (fit.jac.T @ ((adjusted_residuals**2)[:, None] * fit.jac))
+        @ information_inverse
+    )
+    t1_rho = float(np.exp(fit.x[1]))
+    t2_rho = float(np.exp(fit.x[2]))
+    transform = np.ones(fit.x.size)
+    transform[1] = t1_rho
+    transform[2] = t2_rho
+    covariance = information_inverse * np.outer(transform, transform)
+    robust_covariance = robust_covariance_internal * np.outer(transform, transform)
+    statistical_errors = np.sqrt(np.maximum(0.0, np.diag(covariance)))
+    robust_errors = np.sqrt(np.maximum(0.0, np.diag(robust_covariance)))
+    errors = np.maximum(statistical_errors, robust_errors)
+    parameters = {
+        "theta": float(fit.x[0]),
+        "t1_rho": t1_rho,
+        "t2_rho": t2_rho,
+        **{name: float(fit.x[index]) for index, name in enumerate(names[3:], start=3)},
+    }
     parameter_errors = {name: float(errors[index]) for index, name in enumerate(names)}
+    parameter_statistical_errors = {
+        name: float(statistical_errors[index]) for index, name in enumerate(names)
+    }
+    parameter_robust_errors = {
+        name: float(robust_errors[index]) for index, name in enumerate(names)
+    }
     predicted = _predict_expectations(
         times,
         theta=fit.x[0],
-        t1_rho=fit.x[1],
-        t2_rho=fit.x[2],
+        t1_rho=t1_rho,
+        t2_rho=t2_rho,
         p_inf=fit.x[3],
         a0=fit.x[4],
         b0=fit.x[5],
@@ -354,9 +559,12 @@ def _fit_global_model(
         "message": fit.message,
         "parameters": parameters,
         "errors": parameter_errors,
+        "statistical_errors": parameter_statistical_errors,
+        "robust_errors": parameter_robust_errors,
         "phases": fit.x[7:].copy(),
         "phase_errors": errors[7:].copy(),
         "covariance": covariance,
+        "robust_covariance": robust_covariance,
         "parameter_order": [*names, *(f"phi_{index}" for index in range(times.size))],
         "predicted_expectations": predicted,
         "residuals": measured - predicted,
@@ -368,27 +576,59 @@ def _point_estimates(
     observations: np.ndarray,
     *,
     theta: float,
-    sigma: float,
+    theta_error: float,
+    sigma: ArrayLike,
 ) -> dict[str, np.ndarray]:
-    matrix = _design_matrix(theta)
-    parameters = np.linalg.lstsq(matrix, observations.T, rcond=None)[0].T
-    covariance = sigma**2 * np.linalg.pinv(matrix.T @ matrix)
+    uncertainties = np.broadcast_to(
+        np.asarray(sigma, dtype=np.float64), observations.shape
+    )
+    parameters = np.empty((observations.shape[0], 4), dtype=np.float64)
+    for index, (values, errors) in enumerate(
+        zip(observations, uncertainties, strict=True)
+    ):
+        weighted_matrix = _design_matrix(theta) / errors[:, None]
+        parameters[index] = np.linalg.lstsq(
+            weighted_matrix,
+            values / errors,
+            rcond=None,
+        )[0]
     p, a, k, q = parameters.T
     b = np.hypot(k, q)
-    b_error = np.empty_like(b)
-    for index, (k_value, q_value, b_value) in enumerate(zip(k, q, b, strict=True)):
-        if b_value > np.finfo(float).eps:
-            gradient = np.asarray([k_value, q_value]) / b_value
-            b_error[index] = np.sqrt(gradient @ covariance[2:4, 2:4] @ gradient)
-        else:
-            b_error[index] = np.sqrt(np.trace(covariance[2:4, 2:4]))
+
+    rng = np.random.default_rng(0)
+    theta_samples = rng.normal(theta, theta_error, POINT_UNCERTAINTY_SAMPLES)
+    samples = {
+        name: np.empty((POINT_UNCERTAINTY_SAMPLES, observations.shape[0]))
+        for name in ("a", "b", "p")
+    }
+    for sample_index, theta_sample in enumerate(theta_samples):
+        matrix = _design_matrix(float(theta_sample))
+        sampled_observations = rng.normal(observations, uncertainties)
+        for time_index, (values, errors) in enumerate(
+            zip(sampled_observations, uncertainties, strict=True)
+        ):
+            weighted_matrix = matrix / errors[:, None]
+            point = np.linalg.lstsq(
+                weighted_matrix,
+                values / errors,
+                rcond=None,
+            )[0]
+            samples["p"][sample_index, time_index] = point[0]
+            samples["a"][sample_index, time_index] = point[1]
+            samples["b"][sample_index, time_index] = np.hypot(point[2], point[3])
+
+    point_values = {"a": a, "b": b, "p": p}
+    uncertainty_results: dict[str, np.ndarray] = {}
+    for name, values in point_values.items():
+        lower, upper = np.quantile(samples[name], [0.16, 0.84], axis=0)
+        uncertainty_results[f"{name}_error"] = np.std(samples[name], axis=0, ddof=1)
+        uncertainty_results[f"{name}_error_minus"] = np.maximum(values - lower, 0.0)
+        uncertainty_results[f"{name}_error_plus"] = np.maximum(upper - values, 0.0)
     return {
         "a": a,
-        "a_error": np.full(a.shape, np.sqrt(covariance[1, 1])),
         "b": b,
-        "b_error": b_error,
         "p": p,
-        "p_error": np.full(p.shape, np.sqrt(covariance[0, 0])),
+        **uncertainty_results,
         "k": k,
         "q": q,
         "phi": np.arctan2(q, k),
@@ -409,6 +649,9 @@ def _model_diagnostics(observations: np.ndarray, theta: float) -> dict[str, Any]
         "contraction_axis_residual": -(d_x - k) * s + d_z * c,
         "transverse_plane_residual": (x_i - c_x) * c + (z_i - c_z) * s,
     }
+
+
+# Pulse construction and acquisition
 
 
 def _build_sequence(
@@ -448,77 +691,78 @@ def _measure_target(
     ramp_duration: float,
     n_shots: int,
     shot_interval: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    raw_data, expectations = _measure_target_grid(
-        exp,
-        target=target,
-        durations=durations,
-        drive_amplitudes=np.asarray([drive_amplitude]),
-        ramp_duration=ramp_duration,
-        n_shots=n_shots,
-        shot_interval=shot_interval,
-    )
-    return raw_data[0], expectations[0]
-
-
-def _measure_target_grid(
-    exp: Experiment,
-    *,
-    target: str,
-    durations: np.ndarray,
-    drive_amplitudes: np.ndarray,
-    ramp_duration: float,
-    n_shots: int,
-    shot_interval: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    points: list[tuple[float, float, str, Literal["X", "Y", "Z"]]] = [
-        (amplitude, duration, initial_state, basis)
-        for amplitude in drive_amplitudes
+) -> _MeasurementData:
+    """Measure one shuffled duration-setting sweep and restore canonical order."""
+    points: list[tuple[float, str, Literal["X", "Y", "Z"]]] = [
+        (duration, initial_state, basis)
         for duration in durations
         for initial_state, basis in MEASUREMENT_SETTINGS
     ]
+    measurement_order = np.random.default_rng().permutation(len(points))
 
     def sequence(index: int) -> PulseSchedule:
-        amplitude, duration, initial_state, basis = points[int(index)]
+        duration, initial_state, basis = points[int(measurement_order[int(index)])]
         return _build_sequence(
             exp,
             target=target,
             flat_duration=float(duration),
-            drive_amplitude=float(amplitude),
+            drive_amplitude=drive_amplitude,
             ramp_duration=ramp_duration,
             initial_state=initial_state,
             basis=basis,
         )
 
+    rabi_param = exp.get_rabi_param(target)
+    if rabi_param is None:
+        raise ValueError(f"Rabi parameters are unavailable for `{target}`.")
+    exp.ctx.reset_awg_and_capunits(qubits={target})
+    bridge = get_shared_async_bridge(key="experiment")
     with exp.ctx.util.no_output():
-        sweep = exp.measurement_service.sweep_parameter(
-            sequence=sequence,
-            sweep_range=np.arange(len(points)),
-            n_shots=n_shots,
-            shot_interval=shot_interval,
-            plot=False,
-            title=f"Spin-lock relaxation: {target}",
-            xlabel="Sweep point",
-            ylabel="Pauli expectation",
+        sweep = bridge.run(
+            lambda: exp.measurement_service.run_sweep_measurement(
+                schedule=sequence,
+                sweep_values=np.arange(len(points)),
+                n_shots=n_shots,
+                shot_interval=shot_interval,
+                shot_averaging=False,
+                time_integration=True,
+                state_classification=False,
+                final_measurement=True,
+                plot=False,
+                enable_tqdm=False,
+            )
         )
-    target_data = sweep.data[target]
-    shape = (drive_amplitudes.size, durations.size, len(EXPECTATION_LABELS))
-    return (
-        np.asarray(target_data.data).reshape(shape),
-        np.asarray(target_data.normalized, dtype=np.float64).reshape(shape),
+
+    capture_series = sweep.data.get(target)
+    if not capture_series:
+        raise ValueError(f"Sweep measurement returned no data for `{target}`.")
+    shot_iq = np.asarray(capture_series[-1])
+    normalized_shots = np.asarray(rabi_param.normalize(shot_iq), dtype=np.float64)
+    expected_shape = (len(points), n_shots)
+    if shot_iq.shape != expected_shape:
+        raise ValueError(f"Shot IQ for `{target}` must have shape {expected_shape}.")
+    if normalized_shots.shape != shot_iq.shape:
+        raise ValueError(
+            f"Normalized shot data for `{target}` must have shape {shot_iq.shape}."
+        )
+    canonical_iq = np.empty_like(shot_iq)
+    canonical_expectations = np.empty_like(normalized_shots)
+    canonical_iq[measurement_order] = shot_iq
+    canonical_expectations[measurement_order] = normalized_shots
+    shot_shape = (durations.size, len(EXPECTATION_LABELS), n_shots)
+    canonical_iq = canonical_iq.reshape(shot_shape)
+    canonical_expectations = canonical_expectations.reshape(shot_shape)
+    return _MeasurementData(
+        mean_iq=np.mean(canonical_iq, axis=-1),
+        expectations=np.mean(canonical_expectations, axis=-1),
+        expectation_errors=(
+            np.std(canonical_expectations, axis=-1, ddof=1) / np.sqrt(n_shots)
+        ),
+        measurement_order=measurement_order,
     )
 
 
-def _normalization_noise(exp: Experiment, target: str) -> float:
-    parameter = exp.pulse.rabi_params[target]
-    amplitude = float(parameter.amplitude)
-    raw_noise = float(parameter.noise)
-    if not np.isfinite(amplitude) or amplitude == 0 or not np.isfinite(raw_noise):
-        raise ValueError(f"Rabi normalization noise for `{target}` is not available.")
-    noise = abs(raw_noise / amplitude)
-    if noise == 0:
-        raise ValueError(f"Rabi normalization noise for `{target}` must be positive.")
-    return noise
+# Analysis, visualization, and result assembly
 
 
 def _make_figure(
@@ -532,7 +776,7 @@ def _make_figure(
     figure.set_subplots(
         rows=1,
         cols=3,
-        subplot_titles=("a(t)", "b(t)", "p(t)"),
+        subplot_titles=tuple(POINT_SUBPLOT_TITLES.values()),
         horizontal_spacing=0.08,
     )
     parameters = fit["parameters"]
@@ -550,10 +794,19 @@ def _make_figure(
             go.Scatter(
                 x=durations * 1e-3,
                 y=points[name],
-                error_y={"type": "data", "array": points[f"{name}_error"]},
+                error_y={
+                    "type": "data",
+                    "symmetric": False,
+                    "array": points[f"{name}_error_plus"],
+                    "arrayminus": points[f"{name}_error_minus"],
+                },
                 mode="markers",
                 marker={"color": colors[name]},
-                name=f"{name} estimates",
+                name=f"{POINT_DISPLAY_NAMES[name]} estimates",
+                hovertemplate=(
+                    "Flattop duration: %{x:.5g} μs<br>"
+                    f"{POINT_DISPLAY_NAMES[name]}: %{{y:.5g}}<extra></extra>"
+                ),
                 showlegend=False,
             ),
             row=1,
@@ -565,7 +818,11 @@ def _make_figure(
                 y=curves[name],
                 mode="lines",
                 line={"color": colors[name]},
-                name=f"{name} fit",
+                name=f"{POINT_DISPLAY_NAMES[name]} fit",
+                hovertemplate=(
+                    "Flattop duration: %{x:.5g} μs<br>"
+                    f"{POINT_DISPLAY_NAMES[name]} fit: %{{y:.5g}}<extra></extra>"
+                ),
                 showlegend=False,
             ),
             row=1,
@@ -574,7 +831,7 @@ def _make_figure(
         figure.update_xaxes(
             title_text="Flattop duration (μs)", type="log", row=1, col=column
         )
-        figure.update_yaxes(title_text=name, row=1, col=column)
+        figure.update_yaxes(title_text=POINT_DISPLAY_NAMES[name], row=1, col=column)
 
     figure.update_layout(title=f"Tilted-axis spin-lock relaxation: {target}")
     return figure
@@ -609,22 +866,55 @@ def _print_fit_summary(
     )
 
 
+def _print_spectroscopy_diagnostics(
+    result: Mapping[str, Any],
+    rabi_frequencies: np.ndarray,
+) -> None:
+    for index in np.flatnonzero(~result["fit_success"]):
+        frequency_mhz = rabi_frequencies[index] * 1e3
+        print(
+            f"  Fit failed at {frequency_mhz:.6g} MHz: {result['fit_messages'][index]}"
+        )
+
+    for quantity, messages in (
+        ("T1ρ", result["t1_exclusion_messages"]),
+        ("T2ρ", result["t2_exclusion_messages"]),
+    ):
+        for index, message in enumerate(messages):
+            if message is None or not result["fit_success"][index]:
+                continue
+            frequency_mhz = rabi_frequencies[index] * 1e3
+            print(
+                f"  Omitting {quantity} at {frequency_mhz:.6g} MHz from plot: {message}"
+            )
+
+
+def _output_figure(
+    figure: go.Figure,
+    *,
+    name: str,
+    plot: bool,
+    save_image: bool,
+) -> None:
+    if plot:
+        figure.show(config=viz.get_config(filename=name))
+    if save_image:
+        viz.save_figure(figure, name=name)
+
+
 def _analyze_target(
-    exp: Experiment,
     *,
     target: str,
     durations: np.ndarray,
-    raw_data: np.ndarray,
-    expectations: np.ndarray,
+    measurement: _MeasurementData,
     drive_amplitude: float,
     rabi_frequency: float,
     ramp_duration: float,
 ) -> tuple[dict[str, Any], go.Figure]:
-    sigma = _normalization_noise(exp, target)
     analysis = _analyze_expectations(
         durations=durations,
-        expectations=expectations,
-        sigma=sigma,
+        expectations=measurement.expectations,
+        sigma=measurement.expectation_errors,
         rabi_frequency=rabi_frequency,
     )
     fit = analysis["fit"]
@@ -653,11 +943,12 @@ def _analyze_target(
         "drive_amplitude": drive_amplitude,
         "rabi_frequency": rabi_frequency,
         "expectation_labels": EXPECTATION_LABELS,
-        "raw_data": raw_data,
-        "expectations": expectations,
-        "expectation_errors": np.full(expectations.shape, sigma),
+        "mean_iq": measurement.mean_iq,
+        "expectations": measurement.expectations,
+        "expectation_errors": measurement.expectation_errors,
+        "measurement_order": measurement.measurement_order,
         **analysis,
-        "uncertainty_method": "rabi_normalization_noise_and_fit_covariance",
+        "uncertainty_method": "shot_sem_and_robust_covariance",
     }
     return data, figure
 
@@ -666,14 +957,23 @@ def _analyze_expectations(
     *,
     durations: np.ndarray,
     expectations: np.ndarray,
-    sigma: float,
+    sigma: ArrayLike,
     rabi_frequency: float,
 ) -> dict[str, Any]:
     fit = _fit_global_model(durations, expectations, sigma=sigma)
     theta = fit["parameters"]["theta"]
     theta_error = fit["errors"]["theta"]
-    points = _point_estimates(expectations, theta=theta, sigma=sigma)
-    shift = rabi_frequency * np.tan(theta)
+    points = _point_estimates(
+        expectations,
+        theta=theta,
+        theta_error=theta_error,
+        sigma=sigma,
+    )
+    # In Qubex's rotating-frame convention, the fitted Z component is
+    # f_drive - f_transition = f_R * tan(theta).  The reported shift follows
+    # the usual spectroscopy convention, f_transition - f_bare, and the
+    # spin-lock carrier is the configured bare transition frequency.
+    shift = -rabi_frequency * np.tan(theta)
     shift_error = abs(rabi_frequency / np.cos(theta) ** 2 * theta_error)
     axis_frequency = float(np.hypot(rabi_frequency, shift))
     axis_frequency_error = abs(
@@ -696,23 +996,22 @@ def _analyze_expectations(
     }
 
 
-def _resolve_frequency_sweep(
-    exp: Experiment,
+def _try_analyze_expectations(
     *,
-    target: str,
-    requested_frequencies: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    resolved = [
-        _resolve_drive(
-            exp,
-            target=target,
-            drive_amplitude=None,
-            rabi_frequency=float(frequency),
+    durations: np.ndarray,
+    measurement: _MeasurementData,
+    rabi_frequency: float,
+) -> dict[str, Any] | Exception:
+    """Analyze one frequency without aborting a spectroscopy sweep on failure."""
+    try:
+        return _analyze_expectations(
+            durations=durations,
+            expectations=measurement.expectations,
+            sigma=measurement.expectation_errors,
+            rabi_frequency=rabi_frequency,
         )
-        for frequency in requested_frequencies
-    ]
-    amplitudes, rabi_frequencies = zip(*resolved, strict=True)
-    return np.asarray(amplitudes), np.asarray(rabi_frequencies)
+    except ANALYSIS_EXCEPTIONS as exc:
+        return exc
 
 
 def _spectroscopy_sort_indices(axis_frequencies: np.ndarray) -> np.ndarray:
@@ -735,7 +1034,7 @@ def _make_parameter_heatmaps(
         rows=1,
         cols=3,
         shared_yaxes=True,
-        subplot_titles=("a(t)", "b(t)", "p(t)"),
+        subplot_titles=tuple(POINT_SUBPLOT_TITLES.values()),
         horizontal_spacing=0.1,
     )
     for column, name in enumerate(("a", "b", "p"), start=1):
@@ -749,7 +1048,7 @@ def _make_parameter_heatmaps(
                 hovertemplate=(
                     "Axis frequency: %{x:.5g} MHz<br>"
                     "Duration: %{y:.5g} μs<br>"
-                    f"{name}: %{{z:.5g}}<extra></extra>"
+                    f"{POINT_DISPLAY_NAMES[name]}: %{{z:.5g}}<extra></extra>"
                 ),
             ),
             row=1,
@@ -761,19 +1060,19 @@ def _make_parameter_heatmaps(
         figure.update_yaxes(type="log", row=1, col=column)
     figure.update_yaxes(title_text="Flattop duration (μs)", row=1, col=1)
     figure.update_layout(
-        title=f"Spin-lock relaxation parameters: {target}",
+        title=f"Spin-lock relaxation components: {target}",
         coloraxis={
             "colorscale": "Viridis",
             "cmin": 0,
             "cmax": 1,
-            "colorbar": {"title": "a, b", "x": 0.64},
+            "colorbar": {"title": "Retention /<br>coherence", "x": 0.64},
         },
         coloraxis2={
             "colorscale": "RdBu",
             "cmin": -1,
             "cmax": 1,
             "cmid": 0,
-            "colorbar": {"title": "p", "x": 1.02},
+            "colorbar": {"title": "Polarization<br>offset", "x": 1.02},
         },
     )
     return figure
@@ -789,13 +1088,21 @@ def _make_spectroscopy_summary_figure(
     t2_rho_error: np.ndarray,
     shift: np.ndarray,
     shift_error: np.ndarray,
+    t1_plot_mask: np.ndarray,
+    t2_plot_mask: np.ndarray,
 ) -> go.Figure:
     indices = _spectroscopy_sort_indices(axis_frequencies)
     frequencies_mhz = axis_frequencies[indices] * 1e3
     series = (
-        ("T1ρ", t1_rho * 1e-3, t1_rho_error * 1e-3, "T1ρ (μs)"),
-        ("T2ρ", t2_rho * 1e-3, t2_rho_error * 1e-3, "T2ρ (μs)"),
-        ("shift", shift * 1e3, shift_error * 1e3, "Signed shift (MHz)"),
+        ("T1ρ", t1_rho * 1e-3, t1_rho_error * 1e-3, "T1ρ (μs)", t1_plot_mask),
+        ("T2ρ", t2_rho * 1e-3, t2_rho_error * 1e-3, "T2ρ (μs)", t2_plot_mask),
+        (
+            "shift",
+            shift * 1e3,
+            shift_error * 1e3,
+            "Qubit frequency shift (MHz)",
+            np.ones(axis_frequencies.shape, dtype=bool),
+        ),
     )
     figure = viz.make_figure(width=1200, height=360)
     figure.set_subplots(
@@ -803,12 +1110,16 @@ def _make_spectroscopy_summary_figure(
         cols=3,
         horizontal_spacing=0.08,
     )
-    for column, (name, values, errors, ylabel) in enumerate(series, start=1):
+    for column, (name, values, errors, ylabel, plot_mask) in enumerate(series, start=1):
+        plotted_values = values[indices].copy()
+        plotted_errors = errors[indices].copy()
+        plotted_values[~plot_mask[indices]] = np.nan
+        plotted_errors[~plot_mask[indices]] = np.nan
         figure.add_trace(
             go.Scatter(
                 x=frequencies_mhz,
-                y=values[indices],
-                error_y={"type": "data", "array": errors[indices]},
+                y=plotted_values,
+                error_y={"type": "data", "array": plotted_errors},
                 mode="markers+lines",
                 name=name,
                 showlegend=False,
@@ -837,24 +1148,69 @@ def _make_spectroscopy_summary_figure(
     return figure
 
 
-def _analyze_spectroscopy_target(
-    exp: Experiment,
+def _initial_amplitude_plot_quality(
+    *,
+    fit_success: np.ndarray,
+    fit_messages: list[str],
+    amplitudes: np.ndarray,
+    amplitude_name: str,
+    minimum: float | None,
+) -> tuple[np.ndarray, list[str | None]]:
+    plot_mask = fit_success.copy()
+    messages: list[str | None] = [
+        None if success else f"Fit failed: {fit_messages[index]}"
+        for index, success in enumerate(fit_success)
+    ]
+    for index in np.flatnonzero(fit_success):
+        amplitude = amplitudes[index]
+        if not np.isfinite(amplitude):
+            plot_mask[index] = False
+            messages[index] = f"{amplitude_name} is not finite."
+        elif minimum is not None and amplitude < minimum:
+            plot_mask[index] = False
+            messages[index] = (
+                f"{amplitude_name}={amplitude:.6g} is below "
+                f"min_{amplitude_name}={minimum:.6g}."
+            )
+    return plot_mask, messages
+
+
+def _assemble_spectroscopy_result(
     *,
     target: str,
     durations: np.ndarray,
-    raw_data: np.ndarray,
-    expectations: np.ndarray,
+    measurements: list[_MeasurementData],
     requested_frequencies: np.ndarray,
     drive_amplitudes: np.ndarray,
     rabi_frequencies: np.ndarray,
     ramp_duration: float,
+    frequency_analyses: list[dict[str, Any] | Exception],
+    min_a0: float | None = 0.5,
+    min_b0: float | None = 0.5,
 ) -> tuple[dict[str, Any], dict[str, go.Figure]]:
-    sigma = _normalization_noise(exp, target)
     n_frequencies = rabi_frequencies.size
     n_durations = durations.size
+    if len(measurements) != n_frequencies:
+        raise ValueError("measurements must match rabi_frequencies.")
     point_estimates = {
         name: np.full((n_frequencies, n_durations), np.nan)
-        for name in ("a", "a_error", "b", "b_error", "p", "p_error", "k", "q", "phi")
+        for name in (
+            "a",
+            "a_error",
+            "a_error_minus",
+            "a_error_plus",
+            "b",
+            "b_error",
+            "b_error_minus",
+            "b_error_plus",
+            "p",
+            "p_error",
+            "p_error_minus",
+            "p_error_plus",
+            "k",
+            "q",
+            "phi",
+        )
     }
     values = {
         name: np.full(n_frequencies, np.nan)
@@ -867,6 +1223,10 @@ def _analyze_spectroscopy_target(
             "t2_rho_error",
             "p_inf",
             "p_inf_error",
+            "a0",
+            "a0_error",
+            "b0",
+            "b0_error",
             "shift",
             "shift_error",
             "axis_rotation_frequency",
@@ -878,30 +1238,21 @@ def _analyze_spectroscopy_target(
     fit_success = np.zeros(n_frequencies, dtype=bool)
     fit_messages: list[str] = []
 
-    for index, rabi_frequency in enumerate(rabi_frequencies):
-        try:
-            analysis = _analyze_expectations(
-                durations=durations,
-                expectations=expectations[index],
-                sigma=sigma,
-                rabi_frequency=float(rabi_frequency),
-            )
-        except (
-            ValueError,
-            RuntimeError,
-            np.linalg.LinAlgError,
-            FloatingPointError,
-        ) as exc:
+    if len(frequency_analyses) != n_frequencies:
+        raise ValueError("frequency_analyses must match rabi_frequencies.")
+
+    for index, analysis in enumerate(frequency_analyses):
+        if isinstance(analysis, Exception):
             fit_results.append(None)
             diagnostics.append(None)
-            fit_messages.append(str(exc))
+            fit_messages.append(str(analysis))
             continue
 
         fit = analysis["fit"]
         derived = analysis["derived"]
         for name, estimates in analysis["point_estimates"].items():
             point_estimates[name][index] = estimates
-        for name in ("theta", "t1_rho", "t2_rho", "p_inf"):
+        for name in ("theta", "t1_rho", "t2_rho", "p_inf", "a0", "b0"):
             values[name][index] = fit["parameters"][name]
             values[f"{name}_error"][index] = fit["errors"][name]
         for name in (
@@ -916,6 +1267,20 @@ def _analyze_spectroscopy_target(
         fit_success[index] = True
         fit_messages.append(str(fit["message"]))
 
+    t1_plot_mask, t1_exclusion_messages = _initial_amplitude_plot_quality(
+        fit_success=fit_success,
+        fit_messages=fit_messages,
+        amplitudes=values["a0"],
+        amplitude_name="a0",
+        minimum=min_a0,
+    )
+    t2_plot_mask, t2_exclusion_messages = _initial_amplitude_plot_quality(
+        fit_success=fit_success,
+        fit_messages=fit_messages,
+        amplitudes=values["b0"],
+        amplitude_name="b0",
+        minimum=min_b0,
+    )
     figures = {
         f"{target}_parameter_heatmaps": _make_parameter_heatmaps(
             target=target,
@@ -932,6 +1297,8 @@ def _analyze_spectroscopy_target(
             t2_rho_error=values["t2_rho_error"],
             shift=values["shift"],
             shift_error=values["shift_error"],
+            t1_plot_mask=t1_plot_mask,
+            t2_plot_mask=t2_plot_mask,
         ),
     }
     data = {
@@ -942,18 +1309,32 @@ def _analyze_spectroscopy_target(
         "drive_amplitudes": drive_amplitudes,
         "rabi_frequencies": rabi_frequencies,
         "expectation_labels": EXPECTATION_LABELS,
-        "raw_data": raw_data,
-        "expectations": expectations,
-        "expectation_errors": np.full(expectations.shape, sigma),
+        "mean_iq": np.stack([item.mean_iq for item in measurements]),
+        "expectations": np.stack([item.expectations for item in measurements]),
+        "expectation_errors": np.stack(
+            [item.expectation_errors for item in measurements]
+        ),
+        "measurement_order": np.stack(
+            [item.measurement_order for item in measurements]
+        ),
         "point_estimates": point_estimates,
         **values,
         "fit_results": fit_results,
         "fit_success": fit_success,
         "fit_messages": fit_messages,
+        "t1_plot_mask": t1_plot_mask,
+        "t2_plot_mask": t2_plot_mask,
+        "t1_exclusion_messages": t1_exclusion_messages,
+        "t2_exclusion_messages": t2_exclusion_messages,
+        "min_a0": min_a0,
+        "min_b0": min_b0,
         "diagnostics": diagnostics,
-        "uncertainty_method": "rabi_normalization_noise_and_fit_covariance",
+        "uncertainty_method": "shot_sem_and_robust_covariance",
     }
     return data, figures
+
+
+# Public API
 
 
 def spin_lock_relaxation(
@@ -963,6 +1344,9 @@ def spin_lock_relaxation(
     drive_amplitude: float | Mapping[str, float] | None = None,
     rabi_frequency: float | Mapping[str, float] | None = None,
     duration_range: ArrayLike | None = None,
+    t1: float | Mapping[str, float] | None = None,
+    t2_echo: float | Mapping[str, float] | None = None,
+    n_duration_points: int | None = None,
     ramp_duration: float = DEFAULT_RAMP_DURATION,
     n_shots: int | None = None,
     shot_interval: float | None = None,
@@ -989,17 +1373,30 @@ def spin_lock_relaxation(
         recalculated from the amplitude actually used.
     duration_range
         Flat-top durations in ns. One explicit range is reused for every target.
-        Otherwise, each target gets 21 logarithmic points from
+        Otherwise, each target gets 18 logarithmic points from
         `max(100 ns, 0.025 * min(T1, T2_echo))` to
-        `20 * max(T1, T2_echo)`. A single available coherence time is used for
-        both limits; if neither is available, 31 points from 100 ns to 200 μs
+        `10 * max(T1, T2_echo)`. A single available coherence time is used for
+        both limits; if neither is available, 21 points from 100 ns to 200 μs
         are used.
+    t1
+        T1 in ns used only to generate an automatic duration range. May be a
+        common value or a target mapping. If either `t1` or `t2_echo` is given,
+        YAML coherence times are not read.
+    t2_echo
+        T2 echo in ns used only to generate an automatic duration range. May be
+        a common value or a target mapping.
+    n_duration_points
+        Number of logarithmic points in an automatic duration range. Must be at
+        least 3. Defaults to 18 when a coherence time is available, or to 21
+        for the fixed 100 ns--200 μs fallback. Ignored when `duration_range` is
+        explicitly supplied.
     ramp_duration
         Duration of each raised-cosine ramp in ns. Defaults to 16 ns.
     n_shots
-        Number of shots per expectation value. Defaults to `DEFAULT_SHOTS`.
+        Number of shots per expectation value. Must be at least 2 and defaults
+        to `DEFAULT_SHOTS`.
     shot_interval
-        Interval between shots in seconds. Defaults to `DEFAULT_INTERVAL`.
+        Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
     plot
         Whether to display the three-panel relaxation figure. Defaults to
         `True`.
@@ -1010,10 +1407,13 @@ def spin_lock_relaxation(
     -------
     Result
         The `data["results"][target]` mapping contains the measured seven
-        expectations, pointwise `a`, `b`, `p`, `k`, `q`, and `phi` estimates,
-        global-fit parameters and covariance, model diagnostics, and derived
-        frequencies. Durations are in ns and frequencies are in GHz. One
-        three-panel figure is stored as `figures["{target}_relaxation"]`.
+        expectations and their SEM, mean IQ, pointwise `a`, `b`, `p`, `k`, `q`,
+        and `phi`, the global fit, diagnostics, and derived frequencies.
+        Durations are in ns and frequencies are in GHz. One three-panel figure
+        is stored as `figures["{target}_relaxation"]`.
+        Here `a` is longitudinal retention along the effective axis, `b` is
+        transverse coherence magnitude, and `p` is the signed longitudinal
+        polarization offset.
 
     Raises
     ------
@@ -1035,38 +1435,46 @@ def spin_lock_relaxation(
     decay model is `a0 exp(-t/T1rho)`, `b0 exp(-t/T2rho)`, and
     `p_inf + (p0 - p_inf) exp(-t/T1rho)`.
 
-    The signed `shift` is the fitted effective Z component, `f_R tan(theta)`.
-    It equals an AC Stark shift only when no other detuning contributes. Rabi
-    frequency uncertainty is not included in the reported shift or axis
-    rotation frequency uncertainty. Expectation-value uncertainty is the
-    stored Rabi normalization noise divided by its fitted amplitude. Pointwise
-    error bars condition on the fitted `theta`; global parameter errors use the
-    local Jacobian covariance of the seven-expectation fit.
-    """
-    target_list = _normalize_targets(exp, targets)
-    if not target_list:
-        raise ValueError("targets must contain at least one target.")
-    if not np.isfinite(ramp_duration) or ramp_duration < 0:
-        raise ValueError("ramp_duration must be finite and nonnegative.")
-    if n_shots is not None and (
-        isinstance(n_shots, bool) or not isinstance(n_shots, (int, np.integer))
-    ):
-        raise ValueError("n_shots must be a positive integer.")
-    resolved_n_shots = int(DEFAULT_SHOTS if n_shots is None else n_shots)
-    if resolved_n_shots <= 0:
-        raise ValueError("n_shots must be a positive integer.")
+    The `duration x seven settings` points are measured in a new random order
+    on every call to reduce correlation with time drift. Data are restored to
+    canonical duration-major order before analysis. `measurement_order[j]` is
+    the canonical flattened point index acquired at position `j`; its duration
+    and setting indices are respectively `index // 7` and `index % 7`.
 
-    resolved_shot_interval = float(
-        DEFAULT_INTERVAL if shot_interval is None else shot_interval
+    The signed `shift` follows the spectroscopy convention
+    `f_dressed - f_bare = -f_R tan(theta)`: a positive value means that the
+    drive raises the qubit transition frequency. This interpretation assumes
+    that the spin-lock carrier is the calibrated bare transition frequency;
+    residual carrier detuning is indistinguishable from a drive-induced shift.
+    Rabi frequency uncertainty is not included in the reported shift or axis
+    rotation frequency uncertainty. Uncertainty in the stored IQ-normalization
+    parameters is also not propagated. Each expectation-value uncertainty is
+    the standard error calculated from the normalized single-shot IQ values.
+    Global-fit errors use the larger of the local Jacobian error and the HC3
+    robust error. Pointwise `a`, `b`, and `p` error bars are the 16th--84th
+    percentile range from 500 Gaussian draws of the expectation values and
+    fitted `theta`. This lightweight propagation is not a full bootstrap.
+    """
+    target_list, ramp_duration, n_shots, shot_interval = _resolve_measurement_options(
+        exp,
+        targets,
+        ramp_duration=ramp_duration,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
     )
-    if not np.isfinite(resolved_shot_interval) or resolved_shot_interval < 0:
-        raise ValueError("shot_interval must be finite and nonnegative.")
 
     exp.pulse.validate_rabi_params(target_list)
     results: dict[str, Any] = {}
     figures: dict[str, go.Figure] = {}
     for index, target in enumerate(target_list, start=1):
-        durations = _resolve_duration_range(exp, target, duration_range)
+        durations = _resolve_target_durations(
+            exp,
+            target,
+            duration_range=duration_range,
+            t1=t1,
+            t2_echo=t2_echo,
+            n_duration_points=n_duration_points,
+        )
         amplitude, estimated_rabi = _resolve_drive(
             exp,
             target=target,
@@ -1076,39 +1484,39 @@ def spin_lock_relaxation(
         print(
             f"({index}/{len(target_list)}) Measuring spin-lock relaxation for {target}."
         )
-        raw_data, expectations = _measure_target(
+        measurement = _measure_target(
             exp,
             target=target,
             durations=durations,
             drive_amplitude=amplitude,
-            ramp_duration=float(ramp_duration),
-            n_shots=resolved_n_shots,
-            shot_interval=resolved_shot_interval,
+            ramp_duration=ramp_duration,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
         )
         target_result, figure = _analyze_target(
-            exp,
             target=target,
             durations=durations,
-            raw_data=raw_data,
-            expectations=expectations,
+            measurement=measurement,
             drive_amplitude=amplitude,
             rabi_frequency=estimated_rabi,
-            ramp_duration=float(ramp_duration),
+            ramp_duration=ramp_duration,
         )
         results[target] = target_result
+        figure_name = f"spin_lock_relaxation_{target}"
         figures[f"{target}_relaxation"] = figure
-        if plot:
-            figure.show(
-                config=viz.get_config(filename=f"spin_lock_relaxation_{target}")
-            )
-        if save_image:
-            viz.save_figure(figure, name=f"spin_lock_relaxation_{target}")
+        _output_figure(
+            figure,
+            name=figure_name,
+            plot=plot,
+            save_image=save_image,
+        )
 
     return Result(
         data={
             "targets": target_list,
             "results": results,
         },
+        figure=figures.get(f"{target_list[0]}_relaxation"),
         figures=figures,
     )
 
@@ -1119,9 +1527,15 @@ def spin_lock_relaxation_spectroscopy(
     *,
     spin_lock_frequency_range: ArrayLike | None = None,
     duration_range: ArrayLike | None = None,
+    t1: float | Mapping[str, float] | None = None,
+    t2_echo: float | Mapping[str, float] | None = None,
+    n_duration_points: int | None = None,
     ramp_duration: float = DEFAULT_RAMP_DURATION,
+    min_a0: float | None = 0.5,
+    min_b0: float | None = 0.5,
     n_shots: int | None = None,
     shot_interval: float | None = None,
+    enable_tqdm: bool = True,
     plot: bool = True,
     save_image: bool = False,
 ) -> Result:
@@ -1138,17 +1552,41 @@ def spin_lock_relaxation_spectroscopy(
         Requested positive Rabi frequencies in GHz. Defaults to 14 points from
         approximately 5.2 MHz to 120 MHz, with denser sampling at low
         frequencies. Zero is excluded because it cannot determine `shift` from
-        `f_R tan(theta)`.
+        `-f_R tan(theta)`.
     duration_range
         Flat-top durations in ns. One explicit range is reused for every target.
         When omitted, the same per-target T1/T2-echo defaults as
         `spin_lock_relaxation()` are used.
+    t1
+        T1 in ns used only to generate an automatic duration range. May be a
+        common value or a target mapping. If either `t1` or `t2_echo` is given,
+        YAML coherence times are not read.
+    t2_echo
+        T2 echo in ns used only to generate an automatic duration range. May be
+        a common value or a target mapping.
+    n_duration_points
+        Number of logarithmic points in an automatic duration range. Must be at
+        least 3. Defaults to 18 when a coherence time is available, or to 21
+        for the fixed 100 ns--200 μs fallback. Ignored when `duration_range` is
+        explicitly supplied.
     ramp_duration
         Duration of each raised-cosine ramp in ns. Defaults to 16 ns.
+    min_a0
+        Minimum fitted `a(0)` shown in the T1-rho summary plot. Smaller values
+        remain in the returned data but are omitted from that plot. Defaults to
+        0.5; use `None` to disable this filter.
+    min_b0
+        Minimum fitted `b(0)` shown in the T2-rho summary plot. Smaller values
+        remain in the returned data but are omitted from that plot. Defaults to
+        0.5; use `None` to disable this filter.
     n_shots
-        Number of shots per expectation value. Defaults to `DEFAULT_SHOTS`.
+        Number of shots per expectation value. Must be at least 2 and defaults
+        to `DEFAULT_SHOTS`.
     shot_interval
-        Interval between shots in seconds. Defaults to `DEFAULT_INTERVAL`.
+        Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
+    enable_tqdm
+        Whether to show measurement progress by spin-lock frequency. Defaults
+        to `True`.
     plot
         Whether to display the parameter heatmaps and spectroscopy summary.
     save_image
@@ -1158,11 +1596,15 @@ def spin_lock_relaxation_spectroscopy(
     -------
     Result
         The `data["results"][target]` mapping contains frequency and duration
-        axes, seven measured expectations, `a`, `b`, and `p` maps, independent
-        per-frequency global fits, and arrays for `t1_rho`, `t2_rho`, signed
-        `shift`, and axis rotation frequency. Durations are in ns and
-        frequencies are in GHz. Failed frequency fits are represented by NaN
-        values and described by `fit_success` and `fit_messages`.
+        axes, mean IQ, seven expectations and their SEM, `a`, `b`, and `p` maps,
+        per-frequency fits, and summary arrays for `t1_rho`, `t2_rho`, `shift`,
+        and axis rotation frequency. Failed fits are represented by NaN and
+        described by `fit_success` and `fit_messages`. Durations are in ns and
+        frequencies are in GHz.
+
+        In the maps, `a` is longitudinal retention along the effective axis,
+        `b` is transverse coherence magnitude, and `p` is the signed
+        longitudinal polarization offset.
 
         Two figures are stored per target as
         `"{target}_parameter_heatmaps"` and
@@ -1183,90 +1625,119 @@ def spin_lock_relaxation_spectroscopy(
     independent at each frequency, while all durations at one frequency share
     one fitted `theta`.
 
-    A target uses one flattened hardware sweep containing
-    `n_frequencies * n_durations * 7` measurement points. Multiple targets are
-    measured sequentially. A failed fit does not stop analysis of the remaining
-    frequencies. Frequencies with failed fits remain in the returned raw data
-    but are omitted from figures because their axis rotation frequency is not
-    defined.
+    Each frequency uses one hardware sweep containing `n_durations * 7`
+    measurement points. Frequencies and multiple targets are measured
+    sequentially. A failed fit does not stop analysis of the remaining
+    frequencies. Frequencies with failed fits remain in the returned measured
+    data but are omitted from figures because their axis rotation frequency is
+    not defined.
 
-    The signed `shift` is the fitted effective Z component, `f_R tan(theta)`;
-    it should only be interpreted as an AC Stark shift when other detuning is
-    negligible. Rabi-frequency calibration uncertainty is not included in the
-    reported shift or axis rotation frequency uncertainty. Expectation-value
-    uncertainty uses the stored Rabi normalization noise, and pointwise error
-    bars condition on the independently fitted `theta` at each frequency.
+    Within each frequency, the `duration x seven settings` points are measured
+    in an independently randomized order and restored to canonical order before
+    analysis. Frequency order itself is unchanged. Row `i` of
+    `measurement_order` records the canonical flattened indices in acquisition
+    order for frequency `i`.
+
+    The signed `shift` follows the spectroscopy convention
+    `f_dressed - f_bare = -f_R tan(theta)`: a positive value means that the
+    drive raises the qubit transition frequency. This interpretation assumes
+    that the spin-lock carrier is the calibrated bare transition frequency;
+    residual carrier detuning is indistinguishable from a drive-induced shift.
+    Rabi-frequency calibration uncertainty is not included in the reported
+    shift or axis rotation frequency uncertainty. Uncertainty in the stored
+    IQ-normalization parameters is also not propagated. Each expectation-value
+    uncertainty is the standard error calculated from the normalized
+    single-shot IQ values. Global-fit errors use the larger of the local
+    Jacobian error and the HC3 robust error. Pointwise `a`, `b`, and `p` error
+    bars use 500 Gaussian draws and include the fitted `theta` uncertainty. No
+    full bootstrap is performed.
     """
-    target_list = _normalize_targets(exp, targets)
-    if not target_list:
-        raise ValueError("targets must contain at least one target.")
-    if not np.isfinite(ramp_duration) or ramp_duration < 0:
-        raise ValueError("ramp_duration must be finite and nonnegative.")
-    if n_shots is not None and (
-        isinstance(n_shots, bool) or not isinstance(n_shots, (int, np.integer))
-    ):
-        raise ValueError("n_shots must be a positive integer.")
-    resolved_n_shots = int(DEFAULT_SHOTS if n_shots is None else n_shots)
-    if resolved_n_shots <= 0:
-        raise ValueError("n_shots must be a positive integer.")
-    resolved_shot_interval = float(
-        DEFAULT_INTERVAL if shot_interval is None else shot_interval
+    target_list, ramp_duration, n_shots, shot_interval = _resolve_measurement_options(
+        exp,
+        targets,
+        ramp_duration=ramp_duration,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
     )
-    if not np.isfinite(resolved_shot_interval) or resolved_shot_interval < 0:
-        raise ValueError("shot_interval must be finite and nonnegative.")
 
     requested_frequencies = _resolve_spin_lock_frequency_range(
         spin_lock_frequency_range
     )
+    resolved_min_a0 = _resolve_min_initial_amplitude(min_a0, name="min_a0")
+    resolved_min_b0 = _resolve_min_initial_amplitude(min_b0, name="min_b0")
     exp.pulse.validate_rabi_params(target_list)
     results: dict[str, Any] = {}
     figures: dict[str, go.Figure] = {}
     for target_index, target in enumerate(target_list, start=1):
-        durations = _resolve_duration_range(exp, target, duration_range)
+        durations = _resolve_target_durations(
+            exp,
+            target,
+            duration_range=duration_range,
+            t1=t1,
+            t2_echo=t2_echo,
+            n_duration_points=n_duration_points,
+        )
         drive_amplitudes, rabi_frequencies = _resolve_frequency_sweep(
             exp,
             target=target,
             requested_frequencies=requested_frequencies,
         )
-        n_points = requested_frequencies.size * durations.size * len(EXPECTATION_LABELS)
+        points_per_frequency = durations.size * len(EXPECTATION_LABELS)
         print(
             f"({target_index}/{len(target_list)}) Measuring spin-lock relaxation "
-            f"spectroscopy for {target} ({n_points} points)."
+            f"spectroscopy for {target} "
+            f"({points_per_frequency} points per frequency)."
         )
-        raw_data, expectations = _measure_target_grid(
-            exp,
+        measurements: list[_MeasurementData] = []
+        frequency_analyses: list[dict[str, Any] | Exception] = []
+        frequency_progress = tqdm(
+            zip(drive_amplitudes, rabi_frequencies, strict=True),
+            total=rabi_frequencies.size,
+            desc=f"Spin-lock spectroscopy: {target}",
+            unit="freq",
+            disable=not enable_tqdm,
+        )
+        for amplitude, rabi_frequency in frequency_progress:
+            frequency_progress.set_postfix_str(f"{rabi_frequency * 1e3:.3f} MHz")
+            measurement = _measure_target(
+                exp,
+                target=target,
+                durations=durations,
+                drive_amplitude=float(amplitude),
+                ramp_duration=ramp_duration,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
+            )
+            measurements.append(measurement)
+            frequency_analyses.append(
+                _try_analyze_expectations(
+                    durations=durations,
+                    measurement=measurement,
+                    rabi_frequency=float(rabi_frequency),
+                )
+            )
+        target_result, target_figures = _assemble_spectroscopy_result(
             target=target,
             durations=durations,
-            drive_amplitudes=drive_amplitudes,
-            ramp_duration=float(ramp_duration),
-            n_shots=resolved_n_shots,
-            shot_interval=resolved_shot_interval,
-        )
-        target_result, target_figures = _analyze_spectroscopy_target(
-            exp,
-            target=target,
-            durations=durations,
-            raw_data=raw_data,
-            expectations=expectations,
+            measurements=measurements,
             requested_frequencies=requested_frequencies,
             drive_amplitudes=drive_amplitudes,
             rabi_frequencies=rabi_frequencies,
-            ramp_duration=float(ramp_duration),
+            ramp_duration=ramp_duration,
+            min_a0=resolved_min_a0,
+            min_b0=resolved_min_b0,
+            frequency_analyses=frequency_analyses,
         )
         results[target] = target_result
         figures.update(target_figures)
-
-        failed_indices = np.flatnonzero(~target_result["fit_success"])
-        for frequency_index in failed_indices:
-            frequency_mhz = rabi_frequencies[frequency_index] * 1e3
-            message = target_result["fit_messages"][frequency_index]
-            print(f"  Fit failed at {frequency_mhz:.6g} MHz: {message}")
-
+        _print_spectroscopy_diagnostics(target_result, rabi_frequencies)
         for figure_name, figure in target_figures.items():
-            if plot:
-                figure.show(config=viz.get_config(filename=figure_name))
-            if save_image:
-                viz.save_figure(figure, name=figure_name)
+            _output_figure(
+                figure,
+                name=figure_name,
+                plot=plot,
+                save_image=save_image,
+            )
 
     primary_figure = figures.get(f"{target_list[0]}_relaxation_spectroscopy")
     return Result(

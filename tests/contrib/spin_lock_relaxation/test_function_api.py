@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from contextlib import nullcontext
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -18,23 +18,83 @@ from qubex.contrib.experiment import (
 )
 from qubex.contrib.experiment.spin_lock_relaxation import (
     MEASUREMENT_SETTINGS,
-    _analyze_spectroscopy_target,
+    _assemble_spectroscopy_result,
     _build_sequence,
     _fit_global_model,
     _make_figure,
-    _measure_target_grid,
-    _normalization_noise,
+    _measure_target,
+    _MeasurementData,
     _predict_expectations,
     _print_fit_summary,
     _resolve_drive,
     _resolve_duration_range,
+    _resolve_min_initial_amplitude,
     _resolve_spin_lock_frequency_range,
+    _try_analyze_expectations,
 )
 from qubex.pulse import FlatTop, Rect
 
 spin_lock_module = importlib.import_module(
     "qubex.contrib.experiment.spin_lock_relaxation"
 )
+
+
+def _figure_layout(figure: Figure) -> dict[str, Any]:
+    """Return a plain mapping for type-safe Plotly layout assertions."""
+    figure_json = cast(dict[str, Any], figure.to_plotly_json())
+    return cast(dict[str, Any], figure_json["layout"])
+
+
+def _figure_data(figure: Figure) -> list[dict[str, Any]]:
+    """Return plain mappings for type-safe Plotly trace assertions."""
+    figure_json = cast(dict[str, Any], figure.to_plotly_json())
+    return cast(list[dict[str, Any]], figure_json["data"])
+
+
+def _assemble_synthetic_spectroscopy(
+    *,
+    target: str,
+    durations: np.ndarray,
+    expectations: np.ndarray,
+    expectation_errors: np.ndarray,
+    requested_frequencies: np.ndarray,
+    drive_amplitudes: np.ndarray,
+    rabi_frequencies: np.ndarray,
+    ramp_duration: float,
+    min_a0: float | None = 0.5,
+    min_b0: float | None = 0.5,
+) -> tuple[dict[str, Any], dict[str, Figure]]:
+    measurements = [
+        _MeasurementData(
+            mean_iq=np.zeros(values.shape, dtype=complex),
+            expectations=values,
+            expectation_errors=errors,
+            measurement_order=np.arange(values.size),
+        )
+        for values, errors in zip(expectations, expectation_errors, strict=True)
+    ]
+    analyses = [
+        _try_analyze_expectations(
+            durations=durations,
+            measurement=measurement,
+            rabi_frequency=float(rabi_frequency),
+        )
+        for measurement, rabi_frequency in zip(
+            measurements, rabi_frequencies, strict=True
+        )
+    ]
+    return _assemble_spectroscopy_result(
+        target=target,
+        durations=durations,
+        measurements=measurements,
+        requested_frequencies=requested_frequencies,
+        drive_amplitudes=drive_amplitudes,
+        rabi_frequencies=rabi_frequencies,
+        ramp_duration=ramp_duration,
+        frequency_analyses=analyses,
+        min_a0=min_a0,
+        min_b0=min_b0,
+    )
 
 
 def test_spin_lock_relaxation_is_exported_from_contrib() -> None:
@@ -75,13 +135,25 @@ def test_spin_lock_frequency_range_rejects_nonpositive_values(
         _resolve_spin_lock_frequency_range(frequencies)
 
 
+@pytest.mark.parametrize("value", [-0.1, np.nan, np.inf])
+def test_min_initial_amplitude_rejects_invalid_values(value: float) -> None:
+    """Plot thresholds should be finite and nonnegative when enabled."""
+    with pytest.raises(ValueError, match="min_a0"):
+        _resolve_min_initial_amplitude(value, name="min_a0")
+
+
+def test_min_initial_amplitude_can_be_disabled() -> None:
+    """None should disable initial-amplitude filtering."""
+    assert _resolve_min_initial_amplitude(None, name="min_a0") is None
+
+
 @pytest.mark.parametrize(
     ("t1", "t2_echo", "expected_start", "expected_stop", "expected_size"),
     [
-        (10_000.0, 20_000.0, 250.0, 400_000.0, 21),
-        (10_000.0, None, 250.0, 200_000.0, 21),
-        (None, 500.0, 100.0, 10_000.0, 21),
-        (None, None, 100.0, 200_000.0, 31),
+        (10_000.0, 20_000.0, 250.0, 200_000.0, 18),
+        (10_000.0, None, 250.0, 100_000.0, 18),
+        (None, 500.0, 100.0, 5_000.0, 18),
+        (None, None, 100.0, 200_000.0, 21),
     ],
 )
 def test_default_duration_range_uses_available_coherence_times(
@@ -121,6 +193,111 @@ def test_default_duration_range_uses_available_coherence_times(
     assert durations.size == expected_size
     assert durations[0] == pytest.approx(expected_start)
     assert durations[-1] == pytest.approx(expected_stop)
+
+
+@pytest.mark.parametrize(
+    ("unavailable_parameter", "expected_start", "expected_stop"),
+    [
+        ("t1", 500.0, 200_000.0),
+        ("t2_echo", 250.0, 100_000.0),
+    ],
+)
+def test_default_duration_range_loads_coherence_files_independently(
+    unavailable_parameter: str,
+    expected_start: float,
+    expected_stop: float,
+) -> None:
+    """One unavailable YAML parameter must not discard the other one."""
+
+    class _Loader:
+        @staticmethod
+        def load_param_data(name: str) -> dict[str, float]:
+            if name == unavailable_parameter:
+                raise RuntimeError("Parameter file is unavailable.")
+            value = 10_000.0 if name == "t1" else 20_000.0
+            return {"Q00": value}
+
+    class _Util:
+        @staticmethod
+        def discretize_time_range(
+            values: Any,
+            *,
+            sampling_period: float,
+        ) -> np.ndarray:
+            array = np.asarray(values, dtype=float)
+            return np.round(array / sampling_period) * sampling_period
+
+    exp: Any = SimpleNamespace(
+        ctx=SimpleNamespace(
+            measurement=SimpleNamespace(sampling_period=1.0),
+            system_manager=SimpleNamespace(config_loader=_Loader()),
+            util=_Util(),
+        )
+    )
+
+    durations = _resolve_duration_range(exp, "Q00", None)
+
+    assert durations[0] == pytest.approx(expected_start)
+    assert durations[-1] == pytest.approx(expected_stop)
+
+
+def test_duration_range_accepts_external_coherence_times_and_point_count() -> None:
+    """Explicit coherence times should replace YAML values for automatic ranges."""
+
+    class _Loader:
+        @staticmethod
+        def load_param_data(_name: str) -> dict[str, float]:
+            raise AssertionError(
+                "YAML must not be read when a coherence time is given."
+            )
+
+    class _Util:
+        @staticmethod
+        def discretize_time_range(
+            values: Any,
+            *,
+            sampling_period: float,
+        ) -> np.ndarray:
+            array = np.asarray(values, dtype=float)
+            return np.round(array / sampling_period) * sampling_period
+
+    exp: Any = SimpleNamespace(
+        ctx=SimpleNamespace(
+            measurement=SimpleNamespace(sampling_period=1.0),
+            system_manager=SimpleNamespace(config_loader=_Loader()),
+            util=_Util(),
+        )
+    )
+
+    durations = _resolve_duration_range(
+        exp,
+        "Q00",
+        None,
+        t1=8_000.0,
+        t2_echo=20_000.0,
+        n_points=9,
+    )
+
+    assert durations.size == 9
+    assert durations[0] == pytest.approx(200.0)
+    assert durations[-1] == pytest.approx(200_000.0)
+
+
+@pytest.mark.parametrize("n_points", [True, 2, 3.5])
+def test_automatic_duration_range_rejects_invalid_point_count(
+    n_points: Any,
+) -> None:
+    """An automatic range needs at least three logarithmic points."""
+    exp: Any = SimpleNamespace(ctx=SimpleNamespace())
+
+    with pytest.raises(ValueError, match="n_duration_points"):
+        _resolve_duration_range(
+            exp,
+            "Q00",
+            None,
+            t1=10_000.0,
+            n_points=n_points,
+        )
 
 
 def test_default_duration_range_rejects_unmeasurably_short_coherence() -> None:
@@ -226,9 +403,19 @@ def test_sequence_uses_flattop_duration_excluding_both_ramps() -> None:
     assert spin_lock_pulse.tau == pytest.approx(16.0)
 
 
-def test_frequency_duration_grid_is_measured_in_a_single_flattened_sweep() -> None:
-    """The grid should preserve frequency-major, duration, then setting order."""
+def test_frequency_points_are_shuffled_and_restored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One frequency should be shuffled and restored to canonical order."""
     sampled_pulses: list[tuple[float, float]] = []
+    acquisition_options: list[dict[str, Any]] = []
+    reset_targets: list[set[str]] = []
+    reversed_order = np.arange(13, -1, -1)
+    monkeypatch.setattr(
+        spin_lock_module.np.random,
+        "default_rng",
+        lambda: SimpleNamespace(permutation=lambda _size: reversed_order),
+    )
 
     class _Pulse:
         @staticmethod
@@ -245,46 +432,93 @@ def test_frequency_duration_grid_is_measured_in_a_single_flattened_sweep() -> No
 
     class _MeasurementService:
         @staticmethod
-        def sweep_parameter(*, sequence: Any, sweep_range: Any, **_kwargs: Any) -> Any:
-            indices = np.asarray(sweep_range)
+        async def run_sweep_measurement(
+            *,
+            schedule: Any,
+            sweep_values: Any,
+            **kwargs: Any,
+        ) -> Any:
+            acquisition_options.append(kwargs)
+            indices = np.asarray(sweep_values)
             for index in indices:
-                schedule = sequence(int(index))
+                pulse_schedule = schedule(int(index))
                 pulse = next(
                     element
-                    for element in schedule.get_sequences()["Q00"].elements
+                    for element in pulse_schedule.get_sequences()["Q00"].elements
                     if isinstance(element, FlatTop)
                 )
                 sampled_pulses.append((pulse.amplitude, pulse.duration))
-            values = np.arange(indices.size, dtype=float)
-            return SimpleNamespace(
-                data={
-                    "Q00": SimpleNamespace(
-                        data=values.astype(complex),
-                        normalized=values,
-                    )
-                }
+            values = np.arange(indices.size, dtype=float)[:, None] + np.linspace(
+                -0.1, 0.1, 100
             )
+            return SimpleNamespace(data={"Q00": [values.astype(complex)]})
+
+    class _RabiParam:
+        @staticmethod
+        def normalize(values: np.ndarray) -> np.ndarray:
+            return np.real(values)
 
     exp: Any = SimpleNamespace(
         pulse=_Pulse(),
         measurement_service=_MeasurementService(),
-        ctx=SimpleNamespace(util=SimpleNamespace(no_output=nullcontext)),
+        get_rabi_param=lambda _target: _RabiParam(),
+        ctx=SimpleNamespace(
+            reset_awg_and_capunits=lambda *, qubits: reset_targets.append(qubits),
+            util=SimpleNamespace(no_output=nullcontext),
+        ),
     )
 
-    raw_data, expectations = _measure_target_grid(
+    measurement = _measure_target(
         exp,
         target="Q00",
         durations=np.asarray([100.0, 200.0]),
-        drive_amplitudes=np.asarray([0.1, 0.2]),
+        drive_amplitude=0.1,
         ramp_duration=16.0,
         n_shots=100,
-        shot_interval=1e-4,
+        shot_interval=100_000.0,
     )
 
-    assert raw_data.shape == (2, 2, 7)
-    assert expectations.shape == (2, 2, 7)
-    assert sampled_pulses[:14] == [(0.1, 132.0)] * 7 + [(0.1, 232.0)] * 7
-    assert sampled_pulses[14:] == [(0.2, 132.0)] * 7 + [(0.2, 232.0)] * 7
+    assert measurement.mean_iq.shape == (2, 7)
+    assert measurement.expectations.shape == (2, 7)
+    assert measurement.expectation_errors.shape == (2, 7)
+    assert np.all(measurement.expectation_errors > 0)
+    assert reset_targets == [{"Q00"}]
+    assert len(acquisition_options) == 1
+    assert acquisition_options[0]["shot_averaging"] is False
+    assert acquisition_options[0]["time_integration"] is True
+    assert acquisition_options[0]["state_classification"] is False
+    assert acquisition_options[0]["n_shots"] == 100
+    assert acquisition_options[0]["shot_interval"] == 100_000.0
+    np.testing.assert_array_equal(measurement.measurement_order, reversed_order)
+    np.testing.assert_allclose(
+        measurement.expectations.ravel(),
+        range(13, -1, -1),
+        atol=1e-14,
+    )
+    assert sampled_pulses[:14] == [(0.1, 232.0)] * 7 + [(0.1, 132.0)] * 7
+
+
+def test_measurement_checks_rabi_parameters_before_hardware_access() -> None:
+    """A missing IQ normalization must fail before resetting measurement hardware."""
+
+    def unexpected_reset(*, qubits: set[str]) -> None:
+        raise AssertionError(f"Unexpected hardware reset for {qubits}.")
+
+    exp: Any = SimpleNamespace(
+        get_rabi_param=lambda _target: None,
+        ctx=SimpleNamespace(reset_awg_and_capunits=unexpected_reset),
+    )
+
+    with pytest.raises(ValueError, match="Rabi parameters are unavailable"):
+        _measure_target(
+            exp,
+            target="Q00",
+            durations=np.asarray([100.0, 200.0, 300.0]),
+            drive_amplitude=0.1,
+            ramp_duration=16.0,
+            n_shots=100,
+            shot_interval=100_000.0,
+        )
 
 
 def test_multiple_targets_are_measured_independently_in_order(
@@ -292,24 +526,41 @@ def test_multiple_targets_are_measured_independently_in_order(
 ) -> None:
     """Multiple targets should run as separate measurements in input order."""
     measured_targets: list[str] = []
+    duration_inputs: list[tuple[str, float, float, int]] = []
 
     class _Pulse:
         @staticmethod
         def validate_rabi_params(targets: list[str]) -> None:
             assert targets == ["Q01", "Q00"]
 
-    def measure_target(_exp: Any, **kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
+    def measure_target(_exp: Any, **kwargs: Any) -> _MeasurementData:
         measured_targets.append(kwargs["target"])
         shape = (3, 7)
-        return np.zeros(shape, dtype=complex), np.zeros(shape)
+        return _MeasurementData(
+            mean_iq=np.zeros(shape, dtype=complex),
+            expectations=np.zeros(shape),
+            expectation_errors=np.full(shape, 0.01),
+            measurement_order=np.arange(21),
+        )
 
-    def analyze_target(_exp: Any, **kwargs: Any) -> tuple[dict[str, str], Figure]:
+    def analyze_target(**kwargs: Any) -> tuple[dict[str, str], Figure]:
         return {"target": kwargs["target"]}, Figure()
+
+    def resolve_durations(
+        _exp: Any,
+        target: str,
+        _duration_range: Any,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        duration_inputs.append(
+            (target, kwargs["t1"], kwargs["t2_echo"], kwargs["n_points"])
+        )
+        return np.asarray([100.0, 200.0, 300.0])
 
     monkeypatch.setattr(
         spin_lock_module,
         "_resolve_duration_range",
-        lambda *_args: np.asarray([100.0, 200.0, 300.0]),
+        resolve_durations,
     )
     monkeypatch.setattr(
         spin_lock_module,
@@ -320,37 +571,53 @@ def test_multiple_targets_are_measured_independently_in_order(
     monkeypatch.setattr(spin_lock_module, "_analyze_target", analyze_target)
     exp: Any = SimpleNamespace(pulse=_Pulse())
 
-    result = spin_lock_relaxation(exp, ["Q01", "Q00"], plot=False)
+    result = spin_lock_relaxation(
+        exp,
+        ["Q01", "Q00"],
+        t1={"Q01": 10_000.0, "Q00": 20_000.0},
+        t2_echo={"Q01": 8_000.0, "Q00": 12_000.0},
+        n_duration_points=12,
+        plot=False,
+    )
 
     assert measured_targets == ["Q01", "Q00"]
+    assert duration_inputs == [
+        ("Q01", 10_000.0, 8_000.0, 12),
+        ("Q00", 20_000.0, 12_000.0, 12),
+    ]
     assert result.data["targets"] == ["Q01", "Q00"]
 
 
 def test_spectroscopy_measures_multiple_targets_independently_in_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Spectroscopy targets should run as separate flattened sweeps in order."""
-    measured_targets: list[str] = []
+    """Spectroscopy should measure each target and frequency in order."""
+    measured_points: list[tuple[str, float]] = []
 
     class _Pulse:
         @staticmethod
         def validate_rabi_params(targets: list[str]) -> None:
             assert targets == ["Q01", "Q00"]
 
-    def measure_grid(_exp: Any, **kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
-        measured_targets.append(kwargs["target"])
-        shape = (2, 3, 7)
-        return np.zeros(shape, dtype=complex), np.zeros(shape)
+    def measure_target(_exp: Any, **kwargs: Any) -> _MeasurementData:
+        measured_points.append((kwargs["target"], kwargs["drive_amplitude"]))
+        shape = (3, 7)
+        return _MeasurementData(
+            mean_iq=np.zeros(shape, dtype=complex),
+            expectations=np.zeros(shape),
+            expectation_errors=np.full(shape, 0.01),
+            measurement_order=np.arange(21),
+        )
 
-    def analyze_target(
-        _exp: Any, **kwargs: Any
-    ) -> tuple[dict[str, Any], dict[str, Figure]]:
+    def assemble_result(**kwargs: Any) -> tuple[dict[str, Any], dict[str, Figure]]:
         target = kwargs["target"]
         return (
             {
                 "target": target,
                 "fit_success": np.asarray([True, True]),
                 "fit_messages": ["ok", "ok"],
+                "t1_exclusion_messages": [None, None],
+                "t2_exclusion_messages": [None, None],
             },
             {
                 f"{target}_parameter_heatmaps": Figure(),
@@ -361,7 +628,7 @@ def test_spectroscopy_measures_multiple_targets_independently_in_order(
     monkeypatch.setattr(
         spin_lock_module,
         "_resolve_duration_range",
-        lambda *_args: np.asarray([100.0, 200.0, 300.0]),
+        lambda *_args, **_kwargs: np.asarray([100.0, 200.0, 300.0]),
     )
     monkeypatch.setattr(
         spin_lock_module,
@@ -371,11 +638,14 @@ def test_spectroscopy_measures_multiple_targets_independently_in_order(
             np.asarray([0.01, 0.02]),
         ),
     )
-    monkeypatch.setattr(spin_lock_module, "_measure_target_grid", measure_grid)
+    monkeypatch.setattr(spin_lock_module, "_measure_target", measure_target)
+    monkeypatch.setattr(
+        spin_lock_module, "_try_analyze_expectations", lambda **_kwargs: {}
+    )
     monkeypatch.setattr(
         spin_lock_module,
-        "_analyze_spectroscopy_target",
-        analyze_target,
+        "_assemble_spectroscopy_result",
+        assemble_result,
     )
     exp: Any = SimpleNamespace(pulse=_Pulse())
 
@@ -383,10 +653,16 @@ def test_spectroscopy_measures_multiple_targets_independently_in_order(
         exp,
         ["Q01", "Q00"],
         spin_lock_frequency_range=[0.01, 0.02],
+        enable_tqdm=False,
         plot=False,
     )
 
-    assert measured_targets == ["Q01", "Q00"]
+    assert measured_points == [
+        ("Q01", 0.1),
+        ("Q01", 0.2),
+        ("Q00", 0.1),
+        ("Q00", 0.2),
+    ]
     assert result.data["targets"] == ["Q01", "Q00"]
     assert set(result.figures or {}) == {
         "Q01_parameter_heatmaps",
@@ -488,20 +764,6 @@ def test_global_fit_rejects_an_unconverged_optimizer(
         _fit_global_model(durations, observations, sigma=0.01)
 
 
-def test_normalization_noise_rejects_invalid_calibration() -> None:
-    """Invalid Rabi normalization noise should not become a fabricated error bar."""
-    exp: Any = SimpleNamespace(
-        pulse=SimpleNamespace(
-            rabi_params={
-                "Q00": SimpleNamespace(noise=np.nan, amplitude=0.5),
-            }
-        )
-    )
-
-    with pytest.raises(ValueError, match="normalization noise"):
-        _normalization_noise(exp, "Q00")
-
-
 def test_fit_summary_is_printed_separately_from_figure(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -542,7 +804,20 @@ def test_relaxation_figure_uses_a_wide_three_panel_layout() -> None:
     durations = np.asarray([100.0, 200.0, 300.0])
     points = {
         name: np.ones(durations.size)
-        for name in ("a", "a_error", "b", "b_error", "p", "p_error")
+        for name in (
+            "a",
+            "a_error",
+            "a_error_minus",
+            "a_error_plus",
+            "b",
+            "b_error",
+            "b_error_minus",
+            "b_error_plus",
+            "p",
+            "p_error",
+            "p_error_minus",
+            "p_error_plus",
+        )
     }
     fit = {
         "parameters": {
@@ -562,8 +837,20 @@ def test_relaxation_figure_uses_a_wide_three_panel_layout() -> None:
         fit=fit,
     )
 
-    assert figure.layout.width == 1200
-    assert figure.layout.height == 360
+    layout = _figure_layout(figure)
+    annotations = layout["annotations"]
+    assert layout["width"] == 1200
+    assert layout["height"] == 360
+    assert annotations[0]["text"] == ("a(t)<br><sup>Longitudinal retention (T1ρ)</sup>")
+    assert annotations[1]["text"] == ("b(t)<br><sup>Transverse coherence (T2ρ)</sup>")
+    assert annotations[2]["text"] == (
+        "p(t)<br><sup>Longitudinal polarization offset</sup>"
+    )
+    assert layout["yaxis"]["title"]["text"] == "Longitudinal retention a(t)"
+    assert layout["yaxis2"]["title"]["text"] == "Transverse coherence b(t)"
+    assert layout["yaxis3"]["title"]["text"] == (
+        "Longitudinal polarization offset p(t)"
+    )
 
 
 def test_spectroscopy_analysis_recovers_each_frequency_independently() -> None:
@@ -587,20 +874,11 @@ def test_spectroscopy_analysis_recovers_each_frequency_independently() -> None:
             for index, angle in enumerate(theta)
         ]
     )
-    exp: Any = SimpleNamespace(
-        pulse=SimpleNamespace(
-            rabi_params={
-                "Q00": SimpleNamespace(noise=0.005, amplitude=0.5),
-            }
-        )
-    )
-
-    result, figures = _analyze_spectroscopy_target(
-        exp,
+    result, figures = _assemble_synthetic_spectroscopy(
         target="Q00",
         durations=durations,
-        raw_data=np.zeros(expectations.shape, dtype=complex),
         expectations=expectations,
+        expectation_errors=np.full(expectations.shape, 0.01),
         requested_frequencies=rabi_frequencies,
         drive_amplitudes=np.asarray([0.1, 0.2]),
         rabi_frequencies=rabi_frequencies,
@@ -611,7 +889,7 @@ def test_spectroscopy_analysis_recovers_each_frequency_independently() -> None:
     np.testing.assert_allclose(result["t2_rho"], [7_000.0, 8_000.0], rtol=2e-3)
     np.testing.assert_allclose(
         result["shift"],
-        rabi_frequencies * np.tan(theta),
+        -rabi_frequencies * np.tan(theta),
         rtol=2e-3,
     )
     np.testing.assert_allclose(
@@ -625,17 +903,72 @@ def test_spectroscopy_analysis_recovers_each_frequency_independently() -> None:
         "Q00_parameter_heatmaps",
         "Q00_relaxation_spectroscopy",
     }
-    assert len(figures["Q00_parameter_heatmaps"].data) == 3
-    assert len(figures["Q00_relaxation_spectroscopy"].data) == 3
     heatmaps = figures["Q00_parameter_heatmaps"]
-    assert heatmaps.layout.yaxis.type == "log"
-    assert heatmaps.layout.yaxis2.type == "log"
-    assert heatmaps.layout.yaxis3.type == "log"
+    assert len(_figure_data(heatmaps)) == 3
+    heatmap_layout = _figure_layout(heatmaps)
+    heatmap_annotations = heatmap_layout["annotations"]
+    assert heatmap_layout["yaxis"]["type"] == "log"
+    assert heatmap_layout["yaxis2"]["type"] == "log"
+    assert heatmap_layout["yaxis3"]["type"] == "log"
+    assert "Longitudinal retention" in heatmap_annotations[0]["text"]
+    assert "Transverse coherence" in heatmap_annotations[1]["text"]
+    assert "Longitudinal polarization offset" in heatmap_annotations[2]["text"]
     summary = figures["Q00_relaxation_spectroscopy"]
-    assert summary.layout.yaxis.rangemode == "tozero"
-    assert summary.layout.yaxis.minallowed == 0
-    assert summary.layout.yaxis2.rangemode == "tozero"
-    assert summary.layout.yaxis2.minallowed == 0
+    assert len(_figure_data(summary)) == 3
+    summary_layout = _figure_layout(summary)
+    assert summary_layout["yaxis"]["rangemode"] == "tozero"
+    assert summary_layout["yaxis"]["minallowed"] == 0
+    assert summary_layout["yaxis2"]["rangemode"] == "tozero"
+    assert summary_layout["yaxis2"]["minallowed"] == 0
+
+
+def test_spectroscopy_omits_low_initial_amplitudes_from_relaxation_plots() -> None:
+    """Low a0 and b0 fits should be masked only from their respective plots."""
+    durations = np.geomspace(100.0, 30_000.0, 15)
+    rabi_frequencies = np.asarray([0.01, 0.02])
+    expectations = np.stack(
+        [
+            _predict_expectations(
+                durations,
+                theta=0.1,
+                t1_rho=10_000.0,
+                t2_rho=7_000.0,
+                p_inf=-0.2,
+                a0=a0,
+                b0=b0,
+                p0=0.02,
+                phases=np.linspace(0.2, 2.0, durations.size),
+            )
+            for a0, b0 in ((0.2, 0.9), (0.9, 0.2))
+        ]
+    )
+    result, figures = _assemble_synthetic_spectroscopy(
+        target="Q00",
+        durations=durations,
+        expectations=expectations,
+        expectation_errors=np.full(expectations.shape, 0.01),
+        requested_frequencies=rabi_frequencies,
+        drive_amplitudes=np.asarray([0.1, 0.2]),
+        rabi_frequencies=rabi_frequencies,
+        ramp_duration=16.0,
+        min_a0=0.5,
+        min_b0=0.5,
+    )
+
+    assert result["t1_plot_mask"].tolist() == [False, True]
+    assert result["t2_plot_mask"].tolist() == [True, False]
+    assert "a0=" in result["t1_exclusion_messages"][0]
+    assert "b0=" in result["t2_exclusion_messages"][1]
+    assert result["t1_exclusion_messages"][1] is None
+    assert result["t2_exclusion_messages"][0] is None
+
+    summary = figures["Q00_relaxation_spectroscopy"]
+    summary_data = _figure_data(summary)
+    assert np.isnan(np.asarray(summary_data[0]["y"])[0])
+    assert np.isfinite(np.asarray(summary_data[0]["y"])[1])
+    assert np.isfinite(np.asarray(summary_data[1]["y"])[0])
+    assert np.isnan(np.asarray(summary_data[1]["y"])[1])
+    assert np.all(np.isfinite(np.asarray(summary_data[2]["y"])))
 
 
 def test_spectroscopy_analysis_continues_after_one_fit_failure() -> None:
@@ -655,20 +988,11 @@ def test_spectroscopy_analysis_continues_after_one_fit_failure() -> None:
     invalid = valid.copy()
     invalid[0, 0] = np.nan
     expectations = np.stack((invalid, valid))
-    exp: Any = SimpleNamespace(
-        pulse=SimpleNamespace(
-            rabi_params={
-                "Q00": SimpleNamespace(noise=0.005, amplitude=0.5),
-            }
-        )
-    )
-
-    result, _ = _analyze_spectroscopy_target(
-        exp,
+    result, _ = _assemble_synthetic_spectroscopy(
         target="Q00",
         durations=durations,
-        raw_data=np.zeros(expectations.shape, dtype=complex),
         expectations=expectations,
+        expectation_errors=np.full(expectations.shape, 0.01),
         requested_frequencies=np.asarray([0.01, 0.02]),
         drive_amplitudes=np.asarray([0.1, 0.2]),
         rabi_frequencies=np.asarray([0.01, 0.02]),
@@ -685,20 +1009,11 @@ def test_spectroscopy_analysis_handles_all_fit_failures() -> None:
     """All-failed sweeps should still return inspectable data and figures."""
     durations = np.geomspace(100.0, 20_000.0, 12)
     expectations = np.full((2, durations.size, len(MEASUREMENT_SETTINGS)), np.nan)
-    exp: Any = SimpleNamespace(
-        pulse=SimpleNamespace(
-            rabi_params={
-                "Q00": SimpleNamespace(noise=0.005, amplitude=0.5),
-            }
-        )
-    )
-
-    result, figures = _analyze_spectroscopy_target(
-        exp,
+    result, figures = _assemble_synthetic_spectroscopy(
         target="Q00",
         durations=durations,
-        raw_data=np.zeros(expectations.shape, dtype=complex),
         expectations=expectations,
+        expectation_errors=np.full(expectations.shape, 0.01),
         requested_frequencies=np.asarray([0.01, 0.02]),
         drive_amplitudes=np.asarray([0.1, 0.2]),
         rabi_frequencies=np.asarray([0.01, 0.02]),
@@ -707,5 +1022,5 @@ def test_spectroscopy_analysis_handles_all_fit_failures() -> None:
 
     assert result["fit_success"].tolist() == [False, False]
     assert np.all(np.isnan(result["axis_rotation_frequency"]))
-    assert len(figures["Q00_parameter_heatmaps"].data) == 3
-    assert len(figures["Q00_relaxation_spectroscopy"].data) == 3
+    assert len(_figure_data(figures["Q00_parameter_heatmaps"])) == 3
+    assert len(_figure_data(figures["Q00_relaxation_spectroscopy"])) == 3
