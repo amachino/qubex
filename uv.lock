@@ -3197,6 +3197,8 @@ dependencies = [
 
 [package.optional-dependencies]
 backend = [
+    { name = "quelware-client" },
+    { name = "quelware-core" },
     { name = "qxdriver-quel1" },
 ]
 quel1 = [
@@ -3245,10 +3247,10 @@ requires-dist = [
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
+    { name = "qubex", extras = ["quel1", "quel3"], marker = "extra == 'backend'" },
     { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.7.2" },
     { name = "quelware-core", marker = "extra == 'quel3'", specifier = ">=0.9.0" },
     { name = "qxcore", editable = "packages/qxcore" },
-    { name = "qxdriver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
     { name = "qxdriver-quel1", marker = "extra == 'quel1'", editable = "packages/qxdriver-quel1" },
     { name = "qxfitting", editable = "packages/qxfitting" },
     { name = "qxpulse", editable = "packages/qxpulse" },
