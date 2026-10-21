@@ -627,12 +627,10 @@ class Quel3ExecutionManager:
             directives.append(sequencer.export_set_fixed_timeline_directive(alias))
             alias_to_directives[alias] = directives
 
-        drivers = tuple(session_state.alias_to_driver.values())
-        # Initializing drivers in parallel is currently unreliable, so initialize
-        # them serially as a workaround.
         with _log_phase_duration("initialize"):
-            for driver in drivers:
-                await driver.initialize()
+            await session_state.session.initialize(
+                instrument_resource_ids, parallel=parallel
+            )
 
         with _log_phase_duration("apply"):
             if parallel:

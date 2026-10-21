@@ -285,6 +285,14 @@ class SessionProtocol(Protocol):
         """Apply unit-wide controls and return their resulting values."""
         ...
 
+    async def initialize(
+        self,
+        instrument_ids: Collection[ResourceIdProtocol],
+        parallel: bool = True,
+    ) -> None:
+        """Initialize selected instruments, optionally processing units in parallel."""
+        ...
+
     async def trigger(
         self,
         instrument_ids: Collection[ResourceIdProtocol],
