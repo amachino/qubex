@@ -33,20 +33,26 @@ To install `uv`, see the official guide:
 ### Install latest release
 
 ```bash
-uv pip install git+https://github.com/amachino/qubex.git
+uv pip install "qubex @ git+https://github.com/amachino/qubex.git"
 ```
 
-### Install with QuEL-1 backend support for real hardware use (Linux only)
+### Install with QuEL-1 and QuEL-3 support (Linux only)
+
+Use `backend` to install the dependencies for both QuEL-1 and QuEL-3.
 
 ```bash
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
 
-`backend` is the public extra for QuEL-1 support. `quel1` is available as the
-equivalent explicit extra name.
-If you only want to use the simulator, you do not need either extra.
+Hardware extras are unnecessary for simulator-only use.
 
-### Install with QuEL-3 support
+### Install with QuEL-1 support only (Linux only)
+
+```bash
+uv pip install "qubex[quel1] @ git+https://github.com/amachino/qubex.git"
+```
+
+### Install with QuEL-3 support only
 
 ```bash
 uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
@@ -55,8 +61,11 @@ uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
 ### Install specific version
 
 ```bash
-uv pip install "git+https://github.com/amachino/qubex.git@<version>"
+uv pip install "qubex @ git+https://github.com/amachino/qubex.git@<version>"
 ```
+
+To include hardware dependencies, replace `qubex` in the example above with
+`qubex[backend]`, `qubex[quel1]`, or `qubex[quel3]`.
 
 Check available versions on the [Release Page](https://github.com/amachino/qubex/releases).
 
