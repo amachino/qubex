@@ -556,6 +556,7 @@ class Quel1BoxCommonProtocol(Protocol):
         port: PortType,
         lo_freq: float | None = None,
         cnco_freq: float | None = None,
+        cnco_locked_with: PortType | None = None,
         vatt: int | None = None,
         sideband: str | None = None,
         fullscale_current: int | None = None,
@@ -583,6 +584,10 @@ class Quel1BoxCommonProtocol(Protocol):
         fnco_freq: float | None = None,
     ) -> None:
         """Apply runit-level configuration."""
+        ...
+
+    def get_loopbacks_of_port(self, port: PortType) -> set[PortType]:
+        """Return output ports that can loop back to one input port."""
         ...
 
 
