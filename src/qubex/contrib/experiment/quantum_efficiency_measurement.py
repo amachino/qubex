@@ -1827,12 +1827,7 @@ def _fit_measurement_induced_dephasing(
     valid_error_mask = np.isfinite(rho01_errors) & (rho01_errors > 0.0)
     weighted = int(np.count_nonzero(valid_error_mask)) >= 3
     fit_mask = valid_error_mask if weighted else np.ones(len(amplitudes), dtype=bool)
-    fit_kwargs: dict[str, object] = {}
-    if weighted:
-        fit_kwargs = {
-            "sigma": rho01_errors[fit_mask],
-            "absolute_sigma": True,
-        }
+    fit_errors = rho01_errors[fit_mask] if weighted else None
 
     try:
         popt, pcov = curve_fit(
@@ -1841,8 +1836,9 @@ def _fit_measurement_induced_dephasing(
             rho01[fit_mask],
             p0=[initial_b, sigma_guess],
             bounds=([0.0, 1e-12], [np.inf, np.inf]),
+            sigma=fit_errors,
+            absolute_sigma=weighted,
             maxfev=20_000,
-            **fit_kwargs,
         )
     except Exception as exc:
         return FitResult(
@@ -2205,8 +2201,6 @@ def _build_quantum_efficiency_result(
         y=0.0,
         line_color="rgba(80, 80, 80, 0.7)",
         line_width=1.5,
-        row=1,
-        col=1,
     )
     overview_figure.update_layout(
         title=f"Quantum efficiency measurement : {target}",

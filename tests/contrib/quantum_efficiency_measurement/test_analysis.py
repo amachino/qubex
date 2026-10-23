@@ -60,6 +60,14 @@ def _build_analysis_inputs() -> dict[str, Any]:
     }
 
 
+def _error_y_array(figure: go.Figure, index: int = 0) -> Any:
+    """Return one trace's error-bar array without relying on Plotly stub unions."""
+    trace = cast(go.Scatter, figure.data[index])
+    payload = cast(dict[str, Any], trace.to_plotly_json())
+    error_y = cast(dict[str, Any], payload["error_y"])
+    return error_y["array"]
+
+
 def test_analyze_quantum_efficiency_should_recover_fit_based_eta() -> None:
     """Given synthetic amplitude data, when analyzed, then the fit-based QE matches the known model."""
     dataset = _build_analysis_inputs()
@@ -99,8 +107,10 @@ def test_analyze_quantum_efficiency_should_recover_fit_based_eta() -> None:
     assert isinstance(result.get_figure(), go.Figure)
     assert isinstance(result.get_figure("snr"), go.Figure)
     assert isinstance(result.get_figure("dephasing"), go.Figure)
-    assert result.get_figure("snr").data[0].error_y.array is not None
-    assert result.get_figure("dephasing").data[0].error_y.array is not None
+    snr_figure = cast(go.Figure, result.get_figure("snr"))
+    dephasing_figure = cast(go.Figure, result.get_figure("dephasing"))
+    assert _error_y_array(snr_figure) is not None
+    assert _error_y_array(dephasing_figure) is not None
     sigma_m_annotation = result.get_figure("dephasing").layout.annotations[0]
     assert sigma_m_annotation.text is not None
     assert "±" in sigma_m_annotation.text
@@ -126,8 +136,8 @@ def test_analyze_quantum_efficiency_should_recover_fit_based_eta() -> None:
     assert overview.layout.shapes
     assert overview.layout.shapes[0].y0 == pytest.approx(0.0)
     assert overview.layout.shapes[0].y1 == pytest.approx(0.0)
-    assert overview.data[0].error_y.array is not None
-    assert overview.data[2].error_y.array is not None
+    assert _error_y_array(overview) is not None
+    assert _error_y_array(overview, 2) is not None
     eta_annotation = next(
         annotation
         for annotation in overview.layout.annotations
@@ -215,7 +225,8 @@ def test_fit_snr_sweep_should_use_inverse_variance_weights() -> None:
         1.0 / np.sqrt(np.sum(weights * amplitudes**2))
     )
     np.testing.assert_allclose(
-        result.get_figure().data[0].error_y.array, standard_errors
+        _error_y_array(cast(go.Figure, result.get_figure())),
+        standard_errors,
     )
 
 
@@ -397,7 +408,7 @@ def test_measure_ramsey_fringe_should_use_final_capture_from_one_sweep(
 
     assert calls["count"] == 1
     assert calls["validated_targets"] == ["Q00"]
-    np.testing.assert_allclose(calls["sweep_range"], phases)
+    np.testing.assert_allclose(cast(Any, calls["sweep_range"]), phases)
     options = cast(dict[str, object], calls["options"])
     assert options["shot_averaging"] is True
     assert options["time_integration"] is True
@@ -682,7 +693,7 @@ def test_public_experiment_helpers_should_run_with_stubbed_experiment(
     assert isinstance(single_snr_result.get_figure(), go.Figure)
     assert isinstance(snr_result.get_figure(), go.Figure)
     assert np.all(np.asarray(snr_result["snr_standard_error"]) > 0.0)
-    assert snr_result.get_figure().data[0].error_y.array is not None
+    assert _error_y_array(cast(go.Figure, snr_result.get_figure())) is not None
     assert isinstance(qe_result.get_figure(), go.Figure)
     assert qe_result["quantum_efficiency"] > 0
     assert qe_result["quantum_efficiency_error"] > 0
@@ -726,11 +737,11 @@ def test_quantum_efficiency_measurement_should_resolve_default_sweep_ranges(
     quantum_efficiency_measurement(experiment, "Q00", plot=False)
 
     np.testing.assert_allclose(
-        captured["phase_range"],
+        cast(Any, captured["phase_range"]),
         np.linspace(0.0, 2.0 * np.pi, 17, endpoint=False),
     )
     np.testing.assert_allclose(
-        captured["amplitude_range"],
+        cast(Any, captured["amplitude_range"]),
         np.geomspace(0.002, 0.2, 17),
     )
     assert captured["projection_method"] == "max_amplitude"
@@ -777,7 +788,7 @@ def test_quantum_efficiency_measurement_should_prefer_explicit_readout_amplitude
     )
 
     np.testing.assert_allclose(
-        captured["amplitude_range"],
+        cast(Any, captured["amplitude_range"]),
         np.geomspace(0.001, 0.1, 17),
     )
 
@@ -917,6 +928,10 @@ def test_quantum_efficiency_should_use_early_stopped_range_for_snr(
         save_image=False,
     )
 
-    np.testing.assert_allclose(captured["amplitude_range"], completed_amplitudes)
-    np.testing.assert_allclose(captured["build_amplitudes"], completed_amplitudes)
+    np.testing.assert_allclose(
+        cast(Any, captured["amplitude_range"]), completed_amplitudes
+    )
+    np.testing.assert_allclose(
+        cast(Any, captured["build_amplitudes"]), completed_amplitudes
+    )
     assert captured["projection_method"] == "max_amplitude"
