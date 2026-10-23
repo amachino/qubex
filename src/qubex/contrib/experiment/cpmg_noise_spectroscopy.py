@@ -1359,11 +1359,14 @@ def plot_cpmg_results(
             title="Effective CPMG Frequency (MHz)",
             tick0=0,
             showgrid=True,
+            rangemode="tozero",
         ),
-        yaxis=dict(title=yaxis_title, showgrid=True),
+        yaxis=dict(title=yaxis_title, showgrid=True, rangemode="tozero"),
+        legend=dict(x=1.22, xanchor="left", y=1.0, yanchor="top"),
+        margin=dict(r=240),
         xaxis_type="linear",
         yaxis_type="linear",
-        width=800,
+        width=1000,
         height=600,
     )
     if mode == "both":
@@ -1373,6 +1376,7 @@ def plot_cpmg_results(
                 overlaying="y",
                 side="right",
                 showgrid=False,
+                rangemode="tozero",
             )
         )
 
@@ -1383,6 +1387,112 @@ def plot_cpmg_results(
         figure.write_image(directory / "cpmg_noise_spectroscopy_summary.png")
     if plot:
         figure.show()
+    return figure
+
+
+def _plot_cpmg_raw_data_heatmap(
+    *,
+    payload: CPMGResultPayload,
+    target: str,
+    target_index: int,
+) -> go.Figure | None:
+    """Create a target's pre-fit measured-data heatmap without interpolation."""
+    frequencies = np.asarray(payload["realized_frequency_matrix"], dtype=np.float64)[
+        target_index
+    ]
+    valid_indices = np.flatnonzero(np.isfinite(frequencies) & (frequencies > 0))
+    if len(valid_indices) == 0:
+        return None
+
+    ordered_indices = valid_indices[np.argsort(frequencies[valid_indices])]
+    column_by_frequency_index = {
+        int(frequency_index): column
+        for column, frequency_index in enumerate(ordered_indices)
+    }
+    samples: list[tuple[int, NDArray[np.float64], NDArray[np.float64]]] = []
+    maximum_point_count = 0
+    for record in payload["fit_records"]:
+        frequency_index = record.get("requested_frequency_index")
+        if record.get("target") != target or not isinstance(frequency_index, int):
+            continue
+        if frequency_index not in column_by_frequency_index:
+            continue
+        times = np.asarray(record.get("actual_decay_times_ns", []), dtype=np.float64)
+        values = np.asarray(record.get("P_values", []), dtype=np.float64)
+        if times.ndim != 1 or values.ndim != 1 or times.shape != values.shape:
+            continue
+        finite = np.isfinite(times) & (times > 0) & np.isfinite(values)
+        if not np.any(finite):
+            continue
+        finite_times = times[finite]
+        finite_values = values[finite]
+        samples.append((frequency_index, finite_times, finite_values))
+        maximum_point_count = max(maximum_point_count, len(finite_times))
+    if not samples:
+        return None
+
+    all_times = np.concatenate([times for _, times, _ in samples])
+    minimum_time = float(np.min(all_times))
+    maximum_time = float(np.max(all_times))
+    if minimum_time == maximum_time:
+        time_centers = np.asarray([minimum_time], dtype=np.float64)
+        time_edges = None
+    else:
+        time_edges = np.geomspace(
+            minimum_time,
+            maximum_time,
+            maximum_point_count + 1,
+        )
+        time_centers = np.sqrt(time_edges[:-1] * time_edges[1:])
+
+    value_sums = np.zeros((len(time_centers), len(ordered_indices)), dtype=np.float64)
+    value_counts = np.zeros_like(value_sums, dtype=np.int64)
+    for frequency_index, times, values in samples:
+        column = column_by_frequency_index[frequency_index]
+        if time_edges is None:
+            row_indices = np.zeros(len(times), dtype=np.int64)
+        else:
+            row_indices = np.searchsorted(time_edges, times, side="right") - 1
+            row_indices = np.clip(row_indices, 0, len(time_centers) - 1)
+        np.add.at(value_sums[:, column], row_indices, values)
+        np.add.at(value_counts[:, column], row_indices, 1)
+
+    heatmap_values = np.full_like(value_sums, np.nan)
+    np.divide(
+        value_sums,
+        value_counts,
+        out=heatmap_values,
+        where=value_counts > 0,
+    )
+    figure = viz.make_figure()
+    figure.add_trace(
+        go.Heatmap(
+            x=frequencies[ordered_indices] * 1e3,
+            y=time_centers * 1e-3,
+            z=heatmap_values,
+            colorbar={"title": "Normalized signal P"},
+            colorscale="Viridis",
+            zsmooth=False,
+            hovertemplate=(
+                "frequency=%{x:.6g} MHz<br>"
+                "time-bin center=%{y:.6g} us<br>"
+                "mean P=%{z:.6g}<extra></extra>"
+            ),
+        )
+    )
+    figure.update_layout(
+        title={
+            "text": f"CPMG measured data before fitting: {target}",
+            "subtitle": {"text": "Raw P values averaged within logarithmic time bins"},
+        },
+        xaxis={
+            "title": "Effective CPMG Frequency (MHz)",
+            "rangemode": "tozero",
+        },
+        yaxis={"title": "Effective decay time (us)", "type": "log"},
+        width=900,
+        height=600,
+    )
     return figure
 
 
@@ -1559,9 +1669,11 @@ def cpmg_noise_spectroscopy(
         Measurement interval in ns. Defaults to the experiment-wide
         measurement setting.
     plot
-        Whether to display the summary figure. Defaults to `True`.
+        Whether to display the summary figure and pre-fit data heatmaps.
+        Defaults to `True`.
     save_image
-        Whether to save the summary figure. Defaults to `False`.
+        Whether to save the summary figure and pre-fit data heatmaps. Defaults
+        to `False`.
     save_fit_images
         Whether to render and save individual decay figures. Defaults to
         `False`.
@@ -1582,8 +1694,9 @@ def cpmg_noise_spectroscopy(
     Returns
     -------
     Result
-        Numerical payload and an optional summary figure. Numerical fitting
-        does not create Plotly figures.
+        Numerical payload, an optional summary figure, and optional per-target
+        pre-fit data heatmaps in `figures`. Numerical fitting does not create
+        Plotly figures.
 
     Raises
     ------
@@ -2009,6 +2122,7 @@ def cpmg_noise_spectroscopy(
         _save_payload(payload=payload, save_dir=output_dir)
 
     summary_figure = None
+    heatmap_figures: dict[str, go.Figure] = {}
     if plot or save_image:
         summary_figure = plot_cpmg_results(
             exp,
@@ -2019,4 +2133,21 @@ def cpmg_noise_spectroscopy(
             plot=plot,
             save_image=save_image,
         )
-    return Result(data=payload, figure=summary_figure, figures=None)
+        for target_index, target in enumerate(target_list):
+            heatmap = _plot_cpmg_raw_data_heatmap(
+                payload=payload,
+                target=target,
+                target_index=target_index,
+            )
+            if heatmap is None:
+                continue
+            heatmap_figures[f"{target}_raw_data_heatmap"] = heatmap
+            if save_image:
+                heatmap.write_image(output_dir / f"{target}_raw_data_heatmap.png")
+            if plot:
+                heatmap.show()
+    return Result(
+        data=payload,
+        figure=summary_figure,
+        figures=heatmap_figures or None,
+    )

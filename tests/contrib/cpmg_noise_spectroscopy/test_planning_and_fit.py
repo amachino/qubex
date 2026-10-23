@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import plotly.graph_objects as go
 import pytest
 
 import qubex.visualization as viz
@@ -416,6 +417,39 @@ def test_numerical_only_experiment_does_not_create_plotly_figures(monkeypatch) -
     )
 
     assert result.figure is None
+    assert result.figures is None
+
+
+def test_plotting_experiment_returns_prefit_heatmap(monkeypatch) -> None:
+    """Plotting should return each target's measured values as a raw-data heatmap."""
+    monkeypatch.setattr(go.Figure, "show", lambda _self: None)
+
+    result = cpmg_noise_spectroscopy(
+        _FakeExperiment(),  # type: ignore[arg-type]
+        targets=["Q00"],
+        frequency_range=[0.001, 0.002],
+        n_pi_range=[16, 20, 24, 28, 32, 40],
+        n_repeats=2,
+        plot=True,
+        show_t1=False,
+        save_data=False,
+        enable_tqdm=False,
+    )
+
+    assert result.figures is not None
+    heatmap = result.figures["Q00_raw_data_heatmap"]
+    assert isinstance(heatmap, go.Figure)
+    assert len(heatmap.data) == 1
+    trace = cast(go.Heatmap, heatmap.data[0])
+    assert trace.type == "heatmap"
+    expected_frequencies = np.sort(
+        np.asarray(result.data["realized_frequency_matrix"])[0] * 1e3
+    )
+    np.testing.assert_allclose(trace.x, expected_frequencies)
+    assert np.asarray(trace.z, dtype=np.float64).shape[1] == 2
+    assert np.any(np.isfinite(np.asarray(trace.z, dtype=np.float64)))
+    assert heatmap.layout.xaxis.title.text == "Effective CPMG Frequency (MHz)"
+    assert heatmap.layout.yaxis.title.text == "Effective decay time (us)"
 
 
 def test_ascending_acquisition_sorts_realized_frequency_not_input_index() -> None:
