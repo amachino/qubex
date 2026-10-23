@@ -1,6 +1,6 @@
 # Installation
 
-Qubex runs on Python 3.10+. When you are not using hardware backends, it is not tied to a specific operating system. Hardware backends require additional dependencies and typically assume a Linux host.
+Qubex runs on Python 3.10+. Only QuEL-1 support requires Linux.
 During the `v1.5.0 beta` period and until the official release, installing Qubex requires `uv`.
 We plan to publish Qubex to PyPI for the official release, which will make `pip install` available.
 
@@ -37,22 +37,23 @@ Use this option when you want the newest Qubex features from the repository.
 uv pip install "qubex @ git+https://github.com/amachino/qubex.git"
 ```
 
-### Install with QuEL-1 backend support for real hardware use (Linux)
+### Install with QuEL-1 and QuEL-3 support (Linux only)
 
-Use this variant when you plan to use Qubex with real hardware on a Linux host.
-If you only want to use `QuantumSimulator`, you do not need the `backend` or
-`quel1` extra.
+Use `backend` to install the dependencies for both QuEL-1 and QuEL-3.
 
 ```bash
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
 
-This installs the public QuEL-1 backend libraries required for hardware-backed
-execution. `qubex[quel1]` is available as the equivalent explicit extra.
+Hardware extras are unnecessary for simulator-only use.
 
-### Install with QuEL-3 support
+### Install with QuEL-1 support only (Linux only)
 
-Use this variant when you plan to use Qubex with QuEL-3 runtime support.
+```bash
+uv pip install "qubex[quel1] @ git+https://github.com/amachino/qubex.git"
+```
+
+### Install with QuEL-3 support only
 
 ```bash
 uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
@@ -63,8 +64,11 @@ uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
 Use this option when you need a pinned version for reproducibility.
 
 ```bash
-uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@<version>"
+uv pip install "qubex @ git+https://github.com/amachino/qubex.git@<version>"
 ```
+
+To include hardware dependencies, replace `qubex` in the example above with
+`qubex[backend]`, `qubex[quel1]`, or `qubex[quel3]`.
 
 ### Install for development
 
