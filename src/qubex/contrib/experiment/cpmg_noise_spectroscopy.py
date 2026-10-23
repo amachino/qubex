@@ -1359,7 +1359,6 @@ def plot_cpmg_results(
             title="Effective CPMG Frequency (MHz)",
             tick0=0,
             showgrid=True,
-            rangemode="tozero",
         ),
         yaxis=dict(title=yaxis_title, showgrid=True, rangemode="tozero"),
         legend=dict(x=1.22, xanchor="left", y=1.0, yanchor="top"),
@@ -1396,7 +1395,7 @@ def _plot_cpmg_raw_data_heatmap(
     target: str,
     target_index: int,
 ) -> go.Figure | None:
-    """Create a target's pre-fit measured-data heatmap without interpolation."""
+    """Plot pre-fit values at each target's exact realized frequency and time."""
     frequencies = np.asarray(payload["realized_frequency_matrix"], dtype=np.float64)[
         target_index
     ]
@@ -1405,17 +1404,14 @@ def _plot_cpmg_raw_data_heatmap(
         return None
 
     ordered_indices = valid_indices[np.argsort(frequencies[valid_indices])]
-    column_by_frequency_index = {
-        int(frequency_index): column
-        for column, frequency_index in enumerate(ordered_indices)
-    }
-    samples: list[tuple[int, NDArray[np.float64], NDArray[np.float64]]] = []
-    maximum_point_count = 0
+    valid_frequency_indices = {int(index) for index in ordered_indices}
+    value_sums: dict[tuple[int, float], float] = {}
+    value_counts: dict[tuple[int, float], int] = {}
     for record in payload["fit_records"]:
         frequency_index = record.get("requested_frequency_index")
         if record.get("target") != target or not isinstance(frequency_index, int):
             continue
-        if frequency_index not in column_by_frequency_index:
+        if frequency_index not in valid_frequency_indices:
             continue
         times = np.asarray(record.get("actual_decay_times_ns", []), dtype=np.float64)
         values = np.asarray(record.get("P_values", []), dtype=np.float64)
@@ -1424,71 +1420,63 @@ def _plot_cpmg_raw_data_heatmap(
         finite = np.isfinite(times) & (times > 0) & np.isfinite(values)
         if not np.any(finite):
             continue
-        finite_times = times[finite]
-        finite_values = values[finite]
-        samples.append((frequency_index, finite_times, finite_values))
-        maximum_point_count = max(maximum_point_count, len(finite_times))
-    if not samples:
+        for time_ns, value in zip(times[finite], values[finite], strict=True):
+            coordinate = (frequency_index, float(time_ns))
+            value_sums[coordinate] = value_sums.get(coordinate, 0.0) + float(value)
+            value_counts[coordinate] = value_counts.get(coordinate, 0) + 1
+    if not value_sums:
         return None
 
-    all_times = np.concatenate([times for _, times, _ in samples])
-    minimum_time = float(np.min(all_times))
-    maximum_time = float(np.max(all_times))
-    if minimum_time == maximum_time:
-        time_centers = np.asarray([minimum_time], dtype=np.float64)
-        time_edges = None
-    else:
-        time_edges = np.geomspace(
-            minimum_time,
-            maximum_time,
-            maximum_point_count + 1,
-        )
-        time_centers = np.sqrt(time_edges[:-1] * time_edges[1:])
-
-    value_sums = np.zeros((len(time_centers), len(ordered_indices)), dtype=np.float64)
-    value_counts = np.zeros_like(value_sums, dtype=np.int64)
-    for frequency_index, times, values in samples:
-        column = column_by_frequency_index[frequency_index]
-        if time_edges is None:
-            row_indices = np.zeros(len(times), dtype=np.int64)
-        else:
-            row_indices = np.searchsorted(time_edges, times, side="right") - 1
-            row_indices = np.clip(row_indices, 0, len(time_centers) - 1)
-        np.add.at(value_sums[:, column], row_indices, values)
-        np.add.at(value_counts[:, column], row_indices, 1)
-
-    heatmap_values = np.full_like(value_sums, np.nan)
-    np.divide(
+    frequency_order = {
+        int(frequency_index): order
+        for order, frequency_index in enumerate(ordered_indices)
+    }
+    coordinates = sorted(
         value_sums,
-        value_counts,
-        out=heatmap_values,
-        where=value_counts > 0,
+        key=lambda coordinate: (frequency_order[coordinate[0]], coordinate[1]),
     )
+    x_values = [frequencies[index] * 1e3 for index, _ in coordinates]
+    y_values = [time_ns * 1e-3 for _, time_ns in coordinates]
+    mean_values = [
+        value_sums[coordinate] / value_counts[coordinate] for coordinate in coordinates
+    ]
+    repeat_counts = [value_counts[coordinate] for coordinate in coordinates]
     figure = viz.make_figure()
     figure.add_trace(
-        go.Heatmap(
-            x=frequencies[ordered_indices] * 1e3,
-            y=time_centers * 1e-3,
-            z=heatmap_values,
-            colorbar={"title": "Normalized signal P"},
-            colorscale="Viridis",
-            zsmooth=False,
+        go.Scatter(
+            x=x_values,
+            y=y_values,
+            mode="markers",
+            name="Measured data",
+            showlegend=False,
+            customdata=np.column_stack((mean_values, repeat_counts)),
+            marker={
+                "symbol": "square",
+                "size": 14,
+                "color": mean_values,
+                "cmin": 0,
+                "cmax": 1,
+                "colorscale": "Viridis",
+                "colorbar": {"title": "Normalized signal P"},
+                "showscale": True,
+                "line": {"width": 0},
+            },
             hovertemplate=(
                 "frequency=%{x:.6g} MHz<br>"
-                "time-bin center=%{y:.6g} us<br>"
-                "mean P=%{z:.6g}<extra></extra>"
+                "actual time=%{y:.6g} us<br>"
+                "mean P=%{customdata[0]:.6g}<br>"
+                "measurements=%{customdata[1]:.0f}<extra></extra>"
             ),
         )
     )
     figure.update_layout(
         title={
             "text": f"CPMG measured data before fitting: {target}",
-            "subtitle": {"text": "Raw P values averaged within logarithmic time bins"},
+            "subtitle": {
+                "text": "Exact measured times; repeats at identical points are averaged"
+            },
         },
-        xaxis={
-            "title": "Effective CPMG Frequency (MHz)",
-            "rangemode": "tozero",
-        },
+        xaxis={"title": "Effective CPMG Frequency (MHz)"},
         yaxis={"title": "Effective decay time (us)", "type": "log"},
         width=900,
         height=600,

@@ -421,7 +421,7 @@ def test_numerical_only_experiment_does_not_create_plotly_figures(monkeypatch) -
 
 
 def test_plotting_experiment_returns_prefit_heatmap(monkeypatch) -> None:
-    """Plotting should return each target's measured values as a raw-data heatmap."""
+    """The raw-data heatmap should use exact measured times and a fixed color scale."""
     monkeypatch.setattr(go.Figure, "show", lambda _self: None)
 
     result = cpmg_noise_spectroscopy(
@@ -440,14 +440,18 @@ def test_plotting_experiment_returns_prefit_heatmap(monkeypatch) -> None:
     heatmap = result.figures["Q00_raw_data_heatmap"]
     assert isinstance(heatmap, go.Figure)
     assert len(heatmap.data) == 1
-    trace = cast(go.Heatmap, heatmap.data[0])
-    assert trace.type == "heatmap"
-    expected_frequencies = np.sort(
-        np.asarray(result.data["realized_frequency_matrix"])[0] * 1e3
-    )
-    np.testing.assert_allclose(trace.x, expected_frequencies)
-    assert np.asarray(trace.z, dtype=np.float64).shape[1] == 2
-    assert np.any(np.isfinite(np.asarray(trace.z, dtype=np.float64)))
+    trace = cast(go.Scatter, heatmap.data[0])
+    assert trace.type == "scatter"
+    expected_coordinates = {
+        (float(record["f_real_GHz"]) * 1e3, float(time_ns) * 1e-3)
+        for record in result.data["fit_records"]
+        for time_ns in record["actual_decay_times_ns"]
+    }
+    actual_coordinates = set(zip(trace.x, trace.y, strict=True))
+    assert actual_coordinates == expected_coordinates
+    assert trace.marker.cmin == 0
+    assert trace.marker.cmax == 1
+    assert heatmap.layout.xaxis.rangemode is None
     assert heatmap.layout.xaxis.title.text == "Effective CPMG Frequency (MHz)"
     assert heatmap.layout.yaxis.title.text == "Effective decay time (us)"
 

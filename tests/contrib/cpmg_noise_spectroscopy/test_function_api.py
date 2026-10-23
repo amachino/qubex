@@ -75,7 +75,7 @@ def test_plot_cpmg_results_defaults_to_both_summary_modes() -> None:
     assert figure_data[0].get("yaxis", "y") == "y"
     assert figure_data[1]["yaxis"] == "y2"
     assert fig.layout.yaxis2.overlaying == "y"
-    assert fig.layout.xaxis.rangemode == "tozero"
+    assert fig.layout.xaxis.rangemode is None
     assert fig.layout.yaxis.rangemode == "tozero"
     assert fig.layout.yaxis2.rangemode == "tozero"
     assert cast(float, fig.layout.legend.x) > 1.0
