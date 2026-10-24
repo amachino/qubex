@@ -137,10 +137,13 @@ class Quel1MeasurementBackendAdapter:
                         f"Capture duration must be a multiple of {word_duration} ns."
                     )
 
-            if self._is_entire_schedule_capture(
-                captures=sorted_captures,
-                schedule_duration=pulse_schedule.duration,
-            ):
+            if schedule.capture_placement == "entire_schedule":
+                expected_capture_count = 1 + int(profile.require_workaround_capture)
+                if len(sorted_captures) != expected_capture_count:
+                    raise ValueError(
+                        f"Entire-schedule capture mismatch for {channel}: "
+                        f"expected {expected_capture_count} captures."
+                    )
                 continue
 
             ranges = readout_ranges.get(channel, [])
@@ -437,17 +440,8 @@ class Quel1MeasurementBackendAdapter:
             raise ValueError(
                 "word_length_samples is required for backend execution request."
             )
-        capture_is_entire_schedule: dict[str, bool] = {}
+        is_entire_schedule = schedule.capture_placement == "entire_schedule"
         for target in capture_targets:
-            captures = sorted(
-                capture_schedule.channels.get(target, []),
-                key=lambda c: c.start_time,
-            )
-            is_entire_schedule = self._is_entire_schedule_capture(
-                captures=captures,
-                schedule_duration=pulse_schedule.duration,
-            )
-            capture_is_entire_schedule[target] = is_entire_schedule
             if is_entire_schedule:
                 # Full-span capture windows are already defined in absolute
                 # schedule coordinates, so capture-delay offsets are not applied.
@@ -537,11 +531,7 @@ class Quel1MeasurementBackendAdapter:
                     target=target,
                     schedule_frequency=schedule_frequency,
                 ),
-                capture_delay=(
-                    0
-                    if capture_is_entire_schedule.get(target, False)
-                    else capture_delay_sample.get(target, 0)
-                ),
+                capture_delay=capture_delay_sample[target],
                 capture_slots=capture_slots,
             )
 
@@ -774,37 +764,6 @@ class Quel1MeasurementBackendAdapter:
             original_post_blank=None,
             modulation_frequency=modulation_frequency,
             sub_sequences=[cap_sub_sequence],
-        )
-
-    def _is_entire_schedule_capture(
-        self,
-        *,
-        captures: list,
-        schedule_duration: float,
-    ) -> bool:
-        """Return whether captures represent one full-span capture over schedule."""
-        profile = self._constraint_profile
-        if profile.require_workaround_capture:
-            if len(captures) != 2:
-                return False
-            first_capture, second_capture = captures
-            capture_start = profile.extra_capture_duration_ns
-            capture_duration = max(0.0, schedule_duration - capture_start)
-            return bool(
-                np.isclose(first_capture.start_time, 0.0)
-                and np.isclose(
-                    first_capture.duration,
-                    profile.workaround_capture_duration_ns,
-                )
-                and np.isclose(second_capture.start_time, capture_start)
-                and np.isclose(second_capture.duration, capture_duration)
-            )
-        if len(captures) != 1:
-            return False
-        capture = captures[0]
-        return bool(
-            np.isclose(capture.start_time, 0.0)
-            and np.isclose(capture.duration, schedule_duration)
         )
 
     @staticmethod
