@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qxcore"
 version = "1.5.0rc2"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex core data models and utilities"
 readme = "README.md"
@@ -17,7 +17,7 @@ dependencies = [
     "protobuf >= 6.0",
     "pydantic >= 2.0",
     "sympy >= 1.0",
-    "typedunits >= 0.0",
+    "typedunits >= 0.0.2",
     "typing_extensions >= 4.5",
 ]
 
