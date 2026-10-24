@@ -9,6 +9,7 @@ from typing import Any, cast
 import numpy as np
 import plotly.graph_objects as go
 import pytest
+from numpy.typing import ArrayLike
 
 import qubex.visualization as viz
 from qubex.contrib.experiment.cpmg_noise_spectroscopy import (
@@ -16,6 +17,7 @@ from qubex.contrib.experiment.cpmg_noise_spectroscopy import (
     _fit_cpmg_decay,
     _load_payload,
     _make_frequency_plan,
+    _n_pi_from_time_range,
     _plot_cpmg_decay,
     _prepare_n_pi_values,
     _resolve_pi_pulse,
@@ -23,6 +25,8 @@ from qubex.contrib.experiment.cpmg_noise_spectroscopy import (
     cpmg_noise_spectroscopy,
 )
 from qubex.pulse import Rect
+
+_TEST_TIME_RANGE_NS = [8_000.0, 10_000.0, 12_000.0, 14_000.0, 16_000.0, 20_000.0]
 
 
 class _PulseService:
@@ -143,19 +147,16 @@ def test_schedule_duration_contains_exact_cpmg_evolution_time() -> None:
     assert schedule.duration == pytest.approx(10.0 + 16 * 100.0 + 10.0)
 
 
-def test_n_pi_plan_applies_limits_without_changing_values() -> None:
-    """Pulse-count planning should filter bounds and duration without rounding counts."""
+def test_n_pi_plan_applies_minimum_without_changing_values() -> None:
+    """Pulse-count planning should apply the minimum without an implicit upper bound."""
     with pytest.warns(RuntimeWarning, match="sorted and duplicate"):
         values = _prepare_n_pi_values(
             [8, 16, 20, 20, 64, 512],
-            center_spacing_ns=1000.0,
             pattern="++++",
             min_pi_pulses=16,
-            max_pi_pulses=512,
-            max_sequence_time_ns=200_000.0,
         )
 
-    np.testing.assert_array_equal(values, [16, 20, 64])
+    np.testing.assert_array_equal(values, [16, 20, 64, 512])
 
 
 def test_n_pi_plan_rejects_incomplete_sign_pattern() -> None:
@@ -163,11 +164,43 @@ def test_n_pi_plan_rejects_incomplete_sign_pattern() -> None:
     with pytest.raises(ValueError, match="multiples of 4"):
         _prepare_n_pi_values(
             [16, 18, 20],
-            center_spacing_ns=100.0,
             pattern="+--+",
             min_pi_pulses=16,
-            max_pi_pulses=512,
-            max_sequence_time_ns=200_000.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("pattern", "period", "times_ns", "expected"),
+    [
+        ("+--+", 4, [1_790.0, 1_810.0], [16, 20]),
+        ("+-+-", 2, [1_680.0, 1_720.0], [16, 18]),
+    ],
+)
+def test_time_plan_rounds_to_nearest_complete_pattern_cycle(
+    pattern: str,
+    period: int,
+    times_ns: list[float],
+    expected: list[int],
+) -> None:
+    """Time-derived counts should round to the nearest complete pattern cycle."""
+    counts = _n_pi_from_time_range(
+        times_ns,
+        center_spacing_ns=100.0,
+        pattern=pattern,  # type: ignore[arg-type]
+    )
+
+    assert all(counts % period == 0)
+    np.testing.assert_array_equal(counts, expected)
+
+
+@pytest.mark.parametrize("center_spacing_ns", [0.0, -1.0, np.nan, np.inf])
+def test_time_plan_rejects_invalid_center_spacing(center_spacing_ns: float) -> None:
+    """Time-derived planning should reject nonpositive or nonfinite spacing."""
+    with pytest.raises(ValueError, match="center_spacing_ns"):
+        _n_pi_from_time_range(
+            [1_000.0],
+            center_spacing_ns=center_spacing_ns,
+            pattern="++++",
         )
 
 
@@ -196,6 +229,22 @@ def test_cpmg_fit_reports_unresolved_constant_data() -> None:
     assert result.fit_status == "unresolved_decay"
     assert np.isnan(result.t2_ns)
     assert "weak_decay" in result.quality_flags
+
+
+def test_cpmg_fit_uses_distinct_status_for_quality_warnings() -> None:
+    """A usable but poor-model fit should not be labeled as fully reliable."""
+    times_ns = np.linspace(2_000.0, 100_000.0, 40)
+    values = (
+        0.42 * np.exp(-times_ns / 35_000.0)
+        + 0.5
+        + 0.08 * np.sin(np.arange(len(times_ns)) * 2.3)
+    )
+
+    result = _fit_cpmg_decay(times_ns, values, min_fit_points=6)
+
+    assert result.fit_status == "quality_warning"
+    assert "poor_model_fit" in result.quality_flags
+    assert np.isfinite(result.t2_ns)
 
 
 def test_cpmg_fit_uses_valid_measurement_sem_as_absolute_weights() -> None:
@@ -301,7 +350,7 @@ def test_experiment_randomizes_acquisition_but_stores_fixed_frequency_indices() 
     kwargs = {
         "targets": ["Q00"],
         "frequency_range": [0.0005, 0.001, 0.002, 0.003],
-        "n_pi_range": [16, 20, 24, 28, 32, 40],
+        "time_range": _TEST_TIME_RANGE_NS,
         "random_seed": 1234,
         "plot": False,
         "save_data": False,
@@ -333,13 +382,14 @@ def test_public_experiment_uses_time_based_defaults() -> None:
         result.data["frequency_range"],
         np.linspace(0.0005, 0.004, 20),
     )
+    realized_time_range = result.data["time_range"]
+    assert realized_time_range is not None
     np.testing.assert_allclose(
-        result.data["time_range"],
+        realized_time_range,
         np.geomspace(200.0, 200_000.0, 31),
     )
     assert result.data["n_pi_range"] == []
     assert result.data["metadata"]["min_pi_pulses"] == 4
-    assert result.data["metadata"]["max_pi_pulses"] == 512
     assert result.data["metadata"]["max_pulse_duty_ratio"] == 0.25
     assert all(min(record["n_pi_values"]) >= 4 for record in result.data["fit_records"])
 
@@ -363,7 +413,7 @@ def test_time_based_defaults_keep_complete_sign_cycles(
         enable_tqdm=False,
     )
 
-    counts = result.data["fit_records"][0]["n_pi_values"]
+    counts = cast(list[int], result.data["fit_records"][0]["n_pi_values"])
     assert len(counts) >= 6
     assert all(count % period == 0 for count in counts)
 
@@ -375,21 +425,6 @@ def test_public_experiment_rejects_zero_frequency() -> None:
             _FakeExperiment(),  # type: ignore[arg-type]
             targets=["Q00"],
             frequency_range=[0.0],
-            plot=False,
-            save_data=False,
-            enable_tqdm=False,
-        )
-
-
-def test_public_experiment_rejects_n_pi_and_time_ranges_together() -> None:
-    """Pulse-count and time-range inputs should be mutually exclusive."""
-    with pytest.raises(ValueError, match="cannot be provided together"):
-        cpmg_noise_spectroscopy(
-            _FakeExperiment(),  # type: ignore[arg-type]
-            targets=["Q00"],
-            frequency_range=[0.001],
-            n_pi_range=[16, 20, 24, 28, 32, 40],
-            time_range=[10_000.0, 20_000.0],
             plot=False,
             save_data=False,
             enable_tqdm=False,
@@ -408,7 +443,7 @@ def test_numerical_only_experiment_does_not_create_plotly_figures(monkeypatch) -
         _FakeExperiment(),  # type: ignore[arg-type]
         targets=["Q00"],
         frequency_range=[0.001],
-        n_pi_range=[16, 20, 24, 28, 32, 40],
+        time_range=_TEST_TIME_RANGE_NS,
         plot=False,
         save_image=False,
         save_fit_images=False,
@@ -428,7 +463,7 @@ def test_plotting_experiment_returns_prefit_heatmap(monkeypatch) -> None:
         _FakeExperiment(),  # type: ignore[arg-type]
         targets=["Q00"],
         frequency_range=[0.001, 0.002],
-        n_pi_range=[16, 20, 24, 28, 32, 40],
+        time_range=_TEST_TIME_RANGE_NS,
         n_repeats=2,
         plot=True,
         show_t1=False,
@@ -439,18 +474,22 @@ def test_plotting_experiment_returns_prefit_heatmap(monkeypatch) -> None:
     assert result.figures is not None
     heatmap = result.figures["Q00_raw_data_heatmap"]
     assert isinstance(heatmap, go.Figure)
-    assert len(heatmap.data) == 1
-    trace = cast(go.Scatter, heatmap.data[0])
+    heatmap_data = cast(tuple[object, ...], heatmap.data)
+    assert len(heatmap_data) == 1
+    trace = cast(go.Scatter, heatmap_data[0])
     assert trace.type == "scatter"
     expected_coordinates = {
         (float(record["f_real_GHz"]) * 1e3, float(time_ns) * 1e-3)
         for record in result.data["fit_records"]
         for time_ns in record["actual_decay_times_ns"]
     }
-    actual_coordinates = set(zip(trace.x, trace.y, strict=True))
+    trace_x = np.asarray(cast(ArrayLike, trace.x), dtype=np.float64)
+    trace_y = np.asarray(cast(ArrayLike, trace.y), dtype=np.float64)
+    actual_coordinates = set(zip(trace_x, trace_y, strict=True))
     assert actual_coordinates == expected_coordinates
-    assert trace.marker.cmin == 0
-    assert trace.marker.cmax == 1
+    trace_data = cast(dict[str, Any], trace.to_plotly_json())
+    assert trace_data["marker"]["cmin"] == 0
+    assert trace_data["marker"]["cmax"] == 1
     assert heatmap.layout.xaxis.rangemode is None
     assert heatmap.layout.xaxis.title.text == "Effective CPMG Frequency (MHz)"
     assert heatmap.layout.yaxis.title.text == "Effective decay time (us)"
@@ -462,7 +501,7 @@ def test_ascending_acquisition_sorts_realized_frequency_not_input_index() -> Non
         _FakeExperiment(),  # type: ignore[arg-type]
         targets=["Q00"],
         frequency_range=[0.003, 0.001, 0.002],
-        n_pi_range=[16, 20, 24, 28, 32, 40],
+        time_range=_TEST_TIME_RANGE_NS,
         frequency_order="ascending",
         plot=False,
         save_data=False,
@@ -481,7 +520,7 @@ def test_schema_v2_round_trip_preserves_curves_and_frequency_axes(tmp_path) -> N
         _FakeExperiment(),  # type: ignore[arg-type]
         targets=["Q00"],
         frequency_range=[0.001],
-        n_pi_range=[16, 20, 24, 28, 32, 40],
+        time_range=_TEST_TIME_RANGE_NS,
         frequency_order="ascending",
         plot=False,
         save_data=False,

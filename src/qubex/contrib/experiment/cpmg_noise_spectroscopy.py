@@ -48,6 +48,15 @@ __all__ = [
 
 CPMGPattern = Literal["++++", "+--+", "+-+-"]
 CPMGSummaryMode = Literal["t2", "gamma2", "both"]
+CPMGFitStatus = Literal[
+    "ok",
+    "quality_warning",
+    "unresolved_decay",
+    "invalid_shape",
+    "insufficient_points",
+    "invalid_time_axis",
+    "optimizer_failed",
+]
 AxisType = Literal["linear", "log"]
 
 _DEFAULT_SAVE_DIR = "cpmg_noise_spectroscopy"
@@ -56,12 +65,11 @@ _SCHEMA_VERSION = 2
 _DEFAULT_FREQUENCY_RANGE = np.linspace(0.0005, 0.004, 20)
 _DEFAULT_TIME_RANGE = np.geomspace(200.0, 200_000.0, 31)
 _DEFAULT_MIN_PI_PULSES = 4
-_DEFAULT_MAX_PI_PULSES = 512
-_DEFAULT_MAX_SEQUENCE_TIME_NS = 200_000.0
 _DEFAULT_MAX_PULSE_DUTY_RATIO = 0.25
 _DEFAULT_MIN_FIT_POINTS = 6
 _LARGE_RELATIVE_ERROR = 0.3
 _MIN_DECAY_FRACTION = 0.05
+_MIN_ACCEPTABLE_R2 = 0.8
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +88,7 @@ class CPMGResultPayload(TypedDict):
     half_tau_range: list[float]  # First-target compatibility projection.
     tau_spacing_list_ns: list[float]  # Legacy alias of half_tau_range.
     time_range: list[float] | None
-    n_pi_range: list[int]
+    n_pi_range: list[int]  # Legacy schema-v2 field; empty for new runs.
     t2_matrix: NDArray[np.float64]
     t2_error_matrix: NDArray[np.float64]
     gamma2_matrix: NDArray[np.float64]
@@ -116,7 +124,7 @@ class _FrequencyPlan:
 class _CPMGFitResult:
     """Numerical result of one CPMG decay fit without visualization state."""
 
-    fit_status: str
+    fit_status: CPMGFitStatus
     fit_message: str
     quality_flags: tuple[str, ...]
     amplitude: float = math.nan
@@ -501,62 +509,42 @@ def _pattern_period(pattern: CPMGPattern) -> int:
 def _prepare_n_pi_values(
     values: ArrayLike,
     *,
-    center_spacing_ns: float,
     pattern: CPMGPattern,
     min_pi_pulses: int,
-    max_pi_pulses: int,
-    max_sequence_time_ns: float | None,
     warn_on_normalization: bool = True,
 ) -> NDArray[np.int64]:
-    """Validate and filter fixed CPMG pulse counts for one frequency."""
+    """Validate and filter derived CPMG pulse counts for one frequency."""
     raw = np.asarray(values)
     if raw.ndim != 1 or raw.size == 0:
-        raise ValueError("n_pi_range must be a non-empty one-dimensional array.")
+        raise ValueError("pi-pulse counts must be a non-empty one-dimensional array.")
     try:
         numeric = np.asarray(values, dtype=np.float64)
     except (TypeError, ValueError) as exc:
-        raise ValueError("n_pi_range must contain integers.") from exc
+        raise ValueError("pi-pulse counts must be integers.") from exc
     if not np.all(np.isfinite(numeric)) or not np.all(numeric == np.floor(numeric)):
-        raise ValueError("n_pi_range must contain finite integers.")
+        raise ValueError("pi-pulse counts must be finite integers.")
     if np.any(numeric <= 0):
-        raise ValueError("n_pi_range must contain only positive integers.")
+        raise ValueError("pi-pulse counts must be positive integers.")
     min_pi_pulses = _require_integer(
         min_pi_pulses,
         name="min_pi_pulses",
         minimum=1,
     )
-    max_pi_pulses = _require_integer(
-        max_pi_pulses,
-        name="max_pi_pulses",
-        minimum=1,
-    )
-    if max_pi_pulses < min_pi_pulses:
-        raise ValueError("pi-pulse limits must satisfy 1 <= min <= max.")
-    if not np.isfinite(center_spacing_ns) or center_spacing_ns <= 0:
-        raise ValueError("center_spacing_ns must be positive.")
-    if max_sequence_time_ns is not None and (
-        not np.isfinite(max_sequence_time_ns) or max_sequence_time_ns <= 0
-    ):
-        raise ValueError("max_sequence_time_ns must be finite and positive or None.")
-
     unique = np.unique(numeric.astype(np.int64))
     if warn_on_normalization and (
         len(unique) != len(numeric) or not np.array_equal(unique, numeric)
     ):
         warnings.warn(
-            "n_pi_range was sorted and duplicate values were removed.",
+            "Pi-pulse counts were sorted and duplicate values were removed.",
             RuntimeWarning,
             stacklevel=2,
         )
     period = _pattern_period(pattern)
     if np.any(unique % period != 0):
         raise ValueError(
-            f"n_pi_range values must be multiples of {period} for pattern {pattern!r}."
+            f"Pi-pulse counts must be multiples of {period} for pattern {pattern!r}."
         )
-    mask = (unique >= min_pi_pulses) & (unique <= max_pi_pulses)
-    if max_sequence_time_ns is not None:
-        mask &= unique.astype(np.float64) * center_spacing_ns <= max_sequence_time_ns
-    return unique[mask]
+    return unique[unique >= min_pi_pulses]
 
 
 def _n_pi_from_time_range(
@@ -565,14 +553,23 @@ def _n_pi_from_time_range(
     center_spacing_ns: float,
     pattern: CPMGPattern,
 ) -> NDArray[np.int64]:
-    """Convert requested decay times to complete CPMG pulse-pattern cycles."""
+    """Round decay times directly to the nearest complete pattern cycles."""
     times = _as_non_empty_1d_array(
         time_range,
         name="time_range",
     )
-    counts = np.rint(times / center_spacing_ns).astype(np.int64)
+    if not np.isfinite(center_spacing_ns) or center_spacing_ns <= 0:
+        raise ValueError("center_spacing_ns must be finite and positive.")
     period = _pattern_period(pattern)
-    return np.unique(counts[(counts > 0) & (counts % period == 0)])
+    with np.errstate(over="ignore"):
+        requested_cycles = times / center_spacing_ns / period
+    maximum_cycles = np.iinfo(np.int64).max // period
+    if np.any(~np.isfinite(requested_cycles)) or np.any(
+        requested_cycles > maximum_cycles
+    ):
+        raise ValueError("time_range produces pi-pulse counts outside int64 range.")
+    counts = np.floor(requested_cycles + 0.5).astype(np.int64) * period
+    return np.unique(counts[counts > 0])
 
 
 def _decay_model_us(
@@ -592,7 +589,7 @@ def _fit_cpmg_decay(
     sem_values: ArrayLike | None = None,
     min_fit_points: int = _DEFAULT_MIN_FIT_POINTS,
 ) -> _CPMGFitResult:
-    """Fit one CPMG decay numerically without creating a Plotly figure."""
+    """Fit one CPMG decay and classify its numerical quality without plotting."""
     times = np.asarray(times_ns, dtype=np.float64)
     signal = np.asarray(values, dtype=np.float64)
     if times.ndim != 1 or signal.ndim != 1 or times.shape != signal.shape:
@@ -750,11 +747,19 @@ def _fit_cpmg_decay(
         flags.append("unresolved_decay")
     elif relative_error > _LARGE_RELATIVE_ERROR:
         flags.append("large_relative_error")
-    if np.isfinite(r2) and r2 < 0.8:
+    if np.isfinite(r2) and r2 < _MIN_ACCEPTABLE_R2:
         flags.append("poor_model_fit")
 
     unresolved = "weak_decay" in flags or "unresolved_decay" in flags
-    fit_status = "unresolved_decay" if unresolved else "ok"
+    if unresolved:
+        fit_status = "unresolved_decay"
+        fit_message = "Decay is not resolved over the measured time range."
+    elif flags:
+        fit_status = "quality_warning"
+        fit_message = "Fitting succeeded with quality warnings."
+    else:
+        fit_status = "ok"
+        fit_message = "Fitting successful."
     t2_ns = 1.0 / gamma_per_ns if gamma_per_ns > 0 and not unresolved else math.nan
     t2_error = (
         gamma_error / gamma_per_ns**2
@@ -763,11 +768,7 @@ def _fit_cpmg_decay(
     )
     return _CPMGFitResult(
         fit_status=fit_status,
-        fit_message=(
-            "Decay is not resolved over the measured time range."
-            if unresolved
-            else "Fitting successful."
-        ),
+        fit_message=fit_message,
         quality_flags=tuple(dict.fromkeys(flags)),
         amplitude=amplitude,
         offset=offset,
@@ -1116,18 +1117,24 @@ def _payload_from_result_or_mapping(
 
 def _resolve_plot_deprecated_options(
     *,
-    show_t1: bool | None,
+    show_t1: bool,
     save_image: bool | None,
     deprecated_options: dict[str, Any],
-) -> tuple[bool | None, bool | None]:
+) -> tuple[bool, bool | None]:
     """Resolve plotting aliases from the first contrib implementation."""
-    show_t1 = _resolve_deprecated_alias(
-        options=deprecated_options,
-        deprecated_name="show_T1",
-        replacement_name="show_t1",
-        current_value=show_t1,
-        function_name="plot_cpmg_results",
-    )
+    if "show_T1" in deprecated_options:
+        legacy_show_t1 = deprecated_options.pop("show_T1")
+        if legacy_show_t1 is not None:
+            warnings.warn(
+                "`show_T1` is deprecated in `plot_cpmg_results`; use `show_t1`.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            if show_t1 not in (False, legacy_show_t1):
+                raise ValueError(
+                    "`show_T1` conflicts with `show_t1`. Provide only `show_t1`."
+                )
+            show_t1 = bool(legacy_show_t1)
     save_image = _resolve_deprecated_alias(
         options=deprecated_options,
         deprecated_name="save_fig",
@@ -1141,19 +1148,55 @@ def _resolve_plot_deprecated_options(
     return show_t1, save_image
 
 
+def _summarize_gamma_repeats(
+    gamma_values: NDArray[np.float64],
+    gamma_errors: NDArray[np.float64],
+    selected_repeats: NDArray[np.bool_],
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.int64]]:
+    """Aggregate selected repeat fits without mixing quality classifications."""
+    n_frequencies = gamma_values.shape[1]
+    averages = np.full(n_frequencies, np.nan, dtype=np.float64)
+    summary_errors = np.full(n_frequencies, np.nan, dtype=np.float64)
+    repeat_counts = np.zeros(n_frequencies, dtype=np.int64)
+    for frequency_index in range(n_frequencies):
+        values = gamma_values[:, frequency_index]
+        included = (
+            selected_repeats[:, frequency_index] & np.isfinite(values) & (values > 0)
+        )
+        finite_values = values[included]
+        repeat_counts[frequency_index] = len(finite_values)
+        if len(finite_values) == 0:
+            continue
+        averages[frequency_index] = float(np.mean(finite_values))
+        if len(finite_values) >= 2:
+            summary_errors[frequency_index] = float(
+                np.std(finite_values, ddof=1) / np.sqrt(len(finite_values))
+            )
+            continue
+        errors = gamma_errors[included, frequency_index]
+        finite_errors = errors[np.isfinite(errors) & (errors >= 0)]
+        if len(finite_errors):
+            summary_errors[frequency_index] = float(finite_errors[0])
+    return averages, summary_errors, repeat_counts
+
+
 def plot_cpmg_results(
     exp: Experiment,
     result: Result | Mapping[str, object] | None = None,
     *,
     save_dir: str | Path | None = None,
     mode: CPMGSummaryMode | None = None,
-    show_t1: bool | None = None,
+    show_t1: bool = False,
     plot: bool | None = None,
     save_image: bool | None = None,
     **deprecated_options: Any,
 ) -> go.Figure:
     """
     Plot aggregated CPMG noise spectroscopy results.
+
+    Fits without quality flags form the connected summary series. Finite fits
+    carrying quality warnings are excluded from that average and shown as
+    separate red open diamonds without connecting lines.
 
     Parameters
     ----------
@@ -1173,7 +1216,7 @@ def plot_cpmg_results(
         `"both"`.
     show_t1
         Overlay `2*T1` references when plotting `mode="t2"` or `mode="both"`.
-        Defaults to `True` in those modes and `False` in `"gamma2"` mode.
+        Defaults to `False`.
     plot
         Whether to display the figure. Defaults to `True`.
     save_image
@@ -1196,8 +1239,6 @@ def plot_cpmg_results(
     )
     if mode is None:
         mode = "both"
-    if show_t1 is None:
-        show_t1 = mode in ("t2", "both")
     if plot is None:
         plot = True
     if save_image is None:
@@ -1245,87 +1286,134 @@ def plot_cpmg_results(
     for target_index, target in enumerate(targets):
         frequencies_mhz = realized_frequencies[target_index] * 1e3
         n_frequencies = gamma_matrix.shape[2]
-        gamma_average = np.full(n_frequencies, np.nan, dtype=np.float64)
-        gamma_summary_error = np.full(n_frequencies, np.nan, dtype=np.float64)
-        valid_repeat_counts = np.zeros(n_frequencies, dtype=np.int64)
-        for frequency_index in range(n_frequencies):
-            values = gamma_matrix[target_index, :, frequency_index]
-            finite_values = values[np.isfinite(values) & (values > 0)]
-            valid_repeat_counts[frequency_index] = len(finite_values)
-            if len(finite_values) == 0:
-                continue
-            gamma_average[frequency_index] = float(np.mean(finite_values))
-            if len(finite_values) >= 2:
-                gamma_summary_error[frequency_index] = float(
-                    np.std(finite_values, ddof=1) / np.sqrt(len(finite_values))
-                )
-            else:
-                valid_repeats = np.isfinite(values) & (values > 0)
-                errors = gamma_error_matrix[
-                    target_index, valid_repeats, frequency_index
-                ]
-                finite_errors = errors[np.isfinite(errors) & (errors >= 0)]
-                if len(finite_errors):
-                    gamma_summary_error[frequency_index] = float(finite_errors[0])
-        finite = np.isfinite(gamma_average) & (gamma_average > 0)
-        flagged_indices: set[int] = set()
+        target_gamma = gamma_matrix[target_index]
+        target_gamma_errors = gamma_error_matrix[target_index]
+        reliable_repeats = np.isfinite(target_gamma) & (target_gamma > 0)
+        warning_repeats = np.zeros_like(reliable_repeats, dtype=np.bool_)
+        warning_flags: list[set[str]] = [set() for _ in range(n_frequencies)]
         for record in payload["fit_records"]:
-            index = record.get("requested_frequency_index")
+            frequency_index = record.get("requested_frequency_index")
+            repeat_index = record.get("repeat_index")
+            flags = record.get("quality_flags")
+            is_warning = bool(flags) or record.get("fit_status") not in (None, "ok")
             if (
-                record.get("target") == target
-                and record.get("quality_flags")
-                and isinstance(index, int)
+                record.get("target") != target
+                or not is_warning
+                or not isinstance(frequency_index, int)
+                or not isinstance(repeat_index, int)
+                or not 0 <= frequency_index < n_frequencies
+                or not 0 <= repeat_index < target_gamma.shape[0]
             ):
-                flagged_indices.add(index)
-        marker_symbols = [
-            "diamond" if index in flagged_indices else "circle"
-            for index in range(n_frequencies)
-        ]
+                continue
+            reliable_repeats[repeat_index, frequency_index] = False
+            warning_repeats[repeat_index, frequency_index] = True
+            if isinstance(flags, (list, tuple)):
+                warning_flags[frequency_index].update(str(flag) for flag in flags)
+            elif flags:
+                warning_flags[frequency_index].add(str(flags))
+
+        summaries = {
+            "reliable": _summarize_gamma_repeats(
+                target_gamma,
+                target_gamma_errors,
+                reliable_repeats,
+            ),
+            "warning": _summarize_gamma_repeats(
+                target_gamma,
+                target_gamma_errors,
+                warning_repeats,
+            ),
+        }
 
         for displayed_mode in displayed_modes:
-            if displayed_mode == "t2":
-                y_values = np.full(n_frequencies, np.nan, dtype=np.float64)
-                y_errors = np.full(n_frequencies, np.nan, dtype=np.float64)
-                y_values[finite] = 1.0 / gamma_average[finite] * 1e-3
-                y_errors[finite] = (
-                    gamma_summary_error[finite] / gamma_average[finite] ** 2 * 1e-3
-                )
-                trace_name = f"{target} (T2)" if mode == "both" else target
-                hovertemplate = (
-                    "frequency=%{x:.6g} MHz<br>"
-                    "T2_CPMG=%{y:.6g} us<br>"
-                    "valid repeats=%{customdata}<extra>%{fullData.name}</extra>"
-                )
-            else:
-                y_values = gamma_average * 1e3
-                y_errors = gamma_summary_error * 1e3
-                trace_name = f"{target} (Gamma2)"
-                hovertemplate = (
-                    "frequency=%{x:.6g} MHz<br>"
-                    "Gamma_2_CPMG=%{y:.6g} 1/us<br>"
-                    "valid repeats=%{customdata}<extra>%{fullData.name}</extra>"
-                )
+            for quality, (
+                gamma_average,
+                gamma_summary_error,
+                repeat_counts,
+            ) in summaries.items():
+                finite = np.isfinite(gamma_average) & (gamma_average > 0)
+                if not np.any(finite):
+                    continue
+                if displayed_mode == "t2":
+                    y_values = np.full(n_frequencies, np.nan, dtype=np.float64)
+                    y_errors = np.full(n_frequencies, np.nan, dtype=np.float64)
+                    y_values[finite] = 1.0 / gamma_average[finite] * 1e-3
+                    y_errors[finite] = (
+                        gamma_summary_error[finite] / gamma_average[finite] ** 2 * 1e-3
+                    )
+                    base_name = f"{target} (T2)" if mode == "both" else target
+                    value_hover = "T2_CPMG=%{y:.6g} us<br>"
+                else:
+                    y_values = gamma_average * 1e3
+                    y_errors = gamma_summary_error * 1e3
+                    base_name = f"{target} (Gamma2)"
+                    value_hover = "Gamma_2_CPMG=%{y:.6g} 1/us<br>"
 
-            figure.add_trace(
-                go.Scatter(
-                    x=frequencies_mhz,
-                    y=y_values,
-                    mode="markers+lines",
-                    name=trace_name,
-                    error_y={
-                        "type": "data",
-                        "array": y_errors,
-                        "visible": bool(np.any(np.isfinite(y_errors))),
-                    },
-                    marker={"symbol": marker_symbols},
-                    customdata=valid_repeat_counts,
-                    hovertemplate=hovertemplate,
-                    connectgaps=False,
-                    yaxis="y2"
-                    if mode == "both" and displayed_mode == "gamma2"
-                    else "y",
+                yaxis = "y2" if mode == "both" and displayed_mode == "gamma2" else "y"
+                if quality == "reliable":
+                    figure.add_trace(
+                        go.Scatter(
+                            x=frequencies_mhz,
+                            y=y_values,
+                            mode="markers+lines",
+                            name=base_name,
+                            error_y={
+                                "type": "data",
+                                "array": y_errors,
+                                "visible": bool(np.any(np.isfinite(y_errors))),
+                            },
+                            marker={"symbol": "circle"},
+                            customdata=repeat_counts,
+                            hovertemplate=(
+                                "frequency=%{x:.6g} MHz<br>"
+                                f"{value_hover}"
+                                "reliable repeats=%{customdata}"
+                                "<extra>%{fullData.name}</extra>"
+                            ),
+                            connectgaps=False,
+                            yaxis=yaxis,
+                        )
+                    )
+                    continue
+
+                warning_indices = np.flatnonzero(finite)
+                flag_labels = [
+                    ", ".join(sorted(warning_flags[index])) or "fit status warning"
+                    for index in warning_indices
+                ]
+                customdata = np.column_stack(
+                    (repeat_counts[warning_indices], flag_labels)
                 )
-            )
+                figure.add_trace(
+                    go.Scatter(
+                        x=frequencies_mhz[warning_indices],
+                        y=y_values[warning_indices],
+                        mode="markers",
+                        name=f"{base_name} (quality warning)",
+                        error_y={
+                            "type": "data",
+                            "array": y_errors[warning_indices],
+                            "visible": bool(
+                                np.any(np.isfinite(y_errors[warning_indices]))
+                            ),
+                        },
+                        marker={
+                            "symbol": "diamond-open",
+                            "size": 10,
+                            "color": "#d62728",
+                            "line": {"width": 2},
+                        },
+                        customdata=customdata,
+                        hovertemplate=(
+                            "frequency=%{x:.6g} MHz<br>"
+                            f"{value_hover}"
+                            "warning repeats=%{customdata[0]}<br>"
+                            "quality flags=%{customdata[1]}"
+                            "<extra>%{fullData.name}</extra>"
+                        ),
+                        yaxis=yaxis,
+                    )
+                )
 
         if show_t1:
             try:
@@ -1361,8 +1449,13 @@ def plot_cpmg_results(
             showgrid=True,
         ),
         yaxis=dict(title=yaxis_title, showgrid=True, rangemode="tozero"),
-        legend=dict(x=1.22, xanchor="left", y=1.0, yanchor="top"),
-        margin=dict(r=240),
+        legend=dict(
+            x=1.12 if mode == "both" else 1.02,
+            xanchor="left",
+            y=1.0,
+            yanchor="top",
+        ),
+        margin=dict(r=200 if mode == "both" else 140),
         xaxis_type="linear",
         yaxis_type="linear",
         width=1000,
@@ -1573,11 +1666,8 @@ def cpmg_noise_spectroscopy(
     targets: Collection[str] | str | None = None,
     *,
     frequency_range: ArrayLike | None = None,
-    n_pi_range: ArrayLike | None = None,
     time_range: ArrayLike | None = None,
     min_pi_pulses: int = _DEFAULT_MIN_PI_PULSES,
-    max_pi_pulses: int = _DEFAULT_MAX_PI_PULSES,
-    max_sequence_time_ns: float | None = _DEFAULT_MAX_SEQUENCE_TIME_NS,
     max_pulse_duty_ratio: float = _DEFAULT_MAX_PULSE_DUTY_RATIO,
     min_fit_points: int = _DEFAULT_MIN_FIT_POINTS,
     frequency_order: Literal["random", "ascending"] = "random",
@@ -1593,7 +1683,7 @@ def cpmg_noise_spectroscopy(
     save_data: bool | None = None,
     save_dir: str | Path | None = None,
     summary_mode: CPMGSummaryMode | None = None,
-    show_t1: bool | None = None,
+    show_t1: bool = False,
     xaxis_type: AxisType | None = None,
     enable_tqdm: bool | None = None,
     **deprecated_options: Any,
@@ -1617,21 +1707,14 @@ def cpmg_noise_spectroscopy(
         spaced points from 0.0005 to 0.004 GHz. Hardware timing quantization is
         applied per target, and the realized frequencies are recorded in the
         result payload.
-    n_pi_range
-        Optional fixed positive pi-pulse counts. Do not provide it together
-        with `time_range`.
     time_range
         Requested target decay times in ns. Each value is converted to the
-        nearest pi-pulse count independently for every target and frequency.
-        Defaults to 31 geometrically spaced points from 200 to 200000 ns. Do
-        not provide it together with `n_pi_range`.
+        nearest valid pi-pulse count independently for every target and
+        frequency. For `"+--+"` and `"+-+-"`, counts are rounded to the
+        nearest complete pattern cycle. Defaults to 31 geometrically spaced
+        points from 200 to 200000 ns.
     min_pi_pulses
         Minimum accepted pi-pulse count. Defaults to 4.
-    max_pi_pulses
-        Maximum accepted pi-pulse count. Defaults to 512.
-    max_sequence_time_ns
-        Maximum effective decay time `n_pi * D` in ns. Defaults to 200000.
-        Use `None` to disable this limit.
     max_pulse_duty_ratio
         Maximum `pi_duration / D`. Defaults to 0.25.
     min_fit_points
@@ -1644,8 +1727,8 @@ def cpmg_noise_spectroscopy(
         orders. When omitted, a generated seed is stored in the result payload.
     pi_pulse_pattern
         Sign pattern: `"++++"`, `"+--+"`, or `"+-+-"`. Pulse counts derived
-        from `time_range` are restricted to complete pattern cycles. Defaults
-        to `"++++"`.
+        from `time_range` are rounded to the nearest complete pattern cycle;
+        ties are rounded toward the larger count. Defaults to `"++++"`.
     pi_pulses
         Optional per-target pi waveforms.
     n_repeats
@@ -1673,7 +1756,7 @@ def cpmg_noise_spectroscopy(
         Summary mode, `"t2"`, `"gamma2"`, or `"both"`. Defaults to `"both"`.
     show_t1
         Whether to show `2*T1` references in `"t2"` and `"both"` modes.
-        Defaults to `True` in those modes.
+        Defaults to `False`.
     xaxis_type
         Individual decay-plot x-axis scale. Defaults to `"log"`.
     enable_tqdm
@@ -1699,6 +1782,11 @@ def cpmg_noise_spectroscopy(
     This function measures hardware and may write a timestamped result
     directory. The current averaged sweep API does not expose shot-level SEM,
     so fits use unweighted residual covariance unless SEM becomes available.
+    A finite fit is labeled `quality_warning` when its relative decay-rate
+    error exceeds 0.3 or its R2 is below 0.8. Fits with less than 5 percent
+    fitted decay across the measured window, or with decay-rate uncertainty at
+    least as large as the rate, are labeled `unresolved_decay` and do not
+    produce a finite T2 result.
     """
     summary_mode, save_image, save_fit_images, save_data = (
         _resolve_experiment_deprecated_options(
@@ -1725,9 +1813,7 @@ def cpmg_noise_spectroscopy(
         frequency_range,
         name="frequency_range",
     )
-    if n_pi_range is not None and time_range is not None:
-        raise ValueError("n_pi_range and time_range cannot be provided together.")
-    if n_pi_range is None and time_range is None:
+    if time_range is None:
         time_range = _default_time_range()
     if pi_pulse_pattern is None:
         pi_pulse_pattern = "++++"
@@ -1749,6 +1835,8 @@ def cpmg_noise_spectroscopy(
         save_dir = _DEFAULT_SAVE_DIR
     if summary_mode is None:
         summary_mode = "both"
+    if show_t1 is None:
+        show_t1 = False
     if xaxis_type is None:
         xaxis_type = "log"
     if enable_tqdm is None:
@@ -1761,22 +1849,11 @@ def cpmg_noise_spectroscopy(
         name="min_pi_pulses",
         minimum=1,
     )
-    max_pi_pulses = _require_integer(
-        max_pi_pulses,
-        name="max_pi_pulses",
-        minimum=1,
-    )
-    if max_pi_pulses < min_pi_pulses:
-        raise ValueError("pi-pulse limits must satisfy 1 <= min <= max.")
     min_fit_points = _require_integer(
         min_fit_points,
         name="min_fit_points",
         minimum=4,
     )
-    if max_sequence_time_ns is not None and (
-        not np.isfinite(max_sequence_time_ns) or max_sequence_time_ns <= 0
-    ):
-        raise ValueError("max_sequence_time_ns must be finite and positive or None.")
     if random_seed is not None:
         random_seed = _require_integer(random_seed, name="random_seed", minimum=0)
     if pi_pulse_pattern not in ("++++", "+--+", "+-+-"):
@@ -1787,21 +1864,6 @@ def cpmg_noise_spectroscopy(
         raise ValueError("xaxis_type must be either 'linear' or 'log'.")
     if frequency_order not in ("random", "ascending"):
         raise ValueError("frequency_order must be either 'random' or 'ascending'.")
-    if n_pi_range is not None:
-        n_pi_range = _prepare_n_pi_values(
-            n_pi_range,
-            center_spacing_ns=1.0,
-            pattern=pi_pulse_pattern,
-            min_pi_pulses=min_pi_pulses,
-            max_pi_pulses=max_pi_pulses,
-            max_sequence_time_ns=None,
-        )
-        if len(n_pi_range) < min_fit_points:
-            raise ValueError(
-                "n_pi_range contains fewer than min_fit_points values after "
-                "applying the pi-pulse limits."
-            )
-
     _validate_rabi_params(exp, target_list)
     sampling_period = _resolve_sampling_period(exp)
     resolved_pi_pulses = {
@@ -1824,25 +1886,16 @@ def cpmg_noise_spectroscopy(
                 continue
             if point.center_spacing is None:
                 raise RuntimeError("A valid frequency point has no center spacing.")
-            raw_counts = (
-                _n_pi_from_time_range(
-                    time_range,
-                    center_spacing_ns=point.center_spacing,
-                    pattern=pi_pulse_pattern,
-                )
-                if time_range is not None
-                else n_pi_range
+            raw_counts = _n_pi_from_time_range(
+                time_range,
+                center_spacing_ns=point.center_spacing,
+                pattern=pi_pulse_pattern,
             )
-            if raw_counts is None:
-                raise RuntimeError("No pi-pulse counts were resolved.")
             counts = (
                 _prepare_n_pi_values(
                     raw_counts,
-                    center_spacing_ns=point.center_spacing,
                     pattern=pi_pulse_pattern,
                     min_pi_pulses=min_pi_pulses,
-                    max_pi_pulses=max_pi_pulses,
-                    max_sequence_time_ns=max_sequence_time_ns,
                     warn_on_normalization=False,
                 )
                 if len(raw_counts)
@@ -1862,7 +1915,7 @@ def cpmg_noise_spectroscopy(
     if not any_valid:
         raise ValueError(
             "No valid target-frequency points remain after timing, duty-ratio, "
-            "pulse-count, and sequence-time validation."
+            "and pulse-count validation."
         )
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2003,7 +2056,7 @@ def cpmg_noise_spectroscopy(
                     }
                 )
                 fit_records.append(record)
-                if fit.fit_status == "ok":
+                if fit.fit_status in ("ok", "quality_warning"):
                     t2_matrix[target_index, repeat_index, frequency_index] = fit.t2_ns
                     t2_error_matrix[target_index, repeat_index, frequency_index] = (
                         fit.t2_error_ns
@@ -2063,16 +2116,8 @@ def cpmg_noise_spectroscopy(
         "valid_frequency_mask": valid_frequency_mask,
         "half_tau_range": first_plan_half_taus,
         "tau_spacing_list_ns": first_plan_half_taus,
-        "time_range": (
-            np.asarray(time_range, dtype=np.float64).tolist()
-            if time_range is not None
-            else None
-        ),
-        "n_pi_range": (
-            np.asarray(n_pi_range, dtype=np.int64).tolist()
-            if n_pi_range is not None
-            else []
-        ),
+        "time_range": np.asarray(time_range, dtype=np.float64).tolist(),
+        "n_pi_range": [],
         "t2_matrix": t2_matrix,
         "t2_error_matrix": t2_error_matrix,
         "gamma2_matrix": gamma2_matrix,
@@ -2086,8 +2131,6 @@ def cpmg_noise_spectroscopy(
         "metadata": {
             "sampling_period_ns": sampling_period,
             "min_pi_pulses": min_pi_pulses,
-            "max_pi_pulses": max_pi_pulses,
-            "max_sequence_time_ns": max_sequence_time_ns,
             "max_pulse_duty_ratio": max_pulse_duty_ratio,
             "min_fit_points": min_fit_points,
             "frequency_order": frequency_order,
