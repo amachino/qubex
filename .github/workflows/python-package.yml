@@ -18,6 +18,18 @@ on:
       - "**.md"
       - "docs/**"
   workflow_dispatch:
+    inputs:
+      python-version:
+        description: Python version to test (all runs 3.11–3.14)
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
 
 jobs:
   build:
@@ -26,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ${{ fromJSON(inputs.python-version == 'all' && '["3.11", "3.12", "3.13", "3.14"]' || format('["{0}"]', inputs.python-version || '3.11')) }}
 
     steps:
       - name: Checkout repository
