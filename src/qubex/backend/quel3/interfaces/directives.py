@@ -47,3 +47,11 @@ class SetFrequencyFactory(Protocol):
     def __call__(self, *, hz: float) -> DirectiveProtocol:
         """Create one frequency directive."""
         ...
+
+
+class SetTimingOffsetFactory(Protocol):
+    """Factory protocol for instrument-wide timing offsets."""
+
+    def __call__(self, *, offset_samples: int) -> DirectiveProtocol:
+        """Create a timing-offset directive in instrument samples."""
+        ...

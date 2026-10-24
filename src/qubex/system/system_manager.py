@@ -34,11 +34,11 @@ from qubex.external_devices import (
 from qubex.typing import ConfigurationMode
 
 from .config_loader import ConfigLoader
-from .control_system import Box
+from .control_system import Box, GenChannel
 from .experiment_system import ExperimentSystem
-from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
-from .quel3.quel3_system_synchronizer import Quel3SystemSynchronizer
 from .system_synchronizer import SystemSynchronizer
+from .system_synchronizer_factory import create_system_synchronizer
+from .target import Target
 
 logger = logging.getLogger(__name__)
 
@@ -256,11 +256,7 @@ class SystemManager:
         backend_controller: SystemBackendController,
     ) -> SystemSynchronizer | None:
         """Create backend-specific system synchronizer when supported."""
-        if isinstance(backend_controller, Quel1BackendController):
-            return Quel1SystemSynchronizer(backend_controller=backend_controller)
-        if isinstance(backend_controller, Quel3BackendController):
-            return Quel3SystemSynchronizer(backend_controller=backend_controller)
-        return None
+        return create_system_synchronizer(backend_controller)
 
     def _resolve_system_synchronizer(
         self,
@@ -411,6 +407,10 @@ class SystemManager:
                 backend_controller=backend_controller,
                 backend_kind=resolved_backend_kind,
             )
+            if isinstance(backend_controller, Quel3BackendController):
+                timing_settings = backend_runtime_config.get("cable_delay_ns")
+                if timing_settings is not None:
+                    backend_controller.cable_delay_ns = timing_settings
             self._backend_controller = backend_controller
             self._system_synchronizer = self._create_system_synchronizer(
                 backend_controller,
@@ -454,6 +454,41 @@ class SystemManager:
             raise TypeError(
                 "Expected `Quel3BackendController` for `backend_kind='quel3'`."
             )
+
+    def resolve_custom_target_channel(
+        self,
+        *,
+        box_id: str,
+        port_number: int,
+        channel_number: int | None,
+    ) -> GenChannel:
+        """Resolve a custom target channel through the active synchronizer."""
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError("Custom target registration requires an active backend.")
+        return synchronizer.resolve_custom_target_channel(
+            experiment_system=self.experiment_system,
+            box_id=box_id,
+            port_number=port_number,
+            channel_number=channel_number,
+        )
+
+    def register_custom_target(
+        self,
+        *,
+        target: Target,
+        update_backend_settings: bool = False,
+    ) -> None:
+        """Delegate registration and hardware-update ordering to the active synchronizer."""
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError("Custom target registration requires an active backend.")
+        synchronizer.register_custom_target(
+            experiment_system=self.experiment_system,
+            target=target,
+            update_backend_settings=update_backend_settings,
+            push_boxes=lambda box_ids: self.push(box_ids=box_ids),
+        )
 
     def pull(
         self,

@@ -359,68 +359,6 @@ def test_quel3_synchronizer_does_not_cache_experiment_system_for_push() -> None:
     assert planner_calls == [pushed_experiment_system]
 
 
-def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> None:
-    """Given selected boxes, synchronizer should fetch backend settings from hardware state."""
-    calls: list[dict[str, object]] = []
-
-    class _FakeHardwareStateReader:
-        def fetch_backend_settings_from_hardware(
-            self,
-            *,
-            unit_labels: tuple[str, ...],
-            parallel: bool | None = None,
-        ) -> dict[str, dict]:
-            calls.append(
-                {
-                    "unit_labels": unit_labels,
-                    "parallel": parallel,
-                }
-            )
-            return {
-                "BOX1": {
-                    "instruments": {
-                        "Q00": {
-                            "resource_id": "BOX1:inst-q00",
-                            "port_id": "BOX1:tx_p01",
-                            "role": "TRANSMITTER",
-                        }
-                    }
-                }
-            }
-
-    class _FakeBackendController:
-        hardware_state_reader = _FakeHardwareStateReader()
-
-    experiment_system = SimpleNamespace()
-    synchronizer = Quel3SystemSynchronizer(
-        backend_controller=cast(Any, _FakeBackendController()),
-    )
-
-    fetched = synchronizer.fetch_backend_settings_from_hardware(
-        experiment_system=cast(Any, experiment_system),
-        box_ids=("BOX1",),
-        parallel=False,
-    )
-
-    assert fetched == {
-        "BOX1": {
-            "instruments": {
-                "Q00": {
-                    "resource_id": "BOX1:inst-q00",
-                    "port_id": "BOX1:tx_p01",
-                    "role": "TRANSMITTER",
-                }
-            }
-        }
-    }
-    assert calls == [
-        {
-            "unit_labels": ("BOX1",),
-            "parallel": False,
-        }
-    ]
-
-
 def test_quel3_synchronizer_does_not_restore_instruments_from_settings() -> None:
     """Settings synchronization should preserve existing instrument-cache contents."""
     cache = {"Q00": object()}

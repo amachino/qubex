@@ -10,6 +10,13 @@ from qubex.backend.quel3.models import InstrumentConfiguration, InstrumentSpec
 
 logger = logging.getLogger(__name__)
 
+INSTRUMENT_RECOVERY_HINT = (
+    "The instrument may be missing or may have been reconfigured by another user. "
+    "Call exp.configure() to configure the experiment's instruments. "
+    "Inspect currently deployed instruments with "
+    "exp.backend_controller.get_resource_snapshot()."
+)
+
 
 class InstrumentCache:
     """
@@ -53,7 +60,7 @@ class InstrumentCache:
         except KeyError as exc:
             raise ValueError(
                 f"Instrument `{alias}` is not cached; deploy or refresh "
-                "instruments before execution."
+                f"instruments before execution. {INSTRUMENT_RECOVERY_HINT}"
             ) from exc
 
     def snapshot(self) -> dict[str, InstrumentInfoProtocol]:
@@ -122,6 +129,19 @@ class InstrumentCache:
         self._replace_scope(
             instrument_infos=instrument_infos,
             includes=lambda info: info.port_id in selected,
+        )
+
+    def replace_aliases(
+        self,
+        *,
+        aliases: Sequence[str],
+        instrument_infos: Iterable[InstrumentInfoProtocol],
+    ) -> None:
+        """Replace selected aliases while retaining every other cached instrument."""
+        selected = set(aliases)
+        self._replace_scope(
+            instrument_infos=instrument_infos,
+            includes=lambda info: self.alias_for(info) in selected,
         )
 
     def replace_units(

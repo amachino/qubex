@@ -6,9 +6,9 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
 from qubex.backend.quel3.interfaces.client import UnitLabelProtocol
-from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")

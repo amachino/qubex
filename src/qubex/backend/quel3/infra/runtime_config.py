@@ -1,4 +1,4 @@
-"""Shared runtime configuration for QuEL-3 managers."""
+"""Shared runtime configuration for QuEL-3 backend components."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from qubex.backend.quel3.interfaces import QuelwareClientFactory
 
 @dataclass(frozen=True)
 class Quel3RuntimeConfig:
-    """Hold quelware runtime settings shared by QuEL-3 managers."""
+    """Hold quelware runtime settings shared by QuEL-3 backend components."""
 
     endpoint: str = "localhost"
     port: int | None = None
@@ -205,14 +205,3 @@ def _required_string(
     if not isinstance(value, str):
         raise TypeError(f"`{path}.{key}` must be a string.")
     return value
-
-
-def _optional_string(
-    config: Mapping[str, object],
-    key: str,
-    path: str,
-) -> str | None:
-    value = config.get(key)
-    if value is not None and not isinstance(value, str):
-        raise TypeError(f"`{path}.{key}` must be a string.")
-    return cast(str | None, value)

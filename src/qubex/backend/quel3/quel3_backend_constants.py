@@ -8,5 +8,5 @@ SAMPLING_PERIOD_NS: Final[float] = 0.4
 READOUT_SAMPLING_PERIOD_NS: Final[float] = 0.8
 CAPTURE_DECIMATION_FACTOR: Final[int] = 1
 
-# Configurable amplitude multiplier applied when registering waveform events (-1 dB).
-EVENT_GAIN_SCALE: float = 10 ** (-1 / 20)
+# Configurable amplitude multiplier applied when registering waveform events (-3 dB).
+EVENT_GAIN_SCALE: float = 10 ** (-3 / 20)

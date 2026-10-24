@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping
 from contextlib import AbstractAsyncContextManager
-from typing import Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol, TypeAlias
+
+if TYPE_CHECKING:
+    from qubex.backend.quel3.interfaces.driver import (
+        InstrumentConfigProtocol,
+        ResultContainerProtocol,
+    )
 
 ResourceIdProtocol: TypeAlias = str
 UnitLabelProtocol: TypeAlias = str
@@ -137,6 +143,11 @@ class InstrumentInfoProtocol(Protocol):
     @property
     def definition(self) -> InstrumentDefinitionProtocol:
         """Return instrument definition."""
+        ...
+
+    @property
+    def config(self) -> InstrumentConfigProtocol:
+        """Return cached fixed-timeline sampling and alignment configuration."""
         ...
 
 
@@ -274,12 +285,28 @@ class SessionProtocol(Protocol):
         """Apply unit-wide controls and return their resulting values."""
         ...
 
+    async def initialize(
+        self,
+        instrument_ids: Collection[ResourceIdProtocol],
+        parallel: bool = True,
+    ) -> None:
+        """Initialize selected instruments, optionally processing units in parallel."""
+        ...
+
     async def trigger(
         self,
         instrument_ids: Collection[ResourceIdProtocol],
         wait_ms: int | None = None,
     ) -> int:
         """Trigger one fixed-timeline session run."""
+        ...
+
+    async def wait_for_results(
+        self,
+        instrument_ids: Collection[ResourceIdProtocol],
+        timeout_sec: float | None = None,
+    ) -> dict[ResourceIdProtocol, ResultContainerProtocol]:
+        """Wait for all instrument results and raise on instrument failures."""
         ...
 
 

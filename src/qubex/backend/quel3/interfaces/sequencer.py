@@ -81,7 +81,6 @@ class SequencerFactoryProtocol(Protocol[T_co]):
         self,
         default_sampling_period_ns: float,
         enforce_sample_grid: bool = True,
-        iter_blank_ns: float = 2_000,
     ) -> T_co:
         """Create one quelware sequencer."""
         ...

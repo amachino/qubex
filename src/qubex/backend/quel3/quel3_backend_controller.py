@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -19,23 +19,24 @@ from qubex.backend.backend_controller import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.quel3.infra import Quel3ClientMode
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
+from .formatters import Quel3ResourceView, print_resource_snapshot
+from .infra import Quel3ClientMode, Quel3ResourceReader, Quel3RuntimeConfig
 from .managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
     Quel3ExecutionManager,
-    Quel3HardwareStateReader,
-    Quel3RuntimeConfig,
     Quel3SessionManager,
 )
 from .models import (
     InstrumentConfiguration,
     InstrumentSpec,
-    Quel3HardwareState,
-    Quel3HardwareStateView,
+    Quel3ExecutionOptions,
+    Quel3ExecutionPlan,
+    Quel3ResourceLevel,
+    Quel3ResourceSnapshot,
 )
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
 from .tools import Quel3MonitorTool
@@ -63,7 +64,20 @@ class Quel3BackendController(BackendController):
         value: Mapping[str, object] | None,
     ) -> Quel3BackendController:
         """Create a controller from one QuEL-3 system configuration."""
-        return cls(runtime_config=Quel3RuntimeConfig.from_mapping(value))
+        if value is None:
+            return cls()
+        return cls(
+            runtime_config=Quel3RuntimeConfig.from_mapping(value),
+            execution_options=(
+                Quel3ExecutionOptions.model_validate(value["execution"])
+                if "execution" in value
+                else None
+            ),
+            cable_delay_ns=cast(
+                Mapping[str, Mapping[str, float]] | None,
+                value.get("cable_delay_ns"),
+            ),
+        )
 
     def __init__(
         self,
@@ -73,11 +87,13 @@ class Quel3BackendController(BackendController):
         client_mode: str | None = None,
         quelware_pat_path: str | None = None,
         runtime_config: Quel3RuntimeConfig | None = None,
+        cable_delay_ns: Mapping[str, Mapping[str, float]] | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
         session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
         execution_manager: Quel3ExecutionManager | None = None,
-        hardware_state_reader: Quel3HardwareStateReader | None = None,
+        resource_reader: Quel3ResourceReader | None = None,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -94,16 +110,26 @@ class Quel3BackendController(BackendController):
             Path to a quelware personal access token file.
         runtime_config : Quel3RuntimeConfig | None, optional
             Prebuilt runtime settings. Cannot be combined with quelware options.
+        cable_delay_ns : Mapping[str, Mapping[str, float]] | None, optional
+            Cable delays in ns keyed by unit, then local quelware port ID. All
+            configured ports determine the reference, including unused ports.
+            Unspecified ports have zero cable delay. None preserves legacy
+            execution without timing directives. Empty settings explicitly
+            apply zero offsets. Capture delay and payload timing are unchanged.
         connection_manager : Quel3ConnectionManager | None, optional
             Injected connection manager for testing or customization.
         session_manager : Quel3SessionManager | None, optional
             Injected session manager for testing or customization.
         configuration_manager : Quel3ConfigurationManager | None, optional
-            Injected configuration manager for testing or customization.
+            Injected configuration manager, shared with the default execution
+            manager for automatic instrument cache recovery.
         execution_manager : Quel3ExecutionManager | None, optional
             Injected execution manager for testing or customization.
-        hardware_state_reader : Quel3HardwareStateReader | None, optional
-            Injected hardware-state reader for testing or customization.
+        resource_reader : Quel3ResourceReader | None, optional
+            Injected resource reader for inspection and automatic instrument
+            recovery in the default execution manager.
+        execution_options : Quel3ExecutionOptions | None, optional
+            Default resource limits and adjacent-job packing settings.
         """
         if runtime_config is not None and any(
             value is not None
@@ -152,6 +178,13 @@ class Quel3BackendController(BackendController):
                 runtime_config=resolved_runtime_config,
             )
         )
+        self._resource_reader = (
+            resource_reader
+            if resource_reader is not None
+            else Quel3ResourceReader(
+                runtime_config=resolved_runtime_config,
+            )
+        )
         self._execution_manager = (
             execution_manager
             if execution_manager is not None
@@ -160,22 +193,51 @@ class Quel3BackendController(BackendController):
                 sampling_period_ns=self._sampling_period_ns,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 session_manager=self._session_manager,
+                execution_options=execution_options,
+                resource_reader=self._resource_reader,
+                configuration_manager=self._configuration_manager,
             )
         )
-        self._hardware_state_reader = (
-            hardware_state_reader
-            if hardware_state_reader is not None
-            else Quel3HardwareStateReader(
-                runtime_config=resolved_runtime_config,
-            )
-        )
+        if execution_manager is not None and execution_options is not None:
+            self.execution_options = execution_options
+        if cable_delay_ns is not None:
+            self.cable_delay_ns = cable_delay_ns
 
         self._monitor_tool = Quel3MonitorTool(
             configuration_manager=self._configuration_manager,
             execution_manager=self._execution_manager,
-            hardware_state_reader=self._hardware_state_reader,
+            resource_reader=self._resource_reader,
             instrument_cache=self._instrument_cache,
         )
+
+    @property
+    def cable_delay_ns(self) -> dict[str, dict[str, float]]:
+        """Return copied cable delays in ns keyed by unit, then local port ID."""
+        return self._execution_manager.cable_delay_ns
+
+    @cable_delay_ns.setter
+    def cable_delay_ns(self, delays: Mapping[str, Mapping[str, float]]) -> None:
+        """
+        Replace default per-port cable delays for subsequent execution batches.
+
+        A payload's `cable_delay_ns` overrides these defaults without merging.
+        Effective delays are validated before execution.
+
+        All configured ports determine the maximum delay, including unused
+        ports. Each instrument receives the maximum minus its port's delay;
+        missing ports have zero cable delay. A transceiver's offset applies
+        to both transmission and capture, preserving capture delay. Offsets
+        must match the instrument sampling grid. An empty dictionary resets
+        offsets to zero. Input and returned dictionaries are copied; assign
+        the complete dictionary to update settings. No hardware IO occurs.
+
+        Examples
+        --------
+        >>> controller.cable_delay_ns = {
+        ...     "unit-a": {"tx_p04": 20.0, "trx_p00p01": 80.0}
+        ... }
+        """
+        self._execution_manager.cable_delay_ns = delays
 
     @property
     def hash(self) -> int:
@@ -184,6 +246,12 @@ class Quel3BackendController(BackendController):
             (
                 self._connection_manager.hash,
                 self._instrument_cache.hash,
+                tuple(
+                    sorted(
+                        (unit, tuple(sorted(ports.items())))
+                        for unit, ports in self.cable_delay_ns.items()
+                    )
+                ),
             )
         )
 
@@ -238,9 +306,9 @@ class Quel3BackendController(BackendController):
         return self._execution_manager
 
     @property
-    def hardware_state_reader(self) -> Quel3HardwareStateReader:
-        """Return backend-side QuEL-3 hardware-state reader."""
-        return self._hardware_state_reader
+    def resource_reader(self) -> Quel3ResourceReader:
+        """Return backend-side QuEL-3 resource reader."""
+        return self._resource_reader
 
     def connect(
         self,
@@ -271,7 +339,7 @@ class Quel3BackendController(BackendController):
             )
             if unit_labels is not None and not unit_labels:
                 return
-            instrument_infos = self._hardware_state_reader.read_instrument_infos(
+            instrument_infos = self._resource_reader.read_instrument_infos(
                 unit_labels=() if unit_labels is None else unit_labels,
                 parallel=True if parallel is None else parallel,
             )
@@ -383,7 +451,8 @@ class Quel3BackendController(BackendController):
         Raises
         ------
         ValueError
-            Hardware readback is invalid.
+            Hardware readback is invalid, or the alias is already cached on
+            another port. Known cross-port collisions fail before writing.
 
         Notes
         -----
@@ -395,10 +464,37 @@ class Quel3BackendController(BackendController):
         return self._configuration_manager.deploy_instrument(
             instrument=instrument,
             instrument_cache=self._instrument_cache,
-            hardware_state_reader=self._hardware_state_reader,
+            resource_reader=self._resource_reader,
             append=append,
             parallel=parallel,
         )
+
+    def modify_target_frequencies(
+        self, target_frequencies_ghz: dict[str, float]
+    ) -> None:
+        """Redeploy and read back only target instruments at frequencies in GHz."""
+        if not target_frequencies_ghz:
+            return
+        instruments = {
+            instrument.alias: instrument
+            for instrument in self.get_instrument_configuration().instruments
+        }
+        for alias, frequency in target_frequencies_ghz.items():
+            instrument = instruments[alias]
+            margin = (
+                instrument.frequency_range_max_hz - instrument.frequency_range_min_hz
+            ) / 2
+            self._configuration_manager.replace_instruments(
+                instrument=InstrumentSpec(
+                    port_id=instrument.port_id,
+                    alias=alias,
+                    role=instrument.role,
+                    frequency_range_min_hz=frequency * 1e9 - margin,
+                    frequency_range_max_hz=frequency * 1e9 + margin,
+                ),
+                instrument_cache=self._instrument_cache,
+                resource_reader=self._resource_reader,
+            )
 
     def deploy_instruments(
         self,
@@ -416,7 +512,7 @@ class Quel3BackendController(BackendController):
         return self._configuration_manager.deploy_instruments(
             configuration=configuration,
             instrument_cache=self._instrument_cache,
-            hardware_state_reader=self._hardware_state_reader,
+            resource_reader=self._resource_reader,
             parallel=parallel,
         )
 
@@ -468,25 +564,25 @@ class Quel3BackendController(BackendController):
         """
         return self._configuration_manager.refresh_instrument_cache(
             instrument_cache=self._instrument_cache,
-            hardware_state_reader=self._hardware_state_reader,
+            resource_reader=self._resource_reader,
             unit_labels=unit_labels,
             parallel=parallel,
         )
 
-    def get_hardware_state(
+    def get_resource_snapshot(
         self,
         *,
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
-        include_diagnostics: bool = False,
+        level: Quel3ResourceLevel = "instrument",
         parallel: bool = True,
         timeout_seconds: float | None = None,
-    ) -> Quel3HardwareState:
+    ) -> Quel3ResourceSnapshot:
         """
-        Collect one structured QuEL-3 hardware-state snapshot.
+        Collect one structured QuEL-3 resource snapshot.
 
-        Read the current hardware without changing the execution cache. The
+        Read the current quelware resources without changing the execution cache. The
         snapshot can contain partial results and acquisition issues. Instrument
         configuration is obtained separately from the last confirmed cache with
         `get_instrument_configuration()`.
@@ -497,72 +593,95 @@ class Quel3BackendController(BackendController):
             Unit labels to inspect. Empty means all discovered units.
         port_ids : Sequence[str], optional
             Full port IDs or local port IDs used to filter ports and
-            instruments.
+            instruments. Requires `port` level or higher.
         instrument_aliases : Sequence[str], optional
             Unit-qualified aliases or local aliases used to filter instruments
-            and their related ports.
-        include_diagnostics : bool, optional
-            Whether to collect diagnostic dumps for the final visible ports.
+            and their related ports. Requires `instrument` level or higher.
+        level : Quel3ResourceLevel, optional
+            Cumulative acquisition depth: `unit` reads unit controls, `port`
+            adds ports, `instrument` adds instruments, and `diagnosis` adds
+            expensive port diagnostic dumps. Defaults to `instrument`.
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
-            Timeout for the synchronous hardware-state collection call.
+            Timeout for the synchronous resource snapshot collection call.
+
+        Returns
+        -------
+        Quel3ResourceSnapshot
+            Observed resources, including partial results and acquisition issues.
+
+        Raises
+        ------
+        ValueError
+            If the level is unsupported or filters require a higher level.
         """
-        return self._hardware_state_reader.collect_state(
+        return self._resource_reader.collect_snapshot(
             unit_labels=tuple(unit_labels),
             port_ids=tuple(port_ids),
             instrument_aliases=tuple(instrument_aliases),
-            include_diagnostics=include_diagnostics,
+            level=level,
             parallel=parallel,
             timeout_seconds=timeout_seconds,
         )
 
-    def print_hardware_state(
+    def print_resource_snapshot(
         self,
         *,
-        view: Quel3HardwareStateView = "summary",
+        view: Quel3ResourceView = "summary",
         unit_labels: Sequence[str] = (),
         port_ids: Sequence[str] = (),
         instrument_aliases: Sequence[str] = (),
-        include_diagnostics: bool | None = None,
         parallel: bool = True,
         timeout_seconds: float | None = None,
     ) -> None:
         """
-        Print one QuEL-3 hardware-state view with Rich.
+        Print one QuEL-3 resource snapshot view with Rich.
 
         Parameters
         ----------
-        view : Quel3HardwareStateView, optional
-            Rendered view name.
+        view : Quel3ResourceView, optional
+            Rendered view name. `units`, `ports`, and `instruments` select the
+            corresponding cumulative acquisition level. `summary` uses
+            `instrument`; `diagnostics` and `all` use `diagnosis`.
         unit_labels : Sequence[str], optional
             Unit labels to inspect. Empty means all discovered units.
         port_ids : Sequence[str], optional
             Full port IDs or local port IDs used to filter ports and
-            instruments.
+            instruments. Requires `port` level or higher.
         instrument_aliases : Sequence[str], optional
             Unit-qualified aliases or local aliases used to filter instruments
-            and their related ports.
-        include_diagnostics : bool | None, optional
-            Whether to collect diagnostic dumps. `None` includes diagnostics
-            for the `diagnostics` and `all` views.
+            and their related ports. Requires `instrument` level or higher.
         parallel : bool, optional
             Whether resource reads should run concurrently.
         timeout_seconds : float | None, optional
-            Timeout for the synchronous hardware-state collection call.
+            Timeout for the synchronous resource snapshot collection call.
+
+        Raises
+        ------
+        ValueError
+            If the view is unsupported or filters require a higher level.
+            Validation runs before resource reads.
         """
-        if include_diagnostics is None:
-            include_diagnostics = view in ("diagnostics", "all")
-        state = self._hardware_state_reader.collect_state(
-            unit_labels=tuple(unit_labels),
-            port_ids=tuple(port_ids),
-            instrument_aliases=tuple(instrument_aliases),
-            include_diagnostics=include_diagnostics,
+        level_by_view: dict[Quel3ResourceView, Quel3ResourceLevel] = {
+            "summary": "instrument",
+            "units": "unit",
+            "ports": "port",
+            "instruments": "instrument",
+            "diagnostics": "diagnosis",
+            "all": "diagnosis",
+        }
+        if view not in level_by_view:
+            raise ValueError(f"Unsupported QuEL-3 resource snapshot view: {view!r}")
+        snapshot = self.get_resource_snapshot(
+            unit_labels=unit_labels,
+            port_ids=port_ids,
+            instrument_aliases=instrument_aliases,
+            level=level_by_view[view],
             parallel=parallel,
             timeout_seconds=timeout_seconds,
-            view=view,
         )
-        state.print(view=view)
+        print_resource_snapshot(snapshot, view=view)
 
     @property
     def sampling_period_ns(self) -> float:
@@ -632,6 +751,36 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
 
+    @property
+    def execution_options(self) -> Quel3ExecutionOptions:
+        """Return execution defaults owned by the execution manager."""
+        return self._execution_manager.execution_options
+
+    @execution_options.setter
+    def execution_options(self, options: Quel3ExecutionOptions) -> None:
+        """Replace execution defaults in the execution manager."""
+        self._execution_manager.execution_options = options
+
+    def plan_execution(
+        self,
+        requests: Sequence[BackendExecutionRequest],
+        *,
+        execution_options: Quel3ExecutionOptions | None = None,
+    ) -> Quel3ExecutionPlan:
+        """
+        Inspect execution resources and shot ranges without hardware IO.
+
+        Use cached instrument information from connect, deployment, or refresh.
+        Input indices and half-open shot ranges in the returned plan are
+        zero-based. Passing options replaces the complete controller defaults.
+        Jobs are packed and executed in input order.
+        """
+        return self._execution_manager.plan_execution(
+            requests=requests,
+            instrument_cache=self._instrument_cache,
+            execution_options=execution_options,
+        )
+
     def execute_sync(
         self,
         *,
@@ -639,6 +788,7 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request synchronously using QuEL-3 defaults."""
         del execution_mode, clock_health_checks
@@ -646,6 +796,7 @@ class Quel3BackendController(BackendController):
             request=request,
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )
 
     async def execute_async(
@@ -655,6 +806,7 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request asynchronously using QuEL-3 defaults."""
         del execution_mode, clock_health_checks
@@ -662,6 +814,7 @@ class Quel3BackendController(BackendController):
             request=request,
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )
 
     async def execute_batch_async(
@@ -671,11 +824,19 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> list[BackendExecutionResult]:
-        """Execute multiple backend requests as one resolved QuEL-3 batch."""
+        """
+        Execute multiple backend requests as one resolved QuEL-3 batch.
+
+        Missing resources trigger one cache refresh and complete replanning,
+        provided all aliases retain their ports. Recovery restarts the entire
+        batch, including any executions that already completed.
+        """
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_batch_async(
             requests=tuple(requests),
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )

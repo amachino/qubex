@@ -8,13 +8,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from qubex.backend.quel3.infra import quelware_imports as quelware_imports_module
+from qubex.backend.quel3.infra import (
+    Quel3HttpTransportConfig,
+    Quel3RuntimeConfig,
+    quelware_imports as quelware_imports_module,
+)
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
     Quel3ExecutionManager,
-    Quel3HttpTransportConfig,
-    Quel3RuntimeConfig,
     Quel3SessionManager,
 )
 

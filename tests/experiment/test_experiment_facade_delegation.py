@@ -1385,3 +1385,15 @@ def test_spectroscopy_delegates_drive_timing(method, simultaneous_drive) -> None
     assert delegate.call_args.kwargs["simultaneous_drive"] is simultaneous_drive
     assert delegate.call_args.kwargs["shots"] == 32
     assert delegate.call_args.kwargs["interval"] == 100.0
+
+
+def test_register_custom_target_forwards_omitted_channel() -> None:
+    """An omitted custom-target channel should reach the context for backend-specific resolution."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+    exp.register_custom_target(
+        label="custom", frequency=4.2, box_id="Q3", port_number=2, qubit_label="Q00"
+    )
+    assert context_stub.calls[0][0] == "register_custom_target"
+    assert context_stub.calls[0][1]["channel_number"] is None

@@ -3,29 +3,25 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeVar
 
-from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.infra.quelware_imports import (
+    Quel3ClientMode,
+    QuelwareInstrumentEntities,
+    load_quelware_instrument_entities,
+)
+from qubex.backend.quel3.infra.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import (
-    FixedTimelineProfileFactory,
-    InstrumentDefinitionFactory,
     InstrumentDefinitionProtocol,
     InstrumentInfoProtocol,
-    InstrumentModeNamespaceProtocol,
-    InstrumentRoleNamespaceProtocol,
-    InstrumentRoleProtocol,
     QuelwareClientFactory,
     SessionProtocol,
 )
-from qubex.backend.quel3.managers.hardware_state_reader import Quel3HardwareStateReader
-from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
     QuelwareSessionError,
@@ -35,37 +31,17 @@ from qubex.backend.quel3.managers.session_workarounds import (
 )
 from qubex.backend.quel3.models import (
     InstrumentConfiguration,
-    InstrumentRoleName,
     InstrumentSpec,
 )
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
+
+if TYPE_CHECKING:
+    from qubex.backend.quel3.infra.resource_reader import Quel3ResourceReader
 
 T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 _MONITOR_MODE_CONTROL_KEY = "quel3.monitor.mode"
-
-
-@dataclass(frozen=True)
-class _QuelwareInstrumentEntities:
-    """Lazy-loaded quelware instrument entities needed for deployment."""
-
-    fixed_timeline_profile_factory: FixedTimelineProfileFactory
-    instrument_definition_factory: InstrumentDefinitionFactory
-    instrument_mode_namespace: InstrumentModeNamespaceProtocol
-    instrument_role_namespace: InstrumentRoleNamespaceProtocol
-
-    def role_value(self, role: InstrumentRoleName) -> InstrumentRoleProtocol:
-        """Return quelware instrument-role value for one deploy role name."""
-        if role == "TRANSMITTER":
-            return self.instrument_role_namespace.TRANSMITTER
-        if role == "TRANSCEIVER":
-            return self.instrument_role_namespace.TRANSCEIVER
-        if role == "TRANSCEIVER_LOOPBACK":
-            return self.instrument_role_namespace.TRANSCEIVER_LOOPBACK
-        if role == "RECEIVER":
-            return self.instrument_role_namespace.RECEIVER
-        raise ValueError(f"Unsupported QuEL-3 instrument role: {role!r}")
 
 
 def _run_async(
@@ -377,7 +353,7 @@ class Quel3ConfigurationManager:
         *,
         configuration: InstrumentConfiguration,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         """
@@ -392,7 +368,7 @@ class Quel3ConfigurationManager:
         return self._deploy_and_refresh(
             specifications=configuration.instruments,
             instrument_cache=instrument_cache,
-            hardware_state_reader=hardware_state_reader,
+            resource_reader=resource_reader,
             append=False,
             parallel=parallel,
         )
@@ -402,7 +378,7 @@ class Quel3ConfigurationManager:
         *,
         instrument: InstrumentSpec,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         append: bool = True,
         parallel: bool = True,
     ) -> InstrumentInfoProtocol:
@@ -415,7 +391,7 @@ class Quel3ConfigurationManager:
             Instrument definition and its unit-qualified port ID.
         instrument_cache : InstrumentCache
             Controller-owned cache to update after deployment.
-        hardware_state_reader : Quel3HardwareStateReader
+        resource_reader : Quel3ResourceReader
             Reader for complete port readback after deployment.
         append : bool, default=True
             Add or replace this alias while preserving the port's other
@@ -427,7 +403,8 @@ class Quel3ConfigurationManager:
         Raises
         ------
         ValueError
-            Hardware readback is invalid.
+            Hardware readback is invalid, or the alias is already cached on
+            another port. Known cross-port collisions fail before writing.
 
         Notes
         -----
@@ -436,21 +413,79 @@ class Quel3ConfigurationManager:
         read the entire port into the cache. Write or readback failure leaves
         that port uncached.
         """
+        previous = instrument_cache.snapshot().get(instrument.alias)
+        if previous is not None and previous.port_id != instrument.port_id:
+            raise ValueError(
+                f"Instrument alias `{instrument.alias}` is already cached on port "
+                f"`{previous.port_id}`; cannot deploy it on `{instrument.port_id}`."
+            )
         instrument_infos = self._deploy_and_refresh(
             specifications=(instrument,),
             instrument_cache=instrument_cache,
-            hardware_state_reader=hardware_state_reader,
+            resource_reader=resource_reader,
             append=append,
             parallel=parallel,
         )
         return instrument_infos[instrument.alias]
+
+    def replace_instruments(
+        self,
+        *,
+        instrument: InstrumentSpec,
+        instrument_cache: InstrumentCache,
+        resource_reader: Quel3ResourceReader,
+        parallel: bool = True,
+    ) -> InstrumentInfoProtocol:
+        """
+        Replace a cached instrument and read back only its new resource ID.
+
+        Preserve other aliases, including those on the same port. A failed
+        write or readback leaves only the replaced alias absent from the cache.
+        """
+        previous = instrument_cache.get(instrument.alias)
+        if previous.port_id != instrument.port_id:
+            raise ValueError("Instrument redeployment must preserve its port.")
+        instrument_cache.replace_aliases(
+            aliases=(instrument.alias,), instrument_infos=()
+        )
+        deployed = _run_async(
+            lambda: self._deploy_instruments(
+                specifications=(instrument,), append=True, parallel=parallel
+            )
+        )
+        matching = [
+            info
+            for info in deployed
+            if InstrumentCache.alias_for(info) == instrument.alias
+            and info.port_id == instrument.port_id
+        ]
+        if len(matching) != 1:
+            raise ValueError(
+                "Deployment did not return exactly one matching instrument."
+            )
+        infos = resource_reader.read_instrument_infos_by_ids(
+            (matching[0].id,), parallel=parallel
+        )
+        if (
+            len(infos) != 1
+            or infos[0].id != matching[0].id
+            or infos[0].port_id != instrument.port_id
+            or InstrumentCache.alias_for(infos[0]) != instrument.alias
+        ):
+            raise ValueError(
+                "Hardware readback did not match the redeployed instrument."
+            )
+        instrument_cache.replace_aliases(
+            aliases=(instrument.alias,), instrument_infos=infos
+        )
+        return infos[0]
 
     def _deploy_and_refresh(
         self,
         *,
         specifications: tuple[InstrumentSpec, ...],
         instrument_cache: InstrumentCache,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         append: bool,
         parallel: bool,
     ) -> dict[str, InstrumentInfoProtocol]:
@@ -466,18 +501,15 @@ class Quel3ConfigurationManager:
                 parallel=parallel,
             )
         )
-        instrument_infos = hardware_state_reader.read_instrument_infos(
+        instrument_infos = resource_reader.read_instrument_infos(
             port_ids=port_ids,
             parallel=parallel,
         )
+        readback_counts = Counter(
+            (InstrumentCache.alias_for(info), info.port_id) for info in instrument_infos
+        )
         for specification in specifications:
-            matches = [
-                info
-                for info in instrument_infos
-                if InstrumentCache.alias_for(info) == specification.alias
-                and info.port_id == specification.port_id
-            ]
-            if len(matches) != 1:
+            if readback_counts[specification.alias, specification.port_id] != 1:
                 raise ValueError(
                     "Hardware readback did not return exactly one instrument "
                     f"for alias `{specification.alias}` on port `{specification.port_id}`."
@@ -491,7 +523,7 @@ class Quel3ConfigurationManager:
         self,
         *,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: Quel3HardwareStateReader,
+        resource_reader: Quel3ResourceReader,
         unit_labels: Sequence[str] | None = None,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
@@ -504,7 +536,7 @@ class Quel3ConfigurationManager:
         """
         if unit_labels is not None and not unit_labels:
             return {}
-        instrument_infos = hardware_state_reader.read_instrument_infos(
+        instrument_infos = resource_reader.read_instrument_infos(
             unit_labels=() if unit_labels is None else tuple(unit_labels),
             parallel=parallel,
         )
@@ -543,10 +575,10 @@ class Quel3ConfigurationManager:
         specifications: tuple[InstrumentSpec, ...],
         append: bool = False,
         parallel: bool = True,
-    ) -> None:
+    ) -> tuple[InstrumentInfoProtocol, ...]:
         """Deploy instruments through quelware session APIs."""
         if not specifications:
-            return
+            return ()
 
         client_factory = self._load_quelware_client_factory()
         instrument_entities = self._load_instrument_entities()
@@ -559,9 +591,10 @@ class Quel3ConfigurationManager:
             for port_id, port_specifications in specifications_by_port.items()
         )
         max_attempts = 1 if append else QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS
+        instrument_infos: tuple[InstrumentInfoProtocol, ...] = ()
         for attempt in range(max_attempts):
             try:
-                await self._deploy_port_batches(
+                instrument_infos = await self._deploy_port_batches(
                     client_factory=client_factory,
                     port_batches=port_batches,
                     instrument_entities=instrument_entities,
@@ -583,18 +616,19 @@ class Quel3ConfigurationManager:
                         session_token=missing_session_id,
                         cause=exc,
                     ) from exc
+        return instrument_infos
 
     async def _deploy_port_batches(
         self,
         *,
         client_factory: QuelwareClientFactory,
         port_batches: tuple[tuple[str, tuple[InstrumentSpec, ...]], ...],
-        instrument_entities: _QuelwareInstrumentEntities,
+        instrument_entities: QuelwareInstrumentEntities,
         append: bool,
         parallel: bool,
         attempt: int,
         max_attempts: int,
-    ) -> None:
+    ) -> tuple[InstrumentInfoProtocol, ...]:
         """Deploy port batches in one quelware client/session context."""
         async with client_factory(
             self._runtime_config.endpoint,
@@ -622,18 +656,25 @@ class Quel3ConfigurationManager:
                         ),
                         return_exceptions=True,
                     )
+                    infos: list[InstrumentInfoProtocol] = []
                     for result in results:
                         if isinstance(result, BaseException):
                             raise result  # noqa: TRY301
+                        infos.extend(result)
+                    return tuple(infos)
                 else:
+                    infos = []
                     for port_id, port_specifications in port_batches:
-                        await self._deploy_port_batch(
-                            session=session,
-                            port_id=port_id,
-                            port_specifications=port_specifications,
-                            instrument_entities=instrument_entities,
-                            append=append,
+                        infos.extend(
+                            await self._deploy_port_batch(
+                                session=session,
+                                port_id=port_id,
+                                port_specifications=port_specifications,
+                                instrument_entities=instrument_entities,
+                                append=append,
+                            )
                         )
+                    return tuple(infos)
             except Exception as exc:
                 if attempt >= max_attempts:
                     raise QuelwareSessionError(
@@ -669,9 +710,9 @@ class Quel3ConfigurationManager:
         session: SessionProtocol,
         port_id: str,
         port_specifications: tuple[InstrumentSpec, ...],
-        instrument_entities: _QuelwareInstrumentEntities,
+        instrument_entities: QuelwareInstrumentEntities,
         append: bool,
-    ) -> None:
+    ) -> tuple[InstrumentInfoProtocol, ...]:
         """Deploy one port batch through the active quelware session."""
         definitions: list[InstrumentDefinitionProtocol] = []
         for specification in port_specifications:
@@ -688,35 +729,18 @@ class Quel3ConfigurationManager:
                 )
             )
 
-        await session.deploy_instruments(
+        infos = await session.deploy_instruments(
             port_id,
             definitions=definitions,
             append=append,
         )
+        return tuple(infos or ())
 
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
         return self._runtime_config.load_client_factory()
 
     @staticmethod
-    def _load_instrument_entities() -> _QuelwareInstrumentEntities:
-        """Import instrument entities lazily from quelware core package."""
-        instrument_module = importlib.import_module("quelware_core.entities.instrument")
-        fixed_timeline_profile_factory: FixedTimelineProfileFactory = (
-            instrument_module.FixedTimelineProfile
-        )
-        instrument_definition_factory: InstrumentDefinitionFactory = (
-            instrument_module.InstrumentDefinition
-        )
-        instrument_mode_namespace: InstrumentModeNamespaceProtocol = (
-            instrument_module.InstrumentMode
-        )
-        instrument_role_namespace: InstrumentRoleNamespaceProtocol = (
-            instrument_module.InstrumentRole
-        )
-        return _QuelwareInstrumentEntities(
-            fixed_timeline_profile_factory=fixed_timeline_profile_factory,
-            instrument_definition_factory=instrument_definition_factory,
-            instrument_mode_namespace=instrument_mode_namespace,
-            instrument_role_namespace=instrument_role_namespace,
-        )
+    def _load_instrument_entities() -> QuelwareInstrumentEntities:
+        """Load the quelware deployment dependencies."""
+        return load_quelware_instrument_entities()

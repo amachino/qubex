@@ -38,8 +38,6 @@ from qubex.system import (
     ControlParameters,
     ControlSystem,
     ExperimentSystem,
-    GenPort,
-    MixingUtil,
     Mux,
     QuantumSystem,
     Qubit,
@@ -1137,7 +1135,7 @@ class ExperimentContext:
         frequency: float,
         box_id: str,
         port_number: int,
-        channel_number: int,
+        channel_number: int | None = None,
         qubit_label: str | None = None,
         target_qubit_label: str | None = None,
         metadata: dict[str, Any] | None = None,
@@ -1145,7 +1143,15 @@ class ExperimentContext:
         update_backend_settings: bool | None = None,
         **deprecated_options: Any,
     ) -> None:
-        """Register a custom target with the control system."""
+        """
+        Resolve a custom target and delegate registration to the system manager.
+
+        Frequencies are in GHz. An omitted channel selects channel 0 for
+        QuEL-3; QuEL-1 requires an explicit channel. QuEL-3 always deploys the
+        instrument. `update_backend_settings` controls hardware updates only
+        for QuEL-1, with `update_lsi` retained as an alias. See
+        `Experiment.register_custom_target` for lifecycle details.
+        """
         if target_type is None:
             target_type = TargetType.CTRL_GE
         update_backend_settings = resolve_deprecated_option(
@@ -1200,16 +1206,11 @@ class ExperimentContext:
             raise ValueError(
                 "target_qubit_label is only valid for custom CR/2Q targets."
             )
-        port = self.control_system.get_port(box_id, port_number)
-        if not isinstance(port, GenPort):
-            raise TypeError(
-                f"Custom target registration port `{port.id}` must be a GenPort."
-            )
-        if channel_number < 0 or channel_number >= len(port.channels):
-            raise IndexError(
-                f"Channel number `{channel_number}` is out of range for port `{port.id}`."
-            )
-        channel = port.channels[channel_number]
+        channel = self.system_manager.resolve_custom_target_channel(
+            box_id=box_id,
+            port_number=port_number,
+            channel_number=channel_number,
+        )
         target_object = self._resolve_custom_target_object(
             qubit_label=resolved_qubit_label,
             target_type=target_type,
@@ -1222,29 +1223,10 @@ class ExperimentContext:
             type=target_type,
             metadata=target_metadata,
         )
-        define_target = getattr(self.backend_controller, "define_target", None)
-        if not callable(define_target):
-            raise NotImplementedError(
-                "Active backend does not support custom target registration."
-            )
-        define_target(
-            target_name=target.label,
-            channel_name=target.channel.id,
-            target_frequency_ghz=target.frequency,
+        self.system_manager.register_custom_target(
+            target=target,
+            update_backend_settings=update_backend_settings,
         )
-        self.experiment_system.add_target(target)
-        if update_backend_settings:
-            cnco = port.cnco_freq
-            if cnco is None:
-                raise ValueError("CNCO frequency is not set for the target port.")
-            fnco, _ = MixingUtil.calc_fnco(
-                f=frequency * 1e9,
-                ssb=port.sideband,
-                lo=port.lo_freq,
-                cnco=cnco,
-            )
-            channel.fnco_freq = fnco
-            self.system_manager.push(box_ids=[box_id])
 
     @contextmanager
     def modified_frequencies(

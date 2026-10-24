@@ -8,13 +8,17 @@ from typing import Any, cast
 
 import pytest
 
-from qubex.backend.quel3 import InstrumentSpec, Quel3BackendController
+from qubex.backend.quel3 import (
+    InstrumentConfiguration,
+    InstrumentSpec,
+    Quel3BackendController,
+)
+from qubex.backend.quel3.infra import Quel3ResourceReader
+from qubex.backend.quel3.infra.quelware_imports import QuelwareInstrumentEntities
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
-    Quel3HardwareStateReader,
-    configuration_manager as configuration_module,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
 
@@ -29,8 +33,46 @@ def _spec(alias: str = "Q02", port_id: str = "unit-a:tx_p01") -> InstrumentSpec:
     )
 
 
+def test_modify_target_frequencies_preserves_instrument_width_and_other_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Frequency changes should append matching aliases with their existing range widths."""
+    manager = Quel3ConfigurationManager()
+    controller = Quel3BackendController(configuration_manager=manager)
+    original = _spec("Q00")
+    sibling = _spec("Q01")
+    monkeypatch.setattr(
+        controller,
+        "get_instrument_configuration",
+        lambda: InstrumentConfiguration(instruments=(original, sibling)),
+    )
+    deployed: list[InstrumentSpec] = []
+
+    def deploy(*, instrument: InstrumentSpec, **kwargs: Any) -> Any:
+        deployed.append(instrument)
+        return None
+
+    monkeypatch.setattr(manager, "replace_instruments", deploy)
+    controller.modify_target_frequencies({"Q00": 7.0})
+
+    assert deployed == [
+        InstrumentSpec(
+            alias="Q00",
+            port_id=original.port_id,
+            role=original.role,
+            frequency_range_min_hz=6e9,
+            frequency_range_max_hz=8e9,
+        )
+    ]
+
+
 def _info(
-    alias: str, port_id: str = "unit-a:tx_p01", *, resource_id: str | None = None
+    alias: str,
+    port_id: str = "unit-a:tx_p01",
+    *,
+    resource_id: str | None = None,
+    frequency_range_min_hz: float = 4e9,
+    frequency_range_max_hz: float = 6e9,
 ) -> InstrumentInfoProtocol:
     return cast(
         InstrumentInfoProtocol,
@@ -42,7 +84,8 @@ def _info(
                 role="TRANSMITTER",
                 mode="FIXED_TIMELINE",
                 profile=SimpleNamespace(
-                    frequency_range_min=4e9, frequency_range_max=6e9
+                    frequency_range_min=frequency_range_min_hz,
+                    frequency_range_max=frequency_range_max_hz,
                 ),
             ),
             config=SimpleNamespace(sampling_period_fs=400_000),
@@ -104,13 +147,20 @@ class _Hardware:
                             definition.alias,
                             port_id,
                             resource_id=f"{port_id}:{definition.alias}:deployment-{len(hardware.deploy_calls)}",
+                            frequency_range_min_hz=definition.profile.frequency_range_min,
+                            frequency_range_max_hz=definition.profile.frequency_range_max,
                         )
                         for definition in definitions
                     )
                 if hardware.fail_after_write:
                     raise RuntimeError("response lost after deployment")
-                # The manager must use the subsequent full-port read, not this response.
-                return []
+                return [
+                    info
+                    for info in hardware.infos
+                    if info.port_id == port_id
+                    and InstrumentCache.alias_for(info)
+                    in {definition.alias for definition in definitions}
+                ]
 
         return _Session()
 
@@ -139,7 +189,7 @@ def deployment(
     monkeypatch.setattr(
         manager, "_load_quelware_client_factory", lambda: lambda *args: hardware
     )
-    entities = configuration_module._QuelwareInstrumentEntities(  # noqa: SLF001
+    entities = QuelwareInstrumentEntities(
         fixed_timeline_profile_factory=cast(Any, SimpleNamespace),
         instrument_definition_factory=cast(Any, SimpleNamespace),
         instrument_mode_namespace=cast(
@@ -151,6 +201,135 @@ def deployment(
     cache = InstrumentCache()
     cache.replace_all(instrument_infos=hardware.infos)
     return manager, hardware, cache
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_frequency_changes_only_read_changed_instruments(
+    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
+    monkeypatch: pytest.MonkeyPatch,
+    parallel: bool,
+) -> None:
+    """Frequency changes should read new target IDs without querying unrelated instruments."""
+    manager, hardware, cache = deployment
+    sibling = _info("Q03")
+    hardware.infos.append(sibling)
+    cache.replace_all(instrument_infos=hardware.infos)
+    untouched = cache.get("Q01")
+    requested: list[str] = []
+
+    async def get_info(resource_id: str) -> InstrumentInfoProtocol:
+        requested.append(resource_id)
+        return next(info for info in hardware.infos if info.id == resource_id)
+
+    reader = Quel3ResourceReader()
+    monkeypatch.setattr(
+        reader, "_load_quelware_client_factory", lambda: lambda *args: hardware
+    )
+    monkeypatch.setattr(hardware, "get_instrument_info", get_info, raising=False)
+
+    manager.replace_instruments(
+        instrument=_spec("Q00"),
+        instrument_cache=cache,
+        resource_reader=reader,
+        parallel=parallel,
+    )
+
+    updated = cache.get("Q00")
+    assert updated.id == "unit-a:tx_p01:Q00:deployment-1"
+    assert requested == [updated.id]
+    assert hardware.read_calls == []
+    assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
+    assert cache.get("Q03") is sibling
+    assert cache.get("Q01") is untouched
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["write", "response", "readback", "wrong_port", "wrong_alias", "wrong_id"],
+)
+def test_frequency_change_failure_preserves_unrelated_cached_instruments(
+    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """Failed target redeployment should invalidate only that alias and preserve siblings."""
+    manager, hardware, cache = deployment
+    sibling = _info("Q03")
+    hardware.infos.append(sibling)
+    cache.replace_all(instrument_infos=hardware.infos)
+    untouched = cache.get("Q01")
+    hardware.fail_after_write = failure == "write"
+    hardware.omit_added = failure == "response"
+
+    def read_ids(*args: object, **kwargs: object) -> tuple[InstrumentInfoProtocol, ...]:
+        if failure == "readback":
+            raise RuntimeError("instrument unavailable")
+        updated = next(
+            info for info in hardware.infos if InstrumentCache.alias_for(info) == "Q00"
+        )
+        return (
+            _info(
+                "Q99" if failure == "wrong_alias" else "Q00",
+                "unit-a:tx_p02" if failure == "wrong_port" else updated.port_id,
+                resource_id="wrong-id" if failure == "wrong_id" else updated.id,
+            ),
+        )
+
+    reader = Quel3ResourceReader()
+    monkeypatch.setattr(reader, "read_instrument_infos_by_ids", read_ids)
+
+    with pytest.raises((QuelwareSessionError, ValueError, RuntimeError)):
+        manager.replace_instruments(
+            instrument=_spec("Q00"), instrument_cache=cache, resource_reader=reader
+        )
+
+    assert cache.snapshot() == {"Q01": untouched, "Q03": sibling}
+    assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
+    assert hardware.closed_sessions == 1
+
+
+def test_controller_frequency_change_uses_only_target_readback(
+    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Controller frequency changes should preserve the range width and unrelated aliases."""
+    manager, hardware, _ = deployment
+    reader = Quel3ResourceReader()
+    monkeypatch.setattr(
+        reader, "_load_quelware_client_factory", lambda: lambda *args: hardware
+    )
+    requested: list[str] = []
+
+    async def get_info(resource_id: str) -> InstrumentInfoProtocol:
+        requested.append(resource_id)
+        return next(info for info in hardware.infos if info.id == resource_id)
+
+    monkeypatch.setattr(hardware, "get_instrument_info", get_info, raising=False)
+    monkeypatch.setattr(
+        hardware,
+        "read_instrument_infos_by_ids",
+        reader.read_instrument_infos_by_ids,
+        raising=False,
+    )
+    controller = Quel3BackendController(
+        configuration_manager=manager,
+        resource_reader=cast(Quel3ResourceReader, hardware),
+    )
+    controller.refresh_instrument_cache()
+    hardware.read_calls.clear()
+
+    controller.modify_target_frequencies({"Q00": 7.0})
+
+    assert requested == ["unit-a:tx_p01:Q00:deployment-1"]
+    assert hardware.read_calls == []
+    assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
+    specs = {
+        spec.alias: spec
+        for spec in controller.get_instrument_configuration().instruments
+    }
+    assert set(specs) == {"Q00", "Q01"}
+    assert specs["Q00"].frequency_range_min_hz == 6e9
+    assert specs["Q00"].frequency_range_max_hz == 8e9
 
 
 @pytest.mark.parametrize("append", [True, False])
@@ -166,7 +345,7 @@ def test_single_deploy_updates_the_full_port_and_returns_one_readback(
         instrument=_spec(),
         append=append,
         instrument_cache=cache,
-        hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+        resource_reader=cast(Quel3ResourceReader, hardware),
         parallel=False,
     )
 
@@ -186,7 +365,7 @@ def test_controller_single_deploy_defaults_to_append(
     manager, hardware, _ = deployment
     controller = Quel3BackendController(
         configuration_manager=manager,
-        hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+        resource_reader=cast(Quel3ResourceReader, hardware),
     )
     controller.refresh_instrument_cache()
 
@@ -214,7 +393,7 @@ def test_append_replaces_existing_alias_without_a_preflight_read(
     result = manager.deploy_instrument(
         instrument=_spec(alias="Q00"),
         instrument_cache=cache,
-        hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+        resource_reader=cast(Quel3ResourceReader, hardware),
     )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
@@ -239,7 +418,7 @@ def test_append_does_not_retry_after_an_uncertain_write(
         manager.deploy_instrument(
             instrument=_spec(),
             instrument_cache=cache,
-            hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+            resource_reader=cast(Quel3ResourceReader, hardware),
         )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
@@ -262,8 +441,24 @@ def test_failed_append_readback_does_not_publish_partial_information(
         manager.deploy_instrument(
             instrument=_spec(),
             instrument_cache=cache,
-            hardware_state_reader=cast(Quel3HardwareStateReader, hardware),
+            resource_reader=cast(Quel3ResourceReader, hardware),
         )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
     assert cache.snapshot() == {"Q01": untouched}
+
+
+def test_single_deploy_rejects_alias_on_another_cached_port(
+    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
+) -> None:
+    """Cross-port alias collisions should fail before touching hardware or the cache."""
+    manager, hardware, cache = deployment
+    before = cache.snapshot()
+    with pytest.raises(ValueError, match="port"):
+        manager.deploy_instrument(
+            instrument=_spec("Q01"),
+            instrument_cache=cache,
+            resource_reader=cast(Any, hardware),
+        )
+    assert hardware.deploy_calls == []
+    assert cache.snapshot() == before

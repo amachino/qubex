@@ -361,7 +361,7 @@ def monitor_schedule_runtime(
     )
     actions: list[tuple[object, ...]] = []
     monkeypatch.setattr(
-        controller._hardware_state_reader,
+        controller._resource_reader,
         "read_instrument_infos",
         lambda **kwargs: originals,
     )
@@ -392,7 +392,7 @@ def monitor_schedule_runtime(
         *,
         instrument: InstrumentSpec,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: object,
+        resource_reader: object,
         append: bool = True,
         parallel: bool = True,
     ) -> InstrumentInfoProtocol:
@@ -421,7 +421,7 @@ def monitor_schedule_runtime(
         *,
         configuration: InstrumentConfiguration,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: object,
+        resource_reader: object,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         actions.append(
@@ -631,7 +631,7 @@ def test_run_monitor_schedule_infers_unit_from_live_target_and_restores_it(
         reads.append(parallel)
         return (other, *originals)
 
-    monkeypatch.setattr(controller.hardware_state_reader, "read_instrument_infos", read)
+    monkeypatch.setattr(controller.resource_reader, "read_instrument_infos", read)
     with PulseSchedule() as schedule:
         schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
 
@@ -675,7 +675,7 @@ def test_run_monitor_schedule_rejects_ambiguous_target_before_deletion(
     controller._instrument_cache.replace_all(instrument_infos=originals[:1])
     original_snapshot = controller._instrument_cache.snapshot()
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        controller.resource_reader,
         "read_instrument_infos",
         lambda **kwargs: originals,
     )
@@ -705,7 +705,7 @@ def test_run_monitor_schedule_rejects_multiple_units_before_deletion(
     controller._instrument_cache.replace_all(instrument_infos=originals)
     original_snapshot = controller._instrument_cache.snapshot()
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        controller.resource_reader,
         "read_instrument_infos",
         lambda **kwargs: originals,
     )
@@ -737,7 +737,7 @@ def test_run_monitor_schedule_ignores_unrelated_instrument_configurations(
     cast(Any, unrelated[0]).definition.profile = None
     original = _instrument_info("output-a", "tx_p00")
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        controller.resource_reader,
         "read_instrument_infos",
         lambda **kwargs: (original, *unrelated),
     )
@@ -770,7 +770,7 @@ def test_run_monitor_schedule_read_failure_leaves_instruments_untouched(
     def read(**kwargs: object) -> tuple[InstrumentInfoProtocol, ...]:
         raise RuntimeError("instrument snapshot incomplete")
 
-    monkeypatch.setattr(controller.hardware_state_reader, "read_instrument_infos", read)
+    monkeypatch.setattr(controller.resource_reader, "read_instrument_infos", read)
     with PulseSchedule() as schedule:
         schedule.add("output-a", Arbitrary([0.5 + 0j], sampling_period=0.4))
 
@@ -782,19 +782,19 @@ def test_run_monitor_schedule_read_failure_leaves_instruments_untouched(
     assert controller._instrument_cache.snapshot() == original_snapshot
 
 
-@pytest.mark.parametrize("role", ["TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
-def test_run_monitor_schedule_normalizes_readout_waveforms(
+@pytest.mark.parametrize("role", ["TRANSMITTER", "TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
+def test_run_monitor_schedule_normalizes_trx_port_waveforms(
     monkeypatch: pytest.MonkeyPatch,
     monitor_schedule_runtime: tuple[
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
     role: InstrumentRoleName,
 ) -> None:
-    """Readout instruments should use the same normalized samples in monitor runs."""
-    controller, manager, _ = monitor_schedule_runtime
-    original = _instrument_info("readout", "rx_p00", role=role)
+    """TRX ports should use 0.8 ns waveform samples regardless of instrument role."""
+    controller, manager, actions = monitor_schedule_runtime
+    original = _instrument_info("readout", "trx_p00p01", role=role)
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        controller.resource_reader,
         "read_instrument_infos",
         lambda **kwargs: (original,),
     )
@@ -811,21 +811,27 @@ def test_run_monitor_schedule_normalizes_readout_waveforms(
     ]
     assert waveform.sampling_period_ns == pytest.approx(0.8)
     np.testing.assert_allclose(waveform.iq_array, [0.2, 0.5], rtol=1e-12, atol=1e-12)
+    assert (
+        next(action for action in actions if action[:2] == ("deploy", "readout"))[3]
+        == "TRANSMITTER"
+    )
     assert controller.get_instrument_configuration().instruments[0].role == role
 
 
+@pytest.mark.parametrize("role", ["TRANSMITTER", "TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
 def test_run_monitor_schedule_rejects_incompatible_readout_before_deletion(
     monkeypatch: pytest.MonkeyPatch,
     monitor_schedule_runtime: tuple[
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
+    role: InstrumentRoleName,
 ) -> None:
     """Incompatible readout sampling should fail before modifying instruments."""
     controller, manager, actions = monitor_schedule_runtime
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        controller.resource_reader,
         "read_instrument_infos",
-        lambda **kwargs: (_instrument_info("readout", "rx_p00", role="TRANSCEIVER"),),
+        lambda **kwargs: (_instrument_info("readout", "trx_p00p01", role=role),),
     )
     with PulseSchedule() as schedule:
         schedule.add("readout", Arbitrary([0.1, 0.3], sampling_period=0.3))
@@ -859,7 +865,7 @@ def test_run_monitor_schedule_avoids_temporary_alias_collisions(
     uncached = _instrument_info("_qubex_monitor_3", "tx_p02", unit_label="unit-b")
     controller._instrument_cache.replace_all(instrument_infos=other_unit_infos)
     monkeypatch.setattr(
-        controller.hardware_state_reader,
+        controller.resource_reader,
         "read_instrument_infos",
         lambda **kwargs: (*originals, uncached),
     )
@@ -927,7 +933,7 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
         *,
         instrument: InstrumentSpec,
         instrument_cache: InstrumentCache,
-        hardware_state_reader: object,
+        resource_reader: object,
         append: bool = True,
         parallel: bool = True,
     ) -> InstrumentInfoProtocol:
@@ -936,7 +942,7 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
         return original_deploy(
             instrument=instrument,
             instrument_cache=instrument_cache,
-            hardware_state_reader=cast(Any, hardware_state_reader),
+            resource_reader=cast(Any, resource_reader),
             append=append,
             parallel=parallel,
         )
@@ -1069,7 +1075,7 @@ def test_monitor_tool_runs_schedule_without_controller_dependency(
     tool = Quel3MonitorTool(
         configuration_manager=controller.configuration_manager,
         execution_manager=cast(Any, manager),
-        hardware_state_reader=controller.hardware_state_reader,
+        resource_reader=controller.resource_reader,
         instrument_cache=controller._instrument_cache,
     )
     with PulseSchedule() as schedule:
