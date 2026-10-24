@@ -14,7 +14,7 @@ import logging
 from collections import Counter
 from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from functools import cached_property, reduce
 from pathlib import Path
@@ -893,7 +893,7 @@ class MeasureResult:
         }
 
         # Auto metadata
-        created_at_iso = datetime.now(timezone.utc).isoformat()
+        created_at_iso = datetime.now(UTC).isoformat()
         auto_meta: dict[str, object] = {
             "created_at": created_at_iso,
             "mode": self.mode.value,

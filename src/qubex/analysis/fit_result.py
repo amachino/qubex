@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from collections import UserDict
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -104,7 +104,7 @@ class FitResult(UserDict):
         self.message = message
         self.figure = figure
         self.figures = figures
-        self.created_at = created_at or datetime.now(timezone.utc).isoformat()
+        self.created_at = created_at or datetime.now(UTC).isoformat()
 
     def __repr__(self) -> str:
         """Return a compact representation of the fit result."""

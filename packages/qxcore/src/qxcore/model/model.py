@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 from pydantic import (
     BaseModel,
@@ -14,7 +14,6 @@ from pydantic import (
     model_serializer,
 )
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
-from typing_extensions import Self
 
 from qxcore.serialization import (
     FORMAT_NAME,

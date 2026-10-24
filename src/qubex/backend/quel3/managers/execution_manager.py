@@ -272,7 +272,7 @@ class Quel3ExecutionManager:
                     quelware_api=quelware_api,
                     parallel=parallel,
                 )
-            except QuelwareSessionError as exc:  # noqa: PERF203 - Replanning and IO need a bounded retry loop.
+            except QuelwareSessionError as exc:
                 if attempt or not is_resource_not_found_error(exc):
                     raise
                 # TODO: Resume from the failed execution instead of replaying the whole batch.

@@ -5,9 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import datetime
 from os import PathLike
-from typing import Any, ClassVar, Protocol, TypeAlias
-
-from typing_extensions import Self
+from typing import Any, ClassVar, Protocol, Self, TypeAlias
 
 PortType = int | tuple[int, int]
 StatusMap = dict[str, Any]
