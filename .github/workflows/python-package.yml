@@ -57,4 +57,4 @@ jobs:
         run: uv run ruff check --output-format=github
 
       - name: Test (pytest)
-        run: uv run pytest -v --tb=short --durations=10 -n auto
+        run: uv run pytest -v -ra --tb=short --durations=20 -n auto

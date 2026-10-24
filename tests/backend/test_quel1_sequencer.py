@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, ClassVar, cast
 
+from tests._backend_dependencies import require_quel1_backend
+
+# Optional dependency checks must precede the driver imports below.
+# ruff: noqa: E402
+require_quel1_backend()
+
 import qubex.backend.quel1.compat.sequencer as sequencer_module
 from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 

@@ -14,6 +14,8 @@ from qubex.backend.quel1.quel1_backend_constants import (
 )
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
+pytestmark = pytest.mark.usefixtures("stub_quel1_driver")
+
 
 @dataclass
 class _ClockmasterSetting:
@@ -124,7 +126,9 @@ def test_connect_uses_boxpool_by_default(monkeypatch) -> None:
     )
     fake_quel1_system = object()
 
-    _override_driver_classes(controller, BoxPool=_FakeBoxPool)
+    _override_driver_classes(
+        controller, BoxPool=_FakeBoxPool, SequencerClient=lambda _ipaddr: object()
+    )
 
     def _fake_create_from_boxpool(box_names: list[str]):
         assert box_names == ["A", "B"]
@@ -152,7 +156,9 @@ def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> No
     )
     fake_quel1_system = object()
 
-    _override_driver_classes(controller, BoxPool=_FakeBoxPool)
+    _override_driver_classes(
+        controller, BoxPool=_FakeBoxPool, SequencerClient=lambda _ipaddr: object()
+    )
 
     def _fake_create_from_boxpool(box_names: list[str]):
         assert box_names == ["A", "B"]

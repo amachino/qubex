@@ -6,11 +6,10 @@ import warnings
 from types import SimpleNamespace
 from typing import Any
 
-import pytest
-
 from qubex.patches.quel_ic_config import (
     suppress_quelware_nco_ftw_warning_patch as patch,
 )
+from tests._backend_dependencies import require_distributions
 
 
 class _FakeValidator:
@@ -98,7 +97,7 @@ def test_apply_patch_replaces_nco_ftw_init(monkeypatch) -> None:
 
 def test_apply_patch_suppresses_real_quelware_warning() -> None:
     """Given real quelware NCO FTW creation, the patch should suppress validator warnings."""
-    pytest.importorskip("quel_ic_config.ad9082")
+    require_distributions("quel-ic-config")
 
     patch.apply_quelware_nco_ftw_warning_patch()
 
