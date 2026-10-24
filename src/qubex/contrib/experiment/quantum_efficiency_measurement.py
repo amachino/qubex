@@ -2,34 +2,32 @@
 Quantum-efficiency characterization helpers.
 
 This module implements reusable contrib experiments for dispersive readout
-characterization based on arXiv:1711.05336. The main public APIs are:
-
-- :func:`readout_snr`
-- :func:`sweep_readout_snr`
-- :func:`measurement_induced_dephasing`
-- :func:`measurement_induced_dephasing_experiment`
-- :func:`quantum_efficiency_measurement`
+characterization based on arXiv:1711.05336. The main public APIs are
+`readout_snr`, `sweep_readout_snr`, `measurement_induced_dephasing`,
+`measurement_induced_dephasing_experiment`, and
+`quantum_efficiency_measurement`.
 
 The final quantum efficiency is always estimated from fitted scalings,
 
-- ``SNR(epsilon) = a epsilon``
-- ``|rho01|(epsilon) = b exp(-epsilon^2 / (2 sigma_m^2))``
-- ``eta = a^2 sigma_m^2 / 2``
+- `SNR(epsilon) = a epsilon`
+- `|rho01|(epsilon) = b exp(-epsilon^2 / (2 sigma_m^2))`
+- `eta = a^2 sigma_m^2 / 2`
 
 and is never obtained from a pointwise average over amplitudes.
 """
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
-from typing import Any, TypedDict
+from collections.abc import Callable, Collection, Mapping, Sequence
+from typing import Any, Literal, TypeAlias, TypedDict
 
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 
 import qubex.visualization as viz
-from qubex.analysis import FitResult, FitStatus, fitting
+from qubex.analysis import FitResult, FitStatus
+from qubex.core.async_bridge import get_shared_async_bridge
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
     DEFAULT_INTERVAL,
@@ -52,7 +50,17 @@ __all__ = [
 ]
 
 ZERO_TOLERANCE = 1e-15
-READOUT_SAMPLE_PERIOD_NS = 2.0
+DEFAULT_SWEEP_POINTS = 17
+DEFAULT_PHASE_RANGE = np.linspace(
+    0.0,
+    2.0 * np.pi,
+    DEFAULT_SWEEP_POINTS,
+    endpoint=False,
+)
+DEFAULT_AMPLITUDE_START_RATIO = 0.01
+EARLY_STOP_COHERENCE_RATIO = 0.2
+EARLY_STOP_CONSECUTIVE_POINTS = 3
+EARLY_STOP_MIN_POINTS = 9
 
 SNR_FIGURE_KEY = "snr"
 DEPHASING_FIGURE_KEY = "dephasing"
@@ -61,15 +69,21 @@ RAMSEY_FIGURE_KEY = "ramsey"
 PROJECTION_FIGURE_KEY = "projection"
 WEIGHT_FIGURE_KEY = "weight"
 
+ProjectionMethod: TypeAlias = Literal["max_amplitude", "per_amplitude"]
+SnrUncertaintyMethod: TypeAlias = Literal["fit_covariance", "delta_fallback"]
+
 
 class RamseyFringeSummary(TypedDict):
     """Typed Ramsey-fringe fit payload."""
 
     rho01: float
+    rho01_standard_error: float
     phi0: float
     offset: float
     cosine: float
     sine: float
+    coefficient_covariance: NDArray[np.float64]
+    degrees_of_freedom: int
     p1: NDArray[np.float64]
     p1_fit: NDArray[np.float64]
     sigma_z: NDArray[np.float64]
@@ -105,6 +119,8 @@ class ReadoutSnrSummary(TypedDict):
     """Typed single-amplitude readout-SNR payload."""
 
     snr: float
+    snr_standard_error: float
+    snr_uncertainty_method: SnrUncertaintyMethod
     signal: float
     noise: float
     mu_ground: float
@@ -146,6 +162,43 @@ def _normalize_targets(
     return list(targets)
 
 
+def _resolve_phase_range(phase_range: ArrayLike | None) -> NDArray[np.float64]:
+    """Return the explicit phase range or the default single-period sweep."""
+    if phase_range is None:
+        return DEFAULT_PHASE_RANGE.copy()
+    return _normalize_float_array(phase_range, name="phase_range")
+
+
+def _resolve_amplitude_range(
+    exp: Experiment,
+    target: str,
+    *,
+    amplitude_range: ArrayLike | None,
+    readout_amplitude: float | None,
+) -> NDArray[np.float64]:
+    """Return an explicit amplitude range or a target-specific default sweep."""
+    if amplitude_range is not None:
+        return _normalize_float_array(amplitude_range, name="amplitude_range")
+
+    if readout_amplitude is None:
+        qubit = exp.ctx.resolve_qubit_label(target)
+        effective_readout_amplitude = exp.ctx.params.get_readout_amplitude(qubit)
+    else:
+        effective_readout_amplitude = float(readout_amplitude)
+
+    if (
+        not np.isfinite(effective_readout_amplitude)
+        or effective_readout_amplitude <= 0.0
+    ):
+        raise ValueError("`readout_amplitude` must be positive and finite.")
+
+    return np.geomspace(
+        DEFAULT_AMPLITUDE_START_RATIO * effective_readout_amplitude,
+        effective_readout_amplitude,
+        DEFAULT_SWEEP_POINTS,
+    )
+
+
 def _aggregate_target_results(results: dict[str, Result]) -> Result:
     """Aggregate per-target results while keeping single-target behavior."""
     if len(results) == 1:
@@ -180,20 +233,37 @@ def _normalize_float_array(
     *,
     name: str,
     ndim: int = 1,
+    require_finite: bool = True,
 ) -> NDArray[np.float64]:
-    """Return one finite float array with the requested dimensionality."""
+    """Return one float array with the requested dimensionality."""
     array = np.asarray(values, dtype=np.float64)
     if array.ndim != ndim:
         raise ValueError(f"`{name}` must be a {ndim}D array.")
     if array.size == 0:
         raise ValueError(f"`{name}` must not be empty.")
-    if not np.all(np.isfinite(array)):
+    if require_finite and not np.all(np.isfinite(array)):
         raise ValueError(f"`{name}` must contain only finite values.")
     return array
 
 
+def _normalize_increasing_amplitudes(
+    values: ArrayLike,
+    *,
+    name: str = "amplitude_range",
+) -> NDArray[np.float64]:
+    """Return a finite, nonnegative, strictly increasing amplitude sweep."""
+    amplitudes = _normalize_float_array(values, name=name)
+    if len(amplitudes) < 2:
+        raise ValueError(f"`{name}` must contain at least two values.")
+    if np.any(amplitudes < 0.0):
+        raise ValueError(f"`{name}` must contain only nonnegative values.")
+    if np.any(np.diff(amplitudes) <= 0.0):
+        raise ValueError(f"`{name}` must be strictly increasing.")
+    return amplitudes
+
+
 def _normalize_complex_raw(raw: ArrayLike, *, name: str) -> NDArray[np.complex128]:
-    """Normalize one raw IQ payload into shape ``(shots,)`` or ``(shots, samples)``."""
+    """Normalize one raw IQ payload into shape `(shots,)` or `(shots, samples)`."""
     array = np.asarray(raw)
     if array.size == 0:
         raise ValueError(f"`{name}` must not be empty.")
@@ -218,6 +288,74 @@ def _normalize_complex_raw(raw: ArrayLike, *, name: str) -> NDArray[np.complex12
     return normalized
 
 
+def _normalize_projection_method(method: str) -> ProjectionMethod:
+    """Validate and return one SNR projection method."""
+    if method not in ("max_amplitude", "per_amplitude"):
+        raise ValueError(
+            "`projection_method` must be 'max_amplitude' or 'per_amplitude'."
+        )
+    return method
+
+
+def _state_difference_weights(
+    ground: NDArray[np.complex128],
+    excited: NDArray[np.complex128],
+) -> NDArray[np.complex128]:
+    """Return the mean excited-minus-ground IQ difference."""
+    if ground.ndim == 1:
+        return np.asarray(np.mean(excited) - np.mean(ground), dtype=np.complex128)
+    return np.asarray(
+        np.mean(excited, axis=0) - np.mean(ground, axis=0),
+        dtype=np.complex128,
+    )
+
+
+def _validate_projection_weights(
+    weights: ArrayLike,
+    *,
+    raw_shape: tuple[int, ...],
+    zero_tolerance: float,
+) -> NDArray[np.complex128]:
+    """Validate projection weights against one raw-IQ shape."""
+    normalized = np.asarray(weights, dtype=np.complex128)
+    expected_shape = () if len(raw_shape) == 1 else raw_shape[1:]
+    if normalized.shape != expected_shape:
+        raise ValueError(
+            "`projection_weights` must have shape "
+            f"{expected_shape}, got {normalized.shape}."
+        )
+    if not np.all(np.isfinite(normalized)):
+        raise ValueError("`projection_weights` must contain only finite values.")
+    if np.linalg.norm(np.atleast_1d(normalized)) < zero_tolerance:
+        raise ValueError("`projection_weights` must have a nonzero norm.")
+    return normalized
+
+
+def _resolve_common_projection_weights(
+    *,
+    amplitudes: NDArray[np.float64],
+    ground_raw_series: Sequence[NDArray[np.complex128]],
+    excited_raw_series: Sequence[NDArray[np.complex128]],
+    projection_method: ProjectionMethod,
+    zero_tolerance: float = ZERO_TOLERANCE,
+) -> tuple[NDArray[np.complex128] | None, float | None]:
+    """Return the shared largest-amplitude axis and its reference amplitude."""
+    if projection_method == "per_amplitude":
+        return None, None
+
+    reference_index = int(np.argmax(amplitudes))
+    ground = ground_raw_series[reference_index]
+    excited = excited_raw_series[reference_index]
+    weights = _state_difference_weights(ground, excited)
+    validated = _validate_projection_weights(
+        weights,
+        raw_shape=ground.shape,
+        zero_tolerance=zero_tolerance,
+    )
+    norm = float(np.linalg.norm(np.atleast_1d(validated)))
+    return validated / norm, float(amplitudes[reference_index])
+
+
 def _normalize_raw_series(
     raw_series: Sequence[ArrayLike] | ArrayLike,
     *,
@@ -226,18 +364,18 @@ def _normalize_raw_series(
 ) -> list[NDArray[np.complex128]]:
     """Normalize one amplitude-indexed sequence of raw IQ arrays."""
     if isinstance(raw_series, np.ndarray):
-        raw_array = raw_series
-        if raw_array.dtype == object:
-            raw_array = None
-        else:
-            if raw_array.shape[0] != n_amplitudes:
-                raise ValueError(
-                    f"`{name}` first dimension must match the number of amplitudes."
-                )
-            return [
-                _normalize_complex_raw(raw_array[index], name=f"{name}[{index}]")
-                for index in range(n_amplitudes)
-            ]
+        if raw_series.ndim == 0:
+            raise ValueError(
+                f"`{name}` must have one entry for each readout amplitude."
+            )
+        if raw_series.shape[0] != n_amplitudes:
+            raise ValueError(
+                f"`{name}` first dimension must match the number of amplitudes."
+            )
+        return [
+            _normalize_complex_raw(raw_series[index], name=f"{name}[{index}]")
+            for index in range(n_amplitudes)
+        ]
     if not isinstance(raw_series, Sequence) or len(raw_series) != n_amplitudes:
         raise ValueError(
             f"`{name}` must be a sequence with one entry for each readout amplitude."
@@ -251,8 +389,12 @@ def _normalize_raw_series(
 def _dense_fit_axis(
     values: NDArray[np.float64], *, n_points: int = 500
 ) -> NDArray[np.float64]:
-    """Return one dense axis spanning the input range."""
-    return np.linspace(float(np.min(values)), float(np.max(values)), n_points)
+    """Return one dense axis spanning both zero and the input range."""
+    return np.linspace(
+        min(0.0, float(np.min(values))),
+        max(0.0, float(np.max(values))),
+        n_points,
+    )
 
 
 def _gaussian_pdf(
@@ -864,21 +1006,124 @@ def _coupled_double_gaussian_fit_message(*, success: bool, detail: str = "") -> 
     )
 
 
+def _observed_parameter_covariance(
+    objective: Callable[[NDArray[np.float64]], float],
+    parameters: NDArray[np.float64],
+    *,
+    weight_upper: float,
+) -> NDArray[np.float64] | None:
+    """Estimate constrained fit covariance from a numerical observed Hessian."""
+    center, gap, sigma_ground, sigma_excited, p_ground, p_excited = parameters
+
+    def logit_probability(probability: float) -> float:
+        fraction = float(np.clip(probability / weight_upper, 1e-12, 1.0 - 1e-12))
+        return float(np.log(fraction / (1.0 - fraction)))
+
+    transformed = np.asarray(
+        [
+            center,
+            np.log(gap),
+            np.log(sigma_ground),
+            np.log(sigma_excited),
+            logit_probability(float(p_ground)),
+            logit_probability(float(p_excited)),
+        ],
+        dtype=np.float64,
+    )
+
+    def to_physical(values: NDArray[np.float64]) -> NDArray[np.float64]:
+        probabilities = weight_upper / (1.0 + np.exp(-np.clip(values[4:], -700, 700)))
+        return np.asarray(
+            [
+                values[0],
+                np.exp(values[1]),
+                np.exp(values[2]),
+                np.exp(values[3]),
+                probabilities[0],
+                probabilities[1],
+            ],
+            dtype=np.float64,
+        )
+
+    def transformed_objective(values: NDArray[np.float64]) -> float:
+        return objective(to_physical(values))
+
+    n_parameters = len(transformed)
+    steps = 1e-4 * np.maximum(1.0, np.abs(transformed))
+    hessian = np.empty((n_parameters, n_parameters), dtype=np.float64)
+    center_value = transformed_objective(transformed)
+    for row in range(n_parameters):
+        row_step = np.zeros(n_parameters, dtype=np.float64)
+        row_step[row] = steps[row]
+        hessian[row, row] = (
+            transformed_objective(transformed + row_step)
+            - 2.0 * center_value
+            + transformed_objective(transformed - row_step)
+        ) / steps[row] ** 2
+        for column in range(row):
+            column_step = np.zeros(n_parameters, dtype=np.float64)
+            column_step[column] = steps[column]
+            value = (
+                transformed_objective(transformed + row_step + column_step)
+                - transformed_objective(transformed + row_step - column_step)
+                - transformed_objective(transformed - row_step + column_step)
+                + transformed_objective(transformed - row_step - column_step)
+            ) / (4.0 * steps[row] * steps[column])
+            hessian[row, column] = value
+            hessian[column, row] = value
+
+    if not np.all(np.isfinite(hessian)):
+        return None
+    eigenvalues, eigenvectors = np.linalg.eigh(0.5 * (hessian + hessian.T))
+    scale = max(float(np.max(np.abs(eigenvalues))), 1.0)
+    if float(np.min(eigenvalues)) < -1e-6 * scale:
+        return None
+    inverse_eigenvalues = np.zeros_like(eigenvalues)
+    identifiable = eigenvalues > 1e-10 * scale
+    inverse_eigenvalues[identifiable] = 1.0 / eigenvalues[identifiable]
+    transformed_covariance = (
+        eigenvectors * inverse_eigenvalues[np.newaxis, :]
+    ) @ eigenvectors.T
+
+    probabilities = to_physical(transformed)[4:]
+    jacobian_diagonal = np.asarray(
+        [
+            1.0,
+            gap,
+            sigma_ground,
+            sigma_excited,
+            probabilities[0] * (1.0 - probabilities[0] / weight_upper),
+            probabilities[1] * (1.0 - probabilities[1] / weight_upper),
+        ],
+        dtype=np.float64,
+    )
+    covariance = (
+        jacobian_diagonal[:, np.newaxis]
+        * transformed_covariance
+        * jacobian_diagonal[np.newaxis, :]
+    )
+    return covariance if np.all(np.isfinite(covariance)) else None
+
+
 def _fit_coupled_double_gaussian_histograms(
     ground_values: ArrayLike,
     excited_values: ArrayLike,
     *,
     bin_edges: NDArray[np.float64] | None = None,
-) -> tuple[DoubleGaussianHistogramFitSummary, DoubleGaussianHistogramFitSummary]:
+) -> tuple[
+    DoubleGaussianHistogramFitSummary,
+    DoubleGaussianHistogramFitSummary,
+    NDArray[np.float64] | None,
+]:
     """
     Fit ground/excited projected histograms with one coupled constrained model.
 
     The model follows the Fig. 1(c) interpretation in arXiv:1711.05336:
 
-    - prepared ``|g>`` data are a mixture of the main ``|g>`` Gaussian and a
-      spurious ``|e>`` Gaussian
-    - prepared ``|e>`` data are a mixture of the main ``|e>`` Gaussian and a
-      spurious ``|g>`` Gaussian
+    - prepared `|g>` data are a mixture of the main `|g>` Gaussian and a
+      spurious `|e>` Gaussian
+    - prepared `|e>` data are a mixture of the main `|e>` Gaussian and a
+      spurious `|g>` Gaussian
 
     This ties the spurious component of one prepared state to the main Gaussian
     of the opposite prepared state, instead of fitting both histograms
@@ -897,11 +1142,12 @@ def _fit_coupled_double_gaussian_histograms(
             )
 
     if len(ground_samples) < 4 or len(excited_samples) < 4:
-        return _independent_double_gaussian_fit_pair(
+        ground_fit, excited_fit = _independent_double_gaussian_fit_pair(
             ground_samples,
             excited_samples,
             bin_edges=edges,
         )
+        return ground_fit, excited_fit, None
 
     combined_std = (
         float(np.std(combined_samples, ddof=1)) if len(combined_samples) > 1 else 0.0
@@ -918,6 +1164,7 @@ def _fit_coupled_double_gaussian_histograms(
                 bin_edges=edges,
                 message="Degenerate projected excited data prevented constrained fitting.",
             ),
+            None,
         )
 
     bin_width = float(edges[1] - edges[0])
@@ -999,6 +1246,7 @@ def _fit_coupled_double_gaussian_histograms(
                 "status": "fallback",
                 "message": fallback_message,
             },
+            None,
         )
 
     (
@@ -1016,6 +1264,14 @@ def _fit_coupled_double_gaussian_histograms(
     p_ground_to_excited = float(p_ground_to_excited_fit)
     p_excited_to_ground = float(p_excited_to_ground_fit)
     success_message = _coupled_double_gaussian_fit_message(success=True)
+    try:
+        parameter_covariance = _observed_parameter_covariance(
+            objective,
+            np.asarray(best_result.x, dtype=np.float64),
+            weight_upper=weight_upper,
+        )
+    except (FloatingPointError, ValueError, np.linalg.LinAlgError):
+        parameter_covariance = None
 
     ground_fit = _build_double_gaussian_histogram_fit_summary(
         ground_samples,
@@ -1049,7 +1305,25 @@ def _fit_coupled_double_gaussian_histograms(
             weight=p_excited_to_ground,
         ),
     )
-    return ground_fit, excited_fit
+    return ground_fit, excited_fit, parameter_covariance
+
+
+def _ramsey_design_matrix(
+    phases: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Build a full-rank Ramsey design matrix for the given phases."""
+    design = np.column_stack(
+        [
+            np.ones_like(phases),
+            np.cos(phases),
+            np.sin(phases),
+        ]
+    )
+    if np.linalg.matrix_rank(design) < design.shape[1]:
+        raise ValueError(
+            "Ramsey fitting requires at least three independent phase points."
+        )
+    return design
 
 
 def _fit_ramsey_fringe(
@@ -1057,14 +1331,18 @@ def _fit_ramsey_fringe(
     excited_probabilities: ArrayLike,
 ) -> RamseyFringeSummary:
     """
-    Fit one Ramsey fringe and extract ``|rho01|`` and ``phi0``.
+    Fit one Ramsey fringe and extract `|rho01|` and `phi0`.
 
     The fit follows the notebook implementation and the Ramsey fringe picture
     in arXiv:1711.05336:
 
-    - ``sigma_z(phi) = c + a cos(phi) + b sin(phi)``
-    - ``|rho01| = 0.5 * sqrt(a^2 + b^2)``
-    - ``phi0 = atan2(-b, a)``
+    - `sigma_z(phi) = c + a cos(phi) + b sin(phi)`
+    - `|rho01| = 0.5 * sqrt(a^2 + b^2)`
+    - `phi0 = atan2(-b, a)`
+
+    The coefficient covariance is estimated from the phase-fit residuals and
+    propagated to `rho01_standard_error`. This uncertainty therefore measures
+    fringe scatter and model mismatch, rather than per-shot sampling noise.
     """
     phase_array = _normalize_float_array(phases, name="phases")
     probability_array = _normalize_float_array(
@@ -1077,29 +1355,73 @@ def _fit_ramsey_fringe(
         )
 
     sigma_z = 1.0 - 2.0 * probability_array
-    design = np.column_stack(
-        [
-            np.ones_like(phase_array),
-            np.cos(phase_array),
-            np.sin(phase_array),
-        ]
-    )
-    offset, cosine, sine = np.linalg.lstsq(design, sigma_z, rcond=None)[0]
+    design = _ramsey_design_matrix(phase_array)
+    coefficients = np.linalg.lstsq(design, sigma_z, rcond=None)[0]
+    offset, cosine, sine = coefficients
 
     amplitude_sigma_z = float(np.hypot(cosine, sine))
     sigma_z_fit = offset + cosine * np.cos(phase_array) + sine * np.sin(phase_array)
+    degrees_of_freedom = len(phase_array) - design.shape[1]
+    coefficient_covariance = np.full((3, 3), np.nan, dtype=np.float64)
+    rho01_standard_error = np.nan
+    if degrees_of_freedom > 0:
+        residuals = sigma_z - sigma_z_fit
+        residual_variance = float(np.sum(residuals**2) / degrees_of_freedom)
+        coefficient_covariance = residual_variance * np.linalg.pinv(design.T @ design)
+        if amplitude_sigma_z > ZERO_TOLERANCE:
+            gradient = np.array(
+                [
+                    0.0,
+                    cosine / (2.0 * amplitude_sigma_z),
+                    sine / (2.0 * amplitude_sigma_z),
+                ],
+                dtype=np.float64,
+            )
+            rho01_variance = float(gradient @ coefficient_covariance @ gradient)
+        else:
+            # The delta-method gradient is undefined at the origin.  The
+            # quadrature-coefficient variances provide a finite local scale.
+            rho01_variance = 0.25 * float(
+                coefficient_covariance[1, 1] + coefficient_covariance[2, 2]
+            )
+        rho01_standard_error = float(np.sqrt(max(rho01_variance, 0.0)))
 
     return {
         "rho01": 0.5 * amplitude_sigma_z,
+        "rho01_standard_error": rho01_standard_error,
         "phi0": float(np.arctan2(-sine, cosine)),
         "offset": float(offset),
         "cosine": float(cosine),
         "sine": float(sine),
+        "coefficient_covariance": coefficient_covariance,
+        "degrees_of_freedom": degrees_of_freedom,
         "p1": probability_array,
         "p1_fit": 0.5 * (1.0 - sigma_z_fit),
         "sigma_z": sigma_z,
         "sigma_z_fit": sigma_z_fit,
     }
+
+
+def _log_ratio_standard_error(
+    *,
+    numerator: float,
+    numerator_error: float,
+    denominator: float,
+    denominator_error: float,
+) -> float:
+    """Propagate independent standard errors through a logarithmic ratio."""
+    errors = np.asarray(
+        [numerator_error, denominator_error],
+        dtype=np.float64,
+    )
+    if not np.all(np.isfinite(errors)) or np.any(errors < 0.0):
+        return np.nan
+    return float(
+        np.hypot(
+            numerator_error / numerator,
+            denominator_error / denominator,
+        )
+    )
 
 
 def _measure_ramsey_fringe(
@@ -1111,11 +1433,16 @@ def _measure_ramsey_fringe(
     n_shots: int | None,
     shot_interval: float | None,
 ) -> RamseyFringeSummary:
-    """Run one weak-measurement Ramsey sweep and fit the resulting fringe."""
-    excited_probabilities: list[float] = []
+    """Fit one Ramsey fringe from the final averaged-IQ readout captures."""
+    if n_shots is not None and n_shots <= 0:
+        raise ValueError("`n_shots` must be positive.")
+    phases = _normalize_float_array(phase_range, name="phase_range")
+    _ramsey_design_matrix(phases)
+    qubit = exp.ctx.resolve_qubit_label(target)
+    exp.pulse.validate_rabi_params([qubit])
     readout_target = exp.ctx.resolve_read_label(target)
 
-    for phase_shift in phase_range:
+    def schedule(phase_shift: float) -> PulseSchedule:
         with PulseSchedule() as schedule:
             schedule.add(target, exp.pulse.x90(target))
             schedule.barrier()
@@ -1125,53 +1452,203 @@ def _measure_ramsey_fringe(
             )
             schedule.barrier()
             schedule.add(target, exp.pulse.x90(target).shifted(float(phase_shift)))
-            schedule.barrier()
-            schedule.add(readout_target, exp.pulse.readout(readout_target))
-        measurement = exp.execute(
+        return schedule
+
+    # Preserve both the intermediate weak-measurement capture and the appended
+    # final readout. `sweep_parameter` collapses multi-capture measurements to
+    # the first capture, which precedes the phase-dependent second X90 pulse.
+    bridge = get_shared_async_bridge(key="experiment")
+    sweep = bridge.run(
+        lambda: exp.measurement_service.run_sweep_measurement(
             schedule=schedule,
-            mode="single",
+            sweep_values=phases,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            shot_averaging=True,
+            time_integration=True,
+            state_classification=False,
+            final_measurement=True,
             plot=False,
+            enable_tqdm=False,
         )
-        readouts = measurement.data[target]
-        final_readout = readouts[len(readouts) - 1]
-        probabilities = np.asarray(final_readout.probabilities, dtype=np.float64)
-        if probabilities.size < 2:
-            raise ValueError(
-                "The final readout must contain at least two state probabilities."
-            )
-        excited_probabilities.append(float(probabilities[1]))
+    )
+    if len(sweep.results) != len(phases):
+        raise RuntimeError(
+            "Ramsey phase sweep result count does not match `phase_range`: "
+            f"expected {len(phases)}, got {len(sweep.results)}."
+        )
 
-    return _fit_ramsey_fringe(phase_range, excited_probabilities)
+    target_candidates = tuple(dict.fromkeys((qubit, readout_target, target)))
+    averaged_iq = np.empty(len(phases), dtype=np.complex128)
+    for index, point_result in enumerate(sweep.results):
+        data_target = next(
+            (
+                candidate
+                for candidate in target_candidates
+                if candidate in point_result.data
+            ),
+            None,
+        )
+        if data_target is None:
+            raise RuntimeError(
+                "Ramsey phase sweep has no data for target "
+                f"{qubit!r} at phase index {index}."
+            )
+        captures = point_result.data[data_target]
+        if len(captures) == 0:
+            raise RuntimeError(
+                "Ramsey phase sweep has no readout captures for target "
+                f"{qubit!r} at phase index {index}."
+            )
+        final_iq = np.asarray(captures[-1].kerneled)
+        if final_iq.size == 0:
+            raise RuntimeError(
+                "Ramsey phase sweep final readout is empty for target "
+                f"{qubit!r} at phase index {index}."
+            )
+        averaged_iq[index] = complex(np.mean(final_iq))
+
+    if not np.all(np.isfinite(averaged_iq)):
+        raise RuntimeError("Ramsey phase sweep final readout IQ must be finite.")
+
+    sigma_z = np.asarray(
+        exp.pulse.rabi_params[qubit].normalize(averaged_iq),
+        dtype=np.float64,
+    )
+    if sigma_z.ndim != 1 or len(sigma_z) != len(phases):
+        raise RuntimeError(
+            "Normalized Ramsey phase sweep data must be a one-dimensional "
+            "array matching `phase_range`."
+        )
+    if not np.all(np.isfinite(sigma_z)):
+        raise RuntimeError("Normalized Ramsey phase sweep data must be finite.")
+
+    excited_probabilities = 0.5 * (1.0 - sigma_z)
+    return _fit_ramsey_fringe(phases, excited_probabilities)
+
+
+def _delta_method_snr_standard_error(
+    *,
+    signal: float,
+    noise: float,
+    sigma_ground: float,
+    sigma_excited: float,
+    ground_main_weight: float,
+    excited_main_weight: float,
+    n_ground: int,
+    n_excited: int,
+) -> float:
+    """Estimate SNR uncertainty from effective main-component sample counts."""
+    effective_ground = max(float(n_ground) * ground_main_weight, 2.0)
+    effective_excited = max(float(n_excited) * excited_main_weight, 2.0)
+    signal_variance = (
+        sigma_ground**2 / effective_ground + sigma_excited**2 / effective_excited
+    )
+    noise_variance = 0.25 * (
+        sigma_ground**2 / (2.0 * (effective_ground - 1.0))
+        + sigma_excited**2 / (2.0 * (effective_excited - 1.0))
+    )
+    variance = signal_variance / noise**2 + signal**2 * noise_variance / noise**4
+    return float(np.sqrt(max(variance, 0.0)))
+
+
+def _estimate_snr_standard_error(
+    *,
+    signal: float,
+    noise: float,
+    ground_fit: DoubleGaussianHistogramFitSummary,
+    excited_fit: DoubleGaussianHistogramFitSummary,
+    parameter_covariance: NDArray[np.float64] | None,
+    n_ground: int,
+    n_excited: int,
+    zero_tolerance: float,
+) -> tuple[float, SnrUncertaintyMethod]:
+    """Return the propagated SNR standard error and the method used."""
+    sigma_ground = float(ground_fit["main_component"]["sigma"])
+    sigma_excited = float(excited_fit["main_component"]["sigma"])
+    sigma_sum = sigma_ground + sigma_excited
+    if parameter_covariance is not None and sigma_sum > zero_tolerance:
+        gradient = np.zeros(6, dtype=np.float64)
+        gradient[1] = 2.0 / sigma_sum
+        gradient[2] = -2.0 * signal / sigma_sum**2
+        gradient[3] = -2.0 * signal / sigma_sum**2
+        variance = float(gradient @ parameter_covariance @ gradient)
+        if np.isfinite(variance) and variance > zero_tolerance**2:
+            return float(np.sqrt(variance)), "fit_covariance"
+
+    standard_error = _delta_method_snr_standard_error(
+        signal=signal,
+        noise=noise,
+        sigma_ground=sigma_ground,
+        sigma_excited=sigma_excited,
+        ground_main_weight=float(ground_fit["main_component"]["weight"]),
+        excited_main_weight=float(excited_fit["main_component"]["weight"]),
+        n_ground=n_ground,
+        n_excited=n_excited,
+    )
+    if not np.isfinite(standard_error) or standard_error <= 0.0:
+        raise RuntimeError("Failed to estimate a positive finite SNR uncertainty.")
+    return standard_error, "delta_fallback"
 
 
 def compute_readout_snr(
     raw_ground: ArrayLike,
     raw_excited: ArrayLike,
     *,
+    projection_weights: ArrayLike | None = None,
     zero_tolerance: float = ZERO_TOLERANCE,
 ) -> ReadoutSnrSummary:
     """
     Compute the single-shot readout SNR for one readout amplitude.
 
-    For waveform IQ data, the projection weight is the mean state difference
-    ``mean_e - mean_g``. For already-integrated IQ data, the projection axis is
-    the mean-state separation. The projected ``|g>`` and ``|e>`` histograms are
-    then fit jointly with one constrained double-Gaussian model, following the
-    Fig. 1(c) interpretation in arXiv:1711.05336: the spurious component in one
-    prepared state is tied to the main Gaussian of the opposite prepared state.
-    The final scalar SNR is
+    When `projection_weights` is omitted, the projection is obtained from the
+    mean state difference `mean_e - mean_g`. Callers analyzing an amplitude
+    sweep can instead provide one shared axis. The projected `|g>` and `|e>`
+    histograms are then fit jointly with one constrained double-Gaussian model,
+    following the Fig. 1(c) interpretation in arXiv:1711.05336: the spurious
+    component in one prepared state is tied to the main Gaussian of the
+    opposite prepared state. The final scalar SNR is
 
-    ``SNR = |mu_e - mu_g| / (0.5 * (sigma_g + sigma_e))``.
+    `SNR = |mu_e - mu_g| / (0.5 * (sigma_g + sigma_e))`.
+
+    Its standard error is propagated from the observed covariance of the
+    coupled Gaussian fit. If that covariance is unavailable or invalid, a
+    delta-method estimate based on the effective main-component shot counts is
+    used instead.
+
+    Parameters
+    ----------
+    raw_ground, raw_excited
+        Complex IQ shots with shape `(shots,)`, or waveform IQ shots with
+        shape `(shots, samples)`. The two arrays must have identical shapes.
+    projection_weights
+        Optional fixed projection axis. Use one complex scalar for integrated
+        IQ, or one complex value per waveform sample. When omitted, the axis
+        is estimated from the supplied ground/excited shots.
+    zero_tolerance
+        Positive finite threshold used to detect a degenerate projection axis
+        or fitted noise width.
     """
+    zero_tolerance = float(zero_tolerance)
+    if not np.isfinite(zero_tolerance) or zero_tolerance <= 0.0:
+        raise ValueError("`zero_tolerance` must be positive and finite.")
+
     ground = _normalize_complex_raw(raw_ground, name="raw_ground")
     excited = _normalize_complex_raw(raw_excited, name="raw_excited")
     if ground.shape != excited.shape:
         raise ValueError("`raw_ground` and `raw_excited` must have the same shape.")
 
+    if projection_weights is None:
+        weights = _state_difference_weights(ground, excited)
+    else:
+        weights = _validate_projection_weights(
+            projection_weights,
+            raw_shape=ground.shape,
+            zero_tolerance=zero_tolerance,
+        )
+
     if ground.ndim == 1:
-        axis = np.mean(excited) - np.mean(ground)
+        axis = complex(weights)
         if abs(axis) < zero_tolerance:
             weights = np.asarray(0.0 + 0.0j, dtype=np.complex128)
             projected_ground = np.zeros_like(np.real(ground), dtype=np.float64)
@@ -1182,7 +1659,6 @@ def compute_readout_snr(
             projected_ground = np.real(ground * np.conj(normalized_axis))
             projected_excited = np.real(excited * np.conj(normalized_axis))
     else:
-        weights = np.asarray(np.mean(excited, axis=0) - np.mean(ground, axis=0))
         if np.linalg.norm(weights) < zero_tolerance:
             projected_ground = np.zeros(ground.shape[0], dtype=np.float64)
             projected_excited = np.zeros(excited.shape[0], dtype=np.float64)
@@ -1193,10 +1669,12 @@ def compute_readout_snr(
     common_bin_edges = _resolve_histogram_bin_edges(
         np.concatenate([projected_ground, projected_excited]),
     )
-    ground_fit, excited_fit = _fit_coupled_double_gaussian_histograms(
-        projected_ground,
-        projected_excited,
-        bin_edges=common_bin_edges,
+    ground_fit, excited_fit, parameter_covariance = (
+        _fit_coupled_double_gaussian_histograms(
+            projected_ground,
+            projected_excited,
+            bin_edges=common_bin_edges,
+        )
     )
 
     mu_ground = float(ground_fit["main_component"]["mu"])
@@ -1207,9 +1685,21 @@ def compute_readout_snr(
     signal = abs(mu_excited - mu_ground)
     noise = 0.5 * (sigma_ground + sigma_excited)
     snr = 0.0 if noise < zero_tolerance else signal / noise
+    snr_standard_error, uncertainty_method = _estimate_snr_standard_error(
+        signal=signal,
+        noise=noise,
+        ground_fit=ground_fit,
+        excited_fit=excited_fit,
+        parameter_covariance=parameter_covariance,
+        n_ground=len(projected_ground),
+        n_excited=len(projected_excited),
+        zero_tolerance=zero_tolerance,
+    )
 
     return {
         "snr": float(snr),
+        "snr_standard_error": snr_standard_error,
+        "snr_uncertainty_method": uncertainty_method,
         "signal": float(signal),
         "noise": float(noise),
         "mu_ground": mu_ground,
@@ -1224,7 +1714,7 @@ def compute_readout_snr(
     }
 
 
-def _measure_readout_snr(
+def _measure_readout_iq(
     exp: Experiment,
     target: str,
     *,
@@ -1232,8 +1722,8 @@ def _measure_readout_snr(
     n_shots: int,
     shot_interval: float | None,
     readout_duration: float | None,
-) -> ReadoutSnrSummary:
-    """Acquire the raw single-shot data and compute one readout SNR summary."""
+) -> tuple[NDArray[np.complex128], NDArray[np.complex128]]:
+    """Acquire the raw ground- and excited-state IQ distributions."""
     distributions = exp.measure_state_distribution(
         targets=target,
         n_states=2,
@@ -1243,8 +1733,35 @@ def _measure_readout_snr(
         readout_amplitudes={target: float(readout_amplitude)},
         plot=False,
     )
-    ground_raw = distributions[0].data[target].raw
-    excited_raw = distributions[1].data[target].raw
+    ground_raw = _normalize_complex_raw(
+        distributions[0].data[target].raw,
+        name="raw_ground",
+    )
+    excited_raw = _normalize_complex_raw(
+        distributions[1].data[target].raw,
+        name="raw_excited",
+    )
+    return ground_raw, excited_raw
+
+
+def _measure_readout_snr(
+    exp: Experiment,
+    target: str,
+    *,
+    readout_amplitude: float,
+    n_shots: int,
+    shot_interval: float | None,
+    readout_duration: float | None,
+) -> ReadoutSnrSummary:
+    """Acquire raw single-shot IQ and compute one readout SNR summary."""
+    ground_raw, excited_raw = _measure_readout_iq(
+        exp,
+        target,
+        readout_amplitude=readout_amplitude,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        readout_duration=readout_duration,
+    )
     return compute_readout_snr(ground_raw, excited_raw)
 
 
@@ -1253,23 +1770,38 @@ def _fit_measurement_induced_dephasing(
     target: str,
     readout_amplitudes: NDArray[np.float64],
     rho01_values: NDArray[np.float64],
+    rho01_standard_errors: NDArray[np.float64],
 ) -> FitResult:
     """
     Fit the weak-measurement Ramsey coherence envelope.
 
     The fitted model is
 
-    ``|rho01|(epsilon) = b exp(-epsilon^2 / (2 sigma_m^2))``.
+    `|rho01|(epsilon) = b exp(-epsilon^2 / (2 sigma_m^2))`.
 
-    Following arXiv:1711.05336, the same ``sigma_m`` gives
+    Following arXiv:1711.05336, the same `sigma_m` gives
 
-    ``beta_m_fit(epsilon) = epsilon^2 / (2 sigma_m^2)``.
+    `beta_m_fit(epsilon) = epsilon^2 / (2 sigma_m^2)`.
+
+    Points with finite, positive `rho01_standard_errors` are fit with absolute
+    inverse-variance weights when at least three such points are available.
+    Otherwise, the fit falls back to the unweighted behavior.
     """
     amplitudes = _normalize_float_array(readout_amplitudes, name="readout_amplitudes")
     rho01 = _normalize_float_array(rho01_values, name="rho01_values")
+    rho01_errors = _normalize_float_array(
+        rho01_standard_errors,
+        name="rho01_standard_errors",
+        require_finite=False,
+    )
     if len(amplitudes) != len(rho01):
         raise ValueError(
             "`readout_amplitudes` and `rho01_values` must have the same length."
+        )
+    if len(amplitudes) != len(rho01_errors):
+        raise ValueError(
+            "`readout_amplitudes` and `rho01_standard_errors` must have the "
+            "same length."
         )
     if np.any(rho01 <= 0):
         raise ValueError(
@@ -1292,13 +1824,20 @@ def _fit_measurement_induced_dephasing(
     if sigma_guess <= 0:
         sigma_guess = max(float(np.max(np.abs(amplitudes))) / 2.0, 1e-6)
 
+    valid_error_mask = np.isfinite(rho01_errors) & (rho01_errors > 0.0)
+    weighted = int(np.count_nonzero(valid_error_mask)) >= 3
+    fit_mask = valid_error_mask if weighted else np.ones(len(amplitudes), dtype=bool)
+    fit_errors = rho01_errors[fit_mask] if weighted else None
+
     try:
         popt, pcov = curve_fit(
             model,
-            amplitudes,
-            rho01,
+            amplitudes[fit_mask],
+            rho01[fit_mask],
             p0=[initial_b, sigma_guess],
             bounds=([0.0, 1e-12], [np.inf, np.inf]),
+            sigma=fit_errors,
+            absolute_sigma=weighted,
             maxfev=20_000,
         )
     except Exception as exc:
@@ -1314,6 +1853,19 @@ def _fit_measurement_induced_dephasing(
     rho01_fit = model(fit_amplitudes, *popt)
     beta_m_raw = -np.log(np.clip(rho01 / b_fit, 1e-12, None))
     beta_m_fit = (fit_amplitudes**2) / (2.0 * sigma_m_fit**2)
+    if weighted:
+        normalized_residuals = (
+            rho01[fit_mask] - model(amplitudes[fit_mask], *popt)
+        ) / rho01_errors[fit_mask]
+        chi_square = float(np.sum(normalized_residuals**2))
+        degrees_of_freedom = int(np.count_nonzero(fit_mask) - len(popt))
+        reduced_chi_square = (
+            chi_square / degrees_of_freedom if degrees_of_freedom > 0 else np.nan
+        )
+    else:
+        chi_square = np.nan
+        reduced_chi_square = np.nan
+        degrees_of_freedom = len(amplitudes) - len(popt)
 
     figure = viz.make_figure()
     figure.add_trace(
@@ -1322,6 +1874,11 @@ def _fit_measurement_induced_dephasing(
             y=rho01,
             mode="markers",
             name="data",
+            error_y={
+                "type": "data",
+                "array": rho01_errors,
+                "visible": True,
+            },
         )
     )
     figure.add_trace(
@@ -1345,7 +1902,7 @@ def _fit_measurement_induced_dephasing(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"σ<sub>m</sub> = {sigma_m_fit:.3g}",
+        text=f"σ<sub>m</sub> = {sigma_m_fit:.3g} ± {float(sigma_m_err):.2g}",
         bgcolor="rgba(255, 255, 255, 0.8)",
         showarrow=False,
     )
@@ -1360,10 +1917,16 @@ def _fit_measurement_induced_dephasing(
             "popt": popt,
             "pcov": pcov,
             "rho01": rho01,
+            "rho01_standard_error": rho01_errors,
             "rho01_fit": rho01_fit,
             "fit_amplitudes": fit_amplitudes,
             "beta_m_raw": beta_m_raw,
             "beta_m_fit": beta_m_fit,
+            "weighted": weighted,
+            "fit_mask": fit_mask,
+            "chi_square": chi_square,
+            "reduced_chi_square": float(reduced_chi_square),
+            "degrees_of_freedom": degrees_of_freedom,
             "fig": figure,
         },
         figure=figure,
@@ -1375,31 +1938,46 @@ def _fit_snr_sweep(
     target: str,
     readout_amplitudes: NDArray[np.float64],
     snr_values: NDArray[np.float64],
+    snr_standard_errors: NDArray[np.float64],
 ) -> FitResult:
-    """Fit the origin-constrained SNR scaling ``SNR(epsilon) = a epsilon``."""
+    """Fit `SNR(epsilon) = a epsilon` with inverse-variance weights."""
     amplitudes = _normalize_float_array(readout_amplitudes, name="readout_amplitudes")
     snr = _normalize_float_array(snr_values, name="snr_values")
-    if len(amplitudes) != len(snr):
+    standard_errors = _normalize_float_array(
+        snr_standard_errors,
+        name="snr_standard_errors",
+    )
+    if len(amplitudes) != len(snr) or len(amplitudes) != len(standard_errors):
         raise ValueError(
-            "`readout_amplitudes` and `snr_values` must have the same length."
+            "`readout_amplitudes`, `snr_values`, and `snr_standard_errors` "
+            "must have the same length."
+        )
+    if np.any(standard_errors <= 0.0):
+        raise ValueError("`snr_standard_errors` must be strictly positive.")
+
+    weights = 1.0 / standard_errors**2
+    denominator = float(np.sum(weights * amplitudes**2))
+    if denominator <= ZERO_TOLERANCE:
+        return FitResult(
+            status=FitStatus.ERROR,
+            message="Weighted SNR fitting requires at least one nonzero amplitude.",
         )
 
-    base_fit = fitting.fit_linear(
-        x=amplitudes,
-        y=snr,
-        intercept=False,
-        plot=False,
-        target=target,
-        title="Readout SNR",
-        xlabel="Readout amplitude",
-        ylabel="Signal-to-noise ratio",
-        xaxis_type="linear",
-        yaxis_type="linear",
+    slope = float(np.sum(weights * amplitudes * snr) / denominator)
+    slope_error = float(1.0 / np.sqrt(denominator))
+    fitted_at_data = slope * amplitudes
+    residuals = snr - fitted_at_data
+    chi_square = float(np.sum((residuals / standard_errors) ** 2))
+    degrees_of_freedom = len(amplitudes) - 1
+    reduced_chi_square = (
+        chi_square / degrees_of_freedom if degrees_of_freedom > 0 else np.nan
     )
-    if base_fit.status is not FitStatus.SUCCESS:
-        return base_fit
-
-    slope = float(base_fit["a"])
+    total_sum_squares = float(np.sum((snr - np.mean(snr)) ** 2))
+    r_squared = (
+        1.0 - float(np.sum(residuals**2)) / total_sum_squares
+        if total_sum_squares > ZERO_TOLERANCE
+        else np.nan
+    )
     fit_amplitudes = _dense_fit_axis(amplitudes)
     snr_fit = slope * fit_amplitudes
     figure = viz.make_figure()
@@ -1409,6 +1987,11 @@ def _fit_snr_sweep(
             y=snr,
             mode="markers",
             name="data",
+            error_y={
+                "type": "data",
+                "array": standard_errors,
+                "visible": True,
+            },
         )
     )
     figure.add_trace(
@@ -1432,15 +2015,26 @@ def _fit_snr_sweep(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"a = {slope:.3g}",
+        text=f"a = {slope:.3g} ± {slope_error:.2g}",
         bgcolor="rgba(255, 255, 255, 0.8)",
         showarrow=False,
     )
     return FitResult(
         status=FitStatus.SUCCESS,
-        message=base_fit.message,
+        message="Inverse-variance weighted SNR fitting successful.",
         data={
-            **dict(base_fit.data),
+            "a": slope,
+            "a_err": slope_error,
+            "b": None,
+            "b_err": None,
+            "r2": r_squared,
+            "popt": np.asarray([slope], dtype=np.float64),
+            "pcov": np.asarray([[slope_error**2]], dtype=np.float64),
+            "weights": weights,
+            "snr_standard_errors": standard_errors,
+            "chi_square": chi_square,
+            "reduced_chi_square": float(reduced_chi_square),
+            "degrees_of_freedom": degrees_of_freedom,
             "fit_amplitudes": fit_amplitudes,
             "y_fit": snr_fit,
             "fig": figure,
@@ -1464,15 +2058,68 @@ def _build_quantum_efficiency_result(
     snr_fit = snr_result["fit_result"]
 
     slope = float(snr_fit["a"])
+    slope_error = float(snr_fit["a_err"])
     sigma_m = float(dephasing_fit["sigma_m"])
+    sigma_m_error = float(dephasing_fit["sigma_m_err"])
     quantum_efficiency = 0.5 * slope**2 * sigma_m**2
+    quantum_efficiency_error = float(
+        np.hypot(
+            slope * sigma_m**2 * slope_error,
+            slope**2 * sigma_m * sigma_m_error,
+        )
+    )
 
     snr_values = np.asarray(snr_result["snr"], dtype=np.float64)
+    snr_standard_errors = np.asarray(
+        snr_result["snr_standard_error"],
+        dtype=np.float64,
+    )
     rho01_values = np.asarray(dephasing_result["rho01"], dtype=np.float64)
+    rho01_standard_errors = np.asarray(
+        dephasing_result["rho01_standard_error"],
+        dtype=np.float64,
+    )
     beta_m_raw = np.asarray(dephasing_fit["beta_m_raw"], dtype=np.float64)
     pointwise_eta = np.full_like(readout_amplitudes, np.nan, dtype=np.float64)
     valid = beta_m_raw > ZERO_TOLERANCE
     pointwise_eta[valid] = snr_values[valid] ** 2 / (4.0 * beta_m_raw[valid])
+
+    snr_fit_amplitudes = np.asarray(snr_fit["fit_amplitudes"], dtype=np.float64)
+    snr_fit_values = np.asarray(snr_fit["y_fit"], dtype=np.float64)
+    dephasing_fit_amplitudes = np.asarray(
+        dephasing_fit["fit_amplitudes"],
+        dtype=np.float64,
+    )
+    dephasing_fit_values = np.asarray(
+        dephasing_fit["rho01_fit"],
+        dtype=np.float64,
+    )
+    x_max = max(
+        float(np.max(readout_amplitudes)),
+        float(np.max(snr_fit_amplitudes)),
+        float(np.max(dephasing_fit_amplitudes)),
+    )
+    snr_max = max(
+        float(np.max(snr_values + snr_standard_errors)),
+        float(np.max(snr_fit_values)),
+    )
+    rho01_max = max(
+        float(
+            np.max(
+                rho01_values
+                + np.where(
+                    np.isfinite(rho01_standard_errors),
+                    rho01_standard_errors,
+                    0.0,
+                )
+            )
+        ),
+        float(np.max(dephasing_fit_values)),
+    )
+
+    def padded_upper_bound(value: float) -> float:
+        """Leave plotting headroom while keeping zero fixed at the lower edge."""
+        return 1.05 * value if value > ZERO_TOLERANCE else 1.0
 
     overview_figure = viz.make_figure()
     overview_figure.set_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
@@ -1482,6 +2129,11 @@ def _build_quantum_efficiency_result(
             y=snr_values,
             mode="markers",
             name="SNR data",
+            error_y={
+                "type": "data",
+                "array": snr_standard_errors,
+                "visible": True,
+            },
         ),
         row=1,
         col=1,
@@ -1489,8 +2141,8 @@ def _build_quantum_efficiency_result(
     )
     overview_figure.add_trace(
         go.Scatter(
-            x=np.asarray(snr_fit["fit_amplitudes"], dtype=np.float64),
-            y=np.asarray(snr_fit["y_fit"], dtype=np.float64),
+            x=snr_fit_amplitudes,
+            y=snr_fit_values,
             mode="lines",
             name="SNR fit",
         ),
@@ -1504,6 +2156,11 @@ def _build_quantum_efficiency_result(
             y=rho01_values,
             mode="markers",
             name="ρ<sub>01</sub> data",
+            error_y={
+                "type": "data",
+                "array": rho01_standard_errors,
+                "visible": True,
+            },
         ),
         row=1,
         col=1,
@@ -1511,8 +2168,8 @@ def _build_quantum_efficiency_result(
     )
     overview_figure.add_trace(
         go.Scatter(
-            x=np.asarray(dephasing_fit["fit_amplitudes"], dtype=np.float64),
-            y=np.asarray(dephasing_fit["rho01_fit"], dtype=np.float64),
+            x=dephasing_fit_amplitudes,
+            y=dephasing_fit_values,
             mode="lines",
             name="ρ<sub>01</sub> fit",
         ),
@@ -1520,32 +2177,57 @@ def _build_quantum_efficiency_result(
         col=1,
         secondary_y=False,
     )
-    overview_figure.update_xaxes(title_text="Readout amplitude", row=1, col=1)
+    overview_figure.update_xaxes(
+        title_text="Readout amplitude",
+        range=[0.0, padded_upper_bound(x_max)],
+        row=1,
+        col=1,
+    )
     overview_figure.update_yaxes(
         title_text="|ρ<sub>01</sub>|",
+        range=[0.0, padded_upper_bound(rho01_max)],
         row=1,
         col=1,
         secondary_y=False,
     )
     overview_figure.update_yaxes(
         title_text="Signal-to-noise ratio",
+        range=[0.0, padded_upper_bound(snr_max)],
         row=1,
         col=1,
         secondary_y=True,
+    )
+    overview_figure.add_hline(
+        y=0.0,
+        line_color="rgba(80, 80, 80, 0.7)",
+        line_width=1.5,
     )
     overview_figure.update_layout(
         title=f"Quantum efficiency measurement : {target}",
         width=600,
         height=400,
         showlegend=True,
+        legend={
+            "orientation": "h",
+            "x": 0.5,
+            "xanchor": "center",
+            "y": -0.27,
+            "yanchor": "top",
+        },
+        margin={"l": 75, "r": 95, "t": 90, "b": 115},
     )
     overview_figure.add_annotation(
         xref="paper",
         yref="paper",
-        x=0.95,
-        y=0.95,
-        text=f"η = {quantum_efficiency:.3g}",
+        x=1.0,
+        y=1.03,
+        xanchor="right",
+        yanchor="bottom",
+        text=f"η = {quantum_efficiency:.3g} ± {quantum_efficiency_error:.2g}",
         bgcolor="rgba(255, 255, 255, 0.8)",
+        bordercolor="rgba(80, 80, 80, 0.35)",
+        borderwidth=1,
+        borderpad=4,
         showarrow=False,
     )
     if plot:
@@ -1565,16 +2247,28 @@ def _build_quantum_efficiency_result(
         "target": target,
         "readout_amplitudes": readout_amplitudes,
         "quantum_efficiency": float(quantum_efficiency),
+        "quantum_efficiency_error": quantum_efficiency_error,
         "pointwise_quantum_efficiency": pointwise_eta,
+        "projection_method": snr_result["projection_method"],
+        "projection_weights": snr_result["projection_weights"],
+        "projection_reference_amplitude": snr_result["projection_reference_amplitude"],
         "snr": {
             "values": np.asarray(snr_result["snr"], dtype=np.float64),
+            "standard_error": snr_standard_errors,
+            "uncertainty_method": snr_result["snr_uncertainty_method"],
             "signal": np.asarray(snr_result["signal"], dtype=np.float64),
             "noise": np.asarray(snr_result["noise"], dtype=np.float64),
             "projection": snr_result["projection"],
+            "projection_method": snr_result["projection_method"],
+            "projection_weights": snr_result["projection_weights"],
+            "projection_reference_amplitude": snr_result[
+                "projection_reference_amplitude"
+            ],
             "fit_result": snr_fit,
         },
         "measurement_induced_dephasing": {
             "rho01": rho01_values,
+            "rho01_standard_error": rho01_standard_errors,
             "beta_m_raw": beta_m_raw,
             "ramsey": dephasing_result["ramsey"],
             "fit_result": dephasing_fit,
@@ -1586,6 +2280,15 @@ def _build_quantum_efficiency_result(
         "measurement_induced_dephasing_fit": dephasing_fit,
         "fig": overview_figure,
     }
+    for key in (
+        "early_stop_enabled",
+        "early_stopped",
+        "early_stop_threshold_ratio",
+        "early_stop_consecutive_points",
+        "early_stop_min_points",
+    ):
+        if key in dephasing_result:
+            data[key] = dephasing_result[key]
     if source is not None:
         data["source"] = dict(source)
 
@@ -1623,13 +2326,16 @@ def _measurement_induced_dephasing(
         shot_interval=shot_interval,
     )
     measured_rho01 = float(measured_summary["rho01"])
+    measured_rho01_error = float(measured_summary["rho01_standard_error"])
     if measured_rho01 <= ZERO_TOLERANCE:
         raise ValueError("Measured Ramsey coherence must be positive.")
 
     reference_summary: RamseyFringeSummary | None = None
     reference_rho01: float | None = None
+    reference_rho01_error: float | None = None
     reference_phi0: float | None = None
     beta_m: float | None = None
+    beta_m_standard_error: float | None = None
     if use_reference:
         reference_summary = _measure_ramsey_fringe(
             exp,
@@ -1640,26 +2346,43 @@ def _measurement_induced_dephasing(
             shot_interval=shot_interval,
         )
         reference_rho01 = float(reference_summary["rho01"])
+        reference_rho01_error = float(reference_summary["rho01_standard_error"])
         reference_phi0 = float(reference_summary["phi0"])
         if reference_rho01 <= ZERO_TOLERANCE:
             raise ValueError("Reference Ramsey coherence must be positive.")
         beta_m = float(-np.log(np.clip(measured_rho01 / reference_rho01, 1e-12, None)))
+        beta_m_standard_error = _log_ratio_standard_error(
+            numerator=measured_rho01,
+            numerator_error=measured_rho01_error,
+            denominator=reference_rho01,
+            denominator_error=reference_rho01_error,
+        )
 
     if plot:
         print(f"Measurement-induced dephasing : {target}")
         print(f"  readout_amplitude = {float(readout_amplitude):.6g}")
-        print(f"  rho01 = {float(measured_summary['rho01']):.6g}")
+        print(f"  rho01 = {measured_rho01:.6g} ± {measured_rho01_error:.2g}")
         print(f"  phi0 = {float(measured_summary['phi0']):.6g}")
-        if reference_summary is None or beta_m is None:
+        if (
+            reference_summary is None
+            or reference_rho01 is None
+            or reference_rho01_error is None
+            or reference_phi0 is None
+            or beta_m is None
+            or beta_m_standard_error is None
+        ):
             print("  reference_amplitude = N/A")
             print("  reference_rho01 = N/A")
             print("  reference_phi0 = N/A")
             print("  beta_m = N/A")
         else:
             print("  reference_amplitude = 0")
-            print(f"  reference_rho01 = {float(reference_summary['rho01']):.6g}")
-            print(f"  reference_phi0 = {float(reference_summary['phi0']):.6g}")
-            print(f"  beta_m = {beta_m:.6g}")
+            print(
+                "  reference_rho01 = "
+                f"{reference_rho01:.6g} ± {reference_rho01_error:.2g}"
+            )
+            print(f"  reference_phi0 = {reference_phi0:.6g}")
+            print(f"  beta_m = {beta_m:.6g} ± {beta_m_standard_error:.2g}")
 
     phase_fine = np.linspace(float(np.min(phases)), float(np.max(phases)), 1000)
     tick_start = int(np.floor(np.min(phases) / np.pi))
@@ -1731,12 +2454,15 @@ def _measurement_induced_dephasing(
     )
     figure.update_xaxes(tickvals=tickvals, ticktext=ticktext)
     if beta_m is not None:
+        beta_m_text = f"βm = {beta_m:.3g}"
+        if beta_m_standard_error is not None and np.isfinite(beta_m_standard_error):
+            beta_m_text += f" ± {beta_m_standard_error:.2g}"
         figure.add_annotation(
             xref="paper",
             yref="paper",
             x=0.95,
             y=0.95,
-            text=f"βm = {beta_m:.3g}",
+            text=beta_m_text,
             bgcolor="rgba(255, 255, 255, 0.8)",
             showarrow=False,
         )
@@ -1757,9 +2483,13 @@ def _measurement_induced_dephasing(
             "readout_amplitude": float(readout_amplitude),
             "reference_amplitude": 0.0 if use_reference else None,
             "measurement_induced_dephasing": beta_m,
+            "measurement_induced_dephasing_standard_error": beta_m_standard_error,
             "beta_m": beta_m,
+            "beta_m_standard_error": beta_m_standard_error,
             "rho01": measured_rho01,
+            "rho01_standard_error": measured_rho01_error,
             "reference_rho01": reference_rho01,
+            "reference_rho01_standard_error": reference_rho01_error,
             "phi0": float(measured_summary["phi0"]),
             "reference_phi0": reference_phi0,
             "phase_range": phases,
@@ -1805,7 +2535,11 @@ def _readout_snr(
         print(f"  sigma_excited = {float(summary['sigma_excited']):.6g}")
         print(f"  signal = {float(summary['signal']):.6g}")
         print(f"  noise = {float(summary['noise']):.6g}")
-        print(f"  snr = {float(summary['snr']):.6g}")
+        print(
+            "  snr = "
+            f"{float(summary['snr']):.6g} ± "
+            f"{float(summary['snr_standard_error']):.2g}"
+        )
 
     ground_fit = summary["ground_fit"]
     excited_fit = summary["excited_fit"]
@@ -1908,7 +2642,10 @@ def _readout_snr(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"SNR = {float(summary['snr']):.3g}",
+        text=(
+            f"SNR = {float(summary['snr']):.3g} ± "
+            f"{float(summary['snr_standard_error']):.2g}"
+        ),
         bgcolor="rgba(255, 255, 255, 0.8)",
         showarrow=False,
     )
@@ -1984,6 +2721,8 @@ def _readout_snr(
             "target": target,
             "readout_amplitude": float(readout_amplitude),
             "snr": float(summary["snr"]),
+            "snr_standard_error": float(summary["snr_standard_error"]),
+            "snr_uncertainty_method": summary["snr_uncertainty_method"],
             "signal": float(summary["signal"]),
             "noise": float(summary["noise"]),
             "weights": np.asarray(summary["weights"], dtype=np.complex128),
@@ -2006,16 +2745,27 @@ def _measurement_induced_dephasing_experiment(
     phase_range: ArrayLike,
     n_shots: int,
     shot_interval: float | None,
+    early_stop: bool,
     plot: bool,
     save_image: bool,
 ) -> Result:
     """Run the single-target implementation of `measurement_induced_dephasing_experiment`."""
-    amplitudes = _normalize_float_array(amplitude_range, name="amplitude_range")
+    requested_amplitudes = _normalize_increasing_amplitudes(
+        amplitude_range,
+        name="amplitude_range",
+    )
+    if n_shots <= 0:
+        raise ValueError("`n_shots` must be positive.")
     phases = _normalize_float_array(phase_range, name="phase_range")
     ramsey_summaries: dict[float, RamseyFringeSummary] = {}
-    rho01_values = np.empty(len(amplitudes), dtype=np.float64)
+    measured_amplitudes: list[float] = []
+    measured_rho01: list[float] = []
+    measured_rho01_errors: list[float] = []
+    rho01_reference: float | None = None
+    consecutive_below_threshold = 0
+    early_stopped = False
 
-    for index, amplitude in enumerate(amplitudes):
+    for amplitude in requested_amplitudes:
         summary = _measure_ramsey_fringe(
             exp,
             target,
@@ -2024,13 +2774,44 @@ def _measurement_induced_dephasing_experiment(
             n_shots=n_shots,
             shot_interval=shot_interval,
         )
-        ramsey_summaries[float(amplitude)] = summary
-        rho01_values[index] = float(summary["rho01"])
+        amplitude_value = float(amplitude)
+        rho01 = float(summary["rho01"])
+        ramsey_summaries[amplitude_value] = summary
+        measured_amplitudes.append(amplitude_value)
+        measured_rho01.append(rho01)
+        measured_rho01_errors.append(float(summary["rho01_standard_error"]))
+
+        if rho01_reference is None:
+            rho01_reference = rho01
+            continue
+
+        if not early_stop:
+            continue
+
+        if rho01 < EARLY_STOP_COHERENCE_RATIO * rho01_reference:
+            consecutive_below_threshold += 1
+        else:
+            consecutive_below_threshold = 0
+
+        if (
+            len(measured_amplitudes) >= EARLY_STOP_MIN_POINTS
+            and consecutive_below_threshold >= EARLY_STOP_CONSECUTIVE_POINTS
+        ):
+            early_stopped = True
+            break
+
+    amplitudes = np.asarray(measured_amplitudes, dtype=np.float64)
+    rho01_values = np.asarray(measured_rho01, dtype=np.float64)
+    rho01_standard_errors = np.asarray(
+        measured_rho01_errors,
+        dtype=np.float64,
+    )
 
     fit_result = _fit_measurement_induced_dephasing(
         target=target,
         readout_amplitudes=amplitudes,
         rho01_values=rho01_values,
+        rho01_standard_errors=rho01_standard_errors,
     )
     if fit_result.status is not FitStatus.SUCCESS:
         raise RuntimeError(
@@ -2046,8 +2827,16 @@ def _measurement_induced_dephasing_experiment(
     return Result(
         data={
             "target": target,
+            "requested_readout_amplitudes": requested_amplitudes,
             "readout_amplitudes": amplitudes,
             "rho01": rho01_values,
+            "rho01_standard_error": rho01_standard_errors,
+            "rho01_reference": rho01_reference,
+            "early_stop_enabled": early_stop,
+            "early_stopped": early_stopped,
+            "early_stop_threshold_ratio": EARLY_STOP_COHERENCE_RATIO,
+            "early_stop_consecutive_points": EARLY_STOP_CONSECUTIVE_POINTS,
+            "early_stop_min_points": EARLY_STOP_MIN_POINTS,
             "beta_m_raw": np.asarray(fit_result["beta_m_raw"], dtype=np.float64),
             "ramsey": ramsey_summaries,
             "fit_result": fit_result,
@@ -2066,6 +2855,7 @@ def _sweep_readout_snr(
     n_shots: int,
     shot_interval: float | None,
     readout_duration: float | None,
+    projection_method: ProjectionMethod,
     plot: bool,
     save_image: bool,
 ) -> Result:
@@ -2073,14 +2863,12 @@ def _sweep_readout_snr(
     amplitudes = _normalize_float_array(amplitude_range, name="amplitude_range")
     if n_shots <= 0:
         raise ValueError("`n_shots` must be positive.")
+    method = _normalize_projection_method(projection_method)
 
-    projection_summaries: dict[float, ReadoutSnrSummary] = {}
-    snr_values = np.empty(len(amplitudes), dtype=np.float64)
-    signal_values = np.empty(len(amplitudes), dtype=np.float64)
-    noise_values = np.empty(len(amplitudes), dtype=np.float64)
-
-    for index, amplitude in enumerate(amplitudes):
-        summary = _measure_readout_snr(
+    ground_raw_series: list[NDArray[np.complex128]] = []
+    excited_raw_series: list[NDArray[np.complex128]] = []
+    for amplitude in amplitudes:
+        ground_raw, excited_raw = _measure_readout_iq(
             exp,
             target,
             readout_amplitude=float(amplitude),
@@ -2088,8 +2876,36 @@ def _sweep_readout_snr(
             shot_interval=shot_interval,
             readout_duration=readout_duration,
         )
+        if ground_raw.shape != excited_raw.shape:
+            raise RuntimeError(
+                "Ground- and excited-state readout IQ must have matching shapes."
+            )
+        ground_raw_series.append(ground_raw)
+        excited_raw_series.append(excited_raw)
+
+    common_weights, reference_amplitude = _resolve_common_projection_weights(
+        amplitudes=amplitudes,
+        ground_raw_series=ground_raw_series,
+        excited_raw_series=excited_raw_series,
+        projection_method=method,
+    )
+    projection_summaries: dict[float, ReadoutSnrSummary] = {}
+    snr_values = np.empty(len(amplitudes), dtype=np.float64)
+    snr_standard_errors = np.empty(len(amplitudes), dtype=np.float64)
+    uncertainty_methods: list[SnrUncertaintyMethod] = []
+    signal_values = np.empty(len(amplitudes), dtype=np.float64)
+    noise_values = np.empty(len(amplitudes), dtype=np.float64)
+
+    for index, amplitude in enumerate(amplitudes):
+        summary = compute_readout_snr(
+            ground_raw_series[index],
+            excited_raw_series[index],
+            projection_weights=common_weights,
+        )
         projection_summaries[float(amplitude)] = summary
         snr_values[index] = float(summary["snr"])
+        snr_standard_errors[index] = float(summary["snr_standard_error"])
+        uncertainty_methods.append(summary["snr_uncertainty_method"])
         signal_values[index] = float(summary["signal"])
         noise_values[index] = float(summary["noise"])
 
@@ -2097,6 +2913,7 @@ def _sweep_readout_snr(
         target=target,
         readout_amplitudes=amplitudes,
         snr_values=snr_values,
+        snr_standard_errors=snr_standard_errors,
     )
     if fit_result.status is not FitStatus.SUCCESS:
         raise RuntimeError(fit_result.message or "Readout SNR fitting failed.")
@@ -2112,9 +2929,14 @@ def _sweep_readout_snr(
             "target": target,
             "readout_amplitudes": amplitudes,
             "snr": snr_values,
+            "snr_standard_error": snr_standard_errors,
+            "snr_uncertainty_method": uncertainty_methods,
             "signal": signal_values,
             "noise": noise_values,
             "projection": projection_summaries,
+            "projection_method": method,
+            "projection_weights": common_weights,
+            "projection_reference_amplitude": reference_amplitude,
             "fit_result": fit_result,
             "fig": figure,
         },
@@ -2132,11 +2954,14 @@ def _quantum_efficiency_measurement(
     n_shots: int,
     shot_interval: float | None,
     readout_duration: float | None,
+    projection_method: ProjectionMethod,
+    early_stop: bool,
     plot: bool,
     save_image: bool,
 ) -> Result:
     """Run the single-target implementation of `quantum_efficiency_measurement`."""
     amplitudes = _normalize_float_array(amplitude_range, name="amplitude_range")
+    method = _normalize_projection_method(projection_method)
     dephasing_result = _measurement_induced_dephasing_experiment(
         exp,
         target,
@@ -2144,22 +2969,28 @@ def _quantum_efficiency_measurement(
         phase_range=phase_range,
         n_shots=n_shots,
         shot_interval=shot_interval,
+        early_stop=early_stop,
         plot=False,
         save_image=False,
+    )
+    measured_amplitudes = np.asarray(
+        dephasing_result["readout_amplitudes"],
+        dtype=np.float64,
     )
     snr_result = _sweep_readout_snr(
         exp,
         target,
-        amplitude_range=amplitudes,
+        amplitude_range=measured_amplitudes,
         n_shots=n_shots,
         shot_interval=shot_interval,
         readout_duration=readout_duration,
+        projection_method=method,
         plot=False,
         save_image=False,
     )
     return _build_quantum_efficiency_result(
         target=target,
-        readout_amplitudes=amplitudes,
+        readout_amplitudes=measured_amplitudes,
         dephasing_result=dephasing_result,
         snr_result=snr_result,
         plot=plot,
@@ -2182,8 +3013,9 @@ def readout_snr(
     """
     Measure the single-point readout SNR for one or more targets sequentially.
 
-    The returned result contains the projected single-shot histogram as the
-    primary figure and the matched-filter weight as the named `"weight"` figure.
+    The returned result contains the SNR standard error propagated from the
+    Gaussian fit, the projected single-shot histogram as the primary figure,
+    and the matched-filter weight as the named `"weight"` figure.
     """
     n_shots, shot_interval = resolve_shot_options(
         n_shots=n_shots,
@@ -2220,6 +3052,7 @@ def sweep_readout_snr(
     n_shots: int | None = None,
     shot_interval: float | None = None,
     readout_duration: float | None = None,
+    projection_method: ProjectionMethod = "max_amplitude",
     plot: bool | None = None,
     save_image: bool | None = None,
     **deprecated_options: Any,
@@ -2227,10 +3060,15 @@ def sweep_readout_snr(
     """
     Measure the readout SNR versus readout amplitude.
 
-    The raw single-shot data are converted into one SNR value per amplitude,
-    then fit with ``SNR(epsilon) = a epsilon``. The fitted slope ``a`` is shown
-    in the figure because it is the parameter used in
-    :func:`quantum_efficiency_measurement`.
+    By default, the ground-to-excited IQ direction measured at the largest
+    amplitude is reused as the projection axis for every point. Pass
+    `projection_method="per_amplitude"` to estimate the axis independently at
+    each point. The resulting SNR values are fit with
+    `SNR(epsilon) = a epsilon`. Reusing the largest-amplitude axis does not
+    require an additional acquisition: each amplitude is measured once, then
+    the stored IQ shots are projected during analysis. SNR standard errors are
+    propagated from the Gaussian fits and shown as error bars. The slope is
+    obtained from an inverse-variance weighted fit through the origin.
     """
     n_shots, shot_interval = resolve_shot_options(
         n_shots=n_shots,
@@ -2251,6 +3089,7 @@ def sweep_readout_snr(
             n_shots=n_shots,
             shot_interval=shot_interval,
             readout_duration=readout_duration,
+            projection_method=projection_method,
             plot=plot,
             save_image=save_image,
         )
@@ -2276,13 +3115,18 @@ def measurement_induced_dephasing(
     Measure the single-point measurement-induced dephasing for one or more targets.
 
     This function runs a weak-measurement Ramsey sequence at one
-    ``readout_amplitude`` and extracts ``rho01`` and ``phi0`` from the fringe
-    fit. When ``use_reference`` is true, a second Ramsey fringe is measured at
+    `readout_amplitude` and extracts `|rho01|` and `phi0` from the fringe fit.
+    When `use_reference` is true, a second Ramsey fringe is measured at
     zero readout amplitude and
 
-    ``beta_m = -log(|rho01(readout_amplitude)| / |rho01(0)|)``
+    `beta_m = -log(|rho01(readout_amplitude)| / |rho01(0)|)`
 
-    is reported.
+    is reported. Each phase point contains an intermediate weak-measurement
+    capture and a final state-readout capture. Only the final, shot-averaged
+    integrated IQ is normalized with the stored Rabi parameters and used in
+    the Ramsey fit. The result includes `rho01_standard_error`, estimated from
+    the phase-fit residuals. With a reference measurement, its independent
+    error is propagated to `beta_m_standard_error`.
     """
     n_shots, shot_interval = resolve_shot_options(
         n_shots=n_shots,
@@ -2320,6 +3164,7 @@ def measurement_induced_dephasing_experiment(
     phase_range: ArrayLike,
     n_shots: int | None = None,
     shot_interval: float | None = None,
+    early_stop: bool = False,
     plot: bool | None = None,
     save_image: bool | None = None,
     **deprecated_options: Any,
@@ -2327,13 +3172,25 @@ def measurement_induced_dephasing_experiment(
     """
     Measure measurement-induced dephasing as a function of readout amplitude.
 
-    For each amplitude, this function extracts ``|rho01|`` from a Ramsey fringe
-    fit and then fits
+    For each amplitude, this function extracts `|rho01|` from a Ramsey fringe
+    fit. Its standard error is estimated from the fringe-fit residuals, and the
+    coherence envelope is then fit with absolute inverse-variance weights when
+    at least three finite, positive errors are available:
 
-    ``|rho01|(epsilon) = b exp(-epsilon^2 / (2 sigma_m^2))``.
+    `|rho01|(epsilon) = b exp(-epsilon^2 / (2 sigma_m^2))`.
 
-    The fitted ``sigma_m`` is shown in the plot and is the parameter combined
-    with the SNR slope in :func:`quantum_efficiency_measurement`.
+    The phase points for one amplitude are acquired together in one sweep
+    request. Only the final state-readout capture from each phase point is used;
+    its shot-averaged integrated IQ is normalized with the stored Rabi
+    parameters before fitting the fringe.
+    `amplitude_range` must contain at least two nonnegative, strictly increasing
+    values. When `early_stop=True`, acquisition stops after at least nine
+    amplitudes when three consecutive `|rho01|` values are below 20% of the
+    first value. By default, every requested amplitude is measured.
+
+    Both the measured coherence and fitted `sigma_m` are shown with their
+    uncertainties. `sigma_m` is the parameter combined with the SNR slope in
+    `quantum_efficiency_measurement`.
     """
     n_shots, shot_interval = resolve_shot_options(
         n_shots=n_shots,
@@ -2354,6 +3211,7 @@ def measurement_induced_dephasing_experiment(
             phase_range=phase_range,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            early_stop=early_stop,
             plot=plot,
             save_image=save_image,
         )
@@ -2366,11 +3224,14 @@ def quantum_efficiency_measurement(
     exp: Experiment,
     targets: Collection[str] | str | None = None,
     *,
-    amplitude_range: ArrayLike,
-    phase_range: ArrayLike,
+    amplitude_range: ArrayLike | None = None,
+    phase_range: ArrayLike | None = None,
+    readout_amplitude: float | None = None,
     n_shots: int | None = None,
     shot_interval: float | None = None,
     readout_duration: float | None = None,
+    projection_method: ProjectionMethod = "max_amplitude",
+    early_stop: bool = False,
     plot: bool | None = None,
     save_image: bool | None = None,
     **deprecated_options: Any,
@@ -2378,14 +3239,59 @@ def quantum_efficiency_measurement(
     """
     Measure the quantum efficiency for one or more targets sequentially.
 
-    This wrapper runs
+    This wrapper runs `measurement_induced_dephasing_experiment` followed by
+    `sweep_readout_snr`, then computes the final fit-based quantum efficiency
+    as
 
-    - :func:`sweep_readout_snr`
-    - :func:`measurement_induced_dephasing_experiment`
+    `eta = a^2 sigma_m^2 / 2`.
 
-    and computes the final fit-based quantum efficiency as
+    The SNR slope uses inverse-variance weights derived from the propagated
+    SNR standard errors. Ramsey-fit residuals provide `|rho01|` standard
+    errors, which are used for the measurement-induced-dephasing fit.
+    Uncertainties in the slope and `sigma_m` are propagated to
+    `quantum_efficiency_error`.
 
-    ``eta = a^2 sigma_m^2 / 2``.
+    When omitted, `phase_range` is one period sampled at 17 points without a
+    duplicated endpoint. The default `amplitude_range` contains 17 geometric
+    steps from 1% to 100% of `readout_amplitude`. If `readout_amplitude` is also
+    omitted, the target's configured readout amplitude is used. The amplitude
+    sweep measures every requested point by default. Set `early_stop=True` to
+    stop after at least nine points when three consecutive coherence values
+    fall below 20% of the first measured coherence.
+
+    Parameters
+    ----------
+    exp
+        Experiment instance used to acquire Ramsey and single-shot readout data.
+    targets
+        Target label, target labels, or `None` to use every configured qubit.
+    amplitude_range
+        At least two nonnegative, strictly increasing readout amplitudes. When
+        omitted, a 17-point geometric range is generated separately for each
+        target.
+    phase_range
+        Ramsey analysis phases in radians. When omitted, 17 equally spaced
+        points over one period are used, excluding the duplicated endpoint.
+    readout_amplitude
+        Upper bound used only to construct the default `amplitude_range`. When
+        omitted, the target's configured readout amplitude is used.
+    projection_method
+        SNR projection-axis strategy. `"max_amplitude"` reuses the axis from
+        the largest measured amplitude, while `"per_amplitude"` estimates one
+        axis independently at each amplitude.
+    early_stop
+        Whether to stop the amplitude sweep after the coherence threshold is
+        crossed for three consecutive points. Defaults to `False`.
+    n_shots, shot_interval, readout_duration
+        Acquisition settings passed to the underlying measurements.
+    plot, save_image
+        Whether to display or save the generated figures.
+
+    Returns
+    -------
+    Result
+        Fit results, measured amplitudes, SNR and Ramsey data, and figures. For
+        multiple targets, the data are keyed by target label.
     """
     n_shots, shot_interval = resolve_shot_options(
         n_shots=n_shots,
@@ -2398,15 +3304,23 @@ def quantum_efficiency_measurement(
     if shot_interval is None:
         shot_interval = DEFAULT_INTERVAL
     plot, save_image = _resolve_plot_options(plot=plot, save_image=save_image)
+    phases = _resolve_phase_range(phase_range)
     results = {
         target: _quantum_efficiency_measurement(
             exp,
             target,
-            amplitude_range=amplitude_range,
-            phase_range=phase_range,
+            amplitude_range=_resolve_amplitude_range(
+                exp,
+                target,
+                amplitude_range=amplitude_range,
+                readout_amplitude=readout_amplitude,
+            ),
+            phase_range=phases,
             n_shots=n_shots,
             shot_interval=shot_interval,
             readout_duration=readout_duration,
+            projection_method=projection_method,
+            early_stop=early_stop,
             plot=plot,
             save_image=save_image,
         )
@@ -2424,6 +3338,7 @@ def analyze_quantum_efficiency(
     ramsey_excited_probabilities: ArrayLike,
     ground_state_raw: Sequence[ArrayLike] | ArrayLike,
     excited_state_raw: Sequence[ArrayLike] | ArrayLike,
+    projection_method: ProjectionMethod = "max_amplitude",
     plot: bool = True,
 ) -> Result:
     """
@@ -2441,13 +3356,27 @@ def analyze_quantum_efficiency(
         Phase sweep used for each weak-measurement Ramsey fringe.
     ramsey_excited_probabilities
         Excited-state probabilities with shape
-        ``(len(readout_amplitudes), len(ramsey_phases))``.
+        `(len(readout_amplitudes), len(ramsey_phases))`.
     ground_state_raw, excited_state_raw
         Raw IQ samples for the single-shot SNR extraction at each amplitude.
+    projection_method
+        SNR projection-axis strategy. `"max_amplitude"` reuses the axis from
+        the largest amplitude, while `"per_amplitude"` estimates each axis
+        independently.
     plot
         Whether to display the overview figure.
+
+    Notes
+    -----
+    SNR standard errors are propagated from the coupled Gaussian-fit
+    covariance, with an effective-sample delta-method fallback. The SNR slope
+    is fit through the origin using inverse-variance weights. Ramsey residuals
+    provide coherence errors for the weighted dephasing fit. These residual
+    errors describe fringe scatter and model mismatch; they are not direct
+    per-shot standard errors because the input probabilities are averaged.
     """
     del exp
+    method = _normalize_projection_method(projection_method)
     amplitudes = _normalize_float_array(
         readout_amplitudes,
         name="readout_amplitudes",
@@ -2492,6 +3421,13 @@ def analyze_quantum_efficiency(
                 f"`excited_state_raw[{index}]` must have the same shape."
             )
 
+    common_weights, reference_amplitude = _resolve_common_projection_weights(
+        amplitudes=amplitudes,
+        ground_raw_series=ground_raw_series,
+        excited_raw_series=excited_raw_series,
+        projection_method=method,
+    )
+
     ramsey_summaries: dict[float, RamseyFringeSummary] = {}
     projection_summaries: dict[float, ReadoutSnrSummary] = {}
     for index, amplitude in enumerate(amplitudes):
@@ -2502,11 +3438,19 @@ def analyze_quantum_efficiency(
         projection_summaries[float(amplitude)] = compute_readout_snr(
             ground_raw_series[index],
             excited_raw_series[index],
+            projection_weights=common_weights,
         )
 
     rho01_values = np.array(
         [
             float(ramsey_summaries[float(amplitude)]["rho01"])
+            for amplitude in amplitudes
+        ],
+        dtype=np.float64,
+    )
+    rho01_standard_errors = np.array(
+        [
+            float(ramsey_summaries[float(amplitude)]["rho01_standard_error"])
             for amplitude in amplitudes
         ],
         dtype=np.float64,
@@ -2518,6 +3462,17 @@ def analyze_quantum_efficiency(
         ],
         dtype=np.float64,
     )
+    snr_standard_errors = np.array(
+        [
+            float(projection_summaries[float(amplitude)]["snr_standard_error"])
+            for amplitude in amplitudes
+        ],
+        dtype=np.float64,
+    )
+    uncertainty_methods = [
+        projection_summaries[float(amplitude)]["snr_uncertainty_method"]
+        for amplitude in amplitudes
+    ]
     signal_values = np.array(
         [
             float(projection_summaries[float(amplitude)]["signal"])
@@ -2537,6 +3492,7 @@ def analyze_quantum_efficiency(
         target=target,
         readout_amplitudes=amplitudes,
         rho01_values=rho01_values,
+        rho01_standard_errors=rho01_standard_errors,
     )
     if dephasing_fit.status is not FitStatus.SUCCESS:
         raise RuntimeError(
@@ -2547,6 +3503,7 @@ def analyze_quantum_efficiency(
         target=target,
         readout_amplitudes=amplitudes,
         snr_values=snr_values,
+        snr_standard_errors=snr_standard_errors,
     )
     if snr_fit.status is not FitStatus.SUCCESS:
         raise RuntimeError(snr_fit.message or "Readout SNR fitting failed.")
@@ -2556,6 +3513,7 @@ def analyze_quantum_efficiency(
             "target": target,
             "readout_amplitudes": amplitudes,
             "rho01": rho01_values,
+            "rho01_standard_error": rho01_standard_errors,
             "beta_m_raw": np.asarray(dephasing_fit["beta_m_raw"], dtype=np.float64),
             "ramsey": ramsey_summaries,
             "fit_result": dephasing_fit,
@@ -2569,9 +3527,14 @@ def analyze_quantum_efficiency(
             "target": target,
             "readout_amplitudes": amplitudes,
             "snr": snr_values,
+            "snr_standard_error": snr_standard_errors,
+            "snr_uncertainty_method": uncertainty_methods,
             "signal": signal_values,
             "noise": noise_values,
             "projection": projection_summaries,
+            "projection_method": method,
+            "projection_weights": common_weights,
+            "projection_reference_amplitude": reference_amplitude,
             "fit_result": snr_fit,
             "fig": snr_fit.get_figure(),
         },
