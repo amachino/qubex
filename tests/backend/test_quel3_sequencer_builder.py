@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import import_module
+from types import ModuleType
 
 import numpy as np
 import numpy.typing as npt
@@ -18,7 +18,6 @@ from qubex.measurement.adapters import (
     Quel3Waveform,
     Quel3WaveformEvent,
 )
-from tests._backend_dependencies import require_distributions
 
 
 @dataclass(frozen=True)
@@ -602,10 +601,9 @@ def test_builder_preserves_declared_trailing_blank() -> None:
 @pytest.mark.parametrize("shots", [1, 3])
 def test_prepared_builder_preserves_exported_duration_with_real_sequencer(
     shots: int,
+    quel3_sequencer: ModuleType,
 ) -> None:
     """Prepared payloads should preserve declared blank, alignment, and quelware iteration blank."""
-    require_distributions("quelware-client", "quelware-core")
-    sequencer_module = import_module("quelware_client.client.helpers.sequencer")
     payload = _make_payload(
         waveform_library={"wf": Quel3Waveform(np.array([0.5 + 0j]), 0.4)},
         fixed_timelines={
@@ -620,7 +618,7 @@ def test_prepared_builder_preserves_exported_duration_with_real_sequencer(
     )
     sequencer = Quel3SequencerBuilder().build_prepared(
         payload=payload,
-        sequencer_factory=sequencer_module.Sequencer,
+        sequencer_factory=quel3_sequencer.Sequencer,
         default_sampling_period_ns=0.4,
         alias_bindings={"R": (400_000, 4)},
     )
@@ -658,12 +656,10 @@ def test_prepared_builder_forwards_timing_values_without_normalization() -> None
     )
 
 
-def test_public_builder_normalizes_content_beyond_declared_length_before_interval() -> (
-    None
-):
+def test_public_builder_normalizes_content_beyond_declared_length_before_interval(
+    quel3_sequencer: ModuleType,
+) -> None:
     """Standalone builds should keep the shot interval after rounding extends timeline content."""
-    require_distributions("quelware-client", "quelware-core")
-    sequencer_module = import_module("quelware_client.client.helpers.sequencer")
     timeline = Quel3FixedTimeline((), (Quel3CaptureWindow("read", 0.3, 0.3),), 0.5)
     payload = _make_payload(
         waveform_library={},
@@ -673,7 +669,7 @@ def test_public_builder_normalizes_content_beyond_declared_length_before_interva
     )
     sequencer = Quel3SequencerBuilder().build(
         payload=payload,
-        sequencer_factory=sequencer_module.Sequencer,
+        sequencer_factory=quel3_sequencer.Sequencer,
         default_sampling_period_ns=0.4,
         alias_bindings={"R": (800_000, 1)},
     )

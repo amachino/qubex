@@ -20,7 +20,6 @@ from qubex.backend.quel3.models import (
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
 )
-from tests._backend_dependencies import require_distributions
 
 
 @pytest.mark.parametrize("batched", [False, True])
@@ -185,9 +184,9 @@ def test_capture_names_are_scoped_to_instrument_aliases() -> None:
     assert analysis.payload.fixed_timelines["RQ01"].capture_windows == (window,)
 
 
+@pytest.mark.usefixtures("require_quel3_client")
 def test_cached_hardware_info_retains_actual_quelware_driver_configuration() -> None:
     """Cached hardware info should construct a real driver with its original config."""
-    require_distributions("quelware-core", "quelware-client")
     entities = import_module("quelware_core.entities.instrument")
     drivers = import_module("quelware_client.core.instrument_driver")
     config = entities.FixedTimelineConfig(

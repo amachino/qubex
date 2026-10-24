@@ -1,4 +1,4 @@
-"""Fixtures for isolated backend lifecycle tests."""
+"""Shared backend stubs and optional dependency fixtures."""
 
 from dataclasses import dataclass
 from importlib import import_module
@@ -37,7 +37,7 @@ def _stub_qubecalib() -> SimpleNamespace:
 
 @dataclass(frozen=True)
 class _Quel1DriverStub:
-    """Supply constructor defaults and explicit replacement points for unit tests."""
+    """Supply driver defaults compatible with dataclasses.replace in controller tests."""
 
     DEFAULT_SAMPLING_PERIOD: float = 2.0
     QubeCalib: Any = _stub_qubecalib
@@ -62,6 +62,18 @@ def quel3_http_transport() -> ModuleType:
     """Load the real HTTP transport only for tests requiring its optional libraries."""
     require_distributions("grpclib", "protobuf", "googleapis-common-protos")
     return import_module("qubex.backend.quel3.infra.quelware_http_transport")
+
+
+@pytest.fixture
+def require_quel3_client() -> None:
+    """Skip real-client tests when QuEL-3 dependencies are not installed."""
+    require_distributions("quelware-client", "quelware-core")
+
+
+@pytest.fixture
+def quel3_sequencer(require_quel3_client: None) -> ModuleType:
+    """Load the real QuEL-3 sequencer after checking its optional dependencies."""
+    return import_module("quelware_client.client.helpers.sequencer")
 
 
 @pytest.fixture
