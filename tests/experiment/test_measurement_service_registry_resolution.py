@@ -215,6 +215,35 @@ def test_execute_does_not_reset_awg_by_default() -> None:
     assert captured["reset_calls"] == []
 
 
+@pytest.mark.parametrize(
+    ("option_name", "option_value"),
+    [
+        ("state_classification", True),
+        ("enable_dsp_classification", True),
+    ],
+)
+def test_execute_rejects_legacy_dsp_before_reset_or_measurement(
+    option_name: str,
+    option_value: bool,
+) -> None:
+    """Legacy execute should reject DSP state output before device operations."""
+    service, captured = _make_service()
+    options: dict[str, Any] = {option_name: option_value}
+    with PulseSchedule(["custom-target"]) as schedule:
+        pass
+
+    with pytest.raises(ValueError, match="run_measurement"):
+        service.execute(
+            schedule,
+            reset_awg_and_capunits=True,
+            plot=False,
+            **options,
+        )
+
+    assert captured["reset_calls"] == []
+    assert captured["execute_calls"] == []
+
+
 def test_execute_uses_experiment_readout_timing_defaults() -> None:
     """Given omitted readout timing, when executing, then Experiment defaults are delegated."""
     service, captured = _make_service()

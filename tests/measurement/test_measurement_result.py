@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 
 import numpy as np
+import pytest
 
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
 from qubex.measurement.models.measure_result import MultipleMeasureResult
@@ -113,6 +114,19 @@ def test_measure_data_threshold_classification(dummy_classifier):
     )
     labels = data.get_classified_data(threshold=0.8)
     assert labels.tolist() == [-1, 1]
+
+
+def test_measure_data_n_states_requires_classifier() -> None:
+    """State cardinality must come from classifier metadata, not result labels."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=np.array([0, 7], dtype=np.int64),
+        classifier=None,
+    )
+
+    with pytest.raises(ValueError, match="Classifier is not set"):
+        _ = data.n_states
 
 
 def test_measure_result_memory_and_counts(measure_result: MeasureResult):

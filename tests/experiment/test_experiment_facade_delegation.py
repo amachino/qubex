@@ -109,6 +109,14 @@ class _MeasurementServiceStub:
         return "state_tomography_result"
 
 
+class _ClassifierRegistryStub:
+    def __init__(self) -> None:
+        self.classifiers: dict[str, object] = {}
+
+    def update_classifiers(self, classifiers: dict[str, object]) -> None:
+        self.classifiers.update(classifiers)
+
+
 class _ExperimentContextStub:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -553,6 +561,22 @@ def test_capture_loopback_delegates_to_measurement_service() -> None:
     ]
 
 
+def test_set_classifier_registers_target_classifiers() -> None:
+    """Experiment should register classifiers through its measurement context."""
+    exp = object.__new__(Experiment)
+    registry = _ClassifierRegistryStub()
+    exp.__dict__["_experiment_context"] = type(
+        "_CTX",
+        (),
+        {"measurement": registry},
+    )()
+    classifier = cast(Any, object())
+
+    exp.set_classifier({"Q00": classifier})
+
+    assert registry.classifiers == {"Q00": classifier}
+
+
 def test_execute_delegates_new_shot_arguments_to_measurement_service() -> None:
     """Given n_shots args, when execute is called, then it delegates canonical shot keys."""
     exp = object.__new__(Experiment)
@@ -584,8 +608,6 @@ def test_execute_delegates_new_shot_arguments_to_measurement_service() -> None:
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
-                "line_param0": None,
-                "line_param1": None,
                 "reset_awg_and_capunits": None,
                 "plot": None,
             },
@@ -627,8 +649,6 @@ def test_execute_delegates_time_integration_to_measurement_service() -> None:
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
-                "line_param0": None,
-                "line_param1": None,
                 "reset_awg_and_capunits": None,
                 "plot": None,
             },
@@ -667,8 +687,6 @@ def test_measure_delegates_legacy_shot_arguments_to_measurement_service() -> Non
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
-                "line_param0": None,
-                "line_param1": None,
                 "reset_awg_and_capunits": None,
                 "plot": None,
                 "shots": 64,
@@ -712,8 +730,6 @@ def test_measure_delegates_time_integration_to_measurement_service() -> None:
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
-                "line_param0": None,
-                "line_param1": None,
                 "reset_awg_and_capunits": None,
                 "plot": None,
             },

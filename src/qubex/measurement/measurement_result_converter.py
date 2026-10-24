@@ -26,8 +26,36 @@ def _as_read_only_array(data: Any) -> np.ndarray:
     return array
 
 
+def reject_legacy_state_classification_request(
+    *,
+    state_classification: bool | None,
+    enable_dsp_classification: object = None,
+) -> None:
+    """Reject classified-state output requested through IQ-only legacy APIs."""
+    if state_classification is True or enable_dsp_classification is True:
+        raise ValueError(
+            "Legacy `measure()` and `execute()` results cannot represent "
+            "preclassified state data. Use `await run_measurement(..., "
+            "state_classification=True)` and keep its MeasurementResult instead."
+        )
+
+
 class MeasurementResultConverter:
     """Convert `MeasurementResult` to and from legacy result classes."""
+
+    @staticmethod
+    def _reject_classified_state_payload(result: MeasurementResult) -> None:
+        """Reject state payloads that legacy IQ-only results cannot represent."""
+        if any(
+            capture.state_series is not None
+            for captures in result.data.values()
+            for capture in captures
+        ):
+            raise ValueError(
+                "Legacy MeasureResult types cannot represent preclassified state "
+                "data. Use the MeasurementResult returned by `run_measurement()` "
+                "instead."
+            )
 
     @staticmethod
     def _resolve_measure_mode(config: MeasurementConfig) -> MeasureMode:
@@ -102,6 +130,7 @@ class MeasurementResultConverter:
         MultipleMeasureResult
             Legacy multi-capture result.
         """
+        MeasurementResultConverter._reject_classified_state_payload(result)
         mode = MeasurementResultConverter._resolve_measure_mode(
             result.measurement_config
         )
@@ -112,9 +141,6 @@ class MeasurementResultConverter:
         else:
             resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
-        resolved_classifiers: dict[str, StateClassifier | None] = {
-            target: classifier_map.get(target) for target in result.data
-        }
         legacy_data: dict[str, list[MeasureData]] = {}
         for target, captures in result.data.items():
             legacy_captures = [
@@ -122,7 +148,7 @@ class MeasurementResultConverter:
                     target=target,
                     mode=mode,
                     raw=np.asarray(capture.data),
-                    classifier=resolved_classifiers.get(target),
+                    classifier=classifier_map.get(target),
                     sampling_period=(
                         sampling_period
                         if sampling_period is not None
@@ -179,10 +205,8 @@ class MeasurementResultConverter:
         IndexError
             If `index` is out of range for any target.
         """
+        MeasurementResultConverter._reject_classified_state_payload(result)
         classifier_map = {} if classifiers is None else classifiers
-        resolved_classifiers: dict[str, StateClassifier | None] = {
-            target: classifier_map.get(target) for target in result.data
-        }
         single_data: dict[str, MeasureData] = {}
         resolved_mode: MeasureMode | None = None
         for target, captures in result.data.items():
@@ -205,7 +229,7 @@ class MeasurementResultConverter:
                 target=target,
                 mode=selected_mode,
                 raw=np.asarray(selected_capture.data),
-                classifier=resolved_classifiers.get(target),
+                classifier=classifier_map.get(target),
                 sampling_period=(
                     sampling_period
                     if sampling_period is not None

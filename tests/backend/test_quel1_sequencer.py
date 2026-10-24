@@ -112,9 +112,9 @@ def test_generate_e7_settings_uses_boxpool_port_config_path(monkeypatch: Any) ->
     sequencer.dsp_demodulation = True
     sequencer.software_demodulation = False
     sequencer.enable_sum = False
-    sequencer.enable_classification = False
-    sequencer.line_param0 = (1.0, 0.0, 0.0)
-    sequencer.line_param1 = (0.0, 1.0, 0.0)
+    sequencer.enable_classification = True
+    classification_lines = {"RQ00": object()}
+    sequencer.classification_lines = classification_lines
 
     cap_settings, gen_settings, cap_resource_map = cast(
         Any, sequencer
@@ -125,5 +125,49 @@ def test_generate_e7_settings_uses_boxpool_port_config_path(monkeypatch: Any) ->
     assert cap_resource_map["RQ00"]["port"].port == 0
     assert _FakeConverter.cap_kwargs["resource_map"]["RQ00"]["port"].port == 0
     assert _FakeConverter.gen_kwargs["resource_map"]["RQ00"]["port"].port == 1
+    assert _FakeConverter.cap_kwargs["classification_lines"] is classification_lines
     assert {call["port"] for call in _FakePortConfigAcquirer.calls} == {0, 1}
     assert all("driver" not in call for call in _FakePortConfigAcquirer.calls)
+
+
+def test_generate_e7_settings_omits_disabled_classification_lines(
+    monkeypatch: Any,
+) -> None:
+    """Legacy converters should not receive classification lines when disabled."""
+    monkeypatch.setattr(sequencer_module, "driver", _FakeDriverSymbols())
+    monkeypatch.setattr(
+        sequencer_module,
+        "import_module",
+        lambda _name: SimpleNamespace(PortConfigAcquirer=_FakePortConfigAcquirer),
+    )
+    _FakePortConfigAcquirer.calls = []
+    _FakeConverter.cap_kwargs = {}
+
+    sequencer = cast(Any, object.__new__(Quel1Sequencer))
+    sequencer.resource_map = {
+        "RQ00": [
+            {
+                "box": _FakeBoxSetting("B0"),
+                "port": _FakePortSetting(0),
+                "channel_number": 0,
+            },
+            {
+                "box": _FakeBoxSetting("B0"),
+                "port": _FakePortSetting(1),
+                "channel_number": 0,
+            },
+        ]
+    }
+    sequencer.cap_sampled_sequence = {"RQ00": object()}
+    sequencer.gen_sampled_sequence = {"RQ00": object()}
+    sequencer.repeats = 64
+    sequencer.interval = 128
+    sequencer.integral_mode = "integral"
+    sequencer.dsp_demodulation = True
+    sequencer.software_demodulation = False
+    sequencer.enable_sum = False
+    sequencer.enable_classification = False
+
+    cast(Any, sequencer).generate_e7_settings(cast(Any, _FakeBoxPool()))
+
+    assert "classification_lines" not in _FakeConverter.cap_kwargs
