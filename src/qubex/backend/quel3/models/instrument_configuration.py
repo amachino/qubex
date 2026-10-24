@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
-from typing_extensions import Self
 
 from .instrument import InstrumentSpec
 

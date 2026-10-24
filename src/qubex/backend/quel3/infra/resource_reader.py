@@ -6,7 +6,7 @@ import asyncio
 import inspect
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, TypeVar, cast, get_args
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
@@ -293,7 +293,7 @@ class Quel3ResourceReader:
         parallel: bool,
     ) -> Quel3ResourceSnapshot:
         """Collect resource snapshot from one quelware client context."""
-        generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        generated_at = datetime.now(UTC).isoformat(timespec="seconds")
         collect_ports = level != "unit"
         collect_instruments = level in ("instrument", "diagnosis")
         client_factory = self._load_quelware_client_factory()

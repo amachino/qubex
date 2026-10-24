@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import plotly.graph_objects as go
 import pytest
@@ -22,7 +22,7 @@ def test_fit_result_should_preserve_payload_and_metadata() -> None:
     assert result.message == "ok"
     assert result["value"] == 1.0
     assert "status" not in result.data
-    assert datetime.fromisoformat(result.created_at).tzinfo == timezone.utc
+    assert datetime.fromisoformat(result.created_at).tzinfo == UTC
     assert result.figure is None
     assert result.figures is None
 

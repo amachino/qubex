@@ -244,7 +244,7 @@ class _UnaryUnaryHttpStream:
                     post,
                     timeout=effective_timeout,
                 )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise GRPCError(
                 Status.DEADLINE_EXCEEDED,
                 "request deadline exceeded",

@@ -14,7 +14,7 @@ import math
 import warnings
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import pairwise
 from numbers import Real
 from typing import Any, Literal, cast
@@ -1401,7 +1401,7 @@ def _extract_survival_probability(
 
 def _iso_now() -> str:
     """Return the current UTC timestamp in ISO 8601 format."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 async def _measure_paired_irb_async(
