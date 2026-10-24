@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 
 import numpy as np
 import numpy.typing as npt
@@ -17,6 +18,7 @@ from qubex.measurement.adapters import (
     Quel3Waveform,
     Quel3WaveformEvent,
 )
+from tests._backend_dependencies import require_distributions
 
 
 @dataclass(frozen=True)
@@ -602,7 +604,8 @@ def test_prepared_builder_preserves_exported_duration_with_real_sequencer(
     shots: int,
 ) -> None:
     """Prepared payloads should preserve declared blank, alignment, and quelware iteration blank."""
-    sequencer_module = pytest.importorskip("quelware_client.client.helpers.sequencer")
+    require_distributions("quelware-client", "quelware-core")
+    sequencer_module = import_module("quelware_client.client.helpers.sequencer")
     payload = _make_payload(
         waveform_library={"wf": Quel3Waveform(np.array([0.5 + 0j]), 0.4)},
         fixed_timelines={
@@ -659,7 +662,8 @@ def test_public_builder_normalizes_content_beyond_declared_length_before_interva
     None
 ):
     """Standalone builds should keep the shot interval after rounding extends timeline content."""
-    sequencer_module = pytest.importorskip("quelware_client.client.helpers.sequencer")
+    require_distributions("quelware-client", "quelware-core")
+    sequencer_module = import_module("quelware_client.client.helpers.sequencer")
     timeline = Quel3FixedTimeline((), (Quel3CaptureWindow("read", 0.3, 0.3),), 0.5)
     payload = _make_payload(
         waveform_library={},
