@@ -17,7 +17,7 @@ from qxcore import (
     units,
 )
 
-from .async_bridge import AsyncBridge
+from .async_bridge import AsyncBridge, async_execution_timeout
 from .parallel_executor import run_parallel, run_parallel_map
 from .unit_converter import (
     normalize_frequencies_to_ghz,
@@ -40,6 +40,7 @@ __all__ = [
     "Value",
     "ValueArray",
     "ValueArrayLike",
+    "async_execution_timeout",
     "normalize_frequencies_to_ghz",
     "normalize_frequency_to_ghz",
     "normalize_quantity",

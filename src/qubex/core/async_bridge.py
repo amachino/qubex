@@ -5,19 +5,78 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextvars
+import math
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from typing import Final, TypeVar
 
 T = TypeVar("T")
 
-DEFAULT_TIMEOUT_SECONDS: Final[float] = 300.0
+# Temporary workaround: raising the bridge fallback from 300 to 600 seconds
+# accommodates longer experiments but does not define a suitable experiment limit.
+# TODO: Let each operation own its timeout policy and align bridge waits with it.
+DEFAULT_TIMEOUT_SECONDS: Final[float] = 600.0
 DEFAULT_STARTUP_TIMEOUT_SECONDS: Final[float] = 5.0
 THREAD_JOIN_TIMEOUT_SECONDS: Final[float] = 1.0
 DEFAULT_SHARED_THREAD_PREFIX: Final[str] = "qx-async-bridge"
 
 _SHARED_BRIDGE_LOCK = threading.Lock()
 _SHARED_BRIDGES: dict[str, AsyncBridge] = {}
+_SCOPED_TIMEOUT: contextvars.ContextVar[tuple[float | None] | None] = (
+    contextvars.ContextVar("qubex_async_execution_timeout", default=None)
+)
+
+
+@contextmanager
+def async_execution_timeout(seconds: float | None) -> Iterator[None]:
+    """
+    Override async bridge wait timeouts within the current context.
+
+    Parameters
+    ----------
+    seconds : float | None
+        Finite positive wait timeout in seconds, or `None` for unlimited waiting.
+
+    Yields
+    ------
+    None
+        Execute synchronous Qubex calls with the selected wait timeout.
+
+    Raises
+    ------
+    ValueError
+        If `seconds` is not finite and positive.
+
+    Notes
+    -----
+    This is a temporary workaround for long experiments that exceed the fixed
+    bridge wait timeout. Operation-specific timeout policies should eventually
+    determine the appropriate bridge wait instead of requiring this override.
+
+    Overrides both explicit and default timeouts of `AsyncBridge.run` when
+    called from a running event loop, including Notebook measurement calls.
+    Nested contexts restore the previous value, including on exceptions.
+    The setting follows context propagation to bridge tasks without changing
+    global bridge defaults or independent tasks and threads.
+
+    Calls without a running event loop and `run_without_timeout` remain
+    unbounded. This does not change session TTLs, transport timeouts, or impose
+    a shared deadline across multiple calls; each bridge wait gets the timeout.
+
+    Examples
+    --------
+    >>> from qubex.core import async_execution_timeout
+    >>> with async_execution_timeout(3600):
+    ...     pass  # Run a long synchronous experiment here.
+    """
+    if seconds is not None and (not math.isfinite(seconds) or seconds <= 0):
+        raise ValueError("Timeout must be a finite positive number of seconds or None.")
+    token = _SCOPED_TIMEOUT.set((seconds,))
+    try:
+        yield
+    finally:
+        _SCOPED_TIMEOUT.reset(token)
 
 
 async def _invoke_factory(factory: Callable[[], Awaitable[T]]) -> T:
@@ -59,7 +118,7 @@ class AsyncBridge:
         Parameters
         ----------
         default_timeout : float, optional
-            Default timeout in seconds for blocking bridge calls.
+            Default timeout in seconds for blocking bridge calls. Defaults to 600.
         startup_timeout : float, optional
             Timeout in seconds while waiting for bridge-loop startup.
         thread_name : str, optional
@@ -103,6 +162,8 @@ class AsyncBridge:
             Awaitable factory to execute.
         timeout : float | None, optional
             Timeout in seconds for bridge execution when a loop is already active.
+            Defaults to the bridge timeout. An active `async_execution_timeout`
+            context overrides this value.
 
         Returns
         -------
@@ -138,6 +199,9 @@ class AsyncBridge:
             context=contextvars.copy_context(),
         )
         wait_timeout = self._default_timeout if timeout is None else timeout
+        scoped_timeout = _SCOPED_TIMEOUT.get()
+        if scoped_timeout is not None:
+            wait_timeout = scoped_timeout[0]
         try:
             return bridge_future.result(timeout=wait_timeout)
         except concurrent.futures.TimeoutError as error:
