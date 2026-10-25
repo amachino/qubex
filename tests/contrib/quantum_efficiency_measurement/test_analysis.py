@@ -68,6 +68,29 @@ def _error_y_array(figure: go.Figure, index: int = 0) -> Any:
     return error_y["array"]
 
 
+class _RecordingProgress:
+    """Record progress operations without rendering a terminal bar."""
+
+    def __init__(self, **kwargs: object) -> None:
+        self.initial_total = int(cast(int, kwargs["total"]))
+        self.total = self.initial_total
+        self.desc = kwargs["desc"]
+        self.unit = kwargs["unit"]
+        self.disable = kwargs["disable"]
+        self.n = 0
+        self.refresh_count = 0
+        self.closed = False
+
+    def update(self, increment: int = 1) -> None:
+        self.n += increment
+
+    def refresh(self) -> None:
+        self.refresh_count += 1
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def test_analyze_quantum_efficiency_should_recover_fit_based_eta() -> None:
     """Given synthetic amplitude data, when analyzed, then the fit-based QE matches the known model."""
     dataset = _build_analysis_inputs()
@@ -746,6 +769,7 @@ def test_quantum_efficiency_measurement_should_resolve_default_sweep_ranges(
     )
     assert captured["projection_method"] == "max_amplitude"
     assert captured["early_stop"] is False
+    assert captured["enable_tqdm"] is True
 
 
 def test_quantum_efficiency_measurement_should_prefer_explicit_readout_amplitude(
@@ -785,12 +809,14 @@ def test_quantum_efficiency_measurement_should_prefer_explicit_readout_amplitude
         "Q00",
         readout_amplitude=0.1,
         plot=False,
+        enable_tqdm=False,
     )
 
     np.testing.assert_allclose(
         cast(Any, captured["amplitude_range"]),
         np.geomspace(0.001, 0.1, 17),
     )
+    assert captured["enable_tqdm"] is False
 
 
 def test_dephasing_sweep_should_keep_nine_points_before_early_stop(
@@ -926,6 +952,7 @@ def test_quantum_efficiency_should_use_early_stopped_range_for_snr(
         early_stop=True,
         plot=False,
         save_image=False,
+        enable_tqdm=False,
     )
 
     np.testing.assert_allclose(
@@ -935,3 +962,120 @@ def test_quantum_efficiency_should_use_early_stopped_range_for_snr(
         cast(Any, captured["build_amplitudes"]), completed_amplitudes
     )
     assert captured["projection_method"] == "max_amplitude"
+
+
+def test_quantum_efficiency_progress_should_track_settings_and_adjust_for_early_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Progress should cover Ramsey phases and state distributions at measured amplitudes."""
+    requested_amplitudes = np.asarray([0.01, 0.02, 0.03, 0.04])
+    completed_amplitudes = requested_amplitudes[:2]
+    phases = np.asarray([0.0, np.pi / 2.0, np.pi])
+    progress_bars: list[_RecordingProgress] = []
+
+    def _fake_tqdm(**kwargs: object) -> _RecordingProgress:
+        progress = _RecordingProgress(**kwargs)
+        progress_bars.append(progress)
+        return progress
+
+    def _fake_dephasing(*args: object, **kwargs: object) -> Result:
+        del args
+        update = cast(Any, kwargs["progress_callback"])
+        for _ in completed_amplitudes:
+            update(len(cast(np.ndarray, kwargs["phase_range"])))
+        return Result(data={"readout_amplitudes": completed_amplitudes})
+
+    def _fake_snr(*args: object, **kwargs: object) -> Result:
+        del args
+        update = cast(Any, kwargs["progress_callback"])
+        for _ in cast(np.ndarray, kwargs["amplitude_range"]):
+            update(2)
+        return Result(data={})
+
+    qe_module = importlib.import_module(
+        "qubex.contrib.experiment.quantum_efficiency_measurement"
+    )
+    monkeypatch.setattr(qe_module, "tqdm", _fake_tqdm)
+    monkeypatch.setattr(
+        qe_module,
+        "_measurement_induced_dephasing_experiment",
+        _fake_dephasing,
+    )
+    monkeypatch.setattr(qe_module, "_sweep_readout_snr", _fake_snr)
+    monkeypatch.setattr(
+        qe_module,
+        "_build_quantum_efficiency_result",
+        lambda **_kwargs: Result(data={}),
+    )
+
+    qe_module._quantum_efficiency_measurement(  # noqa: SLF001
+        cast(Experiment, object()),
+        "Q00",
+        amplitude_range=requested_amplitudes,
+        phase_range=phases,
+        n_shots=1024,
+        shot_interval=None,
+        readout_duration=None,
+        projection_method="max_amplitude",
+        early_stop=True,
+        plot=False,
+        save_image=False,
+        enable_tqdm=False,
+    )
+
+    assert len(progress_bars) == 1
+    progress = progress_bars[0]
+    assert progress.initial_total == len(requested_amplitudes) * (len(phases) + 2)
+    assert progress.total == len(completed_amplitudes) * (len(phases) + 2)
+    assert progress.n == progress.total
+    assert progress.desc == "Quantum efficiency: Q00"
+    assert progress.unit == "setting"
+    assert progress.disable is True
+    assert progress.refresh_count == 1
+    assert progress.closed is True
+
+
+def test_quantum_efficiency_progress_should_close_when_measurement_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Progress should close when acquisition raises an exception."""
+    progress_bars: list[_RecordingProgress] = []
+
+    def _fake_tqdm(**kwargs: object) -> _RecordingProgress:
+        progress = _RecordingProgress(**kwargs)
+        progress_bars.append(progress)
+        return progress
+
+    def _raise_during_dephasing(*args: object, **kwargs: object) -> Result:
+        del args
+        cast(Any, kwargs["progress_callback"])(3)
+        raise RuntimeError("measurement failed")
+
+    qe_module = importlib.import_module(
+        "qubex.contrib.experiment.quantum_efficiency_measurement"
+    )
+    monkeypatch.setattr(qe_module, "tqdm", _fake_tqdm)
+    monkeypatch.setattr(
+        qe_module,
+        "_measurement_induced_dephasing_experiment",
+        _raise_during_dephasing,
+    )
+
+    with pytest.raises(RuntimeError, match="measurement failed"):
+        qe_module._quantum_efficiency_measurement(  # noqa: SLF001
+            cast(Experiment, object()),
+            "Q00",
+            amplitude_range=np.asarray([0.01, 0.02]),
+            phase_range=np.asarray([0.0, np.pi / 2.0, np.pi]),
+            n_shots=1024,
+            shot_interval=None,
+            readout_duration=None,
+            projection_method="max_amplitude",
+            early_stop=False,
+            plot=False,
+            save_image=False,
+            enable_tqdm=True,
+        )
+
+    assert progress_bars[0].n == 3
+    assert progress_bars[0].closed is True

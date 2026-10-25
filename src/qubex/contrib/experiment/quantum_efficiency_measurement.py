@@ -24,6 +24,7 @@ from typing import Any, Literal, TypeAlias, TypedDict
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
+from tqdm.auto import tqdm
 
 import qubex.visualization as viz
 from qubex.analysis import FitResult, FitStatus
@@ -71,6 +72,7 @@ WEIGHT_FIGURE_KEY = "weight"
 
 ProjectionMethod: TypeAlias = Literal["max_amplitude", "per_amplitude"]
 SnrUncertaintyMethod: TypeAlias = Literal["fit_covariance", "delta_fallback"]
+_ProgressCallback: TypeAlias = Callable[[int], None]
 
 
 class RamseyFringeSummary(TypedDict):
@@ -2748,6 +2750,7 @@ def _measurement_induced_dephasing_experiment(
     early_stop: bool,
     plot: bool,
     save_image: bool,
+    progress_callback: _ProgressCallback | None = None,
 ) -> Result:
     """Run the single-target implementation of `measurement_induced_dephasing_experiment`."""
     requested_amplitudes = _normalize_increasing_amplitudes(
@@ -2780,6 +2783,8 @@ def _measurement_induced_dephasing_experiment(
         measured_amplitudes.append(amplitude_value)
         measured_rho01.append(rho01)
         measured_rho01_errors.append(float(summary["rho01_standard_error"]))
+        if progress_callback is not None:
+            progress_callback(len(phases))
 
         if rho01_reference is None:
             rho01_reference = rho01
@@ -2858,6 +2863,7 @@ def _sweep_readout_snr(
     projection_method: ProjectionMethod,
     plot: bool,
     save_image: bool,
+    progress_callback: _ProgressCallback | None = None,
 ) -> Result:
     """Run the single-target implementation of `sweep_readout_snr`."""
     amplitudes = _normalize_float_array(amplitude_range, name="amplitude_range")
@@ -2882,6 +2888,8 @@ def _sweep_readout_snr(
             )
         ground_raw_series.append(ground_raw)
         excited_raw_series.append(excited_raw)
+        if progress_callback is not None:
+            progress_callback(2)
 
     common_weights, reference_amplitude = _resolve_common_projection_weights(
         amplitudes=amplitudes,
@@ -2958,44 +2966,68 @@ def _quantum_efficiency_measurement(
     early_stop: bool,
     plot: bool,
     save_image: bool,
+    enable_tqdm: bool,
 ) -> Result:
     """Run the single-target implementation of `quantum_efficiency_measurement`."""
-    amplitudes = _normalize_float_array(amplitude_range, name="amplitude_range")
+    amplitudes = _normalize_increasing_amplitudes(
+        amplitude_range,
+        name="amplitude_range",
+    )
+    phases = _normalize_float_array(phase_range, name="phase_range")
     method = _normalize_projection_method(projection_method)
-    dephasing_result = _measurement_induced_dephasing_experiment(
-        exp,
-        target,
-        amplitude_range=amplitudes,
-        phase_range=phase_range,
-        n_shots=n_shots,
-        shot_interval=shot_interval,
-        early_stop=early_stop,
-        plot=False,
-        save_image=False,
+    settings_per_amplitude = len(phases) + 2
+    progress = tqdm(
+        total=len(amplitudes) * settings_per_amplitude,
+        desc=f"Quantum efficiency: {target}",
+        unit="setting",
+        disable=not enable_tqdm,
     )
-    measured_amplitudes = np.asarray(
-        dephasing_result["readout_amplitudes"],
-        dtype=np.float64,
-    )
-    snr_result = _sweep_readout_snr(
-        exp,
-        target,
-        amplitude_range=measured_amplitudes,
-        n_shots=n_shots,
-        shot_interval=shot_interval,
-        readout_duration=readout_duration,
-        projection_method=method,
-        plot=False,
-        save_image=False,
-    )
-    return _build_quantum_efficiency_result(
-        target=target,
-        readout_amplitudes=measured_amplitudes,
-        dephasing_result=dephasing_result,
-        snr_result=snr_result,
-        plot=plot,
-        save_image=save_image,
-    )
+
+    def update_progress(increment: int) -> None:
+        progress.update(increment)
+
+    try:
+        dephasing_result = _measurement_induced_dephasing_experiment(
+            exp,
+            target,
+            amplitude_range=amplitudes,
+            phase_range=phases,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            early_stop=early_stop,
+            plot=False,
+            save_image=False,
+            progress_callback=update_progress,
+        )
+        measured_amplitudes = np.asarray(
+            dephasing_result["readout_amplitudes"],
+            dtype=np.float64,
+        )
+        if len(measured_amplitudes) != len(amplitudes):
+            progress.total = len(measured_amplitudes) * settings_per_amplitude
+            progress.refresh()
+        snr_result = _sweep_readout_snr(
+            exp,
+            target,
+            amplitude_range=measured_amplitudes,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            readout_duration=readout_duration,
+            projection_method=method,
+            plot=False,
+            save_image=False,
+            progress_callback=update_progress,
+        )
+        return _build_quantum_efficiency_result(
+            target=target,
+            readout_amplitudes=measured_amplitudes,
+            dephasing_result=dephasing_result,
+            snr_result=snr_result,
+            plot=plot,
+            save_image=save_image,
+        )
+    finally:
+        progress.close()
 
 
 def readout_snr(
@@ -3234,6 +3266,7 @@ def quantum_efficiency_measurement(
     early_stop: bool = False,
     plot: bool | None = None,
     save_image: bool | None = None,
+    enable_tqdm: bool = True,
     **deprecated_options: Any,
 ) -> Result:
     """
@@ -3286,6 +3319,9 @@ def quantum_efficiency_measurement(
         Acquisition settings passed to the underlying measurements.
     plot, save_image
         Whether to display or save the generated figures.
+    enable_tqdm
+        Whether to display acquisition progress. The progress counts Ramsey
+        phase settings and ground/excited readout-state settings.
 
     Returns
     -------
@@ -3323,6 +3359,7 @@ def quantum_efficiency_measurement(
             early_stop=early_stop,
             plot=plot,
             save_image=save_image,
+            enable_tqdm=enable_tqdm,
         )
         for target in _normalize_targets(exp, targets)
     }
