@@ -19,7 +19,6 @@ from qubex.contrib.experiment.cpmg_noise_spectroscopy import (
     _make_frequency_plan,
     _n_pi_from_time_range,
     _plot_cpmg_decay,
-    _prepare_n_pi_values,
     _resolve_pi_pulse,
     _save_payload,
     cpmg_noise_spectroscopy,
@@ -147,28 +146,6 @@ def test_schedule_duration_contains_exact_cpmg_evolution_time() -> None:
     assert schedule.duration == pytest.approx(10.0 + 16 * 100.0 + 10.0)
 
 
-def test_n_pi_plan_applies_minimum_without_changing_values() -> None:
-    """Pulse-count planning should apply the minimum without an implicit upper bound."""
-    with pytest.warns(RuntimeWarning, match="sorted and duplicate"):
-        values = _prepare_n_pi_values(
-            [8, 16, 20, 20, 64, 512],
-            pattern="++++",
-            min_pi_pulses=16,
-        )
-
-    np.testing.assert_array_equal(values, [16, 20, 64, 512])
-
-
-def test_n_pi_plan_rejects_incomplete_sign_pattern() -> None:
-    """The +--+ pattern should reject pulse counts that do not complete a four-pulse cycle."""
-    with pytest.raises(ValueError, match="multiples of 4"):
-        _prepare_n_pi_values(
-            [16, 18, 20],
-            pattern="+--+",
-            min_pi_pulses=16,
-        )
-
-
 @pytest.mark.parametrize(
     ("pattern", "period", "times_ns", "expected"),
     [
@@ -187,6 +164,7 @@ def test_time_plan_rounds_to_nearest_complete_pattern_cycle(
         times_ns,
         center_spacing_ns=100.0,
         pattern=pattern,  # type: ignore[arg-type]
+        min_pi_pulses=16,
     )
 
     assert all(counts % period == 0)
@@ -388,9 +366,11 @@ def test_public_experiment_uses_time_based_defaults() -> None:
         realized_time_range,
         np.geomspace(200.0, 200_000.0, 31),
     )
-    assert result.data["n_pi_range"] == []
+    assert "requested_frequency_range" not in result.data
+    assert "n_pi_range" not in result.data
     assert result.data["metadata"]["min_pi_pulses"] == 4
     assert result.data["metadata"]["max_pulse_duty_ratio"] == 0.25
+    assert all("P_sem_values" not in record for record in result.data["fit_records"])
     assert all(min(record["n_pi_values"]) >= 4 for record in result.data["fit_records"])
 
 

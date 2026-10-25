@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from numbers import Integral
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -58,7 +58,7 @@ CPMGFitStatus = Literal[
     "optimizer_failed",
 ]
 AxisType = Literal["linear", "log"]
-
+_DisplayedMode = Literal["t2", "gamma2"]
 _DEFAULT_SAVE_DIR = "cpmg_noise_spectroscopy"
 _GRID_ATOL_NS = 1e-9
 _SCHEMA_VERSION = 2
@@ -82,13 +82,11 @@ class CPMGResultPayload(TypedDict):
     n_repeats: int
     schema_version: int
     frequency_range: list[float]
-    requested_frequency_range: list[float]
     realized_frequency_matrix: NDArray[np.float64]
     valid_frequency_mask: NDArray[np.bool_]
-    half_tau_range: list[float]  # First-target compatibility projection.
-    tau_spacing_list_ns: list[float]  # Legacy alias of half_tau_range.
+    half_tau_range: list[float]
+    tau_spacing_list_ns: list[float]
     time_range: list[float] | None
-    n_pi_range: list[int]  # Legacy schema-v2 field; empty for new runs.
     t2_matrix: NDArray[np.float64]
     t2_error_matrix: NDArray[np.float64]
     gamma2_matrix: NDArray[np.float64]
@@ -143,6 +141,74 @@ class _CPMGFitResult:
     relative_gamma_error: float = math.nan
     fit_method_used: str = "unweighted_least_squares"
     uncertainty_source: str = "residual_covariance"
+
+
+@dataclass(frozen=True)
+class _RepeatSummary:
+    """Repeat-aggregated decay rates for one quality group."""
+
+    gamma2: NDArray[np.float64]
+    errors: NDArray[np.float64]
+    counts: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class _MeasurementPlan:
+    """Target-specific pulse and timing plan for one CPMG run."""
+
+    targets: list[str]
+    requested_frequencies: NDArray[np.float64]
+    requested_times: NDArray[np.float64]
+    sampling_period: float
+    pi_pulses: dict[str, Waveform]
+    frequency_plans: list[list[_FrequencyPlan]]
+    n_pi_values: list[dict[int, NDArray[np.int64]]]
+
+
+@dataclass(frozen=True)
+class _AcquisitionOptions:
+    """Validated options used while acquiring and fitting CPMG data."""
+
+    n_repeats: int
+    n_shots: int
+    shot_interval: float
+    min_fit_points: int
+    frequency_order: Literal["random", "ascending"]
+    random_seed: int | None
+    pi_pulse_pattern: CPMGPattern
+    save_fit_images: bool
+    xaxis_type: AxisType
+    enable_tqdm: bool
+
+
+@dataclass
+class _AcquisitionData:
+    """Mutable numerical outputs populated during a CPMG run."""
+
+    t2: NDArray[np.float64]
+    t2_error: NDArray[np.float64]
+    gamma2: NDArray[np.float64]
+    gamma2_error: NDArray[np.float64]
+    r2: NDArray[np.float64]
+    realized_frequencies: NDArray[np.float64]
+    valid_frequencies: NDArray[np.bool_]
+    fit_records: list[dict[str, object]]
+    failed_fits: list[dict[str, object]]
+    acquisition_orders: list[list[list[int]]]
+
+
+@dataclass(frozen=True)
+class _PointMeasurement:
+    """Measured data and fit result for one target-frequency-repeat point."""
+
+    fit: _CPMGFitResult
+    frequency_ghz: float
+    record: dict[str, object]
+    times_ns: NDArray[np.float64]
+    probabilities: NDArray[np.float64]
+
+
+# Input normalization and pulse planning
 
 
 def _resolve_deprecated_alias(
@@ -491,60 +557,9 @@ def _make_frequency_plan(
     return plan
 
 
-def _default_frequency_range() -> NDArray[np.float64]:
-    """Return the default requested CPMG frequency grid in GHz."""
-    return _DEFAULT_FREQUENCY_RANGE.copy()
-
-
-def _default_time_range() -> NDArray[np.float64]:
-    """Return the default requested CPMG decay-time grid in ns."""
-    return _DEFAULT_TIME_RANGE.copy()
-
-
 def _pattern_period(pattern: CPMGPattern) -> int:
     """Return the pulse-count period required by a CPMG sign pattern."""
     return 4 if pattern == "+--+" else 2 if pattern == "+-+-" else 1
-
-
-def _prepare_n_pi_values(
-    values: ArrayLike,
-    *,
-    pattern: CPMGPattern,
-    min_pi_pulses: int,
-    warn_on_normalization: bool = True,
-) -> NDArray[np.int64]:
-    """Validate and filter derived CPMG pulse counts for one frequency."""
-    raw = np.asarray(values)
-    if raw.ndim != 1 or raw.size == 0:
-        raise ValueError("pi-pulse counts must be a non-empty one-dimensional array.")
-    try:
-        numeric = np.asarray(values, dtype=np.float64)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("pi-pulse counts must be integers.") from exc
-    if not np.all(np.isfinite(numeric)) or not np.all(numeric == np.floor(numeric)):
-        raise ValueError("pi-pulse counts must be finite integers.")
-    if np.any(numeric <= 0):
-        raise ValueError("pi-pulse counts must be positive integers.")
-    min_pi_pulses = _require_integer(
-        min_pi_pulses,
-        name="min_pi_pulses",
-        minimum=1,
-    )
-    unique = np.unique(numeric.astype(np.int64))
-    if warn_on_normalization and (
-        len(unique) != len(numeric) or not np.array_equal(unique, numeric)
-    ):
-        warnings.warn(
-            "Pi-pulse counts were sorted and duplicate values were removed.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-    period = _pattern_period(pattern)
-    if np.any(unique % period != 0):
-        raise ValueError(
-            f"Pi-pulse counts must be multiples of {period} for pattern {pattern!r}."
-        )
-    return unique[unique >= min_pi_pulses]
 
 
 def _n_pi_from_time_range(
@@ -552,6 +567,7 @@ def _n_pi_from_time_range(
     *,
     center_spacing_ns: float,
     pattern: CPMGPattern,
+    min_pi_pulses: int = 1,
 ) -> NDArray[np.int64]:
     """Round decay times directly to the nearest complete pattern cycles."""
     times = _as_non_empty_1d_array(
@@ -560,6 +576,11 @@ def _n_pi_from_time_range(
     )
     if not np.isfinite(center_spacing_ns) or center_spacing_ns <= 0:
         raise ValueError("center_spacing_ns must be finite and positive.")
+    min_pi_pulses = _require_integer(
+        min_pi_pulses,
+        name="min_pi_pulses",
+        minimum=1,
+    )
     period = _pattern_period(pattern)
     with np.errstate(over="ignore"):
         requested_cycles = times / center_spacing_ns / period
@@ -569,7 +590,10 @@ def _n_pi_from_time_range(
     ):
         raise ValueError("time_range produces pi-pulse counts outside int64 range.")
     counts = np.floor(requested_cycles + 0.5).astype(np.int64) * period
-    return np.unique(counts[counts > 0])
+    return np.unique(counts[counts >= min_pi_pulses])
+
+
+# Decay fitting
 
 
 def _decay_model_us(
@@ -752,7 +776,7 @@ def _fit_cpmg_decay(
 
     unresolved = "weak_decay" in flags or "unresolved_decay" in flags
     if unresolved:
-        fit_status = "unresolved_decay"
+        fit_status: CPMGFitStatus = "unresolved_decay"
         fit_message = "Decay is not resolved over the measured time range."
     elif flags:
         fit_status = "quality_warning"
@@ -792,9 +816,13 @@ def _fit_cpmg_decay(
 def _fit_result_record(result: _CPMGFitResult) -> dict[str, object]:
     """Convert a fit result to JSON-compatible metadata."""
     record = asdict(result)
-    covariance = result.covariance
-    record["covariance"] = covariance.tolist() if covariance is not None else None
+    record["covariance"] = (
+        result.covariance.tolist() if result.covariance is not None else None
+    )
     return record
+
+
+# Result serialization
 
 
 def _json_safe(value: object) -> object:
@@ -812,11 +840,7 @@ def _json_safe(value: object) -> object:
     return value
 
 
-def _save_payload(
-    *,
-    payload: CPMGResultPayload,
-    save_dir: Path,
-) -> None:
+def _save_payload(*, payload: CPMGResultPayload, save_dir: Path) -> None:
     """Save result metadata and numeric arrays."""
     save_dir.mkdir(parents=True, exist_ok=True)
     serializable: dict[str, object] = {
@@ -825,13 +849,9 @@ def _save_payload(
         "targets": payload["targets"],
         "n_repeats": payload["n_repeats"],
         "frequency_range": payload["frequency_range"],
-        "requested_frequency_range": payload.get(
-            "requested_frequency_range", payload["frequency_range"]
-        ),
         "half_tau_range": payload.get("half_tau_range", []),
         "tau_spacing_list_ns": payload.get("half_tau_range", []),
         "time_range": payload.get("time_range"),
-        "n_pi_range": payload.get("n_pi_range", []),
         "failed_fits": payload.get("failed_fits", []),
         "frequency_plans": payload.get("frequency_plans", []),
         "acquisition_orders": payload.get("acquisition_orders", []),
@@ -841,17 +861,16 @@ def _save_payload(
     }
     with (save_dir / "params.json").open("w", encoding="utf-8") as fp:
         json.dump(_json_safe(serializable), fp, indent=2, allow_nan=False)
-    np.save(save_dir / "t2_matrix.npy", payload["t2_matrix"])
-    np.save(save_dir / "t2_error_matrix.npy", payload["t2_error_matrix"])
-    np.save(save_dir / "r2_matrix.npy", payload["r2_matrix"])
     for name in (
+        "t2_matrix",
+        "t2_error_matrix",
+        "r2_matrix",
         "gamma2_matrix",
         "gamma2_error_matrix",
         "realized_frequency_matrix",
         "valid_frequency_mask",
     ):
-        if name in payload:
-            np.save(save_dir / f"{name}.npy", payload[name])
+        np.save(save_dir / f"{name}.npy", payload[name])
     with (save_dir / "fit_results.json").open("w", encoding="utf-8") as fp:
         json.dump(
             _json_safe(payload.get("fit_records", [])),
@@ -869,12 +888,12 @@ def _load_optional_matrix(
 ) -> NDArray[np.float64]:
     """Load a matrix or return an all-NaN matrix for older save directories."""
     path = save_dir / name
-    if path.exists():
-        matrix = np.asarray(np.load(path), dtype=np.float64)
-        if matrix.shape != shape:
-            raise ValueError(f"{name} has shape {matrix.shape}; expected {shape}.")
-        return matrix
-    return np.full(shape, np.nan, dtype=np.float64)
+    if not path.exists():
+        return np.full(shape, np.nan, dtype=np.float64)
+    matrix = np.asarray(np.load(path), dtype=np.float64)
+    if matrix.shape != shape:
+        raise ValueError(f"{name} has shape {matrix.shape}; expected {shape}.")
+    return matrix
 
 
 def _load_payload(save_dir: str | Path) -> CPMGResultPayload:
@@ -886,25 +905,27 @@ def _load_payload(save_dir: str | Path) -> CPMGResultPayload:
     half_tau_range = params.get("half_tau_range", params.get("tau_spacing_list_ns"))
     if half_tau_range is None:
         raise ValueError("params.json is missing `half_tau_range`.")
-
     schema_version = int(params.get("schema_version", 1))
     if schema_version not in (1, _SCHEMA_VERSION):
         raise ValueError(
             f"Unsupported CPMG save schema version {schema_version}; "
             f"expected 1 or {_SCHEMA_VERSION}."
         )
+
     frequency_range = [float(value) for value in params["frequency_range"]]
     n_targets = len(params["targets"])
+    n_repeats = int(params["n_repeats"])
     n_frequencies = len(frequency_range)
-    expected_shape = (n_targets, int(params["n_repeats"]), n_frequencies)
-    t2_matrix = np.asarray(np.load(directory / "t2_matrix.npy"), dtype=np.float64)
-    if t2_matrix.shape != expected_shape:
-        raise ValueError(
-            f"t2_matrix.npy has shape {t2_matrix.shape}; expected {expected_shape}."
-        )
+    result_shape = (n_targets, n_repeats, n_frequencies)
     frequency_shape = (n_targets, n_frequencies)
-    fit_results_path = directory / "fit_results.json"
+    t2_matrix = np.asarray(np.load(directory / "t2_matrix.npy"), dtype=np.float64)
+    if t2_matrix.shape != result_shape:
+        raise ValueError(
+            f"t2_matrix.npy has shape {t2_matrix.shape}; expected {result_shape}."
+        )
+
     fit_records: list[dict[str, object]] = []
+    fit_results_path = directory / "fit_results.json"
     if fit_results_path.exists():
         with fit_results_path.open("r", encoding="utf-8") as fp:
             loaded_records = json.load(fp)
@@ -918,12 +939,8 @@ def _load_payload(save_dir: str | Path) -> CPMGResultPayload:
         "schema_version": schema_version,
         "timestamp": str(params["timestamp"]),
         "targets": list(params["targets"]),
-        "n_repeats": int(params["n_repeats"]),
+        "n_repeats": n_repeats,
         "frequency_range": frequency_range,
-        "requested_frequency_range": [
-            float(value)
-            for value in params.get("requested_frequency_range", frequency_range)
-        ],
         "half_tau_range": [
             float(value) if value is not None else math.nan for value in half_tau_range
         ],
@@ -935,32 +952,21 @@ def _load_payload(save_dir: str | Path) -> CPMGResultPayload:
             if params.get("time_range") is not None
             else None
         ),
-        "n_pi_range": [int(value) for value in params.get("n_pi_range", [])],
         "t2_matrix": t2_matrix,
         "t2_error_matrix": _load_optional_matrix(
-            directory,
-            "t2_error_matrix.npy",
-            shape=t2_matrix.shape,
+            directory, "t2_error_matrix.npy", shape=result_shape
         ),
         "r2_matrix": _load_optional_matrix(
-            directory,
-            "r2_matrix.npy",
-            shape=t2_matrix.shape,
+            directory, "r2_matrix.npy", shape=result_shape
         ),
         "gamma2_matrix": _load_optional_matrix(
-            directory,
-            "gamma2_matrix.npy",
-            shape=t2_matrix.shape,
+            directory, "gamma2_matrix.npy", shape=result_shape
         ),
         "gamma2_error_matrix": _load_optional_matrix(
-            directory,
-            "gamma2_error_matrix.npy",
-            shape=t2_matrix.shape,
+            directory, "gamma2_error_matrix.npy", shape=result_shape
         ),
         "realized_frequency_matrix": _load_optional_matrix(
-            directory,
-            "realized_frequency_matrix.npy",
-            shape=frequency_shape,
+            directory, "realized_frequency_matrix.npy", shape=frequency_shape
         ),
         "valid_frequency_mask": np.ones(frequency_shape, dtype=np.bool_),
         "fit_records": fit_records,
@@ -982,21 +988,47 @@ def _load_payload(save_dir: str | Path) -> CPMGResultPayload:
                 f"expected {frequency_shape}."
             )
         payload["valid_frequency_mask"] = valid_mask
-    if payload["schema_version"] == 1:
-        common = np.asarray(frequency_range, dtype=np.float64)
-        payload["realized_frequency_matrix"] = np.tile(common, (n_targets, 1))
-        finite_t2 = np.isfinite(t2_matrix) & (t2_matrix > 0)
-        gamma = np.full_like(t2_matrix, np.nan)
-        gamma[finite_t2] = 1.0 / t2_matrix[finite_t2]
-        payload["gamma2_matrix"] = gamma
-        t2_error = payload["t2_error_matrix"]
-        finite_error = finite_t2 & np.isfinite(t2_error) & (t2_error >= 0)
-        gamma_error = np.full_like(t2_matrix, np.nan)
-        gamma_error[finite_error] = (
-            t2_error[finite_error] / t2_matrix[finite_error] ** 2
+    if schema_version == 1:
+        payload["realized_frequency_matrix"] = np.tile(
+            np.asarray(frequency_range, dtype=np.float64), (n_targets, 1)
         )
+        gamma, gamma_error = _derived_gamma_matrices(payload)
+        payload["gamma2_matrix"] = gamma
         payload["gamma2_error_matrix"] = gamma_error
     return payload
+
+
+def _result_matrix(
+    payload: Mapping[str, object],
+    name: str,
+    *,
+    shape: tuple[int, ...],
+) -> NDArray[np.float64]:
+    """Return one validated result matrix, defaulting to all NaNs."""
+    value = payload.get(name)
+    matrix = (
+        np.full(shape, np.nan, dtype=np.float64)
+        if value is None
+        else np.asarray(value, dtype=np.float64)
+    )
+    if matrix.shape != shape:
+        raise ValueError(f"{name} has shape {matrix.shape}; expected {shape}.")
+    return matrix
+
+
+def _derived_gamma_matrices(
+    payload: Mapping[str, object],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Derive decay-rate matrices from T2 values and uncertainties."""
+    t2 = np.asarray(payload["t2_matrix"], dtype=np.float64)
+    t2_error = np.asarray(payload["t2_error_matrix"], dtype=np.float64)
+    finite_t2 = np.isfinite(t2) & (t2 > 0)
+    gamma = np.full_like(t2, np.nan)
+    gamma[finite_t2] = 1.0 / t2[finite_t2]
+    finite_error = finite_t2 & np.isfinite(t2_error) & (t2_error >= 0)
+    gamma_error = np.full_like(t2, np.nan)
+    gamma_error[finite_error] = t2_error[finite_error] / t2[finite_error] ** 2
+    return gamma, gamma_error
 
 
 def _payload_from_result_or_mapping(
@@ -1005,7 +1037,6 @@ def _payload_from_result_or_mapping(
     """Normalize supported in-memory result containers to one payload type."""
     source = result.data if isinstance(result, Result) else result
     payload = dict(source)
-
     if "t2_matrix" not in payload and "data" in payload:
         payload["t2_matrix"] = payload["data"]
     if "data" not in payload and "t2_matrix" in payload:
@@ -1015,7 +1046,7 @@ def _payload_from_result_or_mapping(
     if "tau_spacing_list_ns" not in payload and "half_tau_range" in payload:
         payload["tau_spacing_list_ns"] = payload["half_tau_range"]
 
-    required_keys = {
+    required = {
         "timestamp",
         "targets",
         "n_repeats",
@@ -1025,103 +1056,76 @@ def _payload_from_result_or_mapping(
         "t2_matrix",
         "data",
     }
-    missing = sorted(required_keys.difference(payload))
+    missing = sorted(required.difference(payload))
     if missing:
         raise ValueError(f"result is missing CPMG payload key(s): {missing}.")
 
-    targets = list(payload["targets"])  # type: ignore[arg-type]
-    frequencies = list(payload["frequency_range"])  # type: ignore[arg-type]
-    n_repeats = int(payload["n_repeats"])  # type: ignore[arg-type]
+    targets = list(cast(Collection[str], payload["targets"]))
+    frequencies = np.asarray(
+        cast(ArrayLike, payload["frequency_range"]), dtype=np.float64
+    ).tolist()
+    n_repeats = int(cast(int, payload["n_repeats"]))
+    result_shape = (len(targets), n_repeats, len(frequencies))
+    frequency_shape = (len(targets), len(frequencies))
     payload["targets"] = targets
     payload["frequency_range"] = frequencies
     payload["n_repeats"] = n_repeats
-    n_targets = len(targets)
-    n_frequencies = len(frequencies)
-    result_shape = (n_targets, n_repeats, n_frequencies)
-    frequency_shape = (n_targets, n_frequencies)
-
-    def result_matrix(name: str, *, default: float = math.nan) -> NDArray[np.float64]:
-        value = payload.get(name)
-        matrix = (
-            np.full(result_shape, default, dtype=np.float64)
-            if value is None
-            else np.asarray(value, dtype=np.float64)
-        )
-        if matrix.shape != result_shape:
-            raise ValueError(
-                f"{name} has shape {matrix.shape}; expected {result_shape}."
-            )
-        return matrix
-
-    t2_matrix = result_matrix("t2_matrix")
-    t2_error_matrix = result_matrix("t2_error_matrix")
-    r2_matrix = result_matrix("r2_matrix")
-    payload.setdefault("failed_fits", [])
-    payload.setdefault("save_dir", None)
+    payload["t2_matrix"] = _result_matrix(payload, "t2_matrix", shape=result_shape)
+    payload["t2_error_matrix"] = _result_matrix(
+        payload, "t2_error_matrix", shape=result_shape
+    )
+    payload["r2_matrix"] = _result_matrix(payload, "r2_matrix", shape=result_shape)
     payload.setdefault("schema_version", 1)
     payload.setdefault("time_range", None)
-    payload.setdefault("requested_frequency_range", payload["frequency_range"])
-    if "realized_frequency_matrix" not in payload:
-        payload["realized_frequency_matrix"] = np.tile(
-            np.asarray(payload["frequency_range"], dtype=np.float64),
-            (n_targets, 1),
-        )
-    payload.setdefault(
-        "valid_frequency_mask",
-        np.ones((n_targets, n_frequencies), dtype=np.bool_),
-    )
-    if "gamma2_matrix" not in payload:
-        gamma = np.full_like(t2_matrix, np.nan)
-        finite = np.isfinite(t2_matrix) & (t2_matrix > 0)
-        gamma[finite] = 1.0 / t2_matrix[finite]
-        payload["gamma2_matrix"] = gamma
-    if "gamma2_error_matrix" not in payload:
-        gamma_error = np.full_like(t2_matrix, np.nan)
-        finite = (
-            np.isfinite(t2_matrix)
-            & (t2_matrix > 0)
-            & np.isfinite(t2_error_matrix)
-            & (t2_error_matrix >= 0)
-        )
-        gamma_error[finite] = t2_error_matrix[finite] / t2_matrix[finite] ** 2
-        payload["gamma2_error_matrix"] = gamma_error
+    payload.setdefault("failed_fits", [])
+    payload.setdefault("save_dir", None)
     payload.setdefault("fit_records", [])
     payload.setdefault("frequency_plans", [])
     payload.setdefault("acquisition_orders", [])
     payload.setdefault("metadata", {})
-    payload.setdefault("n_pi_range", [])
     payload.setdefault("random_seed", 0)
     payload.setdefault("random_seed_requested", None)
-    payload["t2_matrix"] = t2_matrix
-    payload["t2_error_matrix"] = t2_error_matrix
-    payload["r2_matrix"] = r2_matrix
-    payload["gamma2_matrix"] = result_matrix("gamma2_matrix")
-    payload["gamma2_error_matrix"] = result_matrix("gamma2_error_matrix")
+    payload.setdefault(
+        "realized_frequency_matrix",
+        np.tile(np.asarray(frequencies, dtype=np.float64), (len(targets), 1)),
+    )
+    payload.setdefault("valid_frequency_mask", np.ones(frequency_shape, dtype=np.bool_))
+    derived_gamma, derived_gamma_error = _derived_gamma_matrices(payload)
+    payload.setdefault("gamma2_matrix", derived_gamma)
+    payload.setdefault("gamma2_error_matrix", derived_gamma_error)
+    payload["gamma2_matrix"] = _result_matrix(
+        payload, "gamma2_matrix", shape=result_shape
+    )
+    payload["gamma2_error_matrix"] = _result_matrix(
+        payload, "gamma2_error_matrix", shape=result_shape
+    )
     realized = np.asarray(payload["realized_frequency_matrix"], dtype=np.float64)
     if realized.shape != frequency_shape:
         raise ValueError(
             "realized_frequency_matrix has shape "
             f"{realized.shape}; expected {frequency_shape}."
         )
-    payload["realized_frequency_matrix"] = realized
-    valid_mask = np.asarray(payload["valid_frequency_mask"], dtype=np.bool_)
-    if valid_mask.shape != frequency_shape:
+    valid = np.asarray(payload["valid_frequency_mask"], dtype=np.bool_)
+    if valid.shape != frequency_shape:
         raise ValueError(
-            f"valid_frequency_mask has shape {valid_mask.shape}; "
-            f"expected {frequency_shape}."
+            f"valid_frequency_mask has shape {valid.shape}; expected {frequency_shape}."
         )
-    payload["valid_frequency_mask"] = valid_mask
-    payload["data"] = t2_matrix
-    return payload  # type: ignore[return-value]
+    payload["realized_frequency_matrix"] = realized
+    payload["valid_frequency_mask"] = valid
+    payload["data"] = payload["t2_matrix"]
+    return cast(CPMGResultPayload, payload)
 
 
-def _resolve_plot_deprecated_options(
+# Result visualization
+
+
+def _resolve_plot_options(
     *,
     show_t1: bool,
     save_image: bool | None,
     deprecated_options: dict[str, Any],
-) -> tuple[bool, bool | None]:
-    """Resolve plotting aliases from the first contrib implementation."""
+) -> tuple[bool, bool]:
+    """Resolve plotting defaults and aliases from the first contrib API."""
     if "show_T1" in deprecated_options:
         legacy_show_t1 = deprecated_options.pop("show_T1")
         if legacy_show_t1 is not None:
@@ -1135,49 +1139,293 @@ def _resolve_plot_deprecated_options(
                     "`show_T1` conflicts with `show_t1`. Provide only `show_t1`."
                 )
             show_t1 = bool(legacy_show_t1)
-    save_image = _resolve_deprecated_alias(
-        options=deprecated_options,
-        deprecated_name="save_fig",
-        replacement_name="save_image",
-        current_value=save_image,
-        function_name="plot_cpmg_results",
-    )
+    if "save_fig" in deprecated_options:
+        legacy_save_image = deprecated_options.pop("save_fig")
+        if legacy_save_image is not None:
+            warnings.warn(
+                "`save_fig` is deprecated in `plot_cpmg_results`; use `save_image`.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            if save_image is not None and save_image != legacy_save_image:
+                raise ValueError(
+                    "`save_fig` conflicts with `save_image`. Provide only `save_image`."
+                )
+            save_image = bool(legacy_save_image)
     if deprecated_options:
         joined = ", ".join(f"`{key}`" for key in sorted(deprecated_options))
         raise TypeError(f"Unexpected keyword argument(s): {joined}")
-    return show_t1, save_image
+    return show_t1, False if save_image is None else save_image
 
 
-def _summarize_gamma_repeats(
-    gamma_values: NDArray[np.float64],
-    gamma_errors: NDArray[np.float64],
-    selected_repeats: NDArray[np.bool_],
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.int64]]:
-    """Aggregate selected repeat fits without mixing quality classifications."""
-    n_frequencies = gamma_values.shape[1]
-    averages = np.full(n_frequencies, np.nan, dtype=np.float64)
-    summary_errors = np.full(n_frequencies, np.nan, dtype=np.float64)
-    repeat_counts = np.zeros(n_frequencies, dtype=np.int64)
-    for frequency_index in range(n_frequencies):
-        values = gamma_values[:, frequency_index]
-        included = (
-            selected_repeats[:, frequency_index] & np.isfinite(values) & (values > 0)
-        )
-        finite_values = values[included]
-        repeat_counts[frequency_index] = len(finite_values)
-        if len(finite_values) == 0:
+def _resolve_plot_source(
+    result: Result | Mapping[str, object] | None,
+    save_dir: str | Path | None,
+) -> tuple[CPMGResultPayload, Path | None]:
+    """Load and normalize one plotting payload and its output directory."""
+    if result is None:
+        if save_dir is None:
+            raise ValueError("Either result or save_dir must be provided.")
+        return _load_payload(save_dir), Path(save_dir)
+    payload = _payload_from_result_or_mapping(result)
+    directory = Path(save_dir) if save_dir is not None else None
+    if directory is None and payload["save_dir"] is not None:
+        directory = Path(payload["save_dir"])
+    return payload, directory
+
+
+def _quality_groups(
+    payload: CPMGResultPayload,
+    *,
+    target: str,
+    gamma2: NDArray[np.float64],
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_], list[set[str]]]:
+    """Classify repeat fits for one target as reliable or warning-quality."""
+    n_frequencies = gamma2.shape[1]
+    reliable = np.isfinite(gamma2) & (gamma2 > 0)
+    warning = np.zeros_like(reliable, dtype=np.bool_)
+    warning_flags: list[set[str]] = [set() for _ in range(n_frequencies)]
+    for record in payload["fit_records"]:
+        frequency_index = record.get("requested_frequency_index")
+        repeat_index = record.get("repeat_index")
+        flags = record.get("quality_flags")
+        is_warning = bool(flags) or record.get("fit_status") not in (None, "ok")
+        if (
+            record.get("target") != target
+            or not is_warning
+            or not isinstance(frequency_index, int)
+            or not isinstance(repeat_index, int)
+            or not 0 <= frequency_index < n_frequencies
+            or not 0 <= repeat_index < gamma2.shape[0]
+        ):
             continue
-        averages[frequency_index] = float(np.mean(finite_values))
-        if len(finite_values) >= 2:
-            summary_errors[frequency_index] = float(
-                np.std(finite_values, ddof=1) / np.sqrt(len(finite_values))
+        reliable[repeat_index, frequency_index] = False
+        warning[repeat_index, frequency_index] = True
+        if isinstance(flags, (list, tuple)):
+            warning_flags[frequency_index].update(str(flag) for flag in flags)
+        elif flags:
+            warning_flags[frequency_index].add(str(flags))
+    return reliable, warning, warning_flags
+
+
+def _summarize_repeats(
+    gamma2: NDArray[np.float64],
+    gamma2_errors: NDArray[np.float64],
+    selected: NDArray[np.bool_],
+) -> _RepeatSummary:
+    """Aggregate selected repeat fits without mixing quality groups."""
+    n_frequencies = gamma2.shape[1]
+    averages = np.full(n_frequencies, np.nan, dtype=np.float64)
+    errors = np.full(n_frequencies, np.nan, dtype=np.float64)
+    counts = np.zeros(n_frequencies, dtype=np.int64)
+    for frequency_index in range(n_frequencies):
+        included = (
+            selected[:, frequency_index]
+            & np.isfinite(gamma2[:, frequency_index])
+            & (gamma2[:, frequency_index] > 0)
+        )
+        values = gamma2[included, frequency_index]
+        counts[frequency_index] = len(values)
+        if len(values) == 0:
+            continue
+        averages[frequency_index] = float(np.mean(values))
+        if len(values) >= 2:
+            errors[frequency_index] = float(
+                np.std(values, ddof=1) / np.sqrt(len(values))
             )
             continue
-        errors = gamma_errors[included, frequency_index]
-        finite_errors = errors[np.isfinite(errors) & (errors >= 0)]
-        if len(finite_errors):
-            summary_errors[frequency_index] = float(finite_errors[0])
-    return averages, summary_errors, repeat_counts
+        candidates = gamma2_errors[included, frequency_index]
+        candidates = candidates[np.isfinite(candidates) & (candidates >= 0)]
+        if len(candidates):
+            errors[frequency_index] = float(candidates[0])
+    return _RepeatSummary(averages, errors, counts)
+
+
+def _display_values(
+    summary: _RepeatSummary,
+    mode: _DisplayedMode,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Convert decay-rate summaries to the requested display units."""
+    if mode == "gamma2":
+        return summary.gamma2 * 1e3, summary.errors * 1e3
+    finite = np.isfinite(summary.gamma2) & (summary.gamma2 > 0)
+    values = np.full_like(summary.gamma2, np.nan)
+    errors = np.full_like(summary.errors, np.nan)
+    values[finite] = 1.0 / summary.gamma2[finite] * 1e-3
+    errors[finite] = summary.errors[finite] / summary.gamma2[finite] ** 2 * 1e-3
+    return values, errors
+
+
+def _add_target_traces(
+    figure: go.Figure,
+    *,
+    target: str,
+    frequencies_mhz: NDArray[np.float64],
+    gamma2: NDArray[np.float64],
+    gamma2_errors: NDArray[np.float64],
+    payload: CPMGResultPayload,
+    mode: CPMGSummaryMode,
+) -> None:
+    """Add reliable and warning-quality summary traces for one target."""
+    reliable, warning, warning_flags = _quality_groups(
+        payload, target=target, gamma2=gamma2
+    )
+    summaries = {
+        "reliable": _summarize_repeats(gamma2, gamma2_errors, reliable),
+        "warning": _summarize_repeats(gamma2, gamma2_errors, warning),
+    }
+    displayed_modes: tuple[_DisplayedMode, ...] = (
+        ("t2", "gamma2") if mode == "both" else (mode,)
+    )
+    plot_indices = np.argsort(frequencies_mhz, kind="stable")
+    for displayed_mode in displayed_modes:
+        for quality, summary in summaries.items():
+            finite = np.isfinite(summary.gamma2) & (summary.gamma2 > 0)
+            if not np.any(finite):
+                continue
+            values, errors = _display_values(summary, displayed_mode)
+            base_name = (
+                f"{target} (T2)"
+                if mode == "both" and displayed_mode == "t2"
+                else f"{target} (Gamma2)"
+                if displayed_mode == "gamma2"
+                else target
+            )
+            value_hover = (
+                "T2_CPMG=%{y:.6g} us<br>"
+                if displayed_mode == "t2"
+                else "Gamma_2_CPMG=%{y:.6g} 1/us<br>"
+            )
+            yaxis = "y2" if mode == "both" and displayed_mode == "gamma2" else "y"
+            if quality == "reliable":
+                figure.add_trace(
+                    go.Scatter(
+                        x=frequencies_mhz[plot_indices],
+                        y=values[plot_indices],
+                        mode="markers+lines",
+                        name=base_name,
+                        error_y={
+                            "type": "data",
+                            "array": errors[plot_indices],
+                            "visible": bool(np.any(np.isfinite(errors))),
+                        },
+                        marker={"symbol": "circle"},
+                        customdata=summary.counts[plot_indices],
+                        hovertemplate=(
+                            "frequency=%{x:.6g} MHz<br>"
+                            f"{value_hover}"
+                            "reliable repeats=%{customdata}"
+                            "<extra>%{fullData.name}</extra>"
+                        ),
+                        connectgaps=False,
+                        yaxis=yaxis,
+                    )
+                )
+                continue
+            warning_indices = plot_indices[finite[plot_indices]]
+            flag_labels = [
+                ", ".join(sorted(warning_flags[index])) or "fit status warning"
+                for index in warning_indices
+            ]
+            customdata = np.empty((len(warning_indices), 2), dtype=object)
+            customdata[:, 0] = summary.counts[warning_indices]
+            customdata[:, 1] = flag_labels
+            figure.add_trace(
+                go.Scatter(
+                    x=frequencies_mhz[warning_indices],
+                    y=values[warning_indices],
+                    mode="markers",
+                    name=f"{base_name} (quality warning)",
+                    error_y={
+                        "type": "data",
+                        "array": errors[warning_indices],
+                        "visible": bool(np.any(np.isfinite(errors[warning_indices]))),
+                    },
+                    marker={
+                        "symbol": "diamond-open",
+                        "size": 10,
+                        "color": "#d62728",
+                        "line": {"width": 2},
+                    },
+                    customdata=customdata,
+                    hovertemplate=(
+                        "frequency=%{x:.6g} MHz<br>"
+                        f"{value_hover}"
+                        "warning repeats=%{customdata[0]}<br>"
+                        "quality flags=%{customdata[1]}"
+                        "<extra>%{fullData.name}</extra>"
+                    ),
+                    yaxis=yaxis,
+                )
+            )
+
+
+def _add_t1_reference(figure: go.Figure, exp: Experiment, target: str) -> None:
+    """Add a target's `2*T1` reference when calibration data are available."""
+    try:
+        t1_values = exp.ctx.system_manager.config_loader.load_param_data("t1")
+        if target in t1_values:
+            figure.add_hline(
+                y=2 * float(t1_values[target]) * 1e-3,
+                line_dash="dash",
+                line_color="gray",
+                annotation_text=f"2*T1 of {target}",
+                annotation_position="top left",
+            )
+    except Exception as exc:
+        warnings.warn(
+            f"Could not load T1 reference for {target}: {exc}",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+
+def _configure_summary_layout(
+    figure: go.Figure,
+    *,
+    payload: CPMGResultPayload,
+    mode: CPMGSummaryMode,
+) -> None:
+    """Apply shared axes, legend, and title settings to a summary figure."""
+    yaxis_title = (
+        "T2_CPMG = 1 / mean(Gamma_2) (us)"
+        if mode in ("t2", "both")
+        else "Mean Gamma_2_CPMG (1/us)"
+    )
+    figure.update_layout(
+        title={
+            "text": "CPMG Noise Spectroscopy",
+            "subtitle": {
+                "text": (
+                    f"timestamp: {payload['timestamp']}, "
+                    f"repetition: {payload['n_repeats']} times"
+                )
+            },
+        },
+        xaxis={"title": "Effective CPMG Frequency (MHz)", "showgrid": True},
+        yaxis={"title": yaxis_title, "showgrid": True, "rangemode": "tozero"},
+        legend={
+            "x": 1.12 if mode == "both" else 1.02,
+            "xanchor": "left",
+            "y": 1.0,
+            "yanchor": "top",
+        },
+        margin={"r": 200 if mode == "both" else 140},
+        xaxis_type="linear",
+        yaxis_type="linear",
+        width=1000,
+        height=600,
+    )
+    if mode == "both":
+        figure.update_layout(
+            yaxis2={
+                "title": "Mean Gamma_2_CPMG (1/us)",
+                "overlaying": "y",
+                "side": "right",
+                "showgrid": False,
+                "rangemode": "tozero",
+            }
+        )
 
 
 def plot_cpmg_results(
@@ -1203,24 +1451,19 @@ def plot_cpmg_results(
     exp
         Experiment instance used to load optional T1 reference values.
     result
-        In-memory result returned by `cpmg_noise_spectroscopy`, or a
-        mapping with the same payload keys.
+        In-memory result returned by `cpmg_noise_spectroscopy`, or a mapping
+        with the same payload keys.
     save_dir
-        Directory containing `params.json` and saved matrix files. When
-        `result` is also provided, this directory is only used for saving the
-        summary image.
+        Directory containing saved result files, or an output directory when
+        `result` is provided.
     mode
-        Summary mode. Use `"t2"` for the inverse of the repeat-averaged
-        decay rate in us, `"gamma2"` for that decay rate in `1/us`, or
-        `"both"` to display both quantities on separate y-axes. Defaults to
-        `"both"`.
+        Summary mode: `"t2"`, `"gamma2"`, or `"both"`. Defaults to `"both"`.
     show_t1
-        Overlay `2*T1` references when plotting `mode="t2"` or `mode="both"`.
-        Defaults to `False`.
+        Whether to overlay `2*T1` references. Defaults to `False`.
     plot
         Whether to display the figure. Defaults to `True`.
     save_image
-        Whether to save the summary figure in `save_dir`. Defaults to `False`.
+        Whether to save the summary figure. Defaults to `False`.
 
     Returns
     -------
@@ -1232,17 +1475,13 @@ def plot_cpmg_results(
     ValueError
         Raised when the mode, input source, or result payload is invalid.
     """
-    show_t1, save_image = _resolve_plot_deprecated_options(
+    show_t1, save_image = _resolve_plot_options(
         show_t1=show_t1,
         save_image=save_image,
         deprecated_options=deprecated_options,
     )
-    if mode is None:
-        mode = "both"
-    if plot is None:
-        plot = True
-    if save_image is None:
-        save_image = False
+    mode = "both" if mode is None else mode
+    plot = True if plot is None else plot
     if mode not in ("t2", "gamma2", "both"):
         raise ValueError("mode must be 't2', 'gamma2', or 'both'.")
     if mode == "gamma2" and show_t1:
@@ -1253,224 +1492,26 @@ def plot_cpmg_results(
         )
         show_t1 = False
 
-    if result is not None:
-        payload = _payload_from_result_or_mapping(result)
-        directory = Path(save_dir) if save_dir is not None else None
-        if directory is None and payload["save_dir"] is not None:
-            directory = Path(payload["save_dir"])
-    elif save_dir is not None:
-        payload = _load_payload(save_dir)
-        directory = Path(save_dir)
-    else:
-        raise ValueError("Either result or save_dir must be provided.")
-
-    targets = payload["targets"]
-    if len(targets) == 0:
+    payload, directory = _resolve_plot_source(result, save_dir)
+    if not payload["targets"]:
         raise ValueError("result contains no targets.")
-
-    realized_frequencies = np.asarray(
-        payload["realized_frequency_matrix"], dtype=np.float64
-    )
-    gamma_matrix = np.asarray(payload["gamma2_matrix"], dtype=np.float64)
-    gamma_error_matrix = np.asarray(payload["gamma2_error_matrix"], dtype=np.float64)
-    yaxis_title = (
-        "T2_CPMG = 1 / mean(Gamma_2) (us)"
-        if mode in ("t2", "both")
-        else "Mean Gamma_2_CPMG (1/us)"
-    )
-    displayed_modes: tuple[Literal["t2", "gamma2"], ...] = (
-        ("t2", "gamma2") if mode == "both" else (mode,)
-    )
-
+    realized = np.asarray(payload["realized_frequency_matrix"], dtype=np.float64)
+    gamma2 = np.asarray(payload["gamma2_matrix"], dtype=np.float64)
+    gamma2_errors = np.asarray(payload["gamma2_error_matrix"], dtype=np.float64)
     figure = viz.make_figure()
-    for target_index, target in enumerate(targets):
-        frequencies_mhz = realized_frequencies[target_index] * 1e3
-        n_frequencies = gamma_matrix.shape[2]
-        target_gamma = gamma_matrix[target_index]
-        target_gamma_errors = gamma_error_matrix[target_index]
-        reliable_repeats = np.isfinite(target_gamma) & (target_gamma > 0)
-        warning_repeats = np.zeros_like(reliable_repeats, dtype=np.bool_)
-        warning_flags: list[set[str]] = [set() for _ in range(n_frequencies)]
-        for record in payload["fit_records"]:
-            frequency_index = record.get("requested_frequency_index")
-            repeat_index = record.get("repeat_index")
-            flags = record.get("quality_flags")
-            is_warning = bool(flags) or record.get("fit_status") not in (None, "ok")
-            if (
-                record.get("target") != target
-                or not is_warning
-                or not isinstance(frequency_index, int)
-                or not isinstance(repeat_index, int)
-                or not 0 <= frequency_index < n_frequencies
-                or not 0 <= repeat_index < target_gamma.shape[0]
-            ):
-                continue
-            reliable_repeats[repeat_index, frequency_index] = False
-            warning_repeats[repeat_index, frequency_index] = True
-            if isinstance(flags, (list, tuple)):
-                warning_flags[frequency_index].update(str(flag) for flag in flags)
-            elif flags:
-                warning_flags[frequency_index].add(str(flags))
-
-        summaries = {
-            "reliable": _summarize_gamma_repeats(
-                target_gamma,
-                target_gamma_errors,
-                reliable_repeats,
-            ),
-            "warning": _summarize_gamma_repeats(
-                target_gamma,
-                target_gamma_errors,
-                warning_repeats,
-            ),
-        }
-
-        for displayed_mode in displayed_modes:
-            for quality, (
-                gamma_average,
-                gamma_summary_error,
-                repeat_counts,
-            ) in summaries.items():
-                finite = np.isfinite(gamma_average) & (gamma_average > 0)
-                if not np.any(finite):
-                    continue
-                if displayed_mode == "t2":
-                    y_values = np.full(n_frequencies, np.nan, dtype=np.float64)
-                    y_errors = np.full(n_frequencies, np.nan, dtype=np.float64)
-                    y_values[finite] = 1.0 / gamma_average[finite] * 1e-3
-                    y_errors[finite] = (
-                        gamma_summary_error[finite] / gamma_average[finite] ** 2 * 1e-3
-                    )
-                    base_name = f"{target} (T2)" if mode == "both" else target
-                    value_hover = "T2_CPMG=%{y:.6g} us<br>"
-                else:
-                    y_values = gamma_average * 1e3
-                    y_errors = gamma_summary_error * 1e3
-                    base_name = f"{target} (Gamma2)"
-                    value_hover = "Gamma_2_CPMG=%{y:.6g} 1/us<br>"
-
-                yaxis = "y2" if mode == "both" and displayed_mode == "gamma2" else "y"
-                if quality == "reliable":
-                    figure.add_trace(
-                        go.Scatter(
-                            x=frequencies_mhz,
-                            y=y_values,
-                            mode="markers+lines",
-                            name=base_name,
-                            error_y={
-                                "type": "data",
-                                "array": y_errors,
-                                "visible": bool(np.any(np.isfinite(y_errors))),
-                            },
-                            marker={"symbol": "circle"},
-                            customdata=repeat_counts,
-                            hovertemplate=(
-                                "frequency=%{x:.6g} MHz<br>"
-                                f"{value_hover}"
-                                "reliable repeats=%{customdata}"
-                                "<extra>%{fullData.name}</extra>"
-                            ),
-                            connectgaps=False,
-                            yaxis=yaxis,
-                        )
-                    )
-                    continue
-
-                warning_indices = np.flatnonzero(finite)
-                flag_labels = [
-                    ", ".join(sorted(warning_flags[index])) or "fit status warning"
-                    for index in warning_indices
-                ]
-                customdata = np.column_stack(
-                    (repeat_counts[warning_indices], flag_labels)
-                )
-                figure.add_trace(
-                    go.Scatter(
-                        x=frequencies_mhz[warning_indices],
-                        y=y_values[warning_indices],
-                        mode="markers",
-                        name=f"{base_name} (quality warning)",
-                        error_y={
-                            "type": "data",
-                            "array": y_errors[warning_indices],
-                            "visible": bool(
-                                np.any(np.isfinite(y_errors[warning_indices]))
-                            ),
-                        },
-                        marker={
-                            "symbol": "diamond-open",
-                            "size": 10,
-                            "color": "#d62728",
-                            "line": {"width": 2},
-                        },
-                        customdata=customdata,
-                        hovertemplate=(
-                            "frequency=%{x:.6g} MHz<br>"
-                            f"{value_hover}"
-                            "warning repeats=%{customdata[0]}<br>"
-                            "quality flags=%{customdata[1]}"
-                            "<extra>%{fullData.name}</extra>"
-                        ),
-                        yaxis=yaxis,
-                    )
-                )
-
-        if show_t1:
-            try:
-                t1_values = exp.ctx.system_manager.config_loader.load_param_data("t1")
-                if target in t1_values:
-                    figure.add_hline(
-                        y=2 * float(t1_values[target]) * 1e-3,
-                        line_dash="dash",
-                        line_color="gray",
-                        annotation_text=f"2*T1 of {target}",
-                        annotation_position="top left",
-                    )
-            except Exception as exc:
-                warnings.warn(
-                    f"Could not load T1 reference for {target}: {exc}",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-
-    figure.update_layout(
-        title=dict(
-            text="CPMG Noise Spectroscopy",
-            subtitle=dict(
-                text=(
-                    f"timestamp: {payload['timestamp']}, "
-                    f"repetition: {payload['n_repeats']} times"
-                )
-            ),
-        ),
-        xaxis=dict(
-            title="Effective CPMG Frequency (MHz)",
-            tick0=0,
-            showgrid=True,
-        ),
-        yaxis=dict(title=yaxis_title, showgrid=True, rangemode="tozero"),
-        legend=dict(
-            x=1.12 if mode == "both" else 1.02,
-            xanchor="left",
-            y=1.0,
-            yanchor="top",
-        ),
-        margin=dict(r=200 if mode == "both" else 140),
-        xaxis_type="linear",
-        yaxis_type="linear",
-        width=1000,
-        height=600,
-    )
-    if mode == "both":
-        figure.update_layout(
-            yaxis2=dict(
-                title="Mean Gamma_2_CPMG (1/us)",
-                overlaying="y",
-                side="right",
-                showgrid=False,
-                rangemode="tozero",
-            )
+    for target_index, target in enumerate(payload["targets"]):
+        _add_target_traces(
+            figure,
+            target=target,
+            frequencies_mhz=realized[target_index] * 1e3,
+            gamma2=gamma2[target_index],
+            gamma2_errors=gamma2_errors[target_index],
+            payload=payload,
+            mode=mode,
         )
+        if show_t1:
+            _add_t1_reference(figure, exp, target)
+    _configure_summary_layout(figure, payload=payload, mode=mode)
 
     if save_image:
         if directory is None:
@@ -1479,6 +1520,36 @@ def plot_cpmg_results(
         figure.write_image(directory / "cpmg_noise_spectroscopy_summary.png")
     if plot:
         figure.show()
+    return figure
+
+
+def _plot_cpmg_decay(
+    *,
+    times_ns: NDArray[np.float64],
+    values: NDArray[np.float64],
+    fit: _CPMGFitResult,
+    target: str,
+    frequency_ghz: float,
+    xaxis_type: AxisType,
+) -> go.Figure:
+    """Create one CPMG decay figure from numerical data."""
+    figure = viz.make_figure()
+    figure.add_trace(
+        go.Scatter(x=times_ns * 1e-3, y=values, mode="markers", name="Data")
+    )
+    if np.all(np.isfinite([fit.amplitude, fit.gamma2_per_ns, fit.offset])):
+        fine_ns = np.linspace(float(np.min(times_ns)), float(np.max(times_ns)), 500)
+        fitted = fit.amplitude * np.exp(-fit.gamma2_per_ns * fine_ns) + fit.offset
+        figure.add_trace(
+            go.Scatter(x=fine_ns * 1e-3, y=fitted, mode="lines", name="Fit")
+        )
+    figure.update_layout(
+        title=f"CPMG decay: {target}, {frequency_ghz * 1e3:.6g} MHz",
+        xaxis_title="Effective decay time (us)",
+        yaxis_title="Normalized signal",
+        xaxis_type=xaxis_type,
+        yaxis_type="linear",
+    )
     return figure
 
 
@@ -1495,24 +1566,23 @@ def _plot_cpmg_raw_data_heatmap(
     valid_indices = np.flatnonzero(np.isfinite(frequencies) & (frequencies > 0))
     if len(valid_indices) == 0:
         return None
-
     ordered_indices = valid_indices[np.argsort(frequencies[valid_indices])]
     valid_frequency_indices = {int(index) for index in ordered_indices}
     value_sums: dict[tuple[int, float], float] = {}
     value_counts: dict[tuple[int, float], int] = {}
     for record in payload["fit_records"]:
         frequency_index = record.get("requested_frequency_index")
-        if record.get("target") != target or not isinstance(frequency_index, int):
-            continue
-        if frequency_index not in valid_frequency_indices:
+        if (
+            record.get("target") != target
+            or not isinstance(frequency_index, int)
+            or frequency_index not in valid_frequency_indices
+        ):
             continue
         times = np.asarray(record.get("actual_decay_times_ns", []), dtype=np.float64)
         values = np.asarray(record.get("P_values", []), dtype=np.float64)
         if times.ndim != 1 or values.ndim != 1 or times.shape != values.shape:
             continue
         finite = np.isfinite(times) & (times > 0) & np.isfinite(values)
-        if not np.any(finite):
-            continue
         for time_ns, value in zip(times[finite], values[finite], strict=True):
             coordinate = (frequency_index, float(time_ns))
             value_sums[coordinate] = value_sums.get(coordinate, 0.0) + float(value)
@@ -1577,39 +1647,7 @@ def _plot_cpmg_raw_data_heatmap(
     return figure
 
 
-def _plot_cpmg_decay(
-    *,
-    times_ns: NDArray[np.float64],
-    values: NDArray[np.float64],
-    fit: _CPMGFitResult,
-    target: str,
-    frequency_ghz: float,
-    xaxis_type: AxisType,
-) -> go.Figure:
-    """Create one CPMG decay figure from numerical data."""
-    figure = viz.make_figure()
-    figure.add_trace(
-        go.Scatter(
-            x=times_ns * 1e-3,
-            y=values,
-            mode="markers",
-            name="Data",
-        )
-    )
-    if np.all(np.isfinite([fit.amplitude, fit.gamma2_per_ns, fit.offset])):
-        fine_ns = np.linspace(float(np.min(times_ns)), float(np.max(times_ns)), 500)
-        fitted = fit.amplitude * np.exp(-fit.gamma2_per_ns * fine_ns) + fit.offset
-        figure.add_trace(
-            go.Scatter(x=fine_ns * 1e-3, y=fitted, mode="lines", name="Fit")
-        )
-    figure.update_layout(
-        title=f"CPMG decay: {target}, {frequency_ghz * 1e3:.6g} MHz",
-        xaxis_title="Effective decay time (us)",
-        yaxis_title="Normalized signal",
-        xaxis_type=xaxis_type,
-        yaxis_type="linear",
-    )
-    return figure
+# Experiment execution
 
 
 def _resolve_experiment_deprecated_options(
@@ -1659,6 +1697,413 @@ def _sweep_parameter(exp: Experiment, **kwargs: Any) -> Any:
     if callable(sweep_parameter):
         return sweep_parameter(**kwargs)
     return exp.sweep_parameter(**kwargs)
+
+
+def _create_measurement_plan(
+    exp: Experiment,
+    *,
+    targets: list[str],
+    requested_frequencies: NDArray[np.float64],
+    requested_times: NDArray[np.float64],
+    pi_pulses: Mapping[str, Waveform] | None,
+    min_pi_pulses: int,
+    max_pulse_duty_ratio: float,
+    min_fit_points: int,
+    pi_pulse_pattern: CPMGPattern,
+) -> _MeasurementPlan:
+    """Create all target-specific frequency and pulse-count plans."""
+    _validate_rabi_params(exp, targets)
+    sampling_period = _resolve_sampling_period(exp)
+    resolved_pi_pulses = {
+        target: _resolve_pi_pulse(exp, target, pi_pulses) for target in targets
+    }
+    frequency_plans: list[list[_FrequencyPlan]] = []
+    n_pi_values: list[dict[int, NDArray[np.int64]]] = []
+    for target in targets:
+        plan = _make_frequency_plan(
+            requested_frequencies,
+            sampling_period=sampling_period,
+            pi_duration=float(resolved_pi_pulses[target].duration),
+            max_pulse_duty_ratio=max_pulse_duty_ratio,
+        )
+        target_counts: dict[int, NDArray[np.int64]] = {}
+        for position, point in enumerate(plan):
+            if point.status != "valid":
+                continue
+            if point.center_spacing is None:
+                raise RuntimeError("A valid frequency point has no center spacing.")
+            counts = _n_pi_from_time_range(
+                requested_times,
+                center_spacing_ns=point.center_spacing,
+                pattern=pi_pulse_pattern,
+                min_pi_pulses=min_pi_pulses,
+            )
+            if len(counts) < min_fit_points:
+                plan[position] = replace(
+                    point,
+                    status="skipped",
+                    reason="insufficient_time_points",
+                )
+                continue
+            target_counts[point.requested_index] = counts
+        frequency_plans.append(plan)
+        n_pi_values.append(target_counts)
+
+    if not any(n_pi_values):
+        raise ValueError(
+            "No valid target-frequency points remain after timing, duty-ratio, "
+            "and pulse-count validation."
+        )
+    return _MeasurementPlan(
+        targets=targets,
+        requested_frequencies=requested_frequencies,
+        requested_times=requested_times,
+        sampling_period=sampling_period,
+        pi_pulses=resolved_pi_pulses,
+        frequency_plans=frequency_plans,
+        n_pi_values=n_pi_values,
+    )
+
+
+def _create_acquisition_data(
+    plan: _MeasurementPlan,
+    *,
+    n_repeats: int,
+) -> _AcquisitionData:
+    """Allocate result matrices and record valid realized frequencies."""
+    shape = (len(plan.targets), n_repeats, len(plan.requested_frequencies))
+    frequency_shape = (len(plan.targets), len(plan.requested_frequencies))
+    realized_frequencies = np.full(frequency_shape, np.nan, dtype=np.float64)
+    valid_frequencies = np.zeros(frequency_shape, dtype=np.bool_)
+    for target_index, target_plan in enumerate(plan.frequency_plans):
+        for point in target_plan:
+            if point.status == "valid" and point.frequency is not None:
+                realized_frequencies[target_index, point.requested_index] = (
+                    point.frequency
+                )
+                valid_frequencies[target_index, point.requested_index] = True
+            elif point.reason is not None:
+                logger.warning(
+                    "Skipping CPMG point for %s at %.9g GHz: %s",
+                    plan.targets[target_index],
+                    point.requested_frequency,
+                    point.reason,
+                )
+    return _AcquisitionData(
+        t2=np.full(shape, np.nan, dtype=np.float64),
+        t2_error=np.full(shape, np.nan, dtype=np.float64),
+        gamma2=np.full(shape, np.nan, dtype=np.float64),
+        gamma2_error=np.full(shape, np.nan, dtype=np.float64),
+        r2=np.full(shape, np.nan, dtype=np.float64),
+        realized_frequencies=realized_frequencies,
+        valid_frequencies=valid_frequencies,
+        fit_records=[],
+        failed_fits=[],
+        acquisition_orders=[[[] for _ in range(n_repeats)] for _ in plan.targets],
+    )
+
+
+def _measure_cpmg_point(
+    exp: Experiment,
+    *,
+    plan: _MeasurementPlan,
+    options: _AcquisitionOptions,
+    target_index: int,
+    repeat_index: int,
+    frequency_index: int,
+) -> _PointMeasurement:
+    """Acquire and fit one target-frequency-repeat point."""
+    target = plan.targets[target_index]
+    point = plan.frequency_plans[target_index][frequency_index]
+    n_pi_values = plan.n_pi_values[target_index][frequency_index]
+    half_tau = point.half_tau
+    center_spacing = point.center_spacing
+    frequency = point.frequency
+    if half_tau is None or center_spacing is None or frequency is None:
+        raise RuntimeError("A valid frequency point has incomplete timing.")
+
+    actual_times = n_pi_values.astype(np.float64) * center_spacing
+    acquired_at = datetime.now(timezone.utc).isoformat()
+    measurement = _sweep_parameter(
+        exp,
+        sequence=lambda n_pi: _build_cpmg_sequence(
+            exp,
+            target=target,
+            half_tau=half_tau,
+            n_pi=int(n_pi),
+            pattern=options.pi_pulse_pattern,
+            pi_pulses=plan.pi_pulses,
+            sampling_period=plan.sampling_period,
+        ),
+        sweep_range=n_pi_values,
+        n_shots=options.n_shots,
+        shot_interval=options.shot_interval,
+        plot=False,
+        enable_tqdm=False,
+        title="CPMG decay",
+        xlabel="Number of pi pulses",
+        ylabel="Measured value",
+        xaxis_type="linear",
+    )
+    probability = np.asarray(
+        0.5 * (1.0 + measurement.data[target].normalized),
+        dtype=np.float64,
+    )
+    fit = _fit_cpmg_decay(
+        actual_times,
+        probability,
+        min_fit_points=options.min_fit_points,
+    )
+    pulse = plan.pi_pulses[target]
+    record = _fit_result_record(fit)
+    record.update(
+        {
+            "target": target,
+            "target_index": target_index,
+            "repeat_index": repeat_index,
+            "requested_frequency_index": frequency_index,
+            "f_requested_GHz": point.requested_frequency,
+            "f_real_GHz": frequency,
+            "pi_duration_ns": float(pulse.duration),
+            "pi_pulse_name": pulse.name,
+            "pi_pulse_type": type(pulse).__name__,
+            "half_tau_ns": half_tau,
+            "pi_center_spacing_ns": center_spacing,
+            "pulse_duty_ratio": point.pulse_duty_ratio,
+            "sampling_period_ns": plan.sampling_period,
+            "n_pi_values": n_pi_values.tolist(),
+            "actual_decay_times_ns": actual_times.tolist(),
+            "P_values": probability.tolist(),
+            "n_shots": options.n_shots,
+            "shot_interval_ns": options.shot_interval,
+            "pi_pulse_pattern": options.pi_pulse_pattern,
+            "acquired_at": acquired_at,
+        }
+    )
+    return _PointMeasurement(
+        fit=fit,
+        frequency_ghz=frequency,
+        record=record,
+        times_ns=actual_times,
+        probabilities=probability,
+    )
+
+
+def _store_point_result(
+    data: _AcquisitionData,
+    measurement: _PointMeasurement,
+    *,
+    target_index: int,
+    repeat_index: int,
+    frequency_index: int,
+) -> None:
+    """Store one fit in the fixed-index result matrices."""
+    fit = measurement.fit
+    data.fit_records.append(measurement.record)
+    if fit.fit_status in ("ok", "quality_warning"):
+        index = (target_index, repeat_index, frequency_index)
+        data.t2[index] = fit.t2_ns
+        data.t2_error[index] = fit.t2_error_ns
+        data.gamma2[index] = fit.gamma2_per_ns
+        data.gamma2_error[index] = fit.gamma2_error_per_ns
+        data.r2[index] = fit.r2
+        return
+    data.failed_fits.append(
+        {
+            "target": measurement.record["target"],
+            "repeat_index": repeat_index,
+            "requested_frequency_index": frequency_index,
+            "frequency": measurement.record["f_real_GHz"],
+            "status": fit.fit_status,
+            "message": fit.fit_message,
+        }
+    )
+
+
+def _save_decay_figure(
+    measurement: _PointMeasurement,
+    *,
+    target: str,
+    repeat_index: int,
+    output_dir: Path,
+    xaxis_type: AxisType,
+) -> None:
+    """Save one measured decay and its fitted curve."""
+    frequency = measurement.frequency_ghz
+    figure = _plot_cpmg_decay(
+        times_ns=measurement.times_ns,
+        values=measurement.probabilities,
+        fit=measurement.fit,
+        target=target,
+        frequency_ghz=frequency,
+        xaxis_type=xaxis_type,
+    )
+    target_dir = output_dir / target
+    target_dir.mkdir(parents=True, exist_ok=True)
+    figure.write_image(
+        target_dir
+        / f"{target}_freq_{frequency * 1e3:.6f}_MHz_rep_{repeat_index + 1}.png"
+    )
+
+
+def _run_acquisition(
+    exp: Experiment,
+    *,
+    plan: _MeasurementPlan,
+    options: _AcquisitionOptions,
+    output_dir: Path,
+) -> tuple[_AcquisitionData, int]:
+    """Acquire every planned point and return populated result matrices."""
+    data = _create_acquisition_data(plan, n_repeats=options.n_repeats)
+    seed_used = (
+        options.random_seed
+        if options.random_seed is not None
+        else int(np.random.SeedSequence().generate_state(1)[0])
+    )
+    rng = np.random.default_rng(seed_used)
+    repeat_iterable = tqdm(
+        range(options.n_repeats),
+        desc="CPMG repetitions",
+        disable=not options.enable_tqdm,
+    )
+    for repeat_index in repeat_iterable:
+        for target_index, target in enumerate(plan.targets):
+            order = np.flatnonzero(data.valid_frequencies[target_index])
+            if options.frequency_order == "random":
+                rng.shuffle(order)
+            else:
+                order = order[
+                    np.argsort(data.realized_frequencies[target_index, order])
+                ]
+            data.acquisition_orders[target_index][repeat_index] = order.tolist()
+            for raw_frequency_index in tqdm(
+                order,
+                total=len(order),
+                desc=f"{target} frequencies",
+                leave=False,
+                disable=not options.enable_tqdm,
+            ):
+                frequency_index = int(raw_frequency_index)
+                measurement = _measure_cpmg_point(
+                    exp,
+                    plan=plan,
+                    options=options,
+                    target_index=target_index,
+                    repeat_index=repeat_index,
+                    frequency_index=frequency_index,
+                )
+                _store_point_result(
+                    data,
+                    measurement,
+                    target_index=target_index,
+                    repeat_index=repeat_index,
+                    frequency_index=frequency_index,
+                )
+                if options.save_fit_images:
+                    _save_decay_figure(
+                        measurement,
+                        target=target,
+                        repeat_index=repeat_index,
+                        output_dir=output_dir,
+                        xaxis_type=options.xaxis_type,
+                    )
+    return data, seed_used
+
+
+def _build_result_payload(
+    *,
+    plan: _MeasurementPlan,
+    data: _AcquisitionData,
+    options: _AcquisitionOptions,
+    timestamp: str,
+    seed_used: int,
+    save_dir: str | None,
+    min_pi_pulses: int,
+    max_pulse_duty_ratio: float,
+) -> CPMGResultPayload:
+    """Assemble the public numerical payload from planning and acquisition data."""
+    first_plan_half_taus = [
+        float(point.half_tau) if point.half_tau is not None else math.nan
+        for point in plan.frequency_plans[0]
+    ]
+    return {
+        "schema_version": _SCHEMA_VERSION,
+        "timestamp": timestamp,
+        "targets": plan.targets,
+        "n_repeats": options.n_repeats,
+        "frequency_range": plan.requested_frequencies.tolist(),
+        "realized_frequency_matrix": data.realized_frequencies,
+        "valid_frequency_mask": data.valid_frequencies,
+        "half_tau_range": first_plan_half_taus,
+        "tau_spacing_list_ns": first_plan_half_taus,
+        "time_range": plan.requested_times.tolist(),
+        "t2_matrix": data.t2,
+        "t2_error_matrix": data.t2_error,
+        "gamma2_matrix": data.gamma2,
+        "gamma2_error_matrix": data.gamma2_error,
+        "r2_matrix": data.r2,
+        "fit_records": data.fit_records,
+        "frequency_plans": [
+            [asdict(point) for point in target_plan]
+            for target_plan in plan.frequency_plans
+        ],
+        "acquisition_orders": data.acquisition_orders,
+        "random_seed": seed_used,
+        "random_seed_requested": options.random_seed,
+        "metadata": {
+            "sampling_period_ns": plan.sampling_period,
+            "min_pi_pulses": min_pi_pulses,
+            "max_pulse_duty_ratio": max_pulse_duty_ratio,
+            "min_fit_points": options.min_fit_points,
+            "frequency_order": options.frequency_order,
+            "pi_pulse_pattern": options.pi_pulse_pattern,
+            "n_shots": options.n_shots,
+            "shot_interval_ns": options.shot_interval,
+            "frequency_definition": "1 / (2 * pi_center_spacing)",
+        },
+        "data": data.t2,
+        "failed_fits": data.failed_fits,
+        "save_dir": save_dir,
+    }
+
+
+def _render_result_figures(
+    exp: Experiment,
+    *,
+    payload: CPMGResultPayload,
+    output_dir: Path,
+    summary_mode: CPMGSummaryMode,
+    show_t1: bool,
+    plot: bool,
+    save_image: bool,
+) -> tuple[go.Figure | None, dict[str, go.Figure] | None]:
+    """Create, optionally display, and optionally save result figures."""
+    if not (plot or save_image):
+        return None, None
+    summary = plot_cpmg_results(
+        exp,
+        payload,
+        save_dir=output_dir,
+        mode=summary_mode,
+        show_t1=show_t1,
+        plot=plot,
+        save_image=save_image,
+    )
+    heatmaps: dict[str, go.Figure] = {}
+    for target_index, target in enumerate(payload["targets"]):
+        heatmap = _plot_cpmg_raw_data_heatmap(
+            payload=payload,
+            target=target,
+            target_index=target_index,
+        )
+        if heatmap is None:
+            continue
+        heatmaps[f"{target}_raw_data_heatmap"] = heatmap
+        if save_image:
+            heatmap.write_image(output_dir / f"{target}_raw_data_heatmap.png")
+        if plot:
+            heatmap.show()
+    return summary, heatmaps or None
 
 
 def cpmg_noise_spectroscopy(
@@ -1808,13 +2253,13 @@ def cpmg_noise_spectroscopy(
     if not target_list:
         raise ValueError("targets must contain at least one target.")
     if frequency_range is None:
-        frequency_range = _default_frequency_range()
+        frequency_range = _DEFAULT_FREQUENCY_RANGE.copy()
     requested_frequencies = _as_non_empty_1d_array(
         frequency_range,
         name="frequency_range",
     )
     if time_range is None:
-        time_range = _default_time_range()
+        time_range = _DEFAULT_TIME_RANGE.copy()
     if pi_pulse_pattern is None:
         pi_pulse_pattern = "++++"
     if n_repeats is None:
@@ -1835,8 +2280,6 @@ def cpmg_noise_spectroscopy(
         save_dir = _DEFAULT_SAVE_DIR
     if summary_mode is None:
         summary_mode = "both"
-    if show_t1 is None:
-        show_t1 = False
     if xaxis_type is None:
         xaxis_type = "log"
     if enable_tqdm is None:
@@ -1864,321 +2307,66 @@ def cpmg_noise_spectroscopy(
         raise ValueError("xaxis_type must be either 'linear' or 'log'.")
     if frequency_order not in ("random", "ascending"):
         raise ValueError("frequency_order must be either 'random' or 'ascending'.")
-    _validate_rabi_params(exp, target_list)
-    sampling_period = _resolve_sampling_period(exp)
-    resolved_pi_pulses = {
-        target: _resolve_pi_pulse(exp, target, pi_pulses) for target in target_list
-    }
-    target_plans: list[list[_FrequencyPlan]] = []
-    target_n_pi: list[dict[int, NDArray[np.int64]]] = []
-    any_valid = False
-    for target in target_list:
-        pi_duration = float(resolved_pi_pulses[target].duration)
-        plan = _make_frequency_plan(
-            requested_frequencies,
-            sampling_period=sampling_period,
-            pi_duration=pi_duration,
-            max_pulse_duty_ratio=max_pulse_duty_ratio,
-        )
-        counts_by_frequency: dict[int, NDArray[np.int64]] = {}
-        for position, point in enumerate(plan):
-            if point.status != "valid":
-                continue
-            if point.center_spacing is None:
-                raise RuntimeError("A valid frequency point has no center spacing.")
-            raw_counts = _n_pi_from_time_range(
-                time_range,
-                center_spacing_ns=point.center_spacing,
-                pattern=pi_pulse_pattern,
-            )
-            counts = (
-                _prepare_n_pi_values(
-                    raw_counts,
-                    pattern=pi_pulse_pattern,
-                    min_pi_pulses=min_pi_pulses,
-                    warn_on_normalization=False,
-                )
-                if len(raw_counts)
-                else np.asarray([], dtype=np.int64)
-            )
-            if len(counts) < min_fit_points:
-                plan[position] = replace(
-                    point,
-                    status="skipped",
-                    reason="insufficient_time_points",
-                )
-                continue
-            counts_by_frequency[point.requested_index] = counts
-            any_valid = True
-        target_plans.append(plan)
-        target_n_pi.append(counts_by_frequency)
-    if not any_valid:
-        raise ValueError(
-            "No valid target-frequency points remain after timing, duty-ratio, "
-            "and pulse-count validation."
-        )
-
+    requested_times = _as_non_empty_1d_array(time_range, name="time_range")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path(save_dir) / timestamp
     if save_data or save_image or save_fit_images:
         output_dir.mkdir(parents=True, exist_ok=True)
-
-    shape = (len(target_list), n_repeats, len(requested_frequencies))
-    t2_matrix = np.full(shape, np.nan, dtype=np.float64)
-    t2_error_matrix = np.full(shape, np.nan, dtype=np.float64)
-    gamma2_matrix = np.full(shape, np.nan, dtype=np.float64)
-    gamma2_error_matrix = np.full(shape, np.nan, dtype=np.float64)
-    r2_matrix = np.full(shape, np.nan, dtype=np.float64)
-    realized_frequency_matrix = np.full(
-        (len(target_list), len(requested_frequencies)),
-        np.nan,
-        dtype=np.float64,
+    options = _AcquisitionOptions(
+        n_repeats=n_repeats,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        min_fit_points=min_fit_points,
+        frequency_order=frequency_order,
+        random_seed=random_seed,
+        pi_pulse_pattern=pi_pulse_pattern,
+        save_fit_images=save_fit_images,
+        xaxis_type=xaxis_type,
+        enable_tqdm=enable_tqdm,
     )
-    valid_frequency_mask = np.zeros_like(realized_frequency_matrix, dtype=np.bool_)
-    failed_fits: list[dict[str, object]] = []
-    fit_records: list[dict[str, object]] = []
-    acquisition_orders: list[list[list[int]]] = [
-        [[] for _ in range(n_repeats)] for _ in target_list
-    ]
-    for target_index, plan in enumerate(target_plans):
-        for point in plan:
-            if point.status == "valid" and point.frequency is not None:
-                realized_frequency_matrix[target_index, point.requested_index] = (
-                    point.frequency
-                )
-                valid_frequency_mask[target_index, point.requested_index] = True
-            elif point.reason is not None:
-                logger.warning(
-                    "Skipping CPMG point for %s at %.9g GHz: %s",
-                    target_list[target_index],
-                    point.requested_frequency,
-                    point.reason,
-                )
-
-    seed_used = (
-        random_seed
-        if random_seed is not None
-        else int(np.random.SeedSequence().generate_state(1)[0])
+    measurement_plan = _create_measurement_plan(
+        exp,
+        targets=target_list,
+        requested_frequencies=requested_frequencies,
+        requested_times=requested_times,
+        pi_pulses=pi_pulses,
+        min_pi_pulses=min_pi_pulses,
+        max_pulse_duty_ratio=max_pulse_duty_ratio,
+        min_fit_points=min_fit_points,
+        pi_pulse_pattern=pi_pulse_pattern,
     )
-    rng = np.random.default_rng(seed_used)
-    repeat_iterable = tqdm(
-        range(n_repeats),
-        desc="CPMG repetitions",
-        disable=not enable_tqdm,
+    acquisition_data, seed_used = _run_acquisition(
+        exp,
+        plan=measurement_plan,
+        options=options,
+        output_dir=output_dir,
     )
-    for repeat_index in repeat_iterable:
-        for target_index, target in enumerate(target_list):
-            valid_indices = np.flatnonzero(valid_frequency_mask[target_index])
-            order = valid_indices.copy()
-            if frequency_order == "random":
-                rng.shuffle(order)
-            else:
-                order = order[
-                    np.argsort(realized_frequency_matrix[target_index, order])
-                ]
-            acquisition_orders[target_index][repeat_index] = order.astype(int).tolist()
-            frequency_iterable = tqdm(
-                order,
-                total=len(order),
-                desc=f"{target} frequencies",
-                leave=False,
-                disable=not enable_tqdm,
-            )
-            for raw_frequency_index in frequency_iterable:
-                frequency_index = int(raw_frequency_index)
-                point = target_plans[target_index][frequency_index]
-                n_pi_values = target_n_pi[target_index][frequency_index]
-                if (
-                    point.half_tau is None
-                    or point.center_spacing is None
-                    or point.frequency is None
-                ):
-                    raise RuntimeError("A valid frequency point has incomplete timing.")
-                actual_times = n_pi_values.astype(np.float64) * point.center_spacing
-                acquired_at = datetime.now(timezone.utc).isoformat()
-                measurement = _sweep_parameter(
-                    exp,
-                    sequence=lambda n_pi, target=target, half_tau=point.half_tau: (
-                        _build_cpmg_sequence(
-                            exp,
-                            target=target,
-                            half_tau=half_tau,
-                            n_pi=int(n_pi),
-                            pattern=pi_pulse_pattern,
-                            pi_pulses=resolved_pi_pulses,
-                            sampling_period=sampling_period,
-                        )
-                    ),
-                    sweep_range=n_pi_values,
-                    n_shots=n_shots,
-                    shot_interval=shot_interval,
-                    plot=False,
-                    enable_tqdm=False,
-                    title="CPMG decay",
-                    xlabel="Number of pi pulses",
-                    ylabel="Measured value",
-                    xaxis_type="linear",
-                )
-                sweep_data = measurement.data[target]
-                probability = np.asarray(
-                    0.5 * (1.0 + sweep_data.normalized),
-                    dtype=np.float64,
-                )
-                fit = _fit_cpmg_decay(
-                    actual_times,
-                    probability,
-                    min_fit_points=min_fit_points,
-                )
-                record = _fit_result_record(fit)
-                record.update(
-                    {
-                        "target": target,
-                        "target_index": target_index,
-                        "repeat_index": repeat_index,
-                        "requested_frequency_index": frequency_index,
-                        "f_requested_GHz": point.requested_frequency,
-                        "f_real_GHz": point.frequency,
-                        "pi_duration_ns": float(resolved_pi_pulses[target].duration),
-                        "pi_pulse_name": resolved_pi_pulses[target].name,
-                        "pi_pulse_type": type(resolved_pi_pulses[target]).__name__,
-                        "half_tau_ns": point.half_tau,
-                        "pi_center_spacing_ns": point.center_spacing,
-                        "pulse_duty_ratio": point.pulse_duty_ratio,
-                        "sampling_period_ns": sampling_period,
-                        "n_pi_values": n_pi_values.tolist(),
-                        "actual_decay_times_ns": actual_times.tolist(),
-                        "P_values": probability.tolist(),
-                        "P_sem_values": None,
-                        "n_shots": n_shots,
-                        "shot_interval_ns": shot_interval,
-                        "pi_pulse_pattern": pi_pulse_pattern,
-                        "acquired_at": acquired_at,
-                    }
-                )
-                fit_records.append(record)
-                if fit.fit_status in ("ok", "quality_warning"):
-                    t2_matrix[target_index, repeat_index, frequency_index] = fit.t2_ns
-                    t2_error_matrix[target_index, repeat_index, frequency_index] = (
-                        fit.t2_error_ns
-                    )
-                    gamma2_matrix[target_index, repeat_index, frequency_index] = (
-                        fit.gamma2_per_ns
-                    )
-                    gamma2_error_matrix[target_index, repeat_index, frequency_index] = (
-                        fit.gamma2_error_per_ns
-                    )
-                    r2_matrix[target_index, repeat_index, frequency_index] = fit.r2
-                else:
-                    failed_fits.append(
-                        {
-                            "target": target,
-                            "repeat_index": repeat_index,
-                            "requested_frequency_index": frequency_index,
-                            "frequency": point.frequency,
-                            "status": fit.fit_status,
-                            "message": fit.fit_message,
-                        }
-                    )
-                if save_fit_images:
-                    figure = _plot_cpmg_decay(
-                        times_ns=actual_times,
-                        values=probability,
-                        fit=fit,
-                        target=target,
-                        frequency_ghz=point.frequency,
-                        xaxis_type=xaxis_type,
-                    )
-                    target_dir = output_dir / target
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    figure.write_image(
-                        target_dir
-                        / (
-                            f"{target}_freq_{point.frequency * 1e3:.6f}_MHz_"
-                            f"rep_{repeat_index + 1}.png"
-                        )
-                    )
-
     save_dir_for_payload = (
         str(output_dir) if (save_data or save_image or save_fit_images) else None
     )
-    first_plan_half_taus = [
-        float(point.half_tau) if point.half_tau is not None else math.nan
-        for point in target_plans[0]
-    ]
-    payload: CPMGResultPayload = {
-        "schema_version": _SCHEMA_VERSION,
-        "timestamp": timestamp,
-        "targets": target_list,
-        "n_repeats": n_repeats,
-        "frequency_range": requested_frequencies.tolist(),
-        "requested_frequency_range": requested_frequencies.tolist(),
-        "realized_frequency_matrix": realized_frequency_matrix,
-        "valid_frequency_mask": valid_frequency_mask,
-        "half_tau_range": first_plan_half_taus,
-        "tau_spacing_list_ns": first_plan_half_taus,
-        "time_range": np.asarray(time_range, dtype=np.float64).tolist(),
-        "n_pi_range": [],
-        "t2_matrix": t2_matrix,
-        "t2_error_matrix": t2_error_matrix,
-        "gamma2_matrix": gamma2_matrix,
-        "gamma2_error_matrix": gamma2_error_matrix,
-        "r2_matrix": r2_matrix,
-        "fit_records": fit_records,
-        "frequency_plans": [[asdict(point) for point in plan] for plan in target_plans],
-        "acquisition_orders": acquisition_orders,
-        "random_seed": seed_used,
-        "random_seed_requested": random_seed,
-        "metadata": {
-            "sampling_period_ns": sampling_period,
-            "min_pi_pulses": min_pi_pulses,
-            "max_pulse_duty_ratio": max_pulse_duty_ratio,
-            "min_fit_points": min_fit_points,
-            "frequency_order": frequency_order,
-            "pi_pulse_pattern": pi_pulse_pattern,
-            "n_shots": n_shots,
-            "shot_interval_ns": shot_interval,
-            "frequency_definition": "1 / (2 * pi_center_spacing)",
-            "compatibility_timing_target": target_list[0],
-            "half_tau_range_semantics": (
-                "first-target compatibility projection; use frequency_plans "
-                "for target-specific timing"
-            ),
-            "tau_spacing_list_ns_semantics": "legacy alias of half_tau_range",
-        },
-        "data": t2_matrix,
-        "failed_fits": failed_fits,
-        "save_dir": save_dir_for_payload,
-    }
+    payload = _build_result_payload(
+        plan=measurement_plan,
+        data=acquisition_data,
+        options=options,
+        timestamp=timestamp,
+        seed_used=seed_used,
+        save_dir=save_dir_for_payload,
+        min_pi_pulses=min_pi_pulses,
+        max_pulse_duty_ratio=max_pulse_duty_ratio,
+    )
     if save_data:
         _save_payload(payload=payload, save_dir=output_dir)
-
-    summary_figure = None
-    heatmap_figures: dict[str, go.Figure] = {}
-    if plot or save_image:
-        summary_figure = plot_cpmg_results(
-            exp,
-            payload,
-            save_dir=output_dir,
-            mode=summary_mode,
-            show_t1=show_t1,
-            plot=plot,
-            save_image=save_image,
-        )
-        for target_index, target in enumerate(target_list):
-            heatmap = _plot_cpmg_raw_data_heatmap(
-                payload=payload,
-                target=target,
-                target_index=target_index,
-            )
-            if heatmap is None:
-                continue
-            heatmap_figures[f"{target}_raw_data_heatmap"] = heatmap
-            if save_image:
-                heatmap.write_image(output_dir / f"{target}_raw_data_heatmap.png")
-            if plot:
-                heatmap.show()
+    summary_figure, heatmap_figures = _render_result_figures(
+        exp,
+        payload=payload,
+        output_dir=output_dir,
+        summary_mode=summary_mode,
+        show_t1=show_t1,
+        plot=plot,
+        save_image=save_image,
+    )
     return Result(
         data=payload,
         figure=summary_figure,
-        figures=heatmap_figures or None,
+        figures=heatmap_figures,
     )

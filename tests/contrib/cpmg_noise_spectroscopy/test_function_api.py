@@ -127,23 +127,30 @@ def test_plot_cpmg_results_separates_quality_warning_points() -> None:
         "timestamp": "20260609_000000",
         "targets": ["Q00"],
         "n_repeats": 1,
-        "frequency_range": [0.001, 0.002],
-        "half_tau_range": [250.0, 125.0],
-        "t2_matrix": np.array([[[20_000.0, 25_000.0]]]),
+        "frequency_range": [0.003, 0.001, 0.002],
+        "half_tau_range": [80.0, 250.0, 125.0],
+        "t2_matrix": np.array([[[20_000.0, 25_000.0, 30_000.0]]]),
         "fit_records": [
             {
                 "target": "Q00",
                 "repeat_index": 0,
                 "requested_frequency_index": 0,
                 "fit_status": "ok",
-                "quality_flags": [],
+                "quality_flags": ["large_relative_error"],
             },
             {
                 "target": "Q00",
                 "repeat_index": 0,
                 "requested_frequency_index": 1,
                 "fit_status": "ok",
-                "quality_flags": ["large_relative_error"],
+                "quality_flags": [],
+            },
+            {
+                "target": "Q00",
+                "repeat_index": 0,
+                "requested_frequency_index": 2,
+                "fit_status": "ok",
+                "quality_flags": ["low_r2"],
             },
         ],
     }
@@ -161,14 +168,111 @@ def test_plot_cpmg_results_separates_quality_warning_points() -> None:
     reliable_x = np.asarray(cast(ArrayLike, reliable.x), dtype=np.float64)
     reliable_y = np.asarray(cast(ArrayLike, reliable.y), dtype=np.float64)
     warning_x = np.asarray(cast(ArrayLike, warning.x), dtype=np.float64)
-    np.testing.assert_allclose(reliable_x, [1.0, 2.0])
-    np.testing.assert_array_equal(np.isfinite(reliable_y), [True, False])
+    warning_y = np.asarray(cast(ArrayLike, warning.y), dtype=np.float64)
+    np.testing.assert_allclose(reliable_x, [1.0, 2.0, 3.0], rtol=0.0, atol=1e-12)
+    np.testing.assert_array_equal(np.isfinite(reliable_y), [True, False, False])
     assert reliable.mode == "markers+lines"
-    np.testing.assert_allclose(warning_x, [2.0])
+    np.testing.assert_allclose(warning_x, [2.0, 3.0], rtol=0.0, atol=1e-12)
+    np.testing.assert_allclose(warning_y, [30.0, 20.0], rtol=0.0, atol=1e-12)
     assert warning.mode == "markers"
     warning_data = cast(dict[str, Any], warning.to_plotly_json())
     assert warning_data["marker"]["symbol"] == "diamond-open"
+    np.testing.assert_array_equal(warning_data["customdata"][:, 0], [1, 1])
+    np.testing.assert_array_equal(
+        warning_data["customdata"][:, 1], ["low_r2", "large_relative_error"]
+    )
     assert "quality warning" in cast(str, warning.name)
+
+
+def test_plot_cpmg_results_sorts_each_target_by_realized_frequency() -> None:
+    """Summary traces should sort aligned values by each target's realized frequency."""
+    realized_frequencies = np.array(
+        [
+            [0.003, 0.001, 0.002],
+            [0.002, 0.003, 0.001],
+        ]
+    )
+    gamma_values = np.array(
+        [
+            [
+                [3.0e-5, 1.0e-5, 2.0e-5],
+                [3.6e-5, 1.2e-5, np.nan],
+            ],
+            [
+                [2.0e-5, 3.0e-5, 1.0e-5],
+                [2.4e-5, np.nan, 1.2e-5],
+            ],
+        ]
+    )
+    gamma_errors = np.full_like(gamma_values, 5.0e-7)
+    payload = {
+        "timestamp": "20260609_000000",
+        "targets": ["Q00", "Q01"],
+        "n_repeats": 2,
+        "frequency_range": [0.003, 0.001, 0.002],
+        "half_tau_range": [100.0, 300.0, 200.0],
+        "t2_matrix": np.reciprocal(gamma_values),
+        "gamma2_matrix": gamma_values,
+        "gamma2_error_matrix": gamma_errors,
+        "realized_frequency_matrix": realized_frequencies,
+    }
+    original_gamma_values = gamma_values.copy()
+    original_frequencies = realized_frequencies.copy()
+
+    figure = plot_cpmg_results(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        payload,
+        mode="gamma2",
+        plot=False,
+    )
+
+    traces = [cast(go.Scatter, trace) for trace in figure.data]
+    assert len(traces) == 2
+    trace_data = [cast(dict[str, Any], trace.to_plotly_json()) for trace in traces]
+    np.testing.assert_allclose(
+        np.asarray(cast(ArrayLike, traces[0].x)),
+        [1.0, 2.0, 3.0],
+        rtol=0.0,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(cast(ArrayLike, traces[0].y)),
+        [0.011, 0.020, 0.033],
+        rtol=0.0,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(cast(ArrayLike, trace_data[0]["error_y"]["array"])),
+        [0.001, 0.0005, 0.003],
+        rtol=0.0,
+        atol=1e-12,
+    )
+    np.testing.assert_array_equal(
+        cast(ArrayLike, trace_data[0]["customdata"]), [2, 1, 2]
+    )
+    np.testing.assert_allclose(
+        np.asarray(cast(ArrayLike, traces[1].x)),
+        [1.0, 2.0, 3.0],
+        rtol=0.0,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(cast(ArrayLike, traces[1].y)),
+        [0.011, 0.022, 0.030],
+        rtol=0.0,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(cast(ArrayLike, trace_data[1]["error_y"]["array"])),
+        [0.001, 0.002, 0.0005],
+        rtol=0.0,
+        atol=1e-12,
+    )
+    np.testing.assert_array_equal(
+        cast(ArrayLike, trace_data[1]["customdata"]), [2, 2, 1]
+    )
+    np.testing.assert_array_equal(gamma_values, original_gamma_values)
+    np.testing.assert_array_equal(realized_frequencies, original_frequencies)
 
 
 @pytest.mark.parametrize("mode", ["t2", "gamma2"])
