@@ -7,6 +7,7 @@ built on quelware-client managers and tools.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -470,27 +471,72 @@ class Quel3BackendController(BackendController):
         )
 
     def modify_target_frequencies(
-        self, target_frequencies_ghz: dict[str, float]
+        self,
+        target_frequencies_ghz: dict[str, float],
+        *,
+        min_frequency_margin_ghz: float | None = None,
     ) -> None:
-        """Redeploy and read back only target instruments at frequencies in GHz."""
+        """
+        Redeploy target instruments at the requested frequencies in GHz.
+
+        Parameters
+        ----------
+        target_frequencies_ghz : dict[str, float]
+            Requested frequencies in GHz keyed by target alias.
+        min_frequency_margin_ghz : float | None, optional
+            Minimum half-width in GHz to guarantee around each frequency.
+            None uses 0.1 (plus or minus 100 MHz). Must be finite and non-negative.
+            Zero requires only the requested frequency to be within the range.
+
+        Raises
+        ------
+        ValueError
+            The minimum frequency margin is negative or non-finite in Hz.
+
+        Notes
+        -----
+        Redeployment centers each instrument's range on the requested frequency
+        and reads back the updated instrument. Preserve its existing width or
+        expand it to satisfy the minimum margin. If the entire minimum range is
+        already within the cached range, including its endpoints, reuse the
+        instrument without redeployment, readback, or cache changes.
+        Other instruments are preserved.
+        """
         if not target_frequencies_ghz:
             return
+        min_margin_hz = (
+            0.1 if min_frequency_margin_ghz is None else min_frequency_margin_ghz
+        ) * 1e9
+        if not math.isfinite(min_margin_hz) or min_margin_hz < 0:
+            raise ValueError(
+                "min_frequency_margin_ghz must be non-negative and finite when converted to Hz."
+            )
         instruments = {
             instrument.alias: instrument
             for instrument in self.get_instrument_configuration().instruments
         }
         for alias, frequency in target_frequencies_ghz.items():
             instrument = instruments[alias]
-            margin = (
-                instrument.frequency_range_max_hz - instrument.frequency_range_min_hz
-            ) / 2
+            # Compare center limits in GHz to preserve inclusive decimal boundaries.
+            if (
+                (instrument.frequency_range_min_hz + min_margin_hz) / 1e9
+                <= frequency
+                <= (instrument.frequency_range_max_hz - min_margin_hz) / 1e9
+            ):
+                continue
+            frequency_hz = frequency * 1e9
+            margin = max(
+                (instrument.frequency_range_max_hz - instrument.frequency_range_min_hz)
+                / 2,
+                min_margin_hz,
+            )
             self._configuration_manager.replace_instruments(
                 instrument=InstrumentSpec(
                     port_id=instrument.port_id,
                     alias=alias,
                     role=instrument.role,
-                    frequency_range_min_hz=frequency * 1e9 - margin,
-                    frequency_range_max_hz=frequency * 1e9 + margin,
+                    frequency_range_min_hz=frequency_hz - margin,
+                    frequency_range_max_hz=frequency_hz + margin,
                 ),
                 instrument_cache=self._instrument_cache,
                 resource_reader=self._resource_reader,
