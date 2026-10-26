@@ -146,6 +146,38 @@ def test_fit_recovers_population_when_centroids_do_not_separate_g_and_e() -> Non
     )
 
 
+def test_fit_preserves_an_interior_solution_with_small_covariance() -> None:
+    """Simplex constraints should remain stable when the GLS objective is large."""
+    state_features = np.array(
+        [
+            [0.0, 0.0, 1.0, 0.0, 1.0],
+            [0.0, 0.0, 4.0, 0.5, 1.0],
+            [2.0, -1.0, 6.0, -1.0, 3.0],
+        ]
+    )
+    expected = np.array([0.17, 0.36, 0.47])
+    means = _unknown_means(state_features, expected)
+    means["s1"] = means["s1"].copy()
+    means["s1"][0] += 0.001
+    summaries = {name: _summary(mean, np.eye(5) * 1e-5) for name, mean in means.items()}
+
+    result = fit_gef_population(summaries, state_features)
+
+    assert result.success
+    assert_allclose(
+        result.population,
+        result.population_unconstrained,
+        rtol=1e-10,
+        atol=1e-10,
+    )
+    assert_allclose(
+        result.population,
+        np.array([0.16997759, 0.35997759, 0.47004482]),
+        rtol=1e-7,
+        atol=1e-8,
+    )
+
+
 def test_fit_uses_pseudo_inverse_for_singular_feature_covariance() -> None:
     """Singular covariance directions should not prevent an identifiable fit."""
     state_features = np.array(

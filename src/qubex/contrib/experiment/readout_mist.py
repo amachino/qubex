@@ -342,13 +342,25 @@ def build_default_readout_cycle(
 
 
 def validate_readout_cycle(cycle: PulseSchedule) -> PulseSchedule:
-    """Validate that an override is a finite positive complete cycle."""
+    """Validate a complete cycle without schedule-wide frequency overrides."""
     if not isinstance(cycle, PulseSchedule):
         raise TypeError("readout_cycle must be a PulseSchedule or None.")
     if not cycle.is_valid():
         raise ValueError("readout_cycle must be a valid PulseSchedule.")
     if not np.isfinite(cycle.duration) or cycle.duration <= 0.0:
         raise ValueError("readout_cycle must have positive finite duration.")
+    frequency_overrides = {
+        label: frequency
+        for label, frequency in cycle.get_frequencies().items()
+        if frequency is not None
+    }
+    if frequency_overrides:
+        labels = ", ".join(sorted(frequency_overrides))
+        raise ValueError(
+            "readout_cycle frequency overrides are not supported because the "
+            "candidate and final diagnostic readouts share schedule-wide channel "
+            f"frequencies (overrides found for: {labels})."
+        )
     return cycle.copy()
 
 
@@ -415,7 +427,8 @@ def build_mist_schedules(
     acquisition_order: AcquisitionOrder = "interleaved",
     acquisition_seed: int | None = 0,
 ) -> ReadoutMistSchedules:
-    """Build G/E/F schedules while preserving the trailing gap in every cycle."""
+    """Build G/E/F schedules from a validated frequency-neutral cycle."""
+    cycle = validate_readout_cycle(cycle)
     preparations = _preparations(exp, target)
     by_condition: dict[str, tuple[PulseSchedule, ...]] = {}
     names_by_condition: dict[str, tuple[str, ...]] = {}
@@ -2168,8 +2181,10 @@ def characterize_readout_mist(
         `(0, 1, 2, 4, 8, 16, 32, 64, 128, 256)`.
     readout_cycle : PulseSchedule | None, optional
         Complete candidate cycle containing drive, optional active depletion,
-        and its trailing gap. When omitted, use the configured readout pulse
-        followed by `cycle_gap_ns`.
+        and its trailing gap. Schedule-wide frequency overrides are rejected
+        because they would also change the final calibrated diagnostic readout.
+        When omitted, use the configured readout pulse followed by
+        `cycle_gap_ns`.
     cycle_gap_ns : float, optional
         Trailing gap for the automatically built configured cycle, in ns.
         Must remain zero when `readout_cycle` is supplied.

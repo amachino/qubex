@@ -448,7 +448,7 @@ def fit_gef_population(
         objective=objective(population),
         residual=residual,
         success=True,
-        message="Solved by probability-simplex active-set enumeration.",
+        message="Solved by probability-simplex face enumeration.",
         design_rank=design_rank,
         design_condition_number=design_condition_number,
     )
@@ -717,7 +717,10 @@ def measure_gef_populations(
     sequences
         Named mapping or ordered sequence of schedules executed before the final
         diagnostic readout. Schedules may contain earlier readout pulses and
-        captures. Ordered inputs receive names such as `sequence_0`.
+        captures. Ordered inputs receive names such as `sequence_0`. Explicit
+        frequency overrides on the measured targets' GE, EF, or readout
+        channels are rejected because they would also alter calibrated
+        population analyzers or the final diagnostic readout.
     calibration
         Optional prior calibration keyed by canonical qubit label. When omitted,
         six calibration configurations are measured before the input sequences.
@@ -768,6 +771,9 @@ def measure_gef_populations(
     `measurement.schedule_packing` settings. Analyzers are left-padded so
     population-permutation pulses occur as close as possible to readout while
     readout starts at a common time within each group.
+    Diagnostic-channel frequency overrides are rejected whether calibration is
+    acquired by this call or supplied by the caller; calibration records do not
+    encode enough frequency metadata to verify such an override safely.
     Populations are modeled only in the g/e/f subspace and sum to one. The method
     assumes negligible initial f population during calibration, ideal GE/EF
     population swaps, and stable readout response throughout the run. Only the
@@ -776,6 +782,7 @@ def measure_gef_populations(
     """
     target_list = _normalize_targets(exp, targets)
     named_sequences = _normalize_sequences(sequences)
+    _validate_diagnostic_frequency_overrides(exp, target_list, named_sequences)
     resolved_progress_label = _validate_progress_label(progress_label)
     if capture_index is not None and (
         isinstance(capture_index, bool) or not isinstance(capture_index, Integral)
@@ -939,7 +946,7 @@ def _solve_probability_simplex_gls(
     objective: Callable[[NDArray[np.float64]], float],
     rcond: float,
 ) -> NDArray[np.float64]:
-    """Solve the three-state convex GLS problem by enumerating simplex faces."""
+    """Minimize convex GLS over every simplex face in sum-preserving coordinates."""
     candidates: list[NDArray[np.float64]] = []
     for active_count in range(1, _STATE_COUNT + 1):
         for active_tuple in combinations(range(_STATE_COUNT), active_count):
@@ -951,19 +958,20 @@ def _solve_probability_simplex_gls(
                 continue
 
             active_normal = normal_matrix[np.ix_(active, active)]
-            kkt = np.block(
-                [
-                    [active_normal, np.ones((active_count, 1))],
-                    [np.ones((1, active_count)), np.zeros((1, 1))],
-                ]
+            active_vector = normal_vector[active]
+            reference = np.zeros(active_count, dtype=np.float64)
+            reference[-1] = 1.0
+            tangent = np.zeros((active_count, active_count - 1), dtype=np.float64)
+            tangent[:-1] = np.eye(active_count - 1)
+            tangent[-1] = -1.0
+            tangent_normal = tangent.T @ active_normal @ tangent
+            tangent_vector = tangent.T @ (active_vector - active_normal @ reference)
+            coordinates = (
+                np.linalg.pinv(tangent_normal, rcond=rcond, hermitian=True)
+                @ tangent_vector
             )
-            rhs = np.concatenate((normal_vector[active], [1.0]))
-            solution = np.linalg.pinv(kkt, rcond=rcond) @ rhs
-            active_population = solution[:active_count]
-            if (
-                np.all(active_population >= -1e-10)
-                and abs(float(np.sum(active_population)) - 1.0) <= 1e-8
-            ):
+            active_population = reference + tangent @ coordinates
+            if np.all(active_population >= -1e-10):
                 candidate = np.zeros(_STATE_COUNT, dtype=np.float64)
                 candidate[active] = np.clip(active_population, 0.0, None)
                 candidate /= np.sum(candidate)
@@ -1026,6 +1034,35 @@ def _normalize_sequences(
         if not sequence.is_valid():
             raise ValueError(f"Sequence `{name}` is not a valid PulseSchedule.")
     return normalized
+
+
+def _validate_diagnostic_frequency_overrides(
+    exp: Experiment,
+    targets: Sequence[str],
+    sequences: Mapping[str, PulseSchedule],
+) -> None:
+    """Reject overrides that would change calibrated analyzers or readout."""
+    protected_labels = {
+        label
+        for target in targets
+        for label in (
+            exp.ctx.resolve_ge_label(target),
+            exp.ctx.resolve_ef_label(target),
+            exp.ctx.resolve_read_label(target),
+        )
+    }
+    for name, sequence in sequences.items():
+        conflicting = sorted(
+            label
+            for label, frequency in sequence.get_frequencies().items()
+            if label in protected_labels and frequency is not None
+        )
+        if conflicting:
+            labels = ", ".join(conflicting)
+            raise ValueError(
+                f"Sequence `{name}` contains frequency overrides on calibrated "
+                f"GEF diagnostic channels: {labels}."
+            )
 
 
 def _validate_progress_label(value: object) -> str | None:

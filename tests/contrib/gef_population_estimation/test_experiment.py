@@ -67,6 +67,10 @@ class _DummyContext:
         """Return the EF label."""
         return f"{self.resolve_qubit_label(target)}/ef"
 
+    def resolve_read_label(self, target: str) -> str:
+        """Return the readout label."""
+        return f"R{self.resolve_qubit_label(target)}"
+
 
 class _DummyPulseService:
     """Provide analysis pulses with distinct durations."""
@@ -558,16 +562,42 @@ def test_multiple_sequences_share_one_measurement_batch() -> None:
         )
 
 
-def test_appended_analyzer_preserves_preparation_frequency() -> None:
-    """GEF acquisition should retain an explicitly detuned preparation channel."""
-    from qubex.contrib.experiment.gef_population_estimation import _append_analyzer
+@pytest.mark.parametrize("label", ["Q0", "Q0/ef", "RQ0"])
+def test_measurement_rejects_diagnostic_channel_frequency_overrides(
+    label: str,
+) -> None:
+    """Input schedules must not alter calibrated analyzer or readout frequencies."""
+    exp = _DummyExperiment([])
+    preparation = PulseSchedule([label])
+    preparation.add(label, Blank(8))
+    preparation.set_frequency(label, 4.91)
 
-    preparation = PulseSchedule(["Q0"])
-    preparation.add("Q0", Blank(8))
-    preparation.set_frequency("Q0", 4.91)
-    analyzer = PulseSchedule(["Q0"])
-    analyzer.add("Q0", Blank(4))
-    combined = _append_analyzer(preparation, analyzer)
-    assert combined.get_frequency("Q0") == 4.91
-    assert combined.duration == 12
-    assert preparation.duration == 8
+    with pytest.raises(
+        ValueError,
+        match=rf"Sequence `detuned`.*{label}",
+    ):
+        measure_gef_populations(
+            cast(Any, exp),
+            targets="Q0",
+            sequences={"detuned": preparation},
+            n_bootstrap=0,
+        )
+
+    assert exp.measurement_service.calls == []
+
+
+def test_unrelated_channel_frequency_override_is_allowed() -> None:
+    """Only channels used by the requested GEF diagnostic should be protected."""
+    exp = _DummyExperiment([])
+    preparation = PulseSchedule(["pump"])
+    preparation.add("pump", Blank(8))
+    preparation.set_frequency("pump", 7.25)
+
+    with pytest.raises(ValueError, match="n_shots must be at least two"):
+        measure_gef_populations(
+            cast(Any, exp),
+            targets="Q0",
+            sequences={"allowed": preparation},
+            n_shots=1,
+            n_bootstrap=0,
+        )

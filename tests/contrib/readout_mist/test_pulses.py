@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import numpy as np
+import pytest
 
 from qubex.contrib.experiment.readout_mist import (
     build_default_readout_cycle,
@@ -71,6 +72,17 @@ def test_reference_cycle_is_a_duration_matched_blank_on_all_channels() -> None:
     assert reference.get_frequencies() == candidate.get_frequencies()
     for values in reference.values.values():
         np.testing.assert_allclose(values, 0.0, rtol=0.0, atol=0.0)
+
+
+def test_schedule_building_rejects_cycle_frequency_overrides() -> None:
+    """A candidate frequency must not silently change or bypass final readout."""
+    exp = _experiment()
+    with PulseSchedule(["RQ0"]) as cycle:
+        cycle.add("RQ0", FlatTop(duration=80.0, amplitude=0.2, tau=8.0))
+    cycle.set_frequencies({"RQ0": 8.1})
+
+    with pytest.raises(ValueError, match="frequency overrides are not supported"):
+        build_mist_schedules(exp, "Q0", cycle, (0, 1))
 
 
 def test_f_preparation_applies_ge_then_ef_pi_pulses() -> None:
