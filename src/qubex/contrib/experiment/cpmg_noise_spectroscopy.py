@@ -1558,14 +1558,31 @@ def _plot_cpmg_raw_data_heatmap(
     payload: CPMGResultPayload,
     target: str,
     target_index: int,
-) -> go.Figure | None:
+) -> go.Figure:
     """Plot pre-fit values at each target's exact realized frequency and time."""
+    figure = viz.make_figure()
+    figure.update_layout(
+        title={
+            "text": f"CPMG measured data before fitting: {target}",
+            "subtitle": {
+                "text": "Exact measured times; repeats at identical points are averaged"
+            },
+        },
+        xaxis={"title": "Effective CPMG Frequency (MHz)"},
+        yaxis={"title": "Effective decay time (us)", "type": "log"},
+        width=900,
+        height=600,
+    )
     frequencies = np.asarray(payload["realized_frequency_matrix"], dtype=np.float64)[
         target_index
     ]
     valid_indices = np.flatnonzero(np.isfinite(frequencies) & (frequencies > 0))
     if len(valid_indices) == 0:
-        return None
+        figure.add_annotation(
+            text="No valid CPMG measurements",
+            showarrow=False,
+        )
+        return figure
     ordered_indices = valid_indices[np.argsort(frequencies[valid_indices])]
     valid_frequency_indices = {int(index) for index in ordered_indices}
     value_sums: dict[tuple[int, float], float] = {}
@@ -1588,7 +1605,11 @@ def _plot_cpmg_raw_data_heatmap(
             value_sums[coordinate] = value_sums.get(coordinate, 0.0) + float(value)
             value_counts[coordinate] = value_counts.get(coordinate, 0) + 1
     if not value_sums:
-        return None
+        figure.add_annotation(
+            text="No valid CPMG measurements",
+            showarrow=False,
+        )
+        return figure
 
     frequency_order = {
         int(frequency_index): order
@@ -1604,7 +1625,6 @@ def _plot_cpmg_raw_data_heatmap(
         value_sums[coordinate] / value_counts[coordinate] for coordinate in coordinates
     ]
     repeat_counts = [value_counts[coordinate] for coordinate in coordinates]
-    figure = viz.make_figure()
     figure.add_trace(
         go.Scatter(
             x=x_values,
@@ -1631,18 +1651,6 @@ def _plot_cpmg_raw_data_heatmap(
                 "measurements=%{customdata[1]:.0f}<extra></extra>"
             ),
         )
-    )
-    figure.update_layout(
-        title={
-            "text": f"CPMG measured data before fitting: {target}",
-            "subtitle": {
-                "text": "Exact measured times; repeats at identical points are averaged"
-            },
-        },
-        xaxis={"title": "Effective CPMG Frequency (MHz)"},
-        yaxis={"title": "Effective decay time (us)", "type": "log"},
-        width=900,
-        height=600,
     )
     return figure
 
@@ -2076,10 +2084,8 @@ def _render_result_figures(
     show_t1: bool,
     plot: bool,
     save_image: bool,
-) -> tuple[go.Figure | None, dict[str, go.Figure] | None]:
-    """Create, optionally display, and optionally save result figures."""
-    if not (plot or save_image):
-        return None, None
+) -> tuple[go.Figure, dict[str, go.Figure]]:
+    """Create result figures and optionally display or save them."""
     summary = plot_cpmg_results(
         exp,
         payload,
@@ -2089,21 +2095,19 @@ def _render_result_figures(
         plot=plot,
         save_image=save_image,
     )
-    heatmaps: dict[str, go.Figure] = {}
+    figures = {"summary": summary}
     for target_index, target in enumerate(payload["targets"]):
         heatmap = _plot_cpmg_raw_data_heatmap(
             payload=payload,
             target=target,
             target_index=target_index,
         )
-        if heatmap is None:
-            continue
-        heatmaps[f"{target}_raw_data_heatmap"] = heatmap
+        figures[f"{target}_raw_data_heatmap"] = heatmap
         if save_image:
             heatmap.write_image(output_dir / f"{target}_raw_data_heatmap.png")
         if plot:
             heatmap.show()
-    return summary, heatmaps or None
+    return summary, figures
 
 
 def cpmg_noise_spectroscopy(
@@ -2175,7 +2179,9 @@ def cpmg_noise_spectroscopy(
         from `time_range` are rounded to the nearest complete pattern cycle;
         ties are rounded toward the larger count. Defaults to `"++++"`.
     pi_pulses
-        Optional per-target pi waveforms.
+        Optional per-target CPMG pi waveforms. Values are used as provided and
+        are not phase-shifted. When omitted, an automatically resolved X pi
+        pulse is shifted by pi/2 to produce the CPMG pulse.
     n_repeats
         Number of measurements per target and frequency. Defaults to 1.
     n_shots
@@ -2185,16 +2191,19 @@ def cpmg_noise_spectroscopy(
         Measurement interval in ns. Defaults to the experiment-wide
         measurement setting.
     plot
-        Whether to display the summary figure and pre-fit data heatmaps.
-        Defaults to `True`.
+        Whether to display the summary figure and pre-fit data heatmaps. The
+        figures are generated and returned regardless of this option. Defaults
+        to `True`.
     save_image
-        Whether to save the summary figure and pre-fit data heatmaps. Defaults
-        to `False`.
+        Whether to save the summary figure and pre-fit data heatmaps as image
+        files. The figures are generated and returned regardless of this
+        option. Defaults to `False`.
     save_fit_images
         Whether to render and save individual decay figures. Defaults to
         `False`.
     save_data
-        Whether to save schema-v2 numerical results. Defaults to `True`.
+        Whether to save schema-v2 numerical result files. This option does not
+        control figure generation or image saving. Defaults to `True`.
     save_dir
         Base output directory. Defaults to `"cpmg_noise_spectroscopy"`.
     summary_mode
@@ -2210,9 +2219,9 @@ def cpmg_noise_spectroscopy(
     Returns
     -------
     Result
-        Numerical payload, an optional summary figure, and optional per-target
-        pre-fit data heatmaps in `figures`. Numerical fitting does not create
-        Plotly figures.
+        Numerical payload, the summary in `figure` and `figures["summary"]`,
+        and per-target pre-fit data heatmaps in `figures`. These figures are
+        always generated; output options only control display and file writes.
 
     Raises
     ------
