@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextvars
+import importlib
 import signal
 import threading
 import time
@@ -14,6 +15,7 @@ from types import FrameType
 
 import pytest
 
+from qubex.core import async_execution_timeout
 from qubex.core.async_bridge import AsyncBridge
 
 
@@ -40,6 +42,113 @@ def test_run_without_running_loop_returns_result(bridge: AsyncBridge) -> None:
     result = bridge.run(lambda: _return_value(7))
 
     assert result == 7
+
+
+def test_scoped_timeout_restores_nested_values_after_exception(
+    bridge: AsyncBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scoped timeouts override explicit waits and restore values after exceptions."""
+    waits: list[float | None] = []
+    original_result = concurrent.futures.Future.result
+
+    def record_result(future, timeout=None):
+        waits.append(timeout)
+        return original_result(future, timeout=timeout)
+
+    monkeypatch.setattr(concurrent.futures.Future, "result", record_result)
+
+    def fail_in_nested_context() -> None:
+        with async_execution_timeout(None):
+            assert bridge.run(lambda: _return_value(7), timeout=300) == 7
+            raise ValueError("inner")
+
+    async def invoke() -> None:
+        assert bridge.run(lambda: _return_value(7), timeout=300) == 7
+        with async_execution_timeout(3600):
+            assert bridge.run(lambda: _return_value(7), timeout=300) == 7
+            with pytest.raises(ValueError, match="inner"):
+                fail_in_nested_context()
+            assert bridge.run(lambda: _return_value(7), timeout=300) == 7
+        assert bridge.run(lambda: _return_value(7), timeout=300) == 7
+
+    asyncio.run(invoke())
+    assert waits == [300, 3600, None, 3600, 300]
+
+
+@pytest.mark.parametrize("seconds", [0, -1, float("nan"), float("inf"), -float("inf")])
+def test_scoped_timeout_rejects_invalid_duration(seconds: float) -> None:
+    """Scoped timeout durations must be finite and positive or None."""
+    with (
+        pytest.raises(ValueError, match="finite positive"),
+        async_execution_timeout(seconds),
+    ):
+        pytest.fail("Invalid timeout entered the context")
+
+
+def test_scoped_timeout_isolated_between_tasks(
+    bridge: AsyncBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A timeout context in one task leaves another task's timeout unchanged."""
+    waits: list[float | None] = []
+    original_result = concurrent.futures.Future.result
+
+    def record_result(future, timeout=None):
+        waits.append(timeout)
+        return original_result(future, timeout=timeout)
+
+    monkeypatch.setattr(concurrent.futures.Future, "result", record_result)
+
+    async def invoke() -> None:
+        entered = asyncio.Event()
+        finished = asyncio.Event()
+
+        async def scoped() -> None:
+            with async_execution_timeout(3600):
+                entered.set()
+                await finished.wait()
+                assert bridge.run(lambda: _return_value(7)) == 7
+
+        async def unscoped() -> None:
+            await entered.wait()
+            assert bridge.run(lambda: _return_value(8)) == 8
+            finished.set()
+
+        await asyncio.gather(scoped(), unscoped())
+
+    asyncio.run(invoke())
+    assert waits == [1.0, 3600]
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "qubex.experiment.services.measurement_service",
+        "qubex.measurement.services.measurement_execution_service",
+    ],
+)
+def test_scoped_timeout_overrides_measurement_service_waits(
+    module_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Measurement service wrappers honor scoped timeouts despite explicit defaults."""
+    service = importlib.import_module(module_name)
+    waits: list[float | None] = []
+    original_result = concurrent.futures.Future.result
+
+    def record_result(future, timeout=None):
+        waits.append(timeout)
+        return original_result(future, timeout=timeout)
+
+    monkeypatch.setattr(concurrent.futures.Future, "result", record_result)
+
+    async def invoke() -> int:
+        # Verify the service default as well as the scoped override.
+        assert service._run_async(lambda: _return_value(8)) == 8  # noqa: SLF001
+        with async_execution_timeout(3600):
+            # Exercise wrappers that explicitly pass their default timeout.
+            return service._run_async(lambda: _return_value(7))  # noqa: SLF001
+
+    assert asyncio.run(invoke()) == 7
+    assert waits == [600, 3600]
 
 
 def test_run_inside_running_loop_preserves_contextvars(bridge: AsyncBridge) -> None:
@@ -76,6 +185,53 @@ def test_run_inside_running_loop_cancels_on_timeout(bridge: AsyncBridge) -> None
     asyncio.run(_invoke())
 
     assert cancelled.wait(timeout=1.0)
+
+
+def test_scoped_timeout_cancels_background_execution(bridge: AsyncBridge) -> None:
+    """A scoped deadline cancels a hanging operation despite a longer explicit timeout."""
+    cancelled = threading.Event()
+
+    async def hang() -> None:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    async def invoke() -> None:
+        with (
+            async_execution_timeout(0.01),
+            pytest.raises(TimeoutError, match="asynchronous bridge"),
+        ):
+            bridge.run(hang, timeout=300)
+
+    asyncio.run(invoke())
+    assert cancelled.wait(timeout=1.0)
+
+
+def test_scoped_timeout_propagates_to_nested_bridges(
+    bridge: AsyncBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scoped timeouts propagate through bridge threads to nested bridge calls."""
+    waits: list[float | None] = []
+    original_result = concurrent.futures.Future.result
+
+    def record_result(future, timeout=None):
+        waits.append(timeout)
+        return original_result(future, timeout=timeout)
+
+    monkeypatch.setattr(concurrent.futures.Future, "result", record_result)
+    with AsyncBridge(default_timeout=2.0) as inner:
+
+        async def nested() -> int:
+            return inner.run(lambda: _return_value(7), timeout=300)
+
+        async def invoke() -> int:
+            with async_execution_timeout(3600):
+                return bridge.run(nested, timeout=300)
+
+        assert asyncio.run(invoke()) == 7
+
+    assert waits == [3600, 3600]
 
 
 def test_run_without_timeout_ignores_default_deadline() -> None:
