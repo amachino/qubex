@@ -95,6 +95,17 @@ def test_joint_fit_recovers_transition_matrix_and_initial_populations() -> None:
     assert goodness.weighted_residual_rms == pytest.approx(
         np.sqrt(goodness.reduced_chi_squared)
     )
+    assert set(analysis.actual.mahalanobis_residuals) == set(measurements.protocols)
+    assert all(
+        residuals.shape == measurements.repetition_counts.shape
+        for residuals in analysis.actual.mahalanobis_residuals.values()
+    )
+    assert goodness.maximum_mahalanobis_residual == pytest.approx(
+        max(
+            np.max(residuals)
+            for residuals in analysis.actual.mahalanobis_residuals.values()
+        )
+    )
     assert analysis.metadata["reference_interpretation"] is None
     assert analysis.metadata["profile_confidence_level"] is None
     np.testing.assert_allclose(
@@ -233,7 +244,14 @@ def test_population_figure_evaluates_fit_at_every_integer_repetition() -> None:
         np.asarray(fit_trace.x),
         np.arange(int(measurements.repetition_counts[-1]) + 1),
     )
-    assert "WRMS=" in figure.layout.title.text
+    assert figure.layout.width == 800
+    assert figure.layout.margin.t == 160
+    diagnostic = figure.layout.title.text.split("<br>")[1]
+    assert "optimizer=success" in diagnostic
+    assert "rank=" in diagnostic
+    assert "χ²/DoF=" in diagnostic
+    assert "max dM=" in diagnostic
+    assert "WRMS=" not in figure.layout.title.text
 
 
 def test_matrix_figure_compares_actual_and_reference_with_uncertainty() -> None:
@@ -264,8 +282,10 @@ def test_matrix_figure_compares_actual_and_reference_with_uncertainty() -> None:
     assert figure.layout.coloraxis.cmin == pytest.approx(0.0)
     assert figure.layout.coloraxis.cmax == pytest.approx(0.1)
     annotation_text = [annotation.text for annotation in figure.layout.annotations]
-    assert annotation_text[0].startswith("Actual<br><sup>optimizer=success, χ²/DoF=")
-    assert annotation_text[1].startswith("Reference<br><sup>optimizer=success, χ²/DoF=")
+    assert annotation_text[0].startswith("Actual<br><sup>optimizer=success, rank=")
+    assert annotation_text[1].startswith("Reference<br><sup>optimizer=success, rank=")
+    assert all("χ²/DoF=" in text and "max dM=" in text for text in annotation_text)
+    assert all("WRMS=" not in text for text in annotation_text)
     for trace in traces:
         text = np.asarray(trace.text)
         assert "±" in text[0, 0]

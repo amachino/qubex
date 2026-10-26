@@ -30,18 +30,46 @@ def test_converged_central_fit_survives_unresolved_local_covariance() -> None:
     assert np.isfinite(result.goodness_of_fit.reduced_chi_squared)
 
 
-def test_goodness_of_fit_reports_objective_residual_metrics_without_judgment() -> None:
-    """Fit diagnostics should report chi-squared and whitened-residual RMS."""
+def test_goodness_of_fit_reports_objective_and_block_residual_metrics() -> None:
+    """Fit diagnostics should include basis-invariant residual-block norms."""
+    residual = np.array([1.0, -2.0, 2.0, 0.0])
     goodness = assess_goodness_of_fit(
-        np.array([1.0, -2.0, 2.0, 0.0]),
+        residual,
         n_parameters=1,
+        residual_block_sizes=(2, 2),
+    )
+    rotation = np.array([[0.0, -1.0], [1.0, 0.0]])
+    rotated = np.concatenate((rotation @ residual[:2], rotation @ residual[2:]))
+    rotated_goodness = assess_goodness_of_fit(
+        rotated,
+        n_parameters=1,
+        residual_block_sizes=(2, 2),
     )
 
     assert goodness.degrees_of_freedom == 3
     assert goodness.chi_squared == pytest.approx(9.0)
     assert goodness.reduced_chi_squared == pytest.approx(3.0)
     assert goodness.weighted_residual_rms == pytest.approx(np.sqrt(3.0))
-    assert goodness.maximum_absolute_whitened_residual == pytest.approx(2.0)
+    assert goodness.maximum_mahalanobis_residual == pytest.approx(np.sqrt(5.0))
+    assert rotated_goodness == goodness
+
+
+def test_goodness_of_fit_rejects_invalid_residual_blocks() -> None:
+    """Residual blocks should be integral, positive, and cover the residual."""
+    residual = np.ones(4)
+
+    with pytest.raises(TypeError, match="integers"):
+        assess_goodness_of_fit(
+            residual,
+            n_parameters=1,
+            residual_block_sizes=(2.0, 2),  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValueError, match="complete residual"):
+        assess_goodness_of_fit(
+            residual,
+            n_parameters=1,
+            residual_block_sizes=(3, 2),
+        )
 
 
 def test_local_covariance_is_not_scaled_by_fit_residual_size() -> None:

@@ -212,13 +212,16 @@ class FitGoodnessOfFit:
     Degrees of freedom are the number of whitened residual components minus the
     numerical Jacobian rank.
     `weighted_residual_rms` is `sqrt(chi_squared / degrees_of_freedom)`.
+    `maximum_mahalanobis_residual` is the largest covariance-weighted norm of
+    one GEF population observation and is invariant under the choice of
+    whitening basis.
     """
 
     degrees_of_freedom: int
     chi_squared: float
     reduced_chi_squared: float
     weighted_residual_rms: float
-    maximum_absolute_whitened_residual: float
+    maximum_mahalanobis_residual: float
 
 
 @dataclass(frozen=True)
@@ -228,7 +231,8 @@ class ReadoutMistMatrixFit:
 
     `parameter_covariance` follows `parameter_order`. Rows and columns are NaN
     when that physical quantity is not locally estimable; `parameter_estimable`
-    records the same decision explicitly.
+    records the same decision explicitly. `mahalanobis_residuals` is keyed by
+    preparation protocol and follows the measurement repetition-count order.
     """
 
     success: bool
@@ -241,6 +245,7 @@ class ReadoutMistMatrixFit:
     parameter_covariance: NDArray[np.float64]
     goodness_of_fit: FitGoodnessOfFit
     whitened_residual: NDArray[np.float64]
+    mahalanobis_residuals: dict[str, NDArray[np.float64]]
     message: str
     model_name: str = "full"
     free_parameter_count: int = 12
@@ -577,31 +582,62 @@ def whiten_predictions(
     return np.concatenate(residuals)
 
 
+def _residual_block_norms(
+    residual: NDArray[np.float64],
+    block_sizes: Sequence[int] | None,
+) -> NDArray[np.float64]:
+    """Return Euclidean norms of covariance-whitened residual blocks."""
+    if block_sizes is None:
+        normalized_sizes = (1,) * residual.size
+    else:
+        if any(
+            isinstance(size, bool) or not isinstance(size, Integral)
+            for size in block_sizes
+        ):
+            raise TypeError("residual_block_sizes must contain integers only.")
+        normalized_sizes = tuple(int(size) for size in block_sizes)
+    if any(size <= 0 for size in normalized_sizes):
+        raise ValueError("residual_block_sizes must contain positive integers.")
+    if sum(normalized_sizes) != residual.size:
+        raise ValueError("residual_block_sizes must cover the complete residual.")
+    offsets = np.cumsum((0, *normalized_sizes))
+    return np.asarray(
+        [np.linalg.norm(residual[start:stop]) for start, stop in pairwise(offsets)],
+        dtype=np.float64,
+    )
+
+
 def assess_goodness_of_fit(
     residual: ArrayLike,
     *,
     n_parameters: int,
+    residual_block_sizes: Sequence[int] | None = None,
 ) -> FitGoodnessOfFit:
-    """Compute objective diagnostics from shot-noise-whitened residuals."""
+    """Compute objective diagnostics from covariance-whitened residual blocks."""
+    if isinstance(n_parameters, bool) or not isinstance(n_parameters, Integral):
+        raise TypeError("n_parameters must be a nonnegative integer.")
+    if n_parameters < 0:
+        raise ValueError("n_parameters must be a nonnegative integer.")
     values = np.asarray(residual, dtype=np.float64).reshape(-1)
-    degrees_of_freedom = int(values.size - n_parameters)
+    mahalanobis = _residual_block_norms(values, residual_block_sizes)
+    degrees_of_freedom = int(values.size - int(n_parameters))
     if values.size == 0 or not np.all(np.isfinite(values)):
         return FitGoodnessOfFit(
             degrees_of_freedom=degrees_of_freedom,
             chi_squared=float("nan"),
             reduced_chi_squared=float("nan"),
             weighted_residual_rms=float("nan"),
-            maximum_absolute_whitened_residual=float("nan"),
+            maximum_mahalanobis_residual=float("nan"),
         )
     chi_squared = float(values @ values)
-    maximum = float(np.max(np.abs(values)))
+    maximum = float(np.max(mahalanobis))
     if degrees_of_freedom <= 0:
         return FitGoodnessOfFit(
             degrees_of_freedom=degrees_of_freedom,
             chi_squared=chi_squared,
             reduced_chi_squared=float("nan"),
             weighted_residual_rms=float("nan"),
-            maximum_absolute_whitened_residual=maximum,
+            maximum_mahalanobis_residual=maximum,
         )
     reduced = chi_squared / degrees_of_freedom
     return FitGoodnessOfFit(
@@ -609,7 +645,7 @@ def assess_goodness_of_fit(
         chi_squared=chi_squared,
         reduced_chi_squared=reduced,
         weighted_residual_rms=float(np.sqrt(reduced)),
-        maximum_absolute_whitened_residual=maximum,
+        maximum_mahalanobis_residual=maximum,
     )
 
 
@@ -711,6 +747,7 @@ def fit_full_gls(
     initializations: Sequence[ArrayLike],
     *,
     parameter_count: int,
+    residual_block_sizes: Sequence[int] | None = None,
 ) -> FullFitResult:
     """
     Fit robust initializations followed by final ordinary GLS.
@@ -780,6 +817,7 @@ def fit_full_gls(
         goodness_of_fit=assess_goodness_of_fit(
             whitened,
             n_parameters=rank,
+            residual_block_sizes=residual_block_sizes,
         ),
         message=(
             str(final.message)
@@ -1170,7 +1208,7 @@ def _failed_fit(
         chi_squared=float("nan"),
         reduced_chi_squared=float("nan"),
         weighted_residual_rms=float("nan"),
-        maximum_absolute_whitened_residual=float("nan"),
+        maximum_mahalanobis_residual=float("nan"),
     )
     return ReadoutMistMatrixFit(
         success=False,
@@ -1186,6 +1224,7 @@ def _failed_fit(
         ),
         goodness_of_fit=goodness,
         whitened_residual=np.empty(0),
+        mahalanobis_residuals={},
         message=message,
         model_name=model_name,
         free_parameter_count=free_parameter_count,
@@ -1289,10 +1328,12 @@ def _fit_model_condition(
         spec,
         preferred,
     )
+    block_sizes = tuple(block.whitener.shape[0] for block in blocks)
     fitted = fit_full_gls(
         residual,
         initializations,
         parameter_count=parameter_count,
+        residual_block_sizes=block_sizes,
     )
     if not fitted.success:
         return _failed_fit(
@@ -1366,6 +1407,15 @@ def _fit_model_condition(
     predicted = _model_predictions(
         fitted.parameters, measurements.repetition_counts, spec
     )
+    block_mahalanobis = _residual_block_norms(
+        fitted.whitened_residual,
+        block_sizes,
+    )
+    point_count = measurements.repetition_counts.size
+    mahalanobis_residuals = {
+        protocol: block_mahalanobis[index * point_count : (index + 1) * point_count]
+        for index, protocol in enumerate(PROTOCOL_ORDER)
+    }
     return ReadoutMistMatrixFit(
         success=True,
         transition_matrix=transition_matrix,
@@ -1377,6 +1427,7 @@ def _fit_model_condition(
         parameter_covariance=covariance,
         goodness_of_fit=fitted.goodness_of_fit,
         whitened_residual=fitted.whitened_residual,
+        mahalanobis_residuals=mahalanobis_residuals,
         message=fitted.message,
         model_name=spec.name,
         free_parameter_count=parameter_count,
@@ -1847,15 +1898,14 @@ def _fitted_populations_on_integer_grid(
 
 
 def _fit_diagnostic_text(fit: ReadoutMistMatrixFit) -> str:
-    """Format objective fit metrics without assigning a quality category."""
+    """Format complementary fit diagnostics as one compact line."""
     if not fit.success:
         return f"optimizer=failed, rank={fit.jacobian_rank}/{fit.free_parameter_count}"
     goodness = fit.goodness_of_fit
     return (
-        f"optimizer=success, χ²/DoF={goodness.reduced_chi_squared:.3g}, "
-        f"WRMS={goodness.weighted_residual_rms:.3g}, "
-        f"max|r_w|={goodness.maximum_absolute_whitened_residual:.3g}, "
-        f"rank={fit.jacobian_rank}/{fit.free_parameter_count}"
+        f"optimizer=success, rank={fit.jacobian_rank}/{fit.free_parameter_count}, "
+        f"χ²/DoF={goodness.reduced_chi_squared:.3g}, "
+        f"max dM={goodness.maximum_mahalanobis_residual:.3g}"
     )
 
 
@@ -1964,7 +2014,7 @@ def _population_figure(
             "Readout-induced state transitions"
             f"<br><sup>Actual: {_fit_diagnostic_text(analysis.actual)}"
             + (
-                f" | Reference: {_fit_diagnostic_text(analysis.reference)}"
+                f"<br>Reference: {_fit_diagnostic_text(analysis.reference)}"
                 if analysis.reference is not None
                 else ""
             )
@@ -1972,6 +2022,8 @@ def _population_figure(
         ),
         template="plotly_white",
         height=850,
+        width=800,
+        margin={"t": 160},
     )
     return figure
 
@@ -2157,8 +2209,8 @@ def characterize_readout_mist(
     effective cycle-boundary probabilities rather than microscopic rates.
     Uncertainty is unscaled local GLS covariance conditional on the shared GEF
     calibration; local null-space directions are assessed separately for every
-    reported quantity. Reduced chi-squared, whitened-residual RMS, maximum
-    absolute whitened residual, optimizer success, and Jacobian rank are returned
+    reported quantity. Reduced chi-squared, whitened-residual RMS, per-point
+    Mahalanobis residuals, optimizer success, and Jacobian rank are returned
     without assigning a fit-quality category. Calibration uncertainty is not
     included.
     The blank reference zeros the entire candidate cycle while preserving its
@@ -2278,12 +2330,10 @@ def characterize_readout_mist(
         measurements,
         covariance_rcond=covariance_rcond,
     )
-    figures = (
-        {"populations": _population_figure(measurements, analysis)} if plot else {}
-    )
+    figures: dict[str, go.Figure] = {}
     if plot:
+        figures["populations"] = _population_figure(measurements, analysis)
         figures["transition_matrix"] = _matrix_figure(analysis)
-    if plot:
         for figure in figures.values():
             figure.show()
     measurement_options = {
