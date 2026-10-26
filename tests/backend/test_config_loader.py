@@ -1747,11 +1747,23 @@ def test_load_requires_address_for_non_quel3_box(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("readout_margin", "expected_margin"), [(None, 0.15), (0.2, 0.2)]
+)
 def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     tmp_path: Path,
+    readout_margin: float | None,
+    expected_margin: float,
 ) -> None:
     """Given quel3 backend, when loading control parameters, then quel3 defaults are materialized."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "frequency_margin.yaml",
+        {
+            "meta": {"unit": "GHz"},
+            "data": {} if readout_margin is None else {"READ": readout_margin},
+        },
+    )
 
     _write_yaml(
         config_dir / "box.yaml",
@@ -1781,6 +1793,12 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     )
     assert control_parameters.get_readout_amplitude("Q1") == pytest.approx(
         DEFAULT_QUEL3_READOUT_AMPLITUDE
+    )
+    assert control_parameters.get_frequency_margin("READ") == pytest.approx(
+        expected_margin, rel=0, abs=1e-12
+    )
+    assert control_parameters.get_frequency_margin("CTRL_GE") == pytest.approx(
+        0.5, rel=0, abs=1e-12
     )
     assert control_parameters.control_vatt["Q0"] is None
     assert control_parameters.readout_vatt[0] is None

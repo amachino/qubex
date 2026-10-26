@@ -21,6 +21,7 @@ from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
+from qubex.system.system_manager import SystemManager
 
 
 def _spec(alias: str = "Q02", port_id: str = "unit-a:tx_p01") -> InstrumentSpec:
@@ -288,11 +289,12 @@ def test_frequency_change_failure_preserves_unrelated_cached_instruments(
     assert hardware.closed_sessions == 1
 
 
-def test_controller_frequency_change_uses_only_target_readback(
+@pytest.fixture
+def frequency_controller(
     deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Controller frequency changes should preserve the range width and unrelated aliases."""
+) -> tuple[Quel3BackendController, _Hardware, list[str]]:
+    """Provide a controller with cached instruments and recorded hardware requests."""
     manager, hardware, _ = deployment
     reader = Quel3ResourceReader()
     monkeypatch.setattr(
@@ -317,8 +319,17 @@ def test_controller_frequency_change_uses_only_target_readback(
     )
     controller.refresh_instrument_cache()
     hardware.read_calls.clear()
+    return controller, hardware, requested
 
-    controller.modify_target_frequencies({"Q00": 7.0})
+
+@pytest.mark.parametrize("frequency", [3.999999, 4.099999, 5.900001, 6.000001, 7.0])
+def test_controller_frequency_change_uses_only_target_readback(
+    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency: float,
+) -> None:
+    """Insufficient frequency margins should redeploy only the target with its existing width."""
+    controller, hardware, requested = frequency_controller
+    controller.modify_target_frequencies({"Q00": frequency})
 
     assert requested == ["unit-a:tx_p01:Q00:deployment-1"]
     assert hardware.read_calls == []
@@ -328,8 +339,195 @@ def test_controller_frequency_change_uses_only_target_readback(
         for spec in controller.get_instrument_configuration().instruments
     }
     assert set(specs) == {"Q00", "Q01"}
-    assert specs["Q00"].frequency_range_min_hz == 6e9
-    assert specs["Q00"].frequency_range_max_hz == 8e9
+    assert specs["Q00"].frequency_range_min_hz == pytest.approx(
+        frequency * 1e9 - 1e9, rel=0, abs=1e-6
+    )
+    assert specs["Q00"].frequency_range_max_hz == pytest.approx(
+        frequency * 1e9 + 1e9, rel=0, abs=1e-6
+    )
+
+
+@pytest.mark.parametrize("frequency", [4.1, 4.100001, 5.0, 5.899999, 5.9])
+def test_controller_reuses_instrument_for_in_range_frequency(
+    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency: float,
+) -> None:
+    """Frequencies with at least the default margin should reuse instruments without hardware IO."""
+    controller, hardware, requested = frequency_controller
+    original = controller.get_instrument_configuration()
+    original_infos = tuple(hardware.infos)
+    original_hash = controller.hash
+
+    controller.modify_target_frequencies({"Q00": frequency})
+
+    assert hardware.deploy_calls == []
+    assert hardware.read_calls == []
+    assert requested == []
+    assert controller.get_instrument_configuration() == original
+    assert controller.hash == original_hash
+    assert all(
+        current is previous
+        for current, previous in zip(hardware.infos, original_infos, strict=True)
+    )
+
+
+def test_controller_only_redeploys_out_of_range_targets(
+    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+) -> None:
+    """Mixed frequency changes should redeploy and read back only out-of-range targets."""
+    controller, hardware, requested = frequency_controller
+    original = hardware.infos[0]
+
+    controller.modify_target_frequencies({"Q00": 5.5, "Q01": 7.0})
+
+    assert hardware.deploy_calls == [("unit-b:tx_p02", True)]
+    assert requested == ["unit-b:tx_p02:Q01:deployment-1"]
+    assert hardware.read_calls == []
+    assert hardware.infos[0] is original
+
+
+def test_controller_reuses_range_confirmed_after_redeployment(
+    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+) -> None:
+    """Later frequency changes should reuse the range read back after redeployment."""
+    controller, hardware, requested = frequency_controller
+
+    controller.modify_target_frequencies({"Q00": 7.0})
+    updated = controller.get_instrument_configuration()
+    controller.modify_target_frequencies({"Q00": 7.5})
+
+    assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
+    assert requested == ["unit-a:tx_p01:Q00:deployment-1"]
+    assert hardware.read_calls == []
+    assert controller.get_instrument_configuration() == updated
+
+
+@pytest.mark.parametrize(
+    ("margin_ghz", "frequency", "redeploy"),
+    [
+        (None, 4.1, False),
+        (None, 4.099999, True),
+        (None, 5.9, False),
+        (None, 5.900001, True),
+        (0.0, 4.0, False),
+        (0.0, 6.0, False),
+        (0.2, 4.2, False),
+        (0.2, 4.199999, True),
+        (0.2, 5.8, False),
+        (0.2, 5.800001, True),
+        (1.1, 5.0, True),
+    ],
+)
+def test_controller_guarantees_requested_frequency_margin(
+    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    margin_ghz: float | None,
+    frequency: float,
+    redeploy: bool,
+) -> None:
+    """The requested half-width should determine reuse and expand narrower deployment ranges."""
+    controller, hardware, requested = frequency_controller
+
+    controller.modify_target_frequencies(
+        {"Q00": frequency}, min_frequency_margin_ghz=margin_ghz
+    )
+
+    assert hardware.deploy_calls == ([("unit-a:tx_p01", True)] if redeploy else [])
+    assert requested == (["unit-a:tx_p01:Q00:deployment-1"] if redeploy else [])
+    assert hardware.read_calls == []
+    specifications = {
+        spec.alias: spec
+        for spec in controller.get_instrument_configuration().instruments
+    }
+    expected_margin_hz = max(1.0, 0.1 if margin_ghz is None else margin_ghz) * 1e9
+    expected_lower_hz = frequency * 1e9 - expected_margin_hz if redeploy else 4e9
+    expected_upper_hz = frequency * 1e9 + expected_margin_hz if redeploy else 6e9
+    assert specifications["Q00"].frequency_range_min_hz == pytest.approx(
+        expected_lower_hz, rel=0, abs=1e-6
+    )
+    assert specifications["Q00"].frequency_range_max_hz == pytest.approx(
+        expected_upper_hz, rel=0, abs=1e-6
+    )
+    assert specifications["Q01"] == _spec("Q01", "unit-b:tx_p02")
+
+
+@pytest.mark.parametrize(
+    "margin_ghz", [-0.1, float("nan"), float("inf"), -float("inf"), 1e308]
+)
+def test_controller_rejects_invalid_frequency_margin_without_hardware_io(
+    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    margin_ghz: float,
+) -> None:
+    """Invalid minimum margins should fail before changing hardware or cached instruments."""
+    controller, hardware, requested = frequency_controller
+    original = controller.get_instrument_configuration()
+
+    with pytest.raises(ValueError, match="min_frequency_margin_ghz"):
+        controller.modify_target_frequencies(
+            {"Q00": 7.0}, min_frequency_margin_ghz=margin_ghz
+        )
+
+    assert hardware.deploy_calls == []
+    assert hardware.read_calls == []
+    assert requested == []
+    assert controller.get_instrument_configuration() == original
+
+
+def test_controller_expands_narrow_instrument_to_default_frequency_margin(
+    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+) -> None:
+    """A narrow cached instrument should expand to the default margin around an unchanged frequency."""
+    controller, hardware, requested = frequency_controller
+    hardware.infos[0] = _info(
+        "Q00", frequency_range_min_hz=4.95e9, frequency_range_max_hz=5.05e9
+    )
+    controller.refresh_instrument_cache()
+    hardware.read_calls.clear()
+
+    controller.modify_target_frequencies({"Q00": 5.0})
+
+    assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
+    assert requested == ["unit-a:tx_p01:Q00:deployment-1"]
+    specification = controller.get_instrument_configuration().instruments[0]
+    assert specification.frequency_range_min_hz == 4.9e9
+    assert specification.frequency_range_max_hz == 5.1e9
+
+
+@pytest.mark.parametrize("fail_in_context", [False, True])
+def test_modified_frequencies_restores_software_without_redeployment(
+    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    fail_in_context: bool,
+) -> None:
+    """In-range temporary frequencies should update and restore software without hardware IO."""
+    controller, hardware, requested = frequency_controller
+    target = SimpleNamespace(label="Q00", frequency=5.0)
+
+    def modify(frequencies: dict[str, float]) -> None:
+        target.frequency = frequencies[target.label]
+
+    experiment_system = SimpleNamespace(
+        targets=[target], modify_target_frequencies=modify
+    )
+    # Isolate the context manager from singleton initialization and hardware setup.
+    manager = object.__new__(SystemManager)
+    manager._experiment_system = cast(Any, experiment_system)  # noqa: SLF001
+    manager._backend_controller = controller  # noqa: SLF001
+
+    def run_context() -> None:
+        with manager.modified_frequencies({"Q00": 5.5}):
+            assert target.frequency == 5.5
+            if fail_in_context:
+                raise RuntimeError("measurement failed")
+
+    if fail_in_context:
+        with pytest.raises(RuntimeError, match="measurement failed"):
+            run_context()
+    else:
+        run_context()
+
+    assert target.frequency == 5.0
+    assert hardware.deploy_calls == []
+    assert hardware.read_calls == []
+    assert requested == []
 
 
 @pytest.mark.parametrize("append", [True, False])
