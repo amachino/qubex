@@ -17,7 +17,7 @@ dependencies = [
     "protobuf >= 6.0",
     "pydantic >= 2.0",
     "sympy >= 1.0",
-    "typedunits >= 0.0",
+    "typedunits >= 0.0.2",
     "typing_extensions >= 4.5",
 ]
 

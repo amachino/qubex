@@ -40,7 +40,7 @@ dependencies = [
     "scikit-learn >= 1.0",
     "scipy >= 1.0",
     "tqdm >= 4.27.0",
-    "typedunits >= 0.0",
+    "typedunits >= 0.0.2",
     "typing_extensions >= 4.5",
 ]
 
@@ -106,6 +106,7 @@ testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
+pythonVersion = "3.10"
 include = ["src", "packages", "scripts", "tests"]
 exclude = [
     ".venv",
