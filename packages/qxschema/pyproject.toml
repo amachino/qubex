@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qxschema"
 version = "1.5.0rc2"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 authors = [{ name = "Yasunari Suzuki" }, { name = "Akinori Machino" }]
 description = "A common schema definitions for quantum experiments"
 readme = "README.md"

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import NotRequired, TypeVar
+from typing import TypeVar
 
-from typing_extensions import TypedDict, deprecated
+from typing_extensions import NotRequired, TypedDict, deprecated
 
 from qubex.core import MutableModel
 

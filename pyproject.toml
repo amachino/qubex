@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qubex"
 version = "1.5.0rc2"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex: Qubit experiment framework"
 readme = "README.md"
@@ -106,7 +106,7 @@ testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
-pythonVersion = "3.11"
+pythonVersion = "3.10"
 include = ["src", "packages", "scripts", "tests"]
 exclude = [
     ".venv",
@@ -147,9 +147,6 @@ select = [
 ]
 
 ignore = [
-    # Preserve the string representation of released str/Enum classes.
-    "UP042", # replace-str-enum
-
     # flake8-annotations
     "ANN002", # missing-type-args
     "ANN003", # missing-type-kwargs

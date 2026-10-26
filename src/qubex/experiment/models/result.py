@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from collections import UserDict
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from plotly.graph_objects import Figure
 
@@ -83,7 +83,7 @@ class Result(UserDict):
         self.data = _ResultData(dict(data) if data is not None else {})
         self.figure = figure
         self.figures = figures
-        self.created_at = created_at or datetime.now(UTC).isoformat()
+        self.created_at = created_at or datetime.now(timezone.utc).isoformat()
 
     def __repr__(self) -> str:
         """Return a concise string representation."""

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from numbers import Real
-from typing import Final, Literal, NotRequired, TypeAlias, TypedDict, cast
+from typing import Final, Literal, TypeAlias, TypedDict, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from typing_extensions import override
+from typing_extensions import NotRequired, override
 
 from qxpulse.pulse import Pulse
 

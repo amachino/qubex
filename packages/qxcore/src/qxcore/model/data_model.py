@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
+
+from typing_extensions import Self
 
 from qxcore.serialization import load_netcdf_file, save_netcdf_file
 

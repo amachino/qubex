@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import plotly.graph_objects as go
@@ -21,7 +21,7 @@ def test_result_should_preserve_mapping_payload_access() -> None:
     assert result["value"] == 1
     assert result["label"] == "Q00"
     assert dict(result) == {"value": 1, "label": "Q00"}
-    assert datetime.fromisoformat(result.created_at).tzinfo == UTC
+    assert datetime.fromisoformat(result.created_at).tzinfo == timezone.utc
     assert result.figure is None
     assert result.figures is None
 

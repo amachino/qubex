@@ -9,10 +9,10 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 from rich.prompt import Confirm
-from typing_extensions import deprecated
+from typing_extensions import Self, deprecated
 
 from qubex.backend.backend_controller import (
     BACKEND_KIND_QUEL1,

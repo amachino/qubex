@@ -7,10 +7,11 @@ import copy
 import hashlib
 import warnings
 from copy import deepcopy
-from typing import Literal, Self, cast
+from typing import Literal, cast
 
 import numpy as np
 import numpy.typing as npt
+from typing_extensions import Self
 
 from .waveform import Waveform
 
