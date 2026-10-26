@@ -11,7 +11,6 @@ import plotly.graph_objects as go
 import pytest
 from numpy.typing import ArrayLike
 
-import qubex.visualization as viz
 from qubex.contrib.experiment.cpmg_noise_spectroscopy import (
     _build_cpmg_sequence,
     _fit_cpmg_decay,
@@ -337,8 +336,10 @@ def test_experiment_randomizes_acquisition_but_stores_fixed_frequency_indices() 
     first = cpmg_noise_spectroscopy(_FakeExperiment(), **kwargs)  # type: ignore[arg-type]
     second = cpmg_noise_spectroscopy(_FakeExperiment(), **kwargs)  # type: ignore[arg-type]
 
-    assert first.figure is None
-    assert first.figures is None
+    assert isinstance(first.figure, go.Figure)
+    assert first.figures is not None
+    assert first.figures["summary"] is first.figure
+    assert isinstance(first.figures["Q00_raw_data_heatmap"], go.Figure)
     assert first.data["acquisition_orders"] == second.data["acquisition_orders"]
     assert first.data["acquisition_orders"][0][0] != [0, 1, 2, 3]
     matrix = np.asarray(first.data["gamma2_matrix"])
@@ -411,13 +412,17 @@ def test_public_experiment_rejects_zero_frequency() -> None:
         )
 
 
-def test_numerical_only_experiment_does_not_create_plotly_figures(monkeypatch) -> None:
-    """Disabling every plot output should avoid the Plotly figure factory entirely."""
+def test_disabled_plot_outputs_still_return_figures_without_side_effects(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Output flags should suppress display and files without suppressing figures."""
 
     def fail_if_called(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("figure creation is disabled")
+        raise AssertionError("display and image saving are disabled")
 
-    monkeypatch.setattr(viz, "make_figure", fail_if_called)
+    monkeypatch.setattr(go.Figure, "show", fail_if_called)
+    monkeypatch.setattr(go.Figure, "write_image", fail_if_called)
 
     result = cpmg_noise_spectroscopy(
         _FakeExperiment(),  # type: ignore[arg-type]
@@ -428,11 +433,80 @@ def test_numerical_only_experiment_does_not_create_plotly_figures(monkeypatch) -
         save_image=False,
         save_fit_images=False,
         save_data=False,
+        save_dir=tmp_path / "results",
         enable_tqdm=False,
     )
 
-    assert result.figure is None
-    assert result.figures is None
+    assert isinstance(result.figure, go.Figure)
+    assert result.figures is not None
+    assert result.figures["summary"] is result.figure
+    assert isinstance(result.figures["Q00_raw_data_heatmap"], go.Figure)
+    assert not (tmp_path / "results").exists()
+
+
+def test_experiment_returns_empty_heatmap_for_target_without_valid_points() -> None:
+    """Every target should retain a heatmap figure when timing rejects all its points."""
+
+    class TargetSpecificPulseService(_PulseService):
+        def x180(self, target: str) -> Rect:
+            if target == "Q01":
+                return Rect(duration=200.0, amplitude=1.0, sampling_period=0.4)
+            return super().x180(target)
+
+    exp = _FakeExperiment()
+    exp.pulse = TargetSpecificPulseService()
+
+    result = cpmg_noise_spectroscopy(
+        exp,  # type: ignore[arg-type]
+        targets=["Q00", "Q01"],
+        frequency_range=[0.004],
+        time_range=_TEST_TIME_RANGE_NS,
+        plot=False,
+        save_data=False,
+        enable_tqdm=False,
+    )
+
+    assert result.figures is not None
+    heatmap = result.figures["Q01_raw_data_heatmap"]
+    assert isinstance(heatmap, go.Figure)
+    heatmap_data = cast(tuple[object, ...], heatmap.data)
+    assert len(heatmap_data) == 0
+    assert heatmap.layout.xaxis.title.text == "Effective CPMG Frequency (MHz)"
+    assert heatmap.layout.annotations[0].text == "No valid CPMG measurements"
+
+
+def test_save_data_writes_numerical_files_without_saving_figures(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Data saving should write numerical outputs without displaying or saving figures."""
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("display and image saving are disabled")
+
+    monkeypatch.setattr(go.Figure, "show", fail_if_called)
+    monkeypatch.setattr(go.Figure, "write_image", fail_if_called)
+
+    result = cpmg_noise_spectroscopy(
+        _FakeExperiment(),  # type: ignore[arg-type]
+        targets=["Q00"],
+        frequency_range=[0.001],
+        time_range=_TEST_TIME_RANGE_NS,
+        plot=False,
+        save_image=False,
+        save_fit_images=False,
+        save_data=True,
+        save_dir=tmp_path,
+        enable_tqdm=False,
+    )
+
+    output_dir = tmp_path / cast(str, result.data["timestamp"])
+    assert (output_dir / "params.json").is_file()
+    assert (output_dir / "fit_results.json").is_file()
+    assert (output_dir / "t2_matrix.npy").is_file()
+    assert not list(output_dir.rglob("*.png"))
+    assert isinstance(result.figure, go.Figure)
+    assert result.figures is not None
 
 
 def test_plotting_experiment_returns_prefit_heatmap(monkeypatch) -> None:
@@ -452,6 +526,7 @@ def test_plotting_experiment_returns_prefit_heatmap(monkeypatch) -> None:
     )
 
     assert result.figures is not None
+    assert result.figures["summary"] is result.figure
     heatmap = result.figures["Q00_raw_data_heatmap"]
     assert isinstance(heatmap, go.Figure)
     heatmap_data = cast(tuple[object, ...], heatmap.data)
