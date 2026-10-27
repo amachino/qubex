@@ -3,17 +3,11 @@
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
-from qubex.backend.quel1.quel1_backend_constants import (
-    BLOCK_LENGTH,
-    CAPTURE_DELAY_RESOLUTION_NS,
-    WORD_DURATION_NS,
-    WORD_LENGTH,
-)
+from qubex.backend.quel1.capture_delay import split_capture_delay_ns
 from qubex.core.parallel_executor import run_parallel, run_parallel_map
 from qubex.system.control_system import PortType
 from qubex.system.quel1.quel1_control_parameter_defaults import DEFAULT_CAPTURE_DELAY
@@ -66,16 +60,13 @@ class Quel1SystemSynchronizer:
         """
         coarse = {}
         offsets = {}
-        for index, delay in capture_delay.items():
-            steps = delay / CAPTURE_DELAY_RESOLUTION_NS
-            if not math.isclose(steps, round(steps), rel_tol=0.0, abs_tol=1e-8):
-                raise ValueError(
-                    f"QuEL-1 capture delay for MUX{index} must be a multiple of "
-                    f"{CAPTURE_DELAY_RESOLUTION_NS} ns; got {delay} ns."
-                )
-            coarse[index], offsets[index] = divmod(
-                round(delay / WORD_DURATION_NS), BLOCK_LENGTH // WORD_LENGTH
-            )
+        # Convert every override before mutating any state.
+        index = None
+        try:
+            for index, delay in capture_delay.items():
+                coarse[index], offsets[index] = split_capture_delay_ns(delay)
+        except ValueError as exc:
+            raise ValueError(f"Invalid capture delay for MUX{index}: {exc}") from exc
         params = experiment_system.control_params
         original_delays = {index: params.capture_delay[index] for index in coarse}
         original_words = {index: params.capture_delay_word[index] for index in offsets}

@@ -1812,22 +1812,22 @@ class MeasurementService:
             else nullcontext()
         )
         with delay_context:
-            result = MeasurementResultConverter.to_measure_result(
-                _run_async(
-                    lambda: self.run_measurement(
-                        schedule=ps,
-                        n_shots=n_shots,
-                        shot_interval=shot_interval,
-                        readout_amplitudes=readout_amplitudes,
-                        readout_duration=readout_duration,
-                        readout_pre_margin=readout_pre_margin,
-                        readout_post_margin=readout_post_margin,
-                        readout_amplification=readout_amplification,
-                        final_measurement=True,
-                        time_integration=False,
-                    )
+            measurement_result = _run_async(
+                lambda: self.run_measurement(
+                    schedule=ps,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
+                    readout_amplitudes=readout_amplitudes,
+                    readout_duration=readout_duration,
+                    readout_pre_margin=readout_pre_margin,
+                    readout_post_margin=readout_post_margin,
+                    readout_amplification=readout_amplification,
+                    final_measurement=True,
+                    time_integration=False,
                 )
             )
+        # Conversion does not depend on the temporary capture delays.
+        result = MeasurementResultConverter.to_measure_result(measurement_result)
         if plot:
             result.plot()
         return result

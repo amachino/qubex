@@ -18,7 +18,6 @@ from qubex.backend.backend_controller import (
     BackendKind,
     normalize_backend_kind,
 )
-from qubex.backend.quel1.capture_delay import validate_capture_delay_word
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
@@ -1062,7 +1061,7 @@ class ConfigLoader:
                     file_path.name,
                     PARAMS_FILE if legacy_file == "params" else PROPS_FILE,
                 )
-                return self._validate_param_values(param_name, legacy_data)
+                return legacy_data
 
             # Merge legacy -> per-file (per-file wins)
             merged = {**legacy_data, **converted_data}
@@ -1110,20 +1109,9 @@ class ConfigLoader:
                     f" with unit={unit!r}" if unit else "",
                 )
 
-            return self._validate_param_values(param_name, merged)
+            return merged
         else:
-            return self._validate_param_values(param_name, legacy_data)
-
-    def _validate_param_values(self, param_name: str, data: dict) -> dict:
-        """Validate effective capture offsets after defaults and legacy merging."""
-        if (
-            self._backend_kind == BACKEND_KIND_QUEL1
-            and param_name == "capture_delay_word"
-        ):
-            for mux, value in data.items():
-                if value is not None:
-                    validate_capture_delay_word(value, mux=mux)
-        return data
+            return legacy_data
 
     def _load_quantum_system(self) -> QuantumSystem | None:
         from qubex.system.quantum_system import Chip, QuantumSystem

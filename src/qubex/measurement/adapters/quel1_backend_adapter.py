@@ -606,7 +606,12 @@ class Quel1MeasurementBackendAdapter:
                     raise ValueError(
                         f"Capture delay word is not configured for mux {mux.index}."
                     )
-                validate_capture_delay_word(capture_delay_word, mux=mux.index)
+                try:
+                    validate_capture_delay_word(capture_delay_word)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid capture delay word for MUX{mux.index}: {exc}"
+                    ) from exc
                 return capture_delay_word * word_length
 
         control_system = getattr(self._experiment_system, "control_system", None)

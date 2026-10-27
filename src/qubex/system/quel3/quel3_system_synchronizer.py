@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from qubex.backend.quel3.quel3_backend_constants import READOUT_SAMPLING_PERIOD_NS
+from qubex.backend.quel3.capture_delay import normalize_capture_delay_ns
 
 from .quel3_target_deploy_planner import Quel3TargetDeployPlanner
 
@@ -68,14 +67,12 @@ class Quel3SystemSynchronizer:
         control parameters during measurement, so no controller update is needed.
         """
         normalized = {}
-        for index, delay in capture_delay.items():
-            samples = delay / READOUT_SAMPLING_PERIOD_NS
-            if not math.isclose(samples, round(samples), rel_tol=0.0, abs_tol=1e-8):
-                raise ValueError(
-                    f"QuEL-3 capture delay for MUX{index} must be a multiple of "
-                    f"{READOUT_SAMPLING_PERIOD_NS} ns; got {delay} ns."
-                )
-            normalized[index] = round(samples) * READOUT_SAMPLING_PERIOD_NS
+        index = None
+        try:
+            for index, delay in capture_delay.items():
+                normalized[index] = normalize_capture_delay_ns(delay)
+        except ValueError as exc:
+            raise ValueError(f"Invalid capture delay for MUX{index}: {exc}") from exc
         delays = experiment_system.control_params.capture_delay
         original = {index: delays[index] for index in normalized}
         try:
