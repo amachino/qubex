@@ -88,7 +88,11 @@ def test_connect_makes_existing_instruments_available_to_execution(
     observed: list[InstrumentInfoProtocol] = []
 
     def execute_sync(
-        *, request: object, instrument_cache: InstrumentCache, parallel: bool
+        *,
+        request: object,
+        instrument_cache: InstrumentCache,
+        parallel: bool,
+        execution_options: object,
     ) -> str:
         observed.append(instrument_cache.get("Q00"))
         return "executed"
@@ -238,7 +242,11 @@ def test_connect_warns_and_executes_last_duplicate_alias(
     observed: list[InstrumentInfoProtocol] = []
 
     def execute_sync(
-        *, request: object, instrument_cache: InstrumentCache, parallel: bool
+        *,
+        request: object,
+        instrument_cache: InstrumentCache,
+        parallel: bool,
+        execution_options: object,
     ) -> str:
         observed.append(instrument_cache.get("Q00"))
         return "executed"

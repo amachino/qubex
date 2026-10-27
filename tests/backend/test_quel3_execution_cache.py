@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from importlib import import_module
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
 from qubex.backend import BackendExecutionRequest
+from qubex.backend.quel3.execution.resources import Quel3PayloadAnalyzer
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 from qubex.backend.quel3.models import (
@@ -101,6 +103,9 @@ def test_execution_rejects_duplicate_capture_names_before_loading_runtime(
                     id="unit-a:instrument",
                     port_id="unit-a:trx_p00",
                     definition=SimpleNamespace(alias="RQ00"),
+                    config=SimpleNamespace(
+                        sampling_period_fs=400_000, timeline_step_samples=64
+                    ),
                 ),
             ),
         )
@@ -146,7 +151,15 @@ def test_capture_names_are_scoped_to_instrument_aliases() -> None:
                 SimpleNamespace(
                     id=f"unit-a:instrument-{index}",
                     port_id=f"unit-a:trx_p0{index}",
-                    definition=SimpleNamespace(alias=alias),
+                    definition=SimpleNamespace(
+                        alias=alias,
+                        profile=SimpleNamespace(
+                            frequency_range_min=5e9, frequency_range_max=7e9
+                        ),
+                    ),
+                    config=SimpleNamespace(
+                        sampling_period_fs=400_000, timeline_step_samples=64
+                    ),
                 )
                 for index, alias in enumerate(("RQ00", "RQ01"))
             ),
@@ -162,19 +175,20 @@ def test_capture_names_are_scoped_to_instrument_aliases() -> None:
         capture_mode=Quel3CaptureMode.AVERAGED_VALUE,
     )
 
-    plan = Quel3ExecutionManager._prepare_payload_execution_plan(  # noqa: SLF001
-        payload=payload, instrument_cache=instrument_cache
-    )
+    analysis = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4).analyze_all(
+        (payload,), instrument_cache
+    )[0]
 
-    assert plan.aliases == ("RQ00", "RQ01")
-    assert plan.payload.fixed_timelines["RQ00"].capture_windows == (window,)
-    assert plan.payload.fixed_timelines["RQ01"].capture_windows == (window,)
+    assert set(analysis.payload.fixed_timelines) == {"RQ00", "RQ01"}
+    assert analysis.payload.fixed_timelines["RQ00"].capture_windows == (window,)
+    assert analysis.payload.fixed_timelines["RQ01"].capture_windows == (window,)
 
 
+@pytest.mark.usefixtures("require_quel3_client")
 def test_cached_hardware_info_retains_actual_quelware_driver_configuration() -> None:
     """Cached hardware info should construct a real driver with its original config."""
-    entities = pytest.importorskip("quelware_core.entities.instrument")
-    drivers = pytest.importorskip("quelware_client.core.instrument_driver")
+    entities = import_module("quelware_core.entities.instrument")
+    drivers = import_module("quelware_client.core.instrument_driver")
     config = entities.FixedTimelineConfig(
         sampling_period_fs=400_000,
         bitdepth=16,

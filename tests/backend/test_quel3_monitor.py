@@ -782,17 +782,17 @@ def test_run_monitor_schedule_read_failure_leaves_instruments_untouched(
     assert controller._instrument_cache.snapshot() == original_snapshot
 
 
-@pytest.mark.parametrize("role", ["TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
-def test_run_monitor_schedule_normalizes_readout_waveforms(
+@pytest.mark.parametrize("role", ["TRANSMITTER", "TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
+def test_run_monitor_schedule_normalizes_trx_port_waveforms(
     monkeypatch: pytest.MonkeyPatch,
     monitor_schedule_runtime: tuple[
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
     role: InstrumentRoleName,
 ) -> None:
-    """Readout instruments should use the same normalized samples in monitor runs."""
-    controller, manager, _ = monitor_schedule_runtime
-    original = _instrument_info("readout", "rx_p00", role=role)
+    """TRX ports should use 0.8 ns waveform samples regardless of instrument role."""
+    controller, manager, actions = monitor_schedule_runtime
+    original = _instrument_info("readout", "trx_p00p01", role=role)
     monkeypatch.setattr(
         controller.resource_reader,
         "read_instrument_infos",
@@ -811,21 +811,27 @@ def test_run_monitor_schedule_normalizes_readout_waveforms(
     ]
     assert waveform.sampling_period_ns == pytest.approx(0.8)
     np.testing.assert_allclose(waveform.iq_array, [0.2, 0.5], rtol=1e-12, atol=1e-12)
+    assert (
+        next(action for action in actions if action[:2] == ("deploy", "readout"))[3]
+        == "TRANSMITTER"
+    )
     assert controller.get_instrument_configuration().instruments[0].role == role
 
 
+@pytest.mark.parametrize("role", ["TRANSMITTER", "TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
 def test_run_monitor_schedule_rejects_incompatible_readout_before_deletion(
     monkeypatch: pytest.MonkeyPatch,
     monitor_schedule_runtime: tuple[
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
+    role: InstrumentRoleName,
 ) -> None:
     """Incompatible readout sampling should fail before modifying instruments."""
     controller, manager, actions = monitor_schedule_runtime
     monkeypatch.setattr(
         controller.resource_reader,
         "read_instrument_infos",
-        lambda **kwargs: (_instrument_info("readout", "rx_p00", role="TRANSCEIVER"),),
+        lambda **kwargs: (_instrument_info("readout", "trx_p00p01", role=role),),
     )
     with PulseSchedule() as schedule:
         schedule.add("readout", Arbitrary([0.1, 0.3], sampling_period=0.3))

@@ -1398,3 +1398,15 @@ def test_check_waveform_delegates_capture_delay(
     result = exp.check_waveform("Q00", capture_delay=delay, plot=False)
     assert result is service.check_waveform.return_value
     assert service.check_waveform.call_args.kwargs["capture_delay"] == delay
+
+
+def test_register_custom_target_forwards_omitted_channel() -> None:
+    """An omitted custom-target channel should reach the context for backend-specific resolution."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+    exp.register_custom_target(
+        label="custom", frequency=4.2, box_id="Q3", port_number=2, qubit_label="Q00"
+    )
+    assert context_stub.calls[0][0] == "register_custom_target"
+    assert context_stub.calls[0][1]["channel_number"] is None

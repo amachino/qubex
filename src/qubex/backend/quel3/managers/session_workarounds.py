@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable, Collection
 from contextlib import AbstractAsyncContextManager, suppress
 from typing import TYPE_CHECKING, TypeVar
 
+from qubex.backend.quel3.instrument_cache import INSTRUMENT_RECOVERY_HINT
 from qubex.backend.quel3.interfaces.client import (
     QuelwareClientFactory,
     QuelwareClientProtocol,
@@ -35,6 +37,7 @@ QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS = 4
 # Add diagnoses here using module-qualified exception class names.
 # String keys keep quelware-client optional and avoid importing it for logging.
 QUELWARE_EXCEPTION_HINTS: dict[str, str] = {
+    "quelware_client.core.exceptions.ResourceNotFoundError": INSTRUMENT_RECOVERY_HINT,
     "quelware_client.core.exceptions.LockConflictError": (
         "Another user may be using these resources, or one of your own sessions "
         "may still hold their locks. Check for sessions that have not been released."
@@ -67,9 +70,15 @@ class QuelwareSessionError(RuntimeError):
         cause: BaseException,
     ) -> None:
         self.session_token = session_token
+        hint = (
+            f" {INSTRUMENT_RECOVERY_HINT}"
+            if is_resource_not_found_error(cause)
+            and INSTRUMENT_RECOVERY_HINT not in f"{message} {cause}"
+            else ""
+        )
         super().__init__(
             f"{message}; session_token={session_token}; "
-            f"cause={type(cause).__name__}: {cause}"
+            f"cause={type(cause).__name__}: {cause}{hint}"
         )
 
 
@@ -84,12 +93,15 @@ async def run_with_session_request_retry(
     Run one operation, recreating the client and session after request failures.
 
     Session creation retains its own retry budget. Successful sessions remain
-    open until the next operation or the caller's batch cleanup.
+    open until the next operation or the caller's batch cleanup. Missing
+    resources propagate immediately so the caller can refresh stale identities
+    and retry the batch.
     """
     max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
     for attempt in range(max_attempts):
         attempt_number = attempt + 1
         try:
+            started = time.monotonic()
             if not manager.is_open:
                 await manager.open(client_factory=client_factory)
             session_token = manager.session_token or "<unavailable>"
@@ -108,10 +120,11 @@ async def run_with_session_request_retry(
                     "QuEL-3 session reopen did not return an execution session."
                 )
             logger.debug(
-                "QuEL-3 quelware session opened; session_token=%s; attempt=%d/%d",
+                "QuEL-3 phase=session opened; session_token=%s; attempt=%d/%d; elapsed_seconds=%.6f",
                 manager.session_token or "<unavailable>",
                 attempt_number,
                 max_attempts,
+                time.monotonic() - started,
             )
             return await operation(session)
         except Exception as exc:
@@ -121,6 +134,14 @@ async def run_with_session_request_retry(
                 else manager.session_token or "<unavailable>"
             )
             await manager.close_safely()
+            if is_resource_not_found_error(exc):
+                if isinstance(exc, QuelwareSessionError):
+                    raise
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware resource not found",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
             if attempt_number >= max_attempts:
                 hint = _exception_hint(exc)
                 logger.exception(
@@ -171,7 +192,11 @@ def quelware_exception_summary(exc: BaseException) -> str:
     """Return exception context with a user-defined possible cause when registered."""
     summary = f"{type(exc).__name__}: {exc}"
     hint = _exception_hint(exc)
-    return f"{summary}; possible cause: {hint}" if hint else summary
+    return (
+        f"{summary}; possible cause: {hint}"
+        if hint and hint not in summary
+        else summary
+    )
 
 
 def _exception_hint(exc: BaseException) -> str | None:
@@ -211,8 +236,26 @@ def _http_status_hint(exc: BaseException) -> str | None:
     )
 
 
+def is_resource_not_found_error(exc: BaseException) -> bool:
+    """Identify typed missing resources along the explicit, cycle-safe cause chain."""
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if any(
+            f"{cls.__module__}.{cls.__qualname__}"
+            == "quelware_client.core.exceptions.ResourceNotFoundError"
+            for cls in type(current).__mro__
+        ):
+            return True
+        current = current.__cause__
+    return False
+
+
 def is_resource_allocation_error(exc: BaseException) -> bool:
     """Return whether an exception looks like transient resource allocation failure."""
+    if is_resource_not_found_error(exc):
+        return False
     text = f"{type(exc).__module__}.{type(exc).__name__}: {exc}".lower()
     grpc_code = _grpc_code_name(exc)
     if grpc_code is not None:

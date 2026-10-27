@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import ModuleType
 
 import numpy as np
 import numpy.typing as npt
@@ -54,17 +55,16 @@ class _RecordingSequencer:
         self,
         default_sampling_period_ns: float,
         enforce_sample_grid: bool = True,
-        iter_blank_ns: float = 2_000,
     ) -> None:
         self.default_sampling_period_ns = default_sampling_period_ns
         self.enforce_sample_grid = enforce_sample_grid
-        self.iter_blank_ns = iter_blank_ns
         self.registered_waveforms: dict[str, _RegisteredWaveform] = {}
         self.events: list[_Event] = []
         self.capture_windows: list[_CaptureWindow] = []
         self.bindings: list[_Binding] = []
         self.iterations: int = 1
         self.extended_by_ns: float = 0.0
+        self.extensions: list[tuple[float, int, int]] = []
 
     def bind(
         self,
@@ -130,6 +130,9 @@ class _RecordingSequencer:
 
     def extend_length_ns(self, additional_ns: float) -> None:
         self.extended_by_ns += additional_ns
+        self.extensions.append(
+            (additional_ns, len(self.events), len(self.capture_windows))
+        )
 
     def get_aligned_length_fs(self, post_blank_fs: int = 0) -> int:
         return post_blank_fs
@@ -247,8 +250,8 @@ def test_builder_rejects_nonfinite_waveforms(value: complex) -> None:
 
 
 def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
-    """Builder should conjugate the complete waveform and attenuate it by 1 dB."""
-    expected_gain_scale = 10 ** (-1 / 20)
+    """Builder should conjugate the complete waveform and attenuate it by 3 dB."""
+    expected_gain_scale = 10 ** (-3 / 20)
     waveform_name = "wf_shared_0000"
     waveform_values = np.array([1.0 + 0.0j, 0.3 + 0.2j], dtype=np.complex128)
     timeline = Quel3FixedTimeline(
@@ -322,8 +325,7 @@ def test_builder_conjugates_waveforms_and_inverts_event_phase() -> None:
     assert sequencer.bindings == [
         _Binding(alias="alias-RQ00", sampling_period_fs=400_000, step_samples=64)
     ]
-    assert sequencer.extended_by_ns == pytest.approx(0.0)
-    assert sequencer.iter_blank_ns == pytest.approx(0.0)
+    assert sequencer.extended_by_ns == pytest.approx(100.0)
     assert sequencer.iterations == 16
 
 
@@ -527,8 +529,11 @@ def test_builder_rejects_missing_alias_binding() -> None:
         )
 
 
-def test_builder_passes_shot_interval_as_iteration_blank() -> None:
-    """Given a shot interval, builder passes its aligned value as the iteration blank."""
+@pytest.mark.parametrize("shot_interval_ns", [0.0, 1.0, 2048.0, 2050.0])
+def test_builder_declares_timeline_length_and_shot_interval_before_content(
+    shot_interval_ns: float,
+) -> None:
+    """The declared duration and shot interval should be set once before timeline content."""
     payload = _make_payload(
         waveform_library={
             "wf_known": Quel3Waveform(
@@ -537,18 +542,25 @@ def test_builder_passes_shot_interval_as_iteration_blank() -> None:
             )
         },
         fixed_timelines={
-            "alias-RQ00": Quel3FixedTimeline(
+            alias: Quel3FixedTimeline(
                 events=(
                     Quel3WaveformEvent(
                         waveform_name="wf_known",
                         start_offset_ns=0.0,
                     ),
                 ),
-                capture_windows=(),
+                capture_windows=(
+                    Quel3CaptureWindow(
+                        name="capture_0",
+                        start_offset_ns=0.0,
+                        length_ns=8.0,
+                    ),
+                ),
                 length_ns=10.0,
             )
+            for alias in ("alias-RQ00", "alias-RQ01")
         },
-        shot_interval_ns=2048.0,
+        shot_interval_ns=shot_interval_ns,
     )
 
     builder = Quel3SequencerBuilder()
@@ -556,44 +568,113 @@ def test_builder_passes_shot_interval_as_iteration_blank() -> None:
         payload=payload,
         sequencer_factory=_RecordingSequencer,
         default_sampling_period_ns=0.4,
-        alias_bindings={"alias-RQ00": (400_000, 64)},
+        alias_bindings={
+            "alias-RQ00": (400_000, 64),
+            "alias-RQ01": (400_000, 64),
+        },
     )
 
-    assert sequencer.iter_blank_ns == pytest.approx(2048.0)
-    assert sequencer.extended_by_ns == pytest.approx(0.0)
+    assert sequencer.iterations == 16
+    assert sequencer.extended_by_ns == pytest.approx(
+        10.0 + shot_interval_ns, rel=0.0, abs=1e-9
+    )
+    assert sequencer.extensions == [(10.0 + shot_interval_ns, 0, 0)]
 
 
-def test_builder_applies_minimum_iteration_blank_floor() -> None:
-    """Given a tiny shot interval, builder passes the aligned minimum iteration blank."""
+def test_builder_preserves_declared_trailing_blank() -> None:
+    """Declared timeline duration should survive export after the last event."""
     payload = _make_payload(
-        waveform_library={
-            "wf_known": Quel3Waveform(
-                iq_array=np.array([1.0 + 0.0j], dtype=np.complex128),
-                sampling_period_ns=0.4,
-            )
-        },
+        waveform_library={"wf": Quel3Waveform(np.array([0.5 + 0j]), 0.4)},
         fixed_timelines={
-            "alias-RQ00": Quel3FixedTimeline(
-                events=(
-                    Quel3WaveformEvent(
-                        waveform_name="wf_known",
-                        start_offset_ns=0.0,
-                    ),
-                ),
-                capture_windows=(),
-                length_ns=10.0,
-            )
+            "R": Quel3FixedTimeline((Quel3WaveformEvent("wf", 0),), (), 10)
         },
-        shot_interval_ns=1.0,
     )
-
-    builder = Quel3SequencerBuilder()
-    sequencer = builder.build(
+    sequencer = Quel3SequencerBuilder().build(
         payload=payload,
         sequencer_factory=_RecordingSequencer,
         default_sampling_period_ns=0.4,
-        alias_bindings={"alias-RQ00": (400_000, 64)},
+        alias_bindings={"R": (400_000, 64)},
+    )
+    assert sequencer.extended_by_ns == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize("shots", [1, 3])
+def test_prepared_builder_preserves_exported_duration_with_real_sequencer(
+    shots: int,
+    quel3_sequencer: ModuleType,
+) -> None:
+    """Prepared payloads should preserve declared blank, alignment, and quelware iteration blank."""
+    payload = _make_payload(
+        waveform_library={"wf": Quel3Waveform(np.array([0.5 + 0j]), 0.4)},
+        fixed_timelines={
+            "R": Quel3FixedTimeline(
+                (Quel3WaveformEvent("wf", 0.8),),
+                (Quel3CaptureWindow("read", 0.8, 0.8),),
+                10,
+            )
+        },
+        n_iterations=shots,
+        shot_interval_ns=1,
+    )
+    sequencer = Quel3SequencerBuilder().build_prepared(
+        payload=payload,
+        sequencer_factory=quel3_sequencer.Sequencer,
+        default_sampling_period_ns=0.4,
+        alias_bindings={"R": (400_000, 4)},
+    )
+    directive = sequencer.export_set_fixed_timeline_directive("R")
+    assert directive.length == (28 if shots == 1 else 5028)
+    assert directive.iterations == shots
+    assert directive.events[0].start_offset_samples == 2
+    assert directive.capture_windows[0].length_samples == 2
+
+
+def test_prepared_builder_forwards_timing_values_without_normalization() -> None:
+    """Prepared builds should forward payload times exactly, including sample tolerance."""
+    timeline = Quel3FixedTimeline(
+        (Quel3WaveformEvent("wf", 4.00001),),
+        (Quel3CaptureWindow("read", 4.00001, 0.80001),),
+        10,
+    )
+    payload = _make_payload(
+        waveform_library={"wf": Quel3Waveform(np.array([0.5 + 0j]), 0.4)},
+        fixed_timelines={"R": timeline},
+    )
+    sequencer = Quel3SequencerBuilder().build_prepared(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=0.4,
+        alias_bindings={"R": (400_000, 4)},
+    )
+    assert sequencer.events[0].start_offset_ns == timeline.events[0].start_offset_ns
+    assert (
+        sequencer.capture_windows[0].start_offset_ns
+        == timeline.capture_windows[0].start_offset_ns
+    )
+    assert (
+        sequencer.capture_windows[0].length_ns == timeline.capture_windows[0].length_ns
     )
 
-    assert sequencer.iter_blank_ns == pytest.approx(1024.0)
-    assert sequencer.extended_by_ns == pytest.approx(0.0)
+
+def test_public_builder_normalizes_content_beyond_declared_length_before_interval(
+    quel3_sequencer: ModuleType,
+) -> None:
+    """Standalone builds should keep the shot interval after rounding extends timeline content."""
+    timeline = Quel3FixedTimeline((), (Quel3CaptureWindow("read", 0.3, 0.3),), 0.5)
+    payload = _make_payload(
+        waveform_library={},
+        fixed_timelines={"R": timeline},
+        n_iterations=1,
+        shot_interval_ns=0.4,
+    )
+    sequencer = Quel3SequencerBuilder().build(
+        payload=payload,
+        sequencer_factory=quel3_sequencer.Sequencer,
+        default_sampling_period_ns=0.4,
+        alias_bindings={"R": (800_000, 1)},
+    )
+    directive = sequencer.export_set_fixed_timeline_directive("R")
+    assert directive.length == 3
+    assert directive.capture_windows[0].start_offset_samples == 1
+    assert directive.capture_windows[0].length_samples == 1
+    assert payload.fixed_timelines["R"] == timeline

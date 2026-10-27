@@ -6,7 +6,7 @@ from typing import Final, Literal
 
 ExecutionMode = Literal["serial", "parallel"]
 DEFAULT_EXECUTION_MODE: Final[ExecutionMode] = "parallel"
-DEFAULT_CLOCK_HEALTH_CHECKS: Final[bool] = False
+DEFAULT_CLOCK_HEALTH_CHECKS: Final[bool] = True
 
 SAMPLING_PERIOD_NS: Final[float] = 2.0
 CAPTURE_DECIMATION_FACTOR: Final[int] = 4

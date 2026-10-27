@@ -1,6 +1,6 @@
 # インストール
 
-Qubex は Python 3.10 以上で動作します。ハードウェアバックエンドを使わない範囲では OS を問いませんが、ハードウェアバックエンドを使う場合は追加依存関係が必要で、通常は Linux ホストを前提にします。
+Qubex は Python 3.10 以上で動作します。QuEL-1 を使う場合のみ Linux が必要です。
 `v1.5.0 beta` 期間中は、正式リリースまで Qubex のインストールに `uv` が必要です。
 正式リリースでは Qubex を PyPI に公開し、`pip install` を使えるようにする予定です。
 
@@ -37,21 +37,23 @@ Python 本体と仮想環境の管理には [uv](https://docs.astral.sh/uv/) を
 uv pip install "qubex @ git+https://github.com/amachino/qubex.git"
 ```
 
-### QuEL-1 バックエンド付きでインストールする（Linux）
+### QuEL-1・QuEL-3 対応でインストールする（Linux 限定）
 
-Linux ホスト上で Qubex を実機と組み合わせて使う予定なら、この構成を使ってください。
-`QuantumSimulator` だけを使う場合は、`backend` / `quel1` extra は不要です。
+`backend` を指定すると、QuEL-1 と QuEL-3 の両方の依存パッケージがインストールされます。
 
 ```bash
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
 
-これにより、公開されている QuEL-1 向けバックエンドライブラリがインストールされます。
-`qubex[quel1]` も同等の explicit な extra 名として使えます。
+シミュレータのみを使う場合、ハードウェア向けの extra は不要です。
 
-### QuEL-3 向けにインストールする
+### QuEL-1 のみ対応でインストールする（Linux 限定）
 
-QuEL-3 の runtime support を使う予定なら、この構成を使ってください。
+```bash
+uv pip install "qubex[quel1] @ git+https://github.com/amachino/qubex.git"
+```
+
+### QuEL-3 のみ対応でインストールする
 
 ```bash
 uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
@@ -62,8 +64,11 @@ uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
 再現性のためにバージョンを固定したい場合はこちらを使ってください。
 
 ```bash
-uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@<version>"
+uv pip install "qubex @ git+https://github.com/amachino/qubex.git@<version>"
 ```
+
+実機向けの依存パッケージも導入する場合は、上記の例の `qubex` を `qubex[backend]`、
+`qubex[quel1]`、または `qubex[quel3]` に置き換えてください。
 
 ### 開発用にインストールする
 

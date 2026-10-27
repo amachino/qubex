@@ -110,6 +110,96 @@ formatter; reader and model APIs use `Quel3ResourceLevel`. System pull requests
 `instrument` level and projects its instruments into backend settings without
 collecting diagnostic dumps.
 
+## Custom target registration
+
+Call `Experiment.register_custom_target()` after `configure()`, which reloads
+the target registry. Custom targets belong to the current session and are not
+persisted to configuration files.
+
+```python
+exp.register_custom_target(
+    label="custom-drive",
+    frequency=4.2,  # GHz
+    box_id="quel3-02-a01",
+    port_number=2,
+    qubit_label="Q00",
+)
+```
+
+Use `box_id` and the integer `port_number` from the control model. The QuEL-3
+planner derives the native instrument port ID: control and PUMP targets use
+`tx_pXX`, while READ targets combine the specified read-out port with its
+configured read-in pair as `trx_pXXpYY` (input first, output second). For
+example, read-out port 1 paired with read-in port 0 maps to `trx_p00p01`.
+Specify the read-out port number for READ targets; the input pair comes from
+existing wiring.
+
+QuEL-3 defaults the optional `channel_number` to zero. The channel provides a
+logical reference to the physical port; it does not select a hardware
+instrument or limit the number of logical targets. QuEL-1 still requires an
+explicit channel number. Keep instrument frequency ranges and simultaneous
+hardware resource limits separate from logical target registration.
+
+QuEL-3 always deploys and reads back the instrument before registering the
+target, including when `update_backend_settings` is False or omitted. Offline
+registration is not supported. The option retains its existing meaning for
+QuEL-1 FNCO updates and confirmed box pushes.
+
+The system manager delegates registration to the active synchronizer through
+the common `SystemSynchronizer` contract. The
+QuEL-3 synchronizer validates the planner's specification and calls
+`deploy_instrument(..., append=True)`. This preserves other aliases on the port;
+ordinary `push()` retains its port-replacement semantics. The backend refreshes
+the whole touched port into its execution cache. Diagnostic `backend_settings`
+remain the last explicitly pulled snapshot.
+
+Control, PUMP, and READ targets are supported; UNKNOWN targets are rejected.
+READ targets require the associated qubit's mux, its configured read-out port,
+and exactly one read-in pair on the same unit. Each READ alias is a transceiver
+with both output events and capture windows. Use the custom READ label explicitly
+in pulse and capture schedules; registering it does not change default readout
+selection or create a separate capture-only target.
+
+Aliases must be nonempty, have no colon or surrounding whitespace, and match
+target labels exactly. Re-registering on the same port replaces that alias.
+Registered targets cannot move between ports, and deployment rejects aliases
+known to be cached on another port before writing. Unknown external changes
+remain subject to hardware readback validation.
+
+Publish the new target only after deployment and readback succeed.
+A write or readback failure preserves the previous registry and leaves
+the touched port uncached; hardware changes are not rolled back. Recover by
+redeploying or explicitly refreshing the instrument cache. CNCO/FNCO allocation
+belongs to quelware; registration does not change those fields in the logical
+channel.
+
+### Implementation ownership
+
+`ExperimentContext` resolves qubits and target metadata, then asks
+`SystemManager` to resolve the channel and register the target. Both operations
+use the active synchronizer without backend-specific registration branches in
+the common layers.
+
+- `system/quel1/quel1_system_synchronizer.py` owns integer port/channel resolution,
+  controller definition, registry publication, and FNCO updates. It uses a
+  narrow box-push callback to retain the manager's confirmation and cache flow.
+- `system/quel3/quel3_system_synchronizer.py` owns logical port resolution,
+  channel defaults, validation, and deployment before registry publication.
+- `system/quel3/quel3_target_deploy_planner.py` converts logical ports into
+  native instrument port IDs and shares specification building between
+  individual and batch deployments.
+- `system/system_synchronizer_factory.py` dispatches by controller type using
+  `singledispatch`. Built-in registrations bind controller types to builders
+  defined in their backend-specific synchronizer modules.
+
+To add a synchronizer, implement its builder in the backend-specific path and
+register it with `create_system_synchronizer.register(ControllerType, builder)`
+at initialization. Subclasses inherit the parent binding unless explicitly
+registered; unsupported types return `None`. The dispatch algorithm and factory
+filename remain unchanged as backends are added. This registry handles
+synchronizer construction; a new backend also needs configuration and execution
+integration.
+
 ## Decision log
 
 Status legend:

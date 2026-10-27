@@ -34,6 +34,118 @@ from qubex.system.target_type import TargetType
 from qubex.typing import MeasurementMode
 
 
+def test_result_labels_do_not_depend_on_the_last_prepared_schedule() -> None:
+    """Preparing another target should not change an earlier request's output label."""
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+    )
+    config = _make_config()
+    for label in ("RQ00", "RQ01"):
+        schedule = _FakePulseSchedule(
+            duration=0.8,
+            sequences={
+                label: PulseArray(
+                    [Arbitrary(np.array([0.1, 0.1]), sampling_period=0.4)]
+                )
+            },
+            frequencies={label: 6.0},
+        )
+        adapter.build_execution_request(
+            schedule=MeasurementSchedule.model_construct(
+                pulse_schedule=cast(Any, schedule),
+                capture_schedule=CaptureSchedule(
+                    captures=[Capture(channels=[label], start_time=0, duration=0.8)]
+                ),
+            ),
+            config=config,
+        )
+    result = adapter.build_measurement_result(
+        backend_result=Quel3BackendExecutionResult(
+            {}, {"RQ00": [np.array([1 + 0j])]}, {"sampling_period_ns": 0.8}
+        ),
+        measurement_config=config,
+        device_config={},
+        sampling_period=0.8,
+    )
+    assert list(result.data) == ["Q00"]
+
+
+def test_backend_merging_preserves_independently_compiled_pulse_frames() -> None:
+    """Merging payloads should preserve each schedule's VirtualZ, scale, and phase."""
+    from qxpulse import PulseSchedule, Rect, VirtualZ
+
+    from qubex.backend.quel3 import Quel3ExecutionOptions
+    from qubex.backend.quel3.execution.payload_builder import (
+        Quel3ExecutionPayloadBuilder,
+    )
+    from qubex.backend.quel3.execution.planner import Quel3ExecutionPlanner
+    from qubex.backend.quel3.execution.resources import Quel3PayloadAnalyzer
+    from qubex.backend.quel3.instrument_cache import InstrumentCache
+
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+    )
+    with PulseSchedule(["Q00"]) as first:
+        first.add("Q00", VirtualZ(np.pi / 2))
+        first.add("Q00", Rect(duration=4, amplitude=0.1))
+        first.add("Q00", VirtualZ(np.pi / 3))
+    with PulseSchedule(["Q00"]) as second:
+        second.add("Q00", Rect(duration=4, amplitude=0.2))
+    payloads = []
+    for schedule in (
+        first.scaled(0.5).shifted(0.2).detuned(0.003),
+        second.scaled(0.3).shifted(0.4).detuned(0.005),
+    ):
+        schedule.set_frequency("Q00", 5.0)
+        payloads.append(
+            adapter.build_execution_request(
+                schedule=MeasurementSchedule(
+                    pulse_schedule=schedule,
+                    capture_schedule=CaptureSchedule(captures=[]),
+                ),
+                config=_make_config(),
+            ).payload
+        )
+    cache = InstrumentCache()
+    cache.replace_all(
+        instrument_infos=cast(
+            Any,
+            [
+                SimpleNamespace(
+                    id="unit:Q00",
+                    port_id="unit:tx_p01",
+                    definition=SimpleNamespace(alias="Q00"),
+                    config=SimpleNamespace(
+                        sampling_period_fs=400_000, timeline_step_samples=64
+                    ),
+                )
+            ],
+        )
+    )
+    analyses = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4).analyze_all(
+        tuple(payloads), cache
+    )
+    plan = Quel3ExecutionPlanner().plan(
+        tuple(analysis.planning for analysis in analyses),
+        options=Quel3ExecutionOptions(),
+    )
+    assert len(plan.executions) == 1
+    merged = Quel3ExecutionPayloadBuilder().build_all(analyses, plan)[0].payload
+    merged_events = merged.fixed_timelines["Q00"].events
+    for original, actual in zip(payloads, merged_events, strict=True):
+        expected = original.fixed_timelines["Q00"].events[0]
+        assert actual.gain == expected.gain
+        assert actual.phase_offset_deg == expected.phase_offset_deg
+        np.testing.assert_allclose(
+            merged.waveform_library[actual.waveform_name].iq_array,
+            original.waveform_library[expected.waveform_name].iq_array,
+            rtol=0,
+            atol=0,
+        )
+
+
 @dataclass
 class _FakePulseSchedule:
     duration: float

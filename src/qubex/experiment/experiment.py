@@ -841,7 +841,7 @@ class Experiment:
         frequency: float,
         box_id: str,
         port_number: int,
-        channel_number: int,
+        channel_number: int | None = None,
         qubit_label: str | None = None,
         target_qubit_label: str | None = None,
         metadata: dict[str, Any] | None = None,
@@ -849,7 +849,58 @@ class Experiment:
         update_backend_settings: bool | None = None,
         **deprecated_options: Any,
     ) -> None:
-        """Register a custom target with the control system."""
+        """
+        Register a custom generator target for the current experiment session.
+
+        Parameters
+        ----------
+        label : str
+            Target name. QuEL-3 uses this exact instrument alias; empty names,
+            colons, and surrounding whitespace are rejected.
+        frequency : float
+            Finite target frequency in GHz.
+        box_id : str
+            Box ID, or the exact quelware unit label for QuEL-3.
+        port_number : int
+            Generator port number. READ targets use a configured read-out port.
+        channel_number : int | None, optional
+            Channel reference in the control model. Required for QuEL-1.
+            QuEL-3 defaults to channel 0 and does not use the number to allocate
+            hardware instruments; multiple targets can share this reference.
+        qubit_label : str | None, optional
+            Associated qubit. Required when the target label cannot be resolved
+            from the existing registry.
+        target_qubit_label : str | None, optional
+            Second qubit for CR/2Q targets. Required for 2Q targets.
+        metadata : dict[str, Any] | None, optional
+            Additional target metadata, including optional 2Q gate metadata.
+        target_type : TargetType | None, optional
+            Generator role, defaulting to CTRL_GE. QuEL-3 supports control,
+            PUMP, and READ targets; UNKNOWN is unsupported.
+        update_backend_settings : bool | None, optional
+            Controls QuEL-1 FNCO updates and confirmed box pushes; defaults
+            to False. QuEL-3 always appends and reads back the instrument,
+            even when this option is False or omitted, preserving other aliases
+            on the port.
+        **deprecated_options : Any
+            Deprecated `update_lsi` alias for `update_backend_settings`.
+
+        Notes
+        -----
+        Register after `configure()`, which reloads the target registry.
+        Registration is not persisted to configuration files. QuEL-3 READ
+        targets require their qubit's mux and a same-unit read-in pair;
+        registering an additional READ target does not change default readout
+        selection. Pass its label explicitly in pulse and capture schedules.
+
+        QuEL-3 always validates, deploys, and reads back the instrument before
+        publishing the target; offline registration is not supported. If either
+        operation fails, the registry is unchanged and the touched port's
+        execution cache is invalidated. Hardware writes are not rolled back. Diagnostic backend
+        settings are refreshed separately with `pull()`.
+        Same-port aliases may be updated; moving an existing alias to another
+        port is unsupported. CNCO/FNCO allocation is delegated to quelware.
+        """
         update_backend_settings = self._resolve_deprecated_option(
             value=update_backend_settings,
             deprecated_options=deprecated_options,

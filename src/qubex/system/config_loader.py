@@ -20,6 +20,7 @@ from qubex.backend.backend_controller import (
 )
 from qubex.constants import (
     BOX_FILE,
+    CABLE_DELAY_FILE,
     CHIP_FILE,
     EXTERNAL_DEVICES_FILE,
     MEASUREMENT_DEFAULTS_FILE,
@@ -310,6 +311,7 @@ class ConfigLoader:
         self._wiring_dict: dict = {}
         self._props_dict: dict = {}
         self._params_dict: dict = {}
+        self._cable_delay_ns: dict[str, dict[str, float]] | None = None
         self._measurement_defaults: MeasurementDefaults = MeasurementDefaults()
         self._external_devices_config = ExternalDevicesConfig()
         self._quantum_system: QuantumSystem | None = None
@@ -374,6 +376,7 @@ class ConfigLoader:
             self._backend_kind = self._resolve_loaded_backend_kind(
                 backend_kind=backend_kind
             )
+            self._cable_delay_ns = self._load_cable_delay_config()
             self._resolved_wiring_file = self._resolve_wiring_file()
             self._wiring_dict = self._load_config_file(self._resolved_wiring_file)
             self._wiring_rows = self._load_wiring_rows()
@@ -419,14 +422,33 @@ class ConfigLoader:
 
     @property
     def backend_runtime_config(self) -> dict[str, Any]:
-        """Return backend-specific runtime configuration for the loaded system."""
+        """
+        Return backend runtime settings, including optional cable delays.
+
+        For QuEL-3, `config/cable_delay.yaml` maps unit names to local port IDs
+        and cable delays in ns, replacing any inline `cable_delay_ns` setting
+        from `system.yaml`. Files are read during `load()`, not on
+        property access. Missing files preserve the inline setting or the
+        backend default; other backends do not load this file.
+        """
         self._ensure_loaded()
         backend_config = self._resolve_backend_config_section()
-        return {
+        runtime_config = {
             key: deepcopy(value)
             for key, value in backend_config.items()
             if key not in SYSTEM_APP_CONFIG_KEYS
         }
+        if self._cable_delay_ns is not None:
+            runtime_config["cable_delay_ns"] = deepcopy(self._cable_delay_ns)
+        return runtime_config
+
+    def _load_cable_delay_config(self) -> dict[str, dict[str, float]] | None:
+        """Read optional QuEL-3 cable delays keyed by unit and port."""
+        if self._backend_kind != BACKEND_KIND_QUEL3:
+            return None
+        if not (Path(self._config_dir) / CABLE_DELAY_FILE).exists():
+            return None
+        return self._load_optional_config_file(CABLE_DELAY_FILE)
 
     def _resolve_backend_config_section(self) -> dict[str, Any]:
         """Return selected backend config section as a mapping."""

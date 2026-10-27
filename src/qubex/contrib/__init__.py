@@ -29,6 +29,13 @@ from .experiment.efh_ramsey_experiment import (
     ef_ramsey_experiment,
     fh_ramsey_experiment,
 )
+from .experiment.gef_population_estimation import (
+    GefPopulationCalibration,
+    GefPopulationFit,
+    calibrate_gef_population,
+    fit_gef_population,
+    measure_gef_populations,
+)
 from .experiment.gf_calibration import (
     calibrate_gf_hpi_pulse,
     calibrate_gf_pi_pulse,
@@ -97,6 +104,7 @@ from .experiment.quantum_efficiency_measurement import (
     readout_snr,
     sweep_readout_snr,
 )
+from .experiment.readout_mist import analyze_readout_mist, characterize_readout_mist
 from .experiment.readout_parameters_characterization import (
     characterize_coarse_readout_parameters,
     characterize_readout_parameters,
@@ -109,6 +117,10 @@ from .experiment.simultaneous_coherence_measurement import (
 )
 from .experiment.simultaneous_qubit_spectroscopy import (
     simultaneous_qubit_spectroscopy,
+)
+from .experiment.spin_lock_relaxation import (
+    spin_lock_relaxation,
+    spin_lock_relaxation_spectroscopy,
 )
 from .experiment.spin_lock_spectroscopy import (
     spin_lock_sequence,
@@ -127,13 +139,18 @@ from .experiment.thermal_excitation_characterization import (
 )
 
 __all__ = [
+    "GefPopulationCalibration",
+    "GefPopulationFit",
     "analyze_chevron_matched_transform",
     "analyze_paired_irb",
+    "analyze_readout_mist",
     "calibrate_cr_pi_pulse",
+    "calibrate_gef_population",
     "calibrate_gf_hpi_pulse",
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
     "characterize_coarse_readout_parameters",
+    "characterize_readout_mist",
     "characterize_readout_parameters",
     "ckp_measurement_v2",
     "cpmg_noise_spectroscopy",
@@ -160,6 +177,7 @@ __all__ = [
     "estimate_qubit_frequency_from_chevron_adaptive",
     "fh_ramsey_experiment",
     "filtered_ckp_experiment",
+    "fit_gef_population",
     "fit_readout_parameters",
     "fourier_analysis",
     "get_resistance_charge",
@@ -177,6 +195,7 @@ __all__ = [
     "measure_bell_states",
     "measure_chevron_pattern",
     "measure_cr_crosstalk",
+    "measure_gef_populations",
     "measure_ghz_state",
     "measure_graph_state",
     "measure_paired_irb",
@@ -203,6 +222,8 @@ __all__ = [
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
     "simultaneous_qubit_spectroscopy",
+    "spin_lock_relaxation",
+    "spin_lock_relaxation_spectroscopy",
     "spin_lock_sequence",
     "spin_lock_spectroscopy",
     "stark_ramsey_experiment",

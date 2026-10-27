@@ -28,6 +28,7 @@ from qubex.system.quel3.quel3_control_parameter_defaults import (
     DEFAULT_PUMP_FREQUENCY_GHZ as DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ,
     DEFAULT_READOUT_AMPLITUDE as DEFAULT_QUEL3_READOUT_AMPLITUDE,
 )
+from qubex.system.quel3.quel3_target_deploy_planner import Quel3TargetDeployPlanner
 from qubex.typing import ConfigurationMode
 
 
@@ -1746,11 +1747,23 @@ def test_load_requires_address_for_non_quel3_box(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("readout_margin", "expected_margin"), [(None, 0.15), (0.2, 0.2)]
+)
 def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     tmp_path: Path,
+    readout_margin: float | None,
+    expected_margin: float,
 ) -> None:
     """Given quel3 backend, when loading control parameters, then quel3 defaults are materialized."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "frequency_margin.yaml",
+        {
+            "meta": {"unit": "GHz"},
+            "data": {} if readout_margin is None else {"READ": readout_margin},
+        },
+    )
 
     _write_yaml(
         config_dir / "box.yaml",
@@ -1780,6 +1793,12 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     )
     assert control_parameters.get_readout_amplitude("Q1") == pytest.approx(
         DEFAULT_QUEL3_READOUT_AMPLITUDE
+    )
+    assert control_parameters.get_frequency_margin("READ") == pytest.approx(
+        expected_margin, rel=0, abs=1e-12
+    )
+    assert control_parameters.get_frequency_margin("CTRL_GE") == pytest.approx(
+        0.5, rel=0, abs=1e-12
     )
     assert control_parameters.control_vatt["Q0"] is None
     assert control_parameters.readout_vatt[0] is None
@@ -2030,6 +2049,166 @@ def test_r8_awg2222_with_ge_ef_fh_shares_second_channel_for_ef_and_fh(
         assert system.resolve_fh_label(qubit) == f"{qubit}-fh"
 
     assert "Q0-CR" not in system.gen_targets
+
+
+@pytest.fixture
+def quel3_wiring_config(tmp_path: Path) -> tuple[Path, Path, str]:
+    """Provide a minimal QuEL-3 configuration for wiring tests."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "box.yaml",
+        {"BOX1": {"name": "Box One", "type": "quel3"}},
+    )
+    _write_system_catalog(
+        config_dir, system_id=chip_id, chip_id=chip_id, backend=BACKEND_KIND_QUEL3
+    )
+    return config_dir, params_dir, chip_id
+
+
+@pytest.mark.parametrize("port_number", [3, 10])
+@pytest.mark.parametrize("separator", [":", "-"])
+def test_quel3_pump_port_wired_as_control_creates_qubit_targets(
+    quel3_wiring_config: tuple[Path, Path, str], port_number: int, separator: str
+) -> None:
+    """A QuEL-3 pump-capable port wired as control should create qubit targets."""
+    config_dir, params_dir, chip_id = quel3_wiring_config
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1:1",
+                    "read_in": "BOX1:0",
+                    "ctrl": [
+                        f"BOX1{separator}{port_number}",
+                        "BOX1:4",
+                        "BOX1:9",
+                        "BOX1:11",
+                    ],
+                    "pump": f"BOX1:{10 if port_number == 3 else 3}",
+                }
+            ]
+        },
+    )
+    system = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir
+    ).get_experiment_system()
+
+    assert "Q0" in {target.qubit for target in system.ge_targets}
+    port = system.control_system.get_gen_port("BOX1", port_number)
+    assert port.type == PortType.CTRL
+    assert system.get_target("Q0").channel.port is port
+    assert ".CTRL" in port.id
+    assert all(channel.id.startswith(port.id) for channel in port.channels)
+    assert len({port.id for port in system.boxes[0].ports}) == len(
+        system.boxes[0].ports
+    )
+    assert system.boxes[0].pump_ports[0].number == (10 if port_number == 3 else 3)
+    configuration = Quel3TargetDeployPlanner().build_configuration(
+        experiment_system=system, box_ids=["BOX1"], target_labels=["Q0"]
+    )
+    assert len(configuration.instruments) == 1
+    assert configuration.instruments[0].port_id == f"BOX1:tx_p{port_number:02d}"
+    assert configuration.instruments[0].role == "TRANSMITTER"
+
+
+def test_quel3_both_pump_ports_can_be_used_as_control(
+    quel3_wiring_config: tuple[Path, Path, str],
+) -> None:
+    """Both pump-capable ports should support control with distinct port and channel IDs."""
+    config_dir, params_dir, chip_id = quel3_wiring_config
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1:1",
+                    "read_in": "BOX1:0",
+                    "ctrl": ["BOX1:3", "BOX1:10", "BOX1:9", "BOX1:11"],
+                }
+            ]
+        },
+    )
+    system = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir
+    ).get_experiment_system()
+
+    assert {target.qubit for target in system.ge_targets} >= {"Q0", "Q1"}
+    ports = system.boxes[0].ports
+    assert len({port.id for port in ports}) == len(ports)
+    channels = [channel for port in ports for channel in port.channels]
+    assert len({channel.id for channel in channels}) == len(channels)
+    assert system.boxes[0].pump_ports == []
+
+
+@pytest.mark.parametrize("pump", [None, "BOX1:3", "BOX1:10"])
+def test_quel3_pump_ports_keep_default_role(
+    quel3_wiring_config: tuple[Path, Path, str], pump: str | None
+) -> None:
+    """QuEL-3 pump ports should retain their default role unless wired as control."""
+    config_dir, params_dir, chip_id = quel3_wiring_config
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1:1",
+                    "read_in": "BOX1:0",
+                    "ctrl": ["BOX1:2", "BOX1:4", "BOX1:9", "BOX1:11"],
+                    "pump": pump,
+                }
+            ]
+        },
+    )
+    system = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir
+    ).get_experiment_system()
+
+    assert {port.number for port in system.boxes[0].pump_ports} == {3, 10}
+    if pump is not None:
+        pump_port = system.wiring_info.pump[0][1]
+        assert any(
+            target.is_pump and target.channel.port is pump_port
+            for target in system.gen_targets.values()
+        )
+
+
+@pytest.mark.parametrize("port_number", [3, 10])
+@pytest.mark.parametrize("other_mux", [False, True])
+def test_quel3_rejects_port_used_for_both_control_and_pump(
+    quel3_wiring_config: tuple[Path, Path, str], port_number: int, other_mux: bool
+) -> None:
+    """A QuEL-3 port assigned to both control and pump should fail across mux rows."""
+    config_dir, params_dir, chip_id = quel3_wiring_config
+    rows = [
+        {
+            "mux": 0,
+            "read_out": "BOX1:1",
+            "read_in": "BOX1:0",
+            "ctrl": [f"BOX1:{port_number}", "BOX1:4", "BOX1:9", "BOX1:11"],
+        }
+    ]
+    if other_mux:
+        _write_yaml(
+            config_dir / "chip.yaml",
+            {chip_id: {"name": "Test Chip", "n_qubits": 16}},
+        )
+        rows.append(
+            {
+                "mux": 1,
+                "read_out": "BOX1:8",
+                "read_in": "BOX1:7",
+                "ctrl": ["BOX1:14", "BOX1:15", "BOX1:16", "BOX1:17"],
+            }
+        )
+    rows[-1]["pump"] = f"BOX1-{port_number}"
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: rows})
+
+    with pytest.raises(ValueError, match=rf"BOX1:{port_number}.*ctrl.*pump"):
+        ConfigLoader(system_id=chip_id, config_dir=config_dir, params_dir=params_dir)
 
 
 def test_quel3_target_registry_is_independent_of_configuration_mode(
@@ -2930,3 +3109,71 @@ def test_quel3_example_deploy_uses_unit_labels_as_box_ids() -> None:
         "TRANSMITTER",
         "TRANSCEIVER",
     }
+
+
+@pytest.mark.parametrize("file_present", [False, True])
+def test_cable_delay_file_is_automatically_loaded_for_quel3(
+    tmp_path: Path,
+    file_present: bool,
+) -> None:
+    """Optional cable delay files should configure a controller through runtime settings."""
+    from qubex.backend.quel3 import Quel3BackendController
+
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(config_dir / "box.yaml", {"BOX1": {"name": "BOX1", "type": "quel3"}})
+    timing = {
+        "unit-a": {"tx_p04": 20.0, "trx_p00p01": 80.0},
+        "unit-b": {"tx_p04": 40.0},
+    }
+    if file_present:
+        _write_yaml(config_dir / "cable_delay.yaml", timing)
+    loader = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir, autoload=False
+    )
+    loader.load(backend_kind=BACKEND_KIND_QUEL3)
+    controller = Quel3BackendController.from_config_mapping(
+        loader.backend_runtime_config
+    )
+    if file_present:
+        assert controller.cable_delay_ns == {
+            "unit-a": {"tx_p04": 20.0, "trx_p00p01": 80.0},
+            "unit-b": {"tx_p04": 40.0},
+        }
+    else:
+        assert "cable_delay_ns" not in loader.backend_runtime_config
+        assert controller.cable_delay_ns == {}
+
+
+def test_cable_delay_file_overrides_inline_settings_and_reloads(tmp_path: Path) -> None:
+    """File settings should replace inline settings and be refreshed only on load."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(config_dir / "box.yaml", {"BOX1": {"name": "BOX1", "type": "quel3"}})
+    inline = {"unit": {"tx": 10.0}}
+    file_settings = {"unit": {"tx": 20.0}}
+    _write_yaml(
+        config_dir / "system.yaml",
+        {chip_id: {"chip_id": chip_id, "quel3": {"cable_delay_ns": inline}}},
+    )
+    path = config_dir / "cable_delay.yaml"
+    _write_yaml(path, file_settings)
+    loader = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir, autoload=False
+    )
+    loader.load(backend_kind=BACKEND_KIND_QUEL3)
+    assert loader.backend_runtime_config["cable_delay_ns"] == {"unit": {"tx": 20.0}}
+    loaded = loader.backend_runtime_config
+    loaded["cable_delay_ns"]["unit"].clear()
+    path.unlink()
+    assert loader.backend_runtime_config["cable_delay_ns"] == {"unit": {"tx": 20.0}}
+    loader.load(backend_kind=BACKEND_KIND_QUEL3)
+    assert loader.backend_runtime_config["cable_delay_ns"] == inline
+
+
+def test_quel1_does_not_load_quel3_cable_delay_file(tmp_path: Path) -> None:
+    """Other backends should retain their existing configuration-loading behavior."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    (config_dir / "cable_delay.yaml").write_text("unit: [", encoding="utf-8")
+    loader = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir
+    )
+    assert "cable_delay_ns" not in loader.backend_runtime_config

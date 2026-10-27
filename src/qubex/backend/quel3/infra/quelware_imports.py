@@ -26,6 +26,7 @@ from qubex.backend.quel3.interfaces import (
     SetCaptureModeFactory,
     SetFrequencyFactory,
 )
+from qubex.backend.quel3.interfaces.directives import SetTimingOffsetFactory
 from qubex.backend.quel3.models import InstrumentRoleName, Quel3CaptureMode
 
 from .quelware_transport_config import (
@@ -83,7 +84,7 @@ def load_quelware_client_factory(
 
     pat_provider: Callable[[], str] | None = None
     if pat_path is not None:
-        path = Path(pat_path)
+        path = Path(pat_path).expanduser()
         pat_provider = lambda: path.read_text(encoding="utf-8").rstrip("\r\n")
 
     def _create_client(endpoint: str, port: int | None):
@@ -135,7 +136,7 @@ def _load_channel_factory(
 
 
 def _read_secret(path: str) -> str:
-    return Path(path).read_text(encoding="utf-8").rstrip("\r\n")
+    return Path(path).expanduser().read_text(encoding="utf-8").rstrip("\r\n")
 
 
 @dataclass(frozen=True)
@@ -170,6 +171,7 @@ class QuelwareExecutionApi:
     set_frequency_directive_factory: SetFrequencyFactory
     set_capture_mode_directive_factory: SetCaptureModeFactory
     capture_mode_namespace: CaptureModeNamespaceProtocol
+    set_timing_offset_directive_factory: SetTimingOffsetFactory | None = None
 
     def build_capture_mode_directive(
         self,
@@ -205,6 +207,9 @@ def load_quelware_execution_api(
         sequencer_factory=sequencer_module.Sequencer,
         fixed_timeline_driver_factory=driver_module.create_instrument_driver_fixed_timeline,
         capture_mode_namespace=directive_module.CaptureMode,
+        set_timing_offset_directive_factory=getattr(
+            directive_module, "SetTimingOffset", None
+        ),
         set_frequency_directive_factory=directive_module.SetFrequency,
         set_capture_mode_directive_factory=directive_module.SetCaptureMode,
     )

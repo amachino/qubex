@@ -151,6 +151,7 @@ assert loaded_backend_drivers == [], loaded_backend_drivers
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.usefixtures("require_quel1_driver")
 def test_quel1_package_import_defers_driver_loading_until_controller_init() -> None:
     """Given QuEL-1 package import, when creating its controller, then drivers load lazily."""
     code = """
@@ -275,6 +276,7 @@ assert controller.sampling_period_ns > 0
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.usefixtures("require_quel1_driver")
 def test_quel1_import_and_controller_init_do_not_require_quelware_client() -> None:
     """Given missing quelware-client dependency, QuEL-1 import and init should still succeed."""
     code = """

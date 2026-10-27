@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - name: Checkout repository
@@ -57,4 +57,4 @@ jobs:
         run: uv run ruff check --output-format=github
 
       - name: Test (pytest)
-        run: uv run pytest -v --tb=short --durations=10 -n auto
+        run: uv run pytest -v -ra --tb=short --durations=20 -n auto

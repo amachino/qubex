@@ -7,9 +7,10 @@ built on quelware-client managers and tools.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -33,6 +34,8 @@ from .managers import (
 from .models import (
     InstrumentConfiguration,
     InstrumentSpec,
+    Quel3ExecutionOptions,
+    Quel3ExecutionPlan,
     Quel3ResourceLevel,
     Quel3ResourceSnapshot,
 )
@@ -62,7 +65,20 @@ class Quel3BackendController(BackendController):
         value: Mapping[str, object] | None,
     ) -> Quel3BackendController:
         """Create a controller from one QuEL-3 system configuration."""
-        return cls(runtime_config=Quel3RuntimeConfig.from_mapping(value))
+        if value is None:
+            return cls()
+        return cls(
+            runtime_config=Quel3RuntimeConfig.from_mapping(value),
+            execution_options=(
+                Quel3ExecutionOptions.model_validate(value["execution"])
+                if "execution" in value
+                else None
+            ),
+            cable_delay_ns=cast(
+                Mapping[str, Mapping[str, float]] | None,
+                value.get("cable_delay_ns"),
+            ),
+        )
 
     def __init__(
         self,
@@ -72,11 +88,13 @@ class Quel3BackendController(BackendController):
         client_mode: str | None = None,
         quelware_pat_path: str | None = None,
         runtime_config: Quel3RuntimeConfig | None = None,
+        cable_delay_ns: Mapping[str, Mapping[str, float]] | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
         session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
         execution_manager: Quel3ExecutionManager | None = None,
         resource_reader: Quel3ResourceReader | None = None,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -93,16 +111,26 @@ class Quel3BackendController(BackendController):
             Path to a quelware personal access token file.
         runtime_config : Quel3RuntimeConfig | None, optional
             Prebuilt runtime settings. Cannot be combined with quelware options.
+        cable_delay_ns : Mapping[str, Mapping[str, float]] | None, optional
+            Cable delays in ns keyed by unit, then local quelware port ID. All
+            configured ports determine the reference, including unused ports.
+            Unspecified ports have zero cable delay. None preserves legacy
+            execution without timing directives. Empty settings explicitly
+            apply zero offsets. Capture delay and payload timing are unchanged.
         connection_manager : Quel3ConnectionManager | None, optional
             Injected connection manager for testing or customization.
         session_manager : Quel3SessionManager | None, optional
             Injected session manager for testing or customization.
         configuration_manager : Quel3ConfigurationManager | None, optional
-            Injected configuration manager for testing or customization.
+            Injected configuration manager, shared with the default execution
+            manager for automatic instrument cache recovery.
         execution_manager : Quel3ExecutionManager | None, optional
             Injected execution manager for testing or customization.
         resource_reader : Quel3ResourceReader | None, optional
-            Injected resource reader for testing or customization.
+            Injected resource reader for inspection and automatic instrument
+            recovery in the default execution manager.
+        execution_options : Quel3ExecutionOptions | None, optional
+            Default resource limits and adjacent-job packing settings.
         """
         if runtime_config is not None and any(
             value is not None
@@ -151,6 +179,13 @@ class Quel3BackendController(BackendController):
                 runtime_config=resolved_runtime_config,
             )
         )
+        self._resource_reader = (
+            resource_reader
+            if resource_reader is not None
+            else Quel3ResourceReader(
+                runtime_config=resolved_runtime_config,
+            )
+        )
         self._execution_manager = (
             execution_manager
             if execution_manager is not None
@@ -159,15 +194,15 @@ class Quel3BackendController(BackendController):
                 sampling_period_ns=self._sampling_period_ns,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 session_manager=self._session_manager,
+                execution_options=execution_options,
+                resource_reader=self._resource_reader,
+                configuration_manager=self._configuration_manager,
             )
         )
-        self._resource_reader = (
-            resource_reader
-            if resource_reader is not None
-            else Quel3ResourceReader(
-                runtime_config=resolved_runtime_config,
-            )
-        )
+        if execution_manager is not None and execution_options is not None:
+            self.execution_options = execution_options
+        if cable_delay_ns is not None:
+            self.cable_delay_ns = cable_delay_ns
 
         self._monitor_tool = Quel3MonitorTool(
             configuration_manager=self._configuration_manager,
@@ -177,12 +212,47 @@ class Quel3BackendController(BackendController):
         )
 
     @property
+    def cable_delay_ns(self) -> dict[str, dict[str, float]]:
+        """Return copied cable delays in ns keyed by unit, then local port ID."""
+        return self._execution_manager.cable_delay_ns
+
+    @cable_delay_ns.setter
+    def cable_delay_ns(self, delays: Mapping[str, Mapping[str, float]]) -> None:
+        """
+        Replace default per-port cable delays for subsequent execution batches.
+
+        A payload's `cable_delay_ns` overrides these defaults without merging.
+        Effective delays are validated before execution.
+
+        All configured ports determine the maximum delay, including unused
+        ports. Each instrument receives the maximum minus its port's delay;
+        missing ports have zero cable delay. A transceiver's offset applies
+        to both transmission and capture, preserving capture delay. Offsets
+        must match the instrument sampling grid. An empty dictionary resets
+        offsets to zero. Input and returned dictionaries are copied; assign
+        the complete dictionary to update settings. No hardware IO occurs.
+
+        Examples
+        --------
+        >>> controller.cable_delay_ns = {
+        ...     "unit-a": {"tx_p04": 20.0, "trx_p00p01": 80.0}
+        ... }
+        """
+        self._execution_manager.cable_delay_ns = delays
+
+    @property
     def hash(self) -> int:
         """Return stable hash from runtime state."""
         return hash(
             (
                 self._connection_manager.hash,
                 self._instrument_cache.hash,
+                tuple(
+                    sorted(
+                        (unit, tuple(sorted(ports.items())))
+                        for unit, ports in self.cable_delay_ns.items()
+                    )
+                ),
             )
         )
 
@@ -382,7 +452,8 @@ class Quel3BackendController(BackendController):
         Raises
         ------
         ValueError
-            Hardware readback is invalid.
+            Hardware readback is invalid, or the alias is already cached on
+            another port. Known cross-port collisions fail before writing.
 
         Notes
         -----
@@ -398,6 +469,78 @@ class Quel3BackendController(BackendController):
             append=append,
             parallel=parallel,
         )
+
+    def modify_target_frequencies(
+        self,
+        target_frequencies_ghz: dict[str, float],
+        *,
+        min_frequency_margin_ghz: float | None = None,
+    ) -> None:
+        """
+        Redeploy target instruments at the requested frequencies in GHz.
+
+        Parameters
+        ----------
+        target_frequencies_ghz : dict[str, float]
+            Requested frequencies in GHz keyed by target alias.
+        min_frequency_margin_ghz : float | None, optional
+            Minimum half-width in GHz to guarantee around each frequency.
+            None uses 0.1 (plus or minus 100 MHz). Must be finite and non-negative.
+            Zero requires only the requested frequency to be within the range.
+
+        Raises
+        ------
+        ValueError
+            The minimum frequency margin is negative or non-finite in Hz.
+
+        Notes
+        -----
+        Redeployment centers each instrument's range on the requested frequency
+        and reads back the updated instrument. Preserve its existing width or
+        expand it to satisfy the minimum margin. If the entire minimum range is
+        already within the cached range, including its endpoints, reuse the
+        instrument without redeployment, readback, or cache changes.
+        Other instruments are preserved.
+        """
+        if not target_frequencies_ghz:
+            return
+        min_margin_hz = (
+            0.1 if min_frequency_margin_ghz is None else min_frequency_margin_ghz
+        ) * 1e9
+        if not math.isfinite(min_margin_hz) or min_margin_hz < 0:
+            raise ValueError(
+                "min_frequency_margin_ghz must be non-negative and finite when converted to Hz."
+            )
+        instruments = {
+            instrument.alias: instrument
+            for instrument in self.get_instrument_configuration().instruments
+        }
+        for alias, frequency in target_frequencies_ghz.items():
+            instrument = instruments[alias]
+            # Compare center limits in GHz to preserve inclusive decimal boundaries.
+            if (
+                (instrument.frequency_range_min_hz + min_margin_hz) / 1e9
+                <= frequency
+                <= (instrument.frequency_range_max_hz - min_margin_hz) / 1e9
+            ):
+                continue
+            frequency_hz = frequency * 1e9
+            margin = max(
+                (instrument.frequency_range_max_hz - instrument.frequency_range_min_hz)
+                / 2,
+                min_margin_hz,
+            )
+            self._configuration_manager.replace_instruments(
+                instrument=InstrumentSpec(
+                    port_id=instrument.port_id,
+                    alias=alias,
+                    role=instrument.role,
+                    frequency_range_min_hz=frequency_hz - margin,
+                    frequency_range_max_hz=frequency_hz + margin,
+                ),
+                instrument_cache=self._instrument_cache,
+                resource_reader=self._resource_reader,
+            )
 
     def deploy_instruments(
         self,
@@ -654,6 +797,36 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
 
+    @property
+    def execution_options(self) -> Quel3ExecutionOptions:
+        """Return execution defaults owned by the execution manager."""
+        return self._execution_manager.execution_options
+
+    @execution_options.setter
+    def execution_options(self, options: Quel3ExecutionOptions) -> None:
+        """Replace execution defaults in the execution manager."""
+        self._execution_manager.execution_options = options
+
+    def plan_execution(
+        self,
+        requests: Sequence[BackendExecutionRequest],
+        *,
+        execution_options: Quel3ExecutionOptions | None = None,
+    ) -> Quel3ExecutionPlan:
+        """
+        Inspect execution resources and shot ranges without hardware IO.
+
+        Use cached instrument information from connect, deployment, or refresh.
+        Input indices and half-open shot ranges in the returned plan are
+        zero-based. Passing options replaces the complete controller defaults.
+        Jobs are packed and executed in input order.
+        """
+        return self._execution_manager.plan_execution(
+            requests=requests,
+            instrument_cache=self._instrument_cache,
+            execution_options=execution_options,
+        )
+
     def execute_sync(
         self,
         *,
@@ -661,6 +834,7 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request synchronously using QuEL-3 defaults."""
         del execution_mode, clock_health_checks
@@ -668,6 +842,7 @@ class Quel3BackendController(BackendController):
             request=request,
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )
 
     async def execute_async(
@@ -677,6 +852,7 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request asynchronously using QuEL-3 defaults."""
         del execution_mode, clock_health_checks
@@ -684,6 +860,7 @@ class Quel3BackendController(BackendController):
             request=request,
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )
 
     async def execute_batch_async(
@@ -693,11 +870,19 @@ class Quel3BackendController(BackendController):
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
         parallel: bool = True,
+        execution_options: Quel3ExecutionOptions | None = None,
     ) -> list[BackendExecutionResult]:
-        """Execute multiple backend requests as one resolved QuEL-3 batch."""
+        """
+        Execute multiple backend requests as one resolved QuEL-3 batch.
+
+        Missing resources trigger one cache refresh and complete replanning,
+        provided all aliases retain their ports. Recovery restarts the entire
+        batch, including any executions that already completed.
+        """
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_batch_async(
             requests=tuple(requests),
             instrument_cache=self._instrument_cache,
             parallel=parallel,
+            execution_options=execution_options,
         )
