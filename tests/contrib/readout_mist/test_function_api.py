@@ -97,6 +97,22 @@ def test_custom_cycle_cannot_also_request_an_implicit_gap() -> None:
         )
 
 
+@pytest.mark.parametrize("cycle_gap_ns", [False, "0", np.nan, np.inf, -1.0])
+def test_custom_cycle_validates_even_an_unused_gap(cycle_gap_ns: Any) -> None:
+    """A custom cycle should not bypass cycle-gap type and range validation."""
+    with PulseSchedule() as cycle:
+        cycle.add("RQ0", FlatTop(duration=80.0, amplitude=0.2, tau=8.0))
+
+    with pytest.raises((TypeError, ValueError), match="cycle_gap_ns"):
+        characterize_readout_mist(
+            _experiment(),
+            "Q0",
+            readout_cycle=cycle,
+            cycle_gap_ns=cycle_gap_ns,
+            plot=False,
+        )
+
+
 def test_invalid_gef_covariance_cutoff_fails_before_acquisition() -> None:
     """The GEF covariance cutoff should be validated before hardware acquisition."""
     with pytest.raises((TypeError, ValueError), match="gef_covariance_rcond"):
@@ -134,17 +150,24 @@ def test_public_measurement_api_excludes_advanced_analysis_options() -> None:
 
 
 @pytest.mark.parametrize(
-    ("acquisition_order", "acquisition_seed"),
-    [("interleaved", 0), ("randomized", None)],
+    ("acquisition_order", "acquisition_seed", "plot", "measure_reference"),
+    [
+        ("interleaved", 0, False, True),
+        ("randomized", None, True, True),
+        ("grouped", 0, False, False),
+    ],
 )
-def test_workflow_interleaves_actual_and_complete_blank_reference(
+def test_workflow_preserves_acquisition_and_result_contracts(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     acquisition_order: str,
     acquisition_seed: int | None,
+    plot: bool,
+    measure_reference: bool,
 ) -> None:
-    """Actual and blank-reference points should remain adjacent in one sweep."""
+    """The public workflow should preserve acquisition and result contracts."""
     calls: list[dict[str, Any]] = []
+    shown_figures: list[go.Figure] = []
     transition = np.array([[0.98, 0.01, 0.01], [0.01, 0.98, 0.02], [0.01, 0.01, 0.97]])
     initial = {
         "initial_g": np.array([0.98, 0.015, 0.005]),
@@ -196,7 +219,7 @@ def test_workflow_interleaves_actual_and_complete_blank_reference(
         )
 
     monkeypatch.setattr(mist_module, "measure_gef_populations", measure)
-    monkeypatch.setattr(go.Figure, "show", lambda self: None)
+    monkeypatch.setattr(go.Figure, "show", lambda self: shown_figures.append(self))
     with PulseSchedule() as cycle:
         cycle.add("RQ0", FlatTop(duration=80.0, amplitude=0.25, tau=8.0))
         cycle.add("RQ0", FlatTop(duration=20.0, amplitude=0.05, tau=4.0))
@@ -208,7 +231,8 @@ def test_workflow_interleaves_actual_and_complete_blank_reference(
         readout_cycle=cycle,
         acquisition_order=acquisition_order,  # type: ignore[arg-type]
         acquisition_seed=acquisition_seed,
-        plot=True,
+        measure_reference=measure_reference,
+        plot=plot,
         enable_tqdm=False,
     )
 
@@ -217,7 +241,7 @@ def test_workflow_interleaves_actual_and_complete_blank_reference(
     assert calls[0]["capture_index"] == -1
     assert "calibration" not in calls[0]
     submitted_names = tuple(calls[0]["sequences"])
-    if acquisition_order == "interleaved":
+    if acquisition_order == "interleaved" and measure_reference:
         assert submitted_names[:6] == (
             "actual/initial_g/n=0",
             "reference/initial_g/n=0",
@@ -226,41 +250,56 @@ def test_workflow_interleaves_actual_and_complete_blank_reference(
             "actual/initial_f/n=0",
             "reference/initial_f/n=0",
         )
-    for actual_name, reference_name in zip(
-        submitted_names[::2], submitted_names[1::2], strict=True
-    ):
-        assert actual_name.removeprefix("actual/") == reference_name.removeprefix(
-            "reference/"
-        )
+    if measure_reference:
+        for actual_name, reference_name in zip(
+            submitted_names[::2], submitted_names[1::2], strict=True
+        ):
+            assert actual_name.removeprefix("actual/") == reference_name.removeprefix(
+                "reference/"
+            )
+    else:
+        assert len(submitted_names) == 15
+        assert all(name.startswith("actual/") for name in submitted_names)
     actual_n1 = calls[0]["sequences"]["actual/initial_g/n=1"]
-    reference_n1 = calls[0]["sequences"]["reference/initial_g/n=1"]
     assert np.any(actual_n1.values["RQ0"] != 0.0)
-    np.testing.assert_allclose(reference_n1.values["RQ0"], 0.0, rtol=0.0, atol=0.0)
-    assert actual_n1.duration == reference_n1.duration
+    if measure_reference:
+        reference_n1 = calls[0]["sequences"]["reference/initial_g/n=1"]
+        np.testing.assert_allclose(reference_n1.values["RQ0"], 0.0, rtol=0.0, atol=0.0)
+        assert actual_n1.duration == reference_n1.duration
     raw_data = result.data["raw_data"]
     assert tuple(raw_data["actual_raw_iq"]) == tuple(
         name for name in submitted_names if name.startswith("actual/")
     )
-    assert tuple(raw_data["reference_raw_iq"]) == tuple(
-        name for name in submitted_names if name.startswith("reference/")
-    )
     assert tuple(raw_data["actual_moment_summaries"]) == tuple(
         name for name in submitted_names if name.startswith("actual/")
     )
-    assert tuple(raw_data["reference_population_fits"]) == tuple(
-        name for name in submitted_names if name.startswith("reference/")
-    )
+    if measure_reference:
+        assert tuple(raw_data["reference_raw_iq"]) == tuple(
+            name for name in submitted_names if name.startswith("reference/")
+        )
+        assert tuple(raw_data["reference_population_fits"]) == tuple(
+            name for name in submitted_names if name.startswith("reference/")
+        )
+    else:
+        assert raw_data["reference_raw_iq"] is None
+        assert raw_data["reference_moment_summaries"] is None
+        assert raw_data["reference_population_fits"] is None
     measurements = result.data["measurements"]
     np.testing.assert_allclose(
         measurements.protocols["initial_g"].actual.population[1],
         transition @ initial["initial_g"],
     )
     reference_series = measurements.protocols["initial_g"].reference
-    assert reference_series is not None
-    np.testing.assert_allclose(
-        reference_series.population[1],
-        reference_transition @ initial["initial_g"],
-    )
+    if measure_reference:
+        assert reference_series is not None
+        np.testing.assert_allclose(
+            reference_series.population[1],
+            reference_transition @ initial["initial_g"],
+        )
+        assert result.data["analysis"].reference is not None
+    else:
+        assert reference_series is None
+        assert result.data["analysis"].reference is None
     assert result.data["analysis"].actual.state_order == ("g", "e", "f")
     assert result.data["analysis"].actual_model_comparison is None
     assert result.data["analysis"].reference_model_comparison is None
@@ -272,6 +311,11 @@ def test_workflow_interleaves_actual_and_complete_blank_reference(
         submitted_names
     )
     assert result.data["measurement_options"]["reference_acquisition"] == (
-        "same_batch_adjacent_pairs"
+        "same_batch_adjacent_pairs" if measure_reference else None
     )
+    figures = result.figures
+    assert figures is not None
+    assert set(figures) == {"populations", "transition_matrix"}
+    assert result.figure is figures["populations"]
+    assert shown_figures == (list(figures.values()) if plot else [])
     assert capsys.readouterr().out == ""

@@ -2209,13 +2209,17 @@ def characterize_readout_mist(
         Whether acquisition services show progress labels and bars. Enabled by
         default.
     plot : bool, optional
-        Whether to construct and show figures. If false, the returned `figures`
-        mapping is empty. This function does not print a fit summary.
+        Whether to display the generated figures. Both figures are generated
+        and returned regardless of this option. This function does not print a
+        fit summary.
 
     Returns
     -------
     Result
-        Measurements, full six-transition fits, raw GEF data, timing, and figures.
+        Measurements, full six-transition fits, raw GEF data, timing, and
+        figures. The population figure is returned in `figure` and
+        `figures["populations"]`; the transition-matrix figure is returned in
+        `figures["transition_matrix"]`.
 
     Notes
     -----
@@ -2275,13 +2279,14 @@ def characterize_readout_mist(
         configured_interval if shot_interval is None else shot_interval,
         "shot_interval",
     )
+    cycle_gap = _finite_nonnegative(cycle_gap_ns, "cycle_gap_ns")
     resolved_target = exp.ctx.resolve_qubit_label(target)
-    if readout_cycle is not None and cycle_gap_ns != 0.0:
+    if readout_cycle is not None and cycle_gap != 0.0:
         raise ValueError(
             "cycle_gap_ns must be zero when readout_cycle supplies the complete cycle."
         )
     cycle = (
-        build_default_readout_cycle(exp, resolved_target, cycle_gap_ns=cycle_gap_ns)
+        build_default_readout_cycle(exp, resolved_target, cycle_gap_ns=cycle_gap)
         if readout_cycle is None
         else validate_readout_cycle(readout_cycle)
     )
@@ -2345,10 +2350,11 @@ def characterize_readout_mist(
         measurements,
         covariance_rcond=covariance_rcond,
     )
-    figures: dict[str, go.Figure] = {}
+    figures = {
+        "populations": _population_figure(measurements, analysis),
+        "transition_matrix": _matrix_figure(analysis),
+    }
     if plot:
-        figures["populations"] = _population_figure(measurements, analysis)
-        figures["transition_matrix"] = _matrix_figure(analysis)
         for figure in figures.values():
             figure.show()
     measurement_options = {
@@ -2416,7 +2422,7 @@ def characterize_readout_mist(
                 "labels": tuple(cycle.labels),
                 "frequencies": dict(cycle.get_frequencies()),
                 "source": "configured" if readout_cycle is None else "override",
-                "cycle_gap_ns": float(cycle_gap_ns) if readout_cycle is None else None,
+                "cycle_gap_ns": cycle_gap if readout_cycle is None else None,
                 "trailing_gap_in_final_cycle": True,
                 "reference": "complete_duration_matched_blank"
                 if measure_reference
@@ -2430,7 +2436,7 @@ def characterize_readout_mist(
                 "reference": reference_schedules,
             },
         },
-        figure=figures.get("populations"),
+        figure=figures["populations"],
         figures=figures,
     )
 
