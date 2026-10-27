@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from numbers import Integral
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -20,7 +21,7 @@ from .types import CandidateFit, CrDissipationFitQuality, FitGoodnessOfFit
 
 _EPS = float(np.finfo(np.float64).eps)
 GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT = 5.0
-GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT = 8.0
+GOODNESS_OF_FIT_MAX_MAHALANOBIS_RESIDUAL_LIMIT = 8.0
 
 
 # Residual construction and covariance whitening
@@ -168,27 +169,46 @@ def assess_goodness_of_fit(
     whitened_residual: ArrayLike,
     *,
     n_parameters: int,
+    residual_block_sizes: Sequence[int] | None = None,
 ) -> FitGoodnessOfFit:
-    """Classify absolute agreement with shot-noise-whitened residuals."""
+    """Classify absolute agreement using chi-squared and block Mahalanobis norms."""
     residual = np.asarray(whitened_residual, dtype=np.float64).reshape(-1)
+    block_sizes = (
+        (1,) * residual.size
+        if residual_block_sizes is None
+        else tuple(residual_block_sizes)
+    )
+    if any(
+        isinstance(size, bool) or not isinstance(size, Integral) or size <= 0
+        for size in block_sizes
+    ):
+        raise ValueError("residual_block_sizes must contain positive integers.")
+    if sum(block_sizes) != residual.size:
+        raise ValueError("residual_block_sizes must span the residual vector.")
     degrees_of_freedom = int(residual.size - n_parameters)
     if residual.size == 0 or not np.all(np.isfinite(residual)):
         return FitGoodnessOfFit(
             degrees_of_freedom=degrees_of_freedom,
             reduced_chi_squared=float("nan"),
             chi_squared_p_value=None,
-            maximum_absolute_whitened_residual=float("nan"),
+            maximum_mahalanobis_residual=float("nan"),
             quality=CrDissipationFitQuality.NOT_ASSESSED,
             reason="No finite whitened residuals were available.",
         )
     chi_squared = float(residual @ residual)
-    maximum = float(np.max(np.abs(residual)))
+    offset = 0
+    block_norms: list[float] = []
+    for size in block_sizes:
+        block = residual[offset : offset + int(size)]
+        block_norms.append(float(np.linalg.norm(block)))
+        offset += int(size)
+    maximum = max(block_norms, default=float("nan"))
     if degrees_of_freedom <= 0:
         return FitGoodnessOfFit(
             degrees_of_freedom=degrees_of_freedom,
             reduced_chi_squared=float("nan"),
             chi_squared_p_value=None,
-            maximum_absolute_whitened_residual=maximum,
+            maximum_mahalanobis_residual=maximum,
             quality=CrDissipationFitQuality.NOT_ASSESSED,
             reason=(
                 "Absolute goodness-of-fit requires positive residual degrees "
@@ -199,19 +219,19 @@ def assess_goodness_of_fit(
     p_value = float(chi2.sf(chi_squared, degrees_of_freedom))
     accepted = bool(
         reduced <= GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT
-        and maximum <= GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT
+        and maximum <= GOODNESS_OF_FIT_MAX_MAHALANOBIS_RESIDUAL_LIMIT
     )
     reason = None
     if not accepted:
         reason = (
             "Whitened residuals exceed the conservative absolute fit limits "
-            f"(reduced chi-squared={reduced:.3g}, max |r|={maximum:.3g})."
+            f"(reduced chi-squared={reduced:.3g}, max d_M={maximum:.3g})."
         )
     return FitGoodnessOfFit(
         degrees_of_freedom=degrees_of_freedom,
         reduced_chi_squared=reduced,
         chi_squared_p_value=p_value,
-        maximum_absolute_whitened_residual=maximum,
+        maximum_mahalanobis_residual=maximum,
         quality=(
             CrDissipationFitQuality.ACCEPTED
             if accepted
@@ -266,6 +286,7 @@ def fit_gls_candidate(
     residual: Callable[[NDArray[np.float64]], NDArray[np.float64]],
     prediction: Callable[[NDArray[np.float64]], NDArray[np.float64]],
     n_observations: int,
+    residual_block_sizes: Sequence[int] | None = None,
     additional_initials: Sequence[ArrayLike] | None = None,
     preliminary_loss: str = "soft_l1",
     max_nfev: int = 3000,
@@ -311,7 +332,13 @@ def fit_gls_candidate(
             if success
             else "Fixed-parameter candidate evaluation failed.",
             goodness_of_fit=(
-                assess_goodness_of_fit(whitened, n_parameters=0) if success else None
+                assess_goodness_of_fit(
+                    whitened,
+                    n_parameters=0,
+                    residual_block_sizes=residual_block_sizes,
+                )
+                if success
+                else None
             ),
         )
 
@@ -418,7 +445,11 @@ def fit_gls_candidate(
         n_observations=n_observations,
         n_parameters=n_parameters,
         message=str(final.message),
-        goodness_of_fit=assess_goodness_of_fit(whitened, n_parameters=n_parameters),
+        goodness_of_fit=assess_goodness_of_fit(
+            whitened,
+            n_parameters=n_parameters,
+            residual_block_sizes=residual_block_sizes,
+        ),
         n_initializations=len(starts),
         n_successful_initializations=len(solutions),
     )

@@ -649,7 +649,9 @@ def build_protocol_schedules(
             with PulseSchedule() as base:
                 base.call(preparations[protocol], copy=True)
                 base.call(blocks[protocol].repeated(int(count)), copy=True)
-            base.set_frequencies(_frequencies(descriptor.echoed))
+            base.set_frequencies(
+                _frequencies(blocks[protocol], source=f"{protocol} block")
+            )
             bases.append(base)
             analyzer_target, analyzer = primary_analyzers[protocol]
             sequences.append(

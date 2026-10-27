@@ -1,4 +1,4 @@
-"""Shared construction helpers for lightweight CR dissipation v11 tests."""
+"""Shared construction helpers for lightweight CR dissipation tests."""
 
 from __future__ import annotations
 

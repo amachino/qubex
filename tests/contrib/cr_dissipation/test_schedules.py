@@ -13,6 +13,9 @@ from scipy.linalg import expm
 
 import qubex.contrib.experiment._cr_dissipation.simulation as simulation_module
 from qubex.contrib.experiment._cr_dissipation.pulses import (
+    PROTOCOL_A,
+    PROTOCOL_B,
+    PROTOCOL_C,
     PROTOCOL_D,
     PROTOCOLS,
     build_protocol_schedules,
@@ -315,6 +318,24 @@ def test_protocol_d_uses_ground_state_z_readout_without_analysis_rotation() -> N
     ]
 
 
+def test_custom_ab_schedule_preserves_its_cr_channel_frequency() -> None:
+    """A/B should retain a custom un-echoed CR frequency independently of C/D."""
+    echoed = _echoed_zx90()
+    echoed.set_frequencies({"Q0-Q1": 7.9})
+    exp = _schedule_experiment(echoed)
+    generated = resolve_zx90_descriptor(exp, "Q0", "Q1", echoed)
+    custom_ab = generated.full_un_echoed.copy()
+    custom_ab.set_frequencies({"Q0-Q1": 8.1})
+    descriptor = resolve_zx90_descriptor(exp, "Q0", "Q1", echoed, custom_ab)
+
+    schedules = build_protocol_schedules(exp, "Q0", "Q1", descriptor, (0, 1))
+
+    assert schedules.actual[PROTOCOL_A][1].get_frequency("Q0-Q1") == 8.1
+    assert schedules.actual[PROTOCOL_B][1].get_frequency("Q0-Q1") == 8.1
+    assert schedules.actual[PROTOCOL_C][1].get_frequency("Q0-Q1") == 7.9
+    assert schedules.actual[PROTOCOL_D][1].get_frequency("Q0-Q1") == 7.9
+
+
 def test_protocol_d_ideal_block_refocuses_z_even_with_zx_angle_error() -> None:
     """The swapped D block returns ground-state Z for a common ZX angle error."""
     descriptor = resolve_zx90_descriptor(
@@ -516,5 +537,24 @@ def test_unscented_covariance_psd_handling_and_positive_rates() -> None:
         lambda _: 1.0,
         positive_parameters=(),
     )
+    assert error is None
+    assert not ok
+
+
+def test_unscented_transform_rejects_nonfinite_positive_sigma_points() -> None:
+    """Extreme relative uncertainty should disable propagation instead of raising."""
+
+    def finite_positive_evaluator(rates: Mapping[str, float]) -> float:
+        if not np.isfinite(rates["gamma"]) or rates["gamma"] <= 0.0:
+            raise ValueError("gamma must remain positive and finite")
+        return float(np.exp(-rates["gamma"]))
+
+    error, ok = propagate_fidelity_uncertainty(
+        {"gamma": 1e-12},
+        np.array([[1.0]]),
+        finite_positive_evaluator,
+        positive_parameters=("gamma",),
+    )
+
     assert error is None
     assert not ok

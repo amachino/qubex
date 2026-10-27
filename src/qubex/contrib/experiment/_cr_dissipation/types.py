@@ -70,16 +70,14 @@ class IdleNoiseParameters:
 
     @property
     def transverse_rate_per_ns(self) -> float:
-        """Return the supplied echo transverse rate in 1/ns."""
-        return 0.0 if np.isinf(self.t2_echo_ns) else 1.0 / self.t2_echo_ns
+        """Return the physical echo transverse rate in 1/ns."""
+        supplied = 0.0 if np.isinf(self.t2_echo_ns) else 1.0 / self.t2_echo_ns
+        return max(supplied, 0.5 * self.relaxation_rate_per_ns)
 
     @property
     def pure_dephasing_rate_per_ns(self) -> float:
         """Return physical idle pure dephasing in 1/ns."""
-        return max(
-            0.0,
-            self.transverse_rate_per_ns - 0.5 * self.relaxation_rate_per_ns,
-        )
+        return self.transverse_rate_per_ns - 0.5 * self.relaxation_rate_per_ns
 
 
 @dataclass(frozen=True)
@@ -143,12 +141,12 @@ class CrDissipationMeasurements:
 
 @dataclass(frozen=True)
 class FitGoodnessOfFit:
-    """Store fit quality assessed against the supplied shot-noise covariance."""
+    """Store chi-squared and block-Mahalanobis fit-quality diagnostics."""
 
     degrees_of_freedom: int
     reduced_chi_squared: float
     chi_squared_p_value: float | None
-    maximum_absolute_whitened_residual: float
+    maximum_mahalanobis_residual: float
     quality: CrDissipationFitQuality
     reason: str | None = None
 

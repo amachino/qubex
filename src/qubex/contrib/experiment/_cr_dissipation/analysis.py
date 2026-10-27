@@ -19,7 +19,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.linalg import expm
 
 from .fit import (
-    GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT,
+    GOODNESS_OF_FIT_MAX_MAHALANOBIS_RESIDUAL_LIMIT,
     GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
     ResidualBlock,
     assess_goodness_of_fit,
@@ -155,6 +155,7 @@ def _protocol_goodness_of_fit(
         output[protocol] = assess_goodness_of_fit(
             np.concatenate(residuals) if residuals else np.empty(0),
             n_parameters=0,
+            residual_block_sizes=tuple(residual.size for residual in residuals),
         )
     return output
 
@@ -194,9 +195,7 @@ def _goodness_metadata(goodness: FitGoodnessOfFit | None) -> dict[str, Any]:
         "degrees_of_freedom": goodness.degrees_of_freedom,
         "reduced_chi_squared": goodness.reduced_chi_squared,
         "chi_squared_p_value": goodness.chi_squared_p_value,
-        "maximum_absolute_whitened_residual": (
-            goodness.maximum_absolute_whitened_residual
-        ),
+        "maximum_mahalanobis_residual": goodness.maximum_mahalanobis_residual,
         "reason": goodness.reason,
     }
 
@@ -788,6 +787,7 @@ def fit_control_populations(
                 residual=residual,
                 prediction=prediction,
                 n_observations=n_observations,
+                residual_block_sizes=tuple(block.rank for block in blocks),
             )
             candidates[name] = candidate
             if candidate.success:
@@ -1680,6 +1680,7 @@ def _fit_idle_control_rates(
         ),
         prediction=lambda parameters: np.concatenate(block_predictions(parameters)),
         n_observations=sum(block.rank for block in blocks),
+        residual_block_sizes=tuple(block.rank for block in blocks),
     )
     if not candidate.success:
         # An exact boundary solution can have singular local covariance even
@@ -2138,11 +2139,19 @@ def _fidelity_limits(
         CrDissipationRateStatus.CONSISTENT_WITH_ZERO,
         CrDissipationRateStatus.INCONSISTENT_RATE_DECOMPOSITION,
     }
-    # Restrict fallback metadata to primitive simulator inputs.  A partially
-    # unresolved primitive with conditional variance still participates in the
-    # sigma-point vector and therefore is not described as fixed.
+    # Restrict fallback metadata to primitive simulator inputs. A partially
+    # unresolved primitive with positive central value and conditional variance
+    # still participates in the sigma-point vector. A rate on the physical zero
+    # boundary is fixed because a local Gaussian cannot remain nonnegative.
     fixed = tuple(
-        name for name in primitive_order if statuses.get(name) in fixed_statuses
+        name
+        for name in primitive_order
+        if statuses.get(name) in fixed_statuses
+        or (
+            statuses.get(name) != CrDissipationRateStatus.FIT_FAILED
+            and np.isfinite(nominal.get(name, np.nan))
+            and nominal[name] <= 0.0
+        )
     )
     fallbacks = {name: nominal[name] for name in fixed if name in nominal}
     warnings: list[CrDissipationWarning] = []
@@ -2678,8 +2687,8 @@ def analyze_cr_dissipation(
             "c_d_signed_diagnostic": CD_SIGNED_DIAGNOSTIC_POLICY,
             "absolute_goodness_of_fit_limits": {
                 "reduced_chi_squared": GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
-                "maximum_absolute_whitened_residual": (
-                    GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT
+                "maximum_mahalanobis_residual": (
+                    GOODNESS_OF_FIT_MAX_MAHALANOBIS_RESIDUAL_LIMIT
                 ),
                 "covariance_conditioning": "gef_calibration_fixed",
             },

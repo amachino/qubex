@@ -53,7 +53,7 @@ from .analysis import (
     simplex_boundary_bootstrap_required,
 )
 from .fit import (
-    GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT,
+    GOODNESS_OF_FIT_MAX_MAHALANOBIS_RESIDUAL_LIMIT,
     GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
 )
 from .pulses import (
@@ -202,6 +202,36 @@ def _positive_finite(value: float, name: str) -> float:
     if not np.isfinite(normalized) or normalized <= 0.0:
         raise ValueError(f"{name} must be positive and finite.")
     return normalized
+
+
+def _validate_gef_diagnostic_frequency_overrides(
+    exp: Experiment,
+    targets: Sequence[str],
+    schedules: Mapping[str, Sequence[PulseSchedule]],
+) -> None:
+    """Reject schedule frequencies that would alter GEF analyzers or readout."""
+    protected_labels = {
+        label
+        for target in targets
+        for label in (
+            exp.ctx.resolve_ge_label(target),
+            exp.ctx.resolve_ef_label(target),
+            exp.ctx.resolve_read_label(target),
+        )
+    }
+    for protocol, protocol_schedules in schedules.items():
+        for index, schedule in enumerate(protocol_schedules):
+            conflicting = sorted(
+                label
+                for label, frequency in schedule.get_frequencies().items()
+                if label in protected_labels and frequency is not None
+            )
+            if conflicting:
+                labels = ", ".join(conflicting)
+                raise ValueError(
+                    f"Protocol `{protocol}` schedule {index} contains frequency "
+                    f"overrides on calibrated GEF diagnostic channels: {labels}."
+                )
 
 
 def _load_idle_noise(
@@ -1668,8 +1698,9 @@ def characterize_cr_dissipation(
         and CR-active durations of `zx90_echo`. It is also expected to contain no
         rotary component; this cannot be inferred from a generic schedule. A
         single-lobe schedule returned by `exp.pulse.zx90(..., echo=False)` is not
-        sufficient. When omitted, build a rotary-free schedule from the calibrated
-        CR and cancellation waveforms.
+        sufficient. Its CR-channel frequency metadata are preserved independently
+        of `zx90_echo`. When omitted, build a rotary-free schedule from the
+        calibrated CR and cancellation waveforms.
     zx90_echo : PulseSchedule | None, optional
         Optional echoed calibrated ZX90 schedule. When omitted, resolve it from
         the pulse service. This schedule is used by C/D and fidelity simulation.
@@ -1706,7 +1737,8 @@ def characterize_cr_dissipation(
         Whether to propagate fitted-rate covariance into the two CR-on fidelity
         limits with sigma points. Disable to retain central fidelities while
         skipping the most expensive post-fit uncertainty calculation. Defaults
-        to `False`.
+        to `False`. Rates on the physical zero boundary are fixed during this
+        local propagation because Gaussian sigma points cannot remain nonnegative.
     enable_tqdm : bool, optional
         Whether acquisition services display progress bars.
     plot : bool, optional
@@ -1723,6 +1755,9 @@ def characterize_cr_dissipation(
     -----
     This function performs hardware acquisition. When reference calibration is
     requested, it may also update the experiment calibration-note store.
+    Explicit frequency overrides on either qubit's calibrated GE, EF, or readout
+    channel are rejected before acquisition because they would also alter the
+    appended population analyzers or final readout.
     A/B initial populations and contrasts are fitted nuisance parameters;
     measured `n=0` values constrain them as ordinary observations rather than
     being fixed as exact initial conditions.
@@ -1831,6 +1866,11 @@ def characterize_cr_dissipation(
             ab_block_duration_ns=4.0 * float(descriptor.full_un_echoed.duration),
         )
     schedules = build_protocol_schedules(exp, control, target, descriptor, counts)
+    _validate_gef_diagnostic_frequency_overrides(
+        exp,
+        (control, target),
+        schedules.actual,
+    )
 
     reference_calibration: _ReferenceIx45Calibration | None = None
     reference_calibrated = False
@@ -2137,8 +2177,8 @@ def characterize_cr_dissipation(
         "goodness_of_fit_reduced_chi_squared_limit": (
             GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT
         ),
-        "goodness_of_fit_maximum_absolute_whitened_residual_limit": (
-            GOODNESS_OF_FIT_MAX_RESIDUAL_LIMIT
+        "goodness_of_fit_maximum_mahalanobis_residual_limit": (
+            GOODNESS_OF_FIT_MAX_MAHALANOBIS_RESIDUAL_LIMIT
         ),
         "rate_uncertainty_method": "local_gls_covariance",
         "initial_condition_treatment": "latent_nuisance_with_n0_observation",

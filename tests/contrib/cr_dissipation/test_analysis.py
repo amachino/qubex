@@ -1,4 +1,4 @@
-"""Fast synthetic tests for the CR dissipation v11 physical estimators."""
+"""Fast synthetic tests for the CR dissipation physical estimators."""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ from qubex.contrib.experiment._cr_dissipation.analysis import (
     target_t1rho_trajectory,
 )
 from qubex.contrib.experiment._cr_dissipation.fit import (
+    assess_goodness_of_fit,
     fit_gls_candidate,
     fit_profiled_affine_candidate,
     select_aicc_candidate,
@@ -238,7 +239,24 @@ def test_gls_candidate_records_absolute_goodness_of_fit() -> None:
         CrDissipationFitQuality.STATISTICAL_MISMATCH
     )
     assert candidate.goodness_of_fit.reduced_chi_squared == 100.0
-    assert candidate.goodness_of_fit.maximum_absolute_whitened_residual == 10.0
+    assert candidate.goodness_of_fit.maximum_mahalanobis_residual == 10.0
+
+
+def test_goodness_of_fit_uses_residual_block_mahalanobis_norms() -> None:
+    """Vector residual diagnostics should be invariant to whitening basis rotations."""
+    first = assess_goodness_of_fit(
+        np.array([3.0, 4.0, 0.0]),
+        n_parameters=0,
+        residual_block_sizes=(2, 1),
+    )
+    rotated = assess_goodness_of_fit(
+        np.array([5.0, 0.0, 0.0]),
+        n_parameters=0,
+        residual_block_sizes=(2, 1),
+    )
+
+    assert first.maximum_mahalanobis_residual == pytest.approx(5.0)
+    assert rotated.maximum_mahalanobis_residual == pytest.approx(5.0)
 
 
 def test_rate_resolution_is_independent_of_statistical_fit_quality() -> None:
@@ -249,7 +267,7 @@ def test_rate_resolution_is_independent_of_statistical_fit_quality() -> None:
             degrees_of_freedom=8,
             reduced_chi_squared=10.0,
             chi_squared_p_value=0.0,
-            maximum_absolute_whitened_residual=9.0,
+            maximum_mahalanobis_residual=9.0,
             quality=CrDissipationFitQuality.STATISTICAL_MISMATCH,
             reason="synthetic mismatch",
         ),
@@ -325,6 +343,7 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
             "target_t2rho": CrDissipationRateStatus.PARTIALLY_UNRESOLVED,
         }
     )
+    nominal["control_g_to_e"] = 0.0
     covariance = np.eye(len(primitive_order)) * 1e-12
     propagated: list[set[str]] = []
 
@@ -358,6 +377,7 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
 
     expected_fixed = {
         "control_e_to_g",
+        "control_g_to_e",
         "control_e_to_f",
         "control_f_to_e",
     }
@@ -415,6 +435,14 @@ def test_pure_dephasing_component_uses_both_longitudinal_directions() -> None:
     assert _pure_dephasing_component(2e-5, 6e-5) == 0.0
     assert np.isnan(_pure_dephasing_component(float("nan"), 6e-5))
     assert np.isnan(_pure_dephasing_component(8e-5, float("nan")))
+
+
+def test_idle_transverse_rate_respects_the_relaxation_floor() -> None:
+    """An unphysical T2 above 2T1 should project to zero pure dephasing."""
+    idle = IdleNoiseParameters(t1_ns=10_000.0, t2_echo_ns=100_000.0)
+
+    assert idle.transverse_rate_per_ns == pytest.approx(0.5 / idle.t1_ns)
+    assert idle.pure_dephasing_rate_per_ns == 0.0
 
 
 def test_control_aicc_winner_retains_an_uncertain_rate_and_covariance(

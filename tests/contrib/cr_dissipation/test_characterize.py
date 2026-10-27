@@ -26,6 +26,18 @@ class _Context:
     def resolve_qubit_label(label: str) -> str:
         return label
 
+    @staticmethod
+    def resolve_ge_label(label: str) -> str:
+        return label
+
+    @staticmethod
+    def resolve_ef_label(label: str) -> str:
+        return f"E{label}"
+
+    @staticmethod
+    def resolve_read_label(label: str) -> str:
+        return f"R{label}"
+
 
 def test_optional_diagnostics_default_on_and_fidelity_uncertainty_off() -> None:
     """Public defaults acquire diagnostics but avoid costly fidelity SEs."""
@@ -181,6 +193,55 @@ def test_default_repetition_counts_span_twice_the_longer_idle_t1() -> None:
     assert counts == (0, 1, 2, 3, 6, 10, 18, 32, 56, 100)
     assert len(counts) == 10
     assert all(right > left for left, right in pairwise(counts))
+
+
+def test_diagnostic_frequency_override_is_rejected_before_reference_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unsafe analyzer-channel frequencies should fail before hardware acquisition."""
+    protocols = (
+        health.PROTOCOL_A,
+        health.PROTOCOL_B,
+        health.PROTOCOL_C,
+        health.PROTOCOL_D,
+    )
+    unsafe = PulseSchedule(["Q0"])
+    unsafe.set_frequencies({"Q0": 5.1})
+    schedules = SimpleNamespace(
+        actual=dict.fromkeys(protocols, (unsafe,)),
+        timing={},
+    )
+    descriptor = SimpleNamespace(
+        full_un_echoed=SimpleNamespace(duration=100.0),
+    )
+    monkeypatch.setattr(
+        health,
+        "_load_idle_noise",
+        lambda *_args: (
+            health.IdleNoiseParameters(4_000.0, 3_000.0),
+            health.IdleNoiseParameters(5_000.0, 3_000.0),
+        ),
+    )
+    monkeypatch.setattr(
+        health, "resolve_zx90_descriptor", lambda *_args, **_kwargs: descriptor
+    )
+    monkeypatch.setattr(health, "build_protocol_schedules", lambda *_args: schedules)
+    monkeypatch.setattr(
+        health,
+        "_resolve_reference_ix45",
+        lambda *_args, **_kwargs: pytest.fail("reference calibration was started"),
+    )
+
+    with pytest.raises(ValueError, match="GEF diagnostic channels: Q0"):
+        health.characterize_cr_dissipation(
+            _fake_experiment(),
+            "Q0",
+            "Q1",
+            repetition_counts=(0, 1, 2, 3, 4),
+            idle_t1={"Q0": 4_000.0, "Q1": 5_000.0},
+            idle_t2_echo={"Q0": 3_000.0, "Q1": 3_000.0},
+            plot=False,
+        )
 
 
 def test_missing_idle_coherence_fails_before_pulse_resolution() -> None:

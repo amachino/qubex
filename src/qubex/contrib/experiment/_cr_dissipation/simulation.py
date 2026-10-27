@@ -584,6 +584,8 @@ def propagate_fidelity_uncertainty(
     eigenvalues = np.maximum(eigenvalues, 0.0)
     positive = set(positive_parameters)
     mean = np.asarray([float(central_rates[name]) for name in names], dtype=np.float64)
+    if not np.all(np.isfinite(mean)):
+        return None, False
     transform = np.eye(dimension, dtype=np.float64)
     transformed_mean = mean.copy()
     for index, name in enumerate(names):
@@ -610,10 +612,19 @@ def propagate_fidelity_uncertainty(
     for point in sigma_points:
         rate_point: dict[str, float] = {}
         for index, name in enumerate(names):
-            rate_point[name] = (
-                float(np.exp(point[index])) if name in positive else float(point[index])
-            )
-        evaluated.append(float(evaluator(rate_point)))
+            with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+                value = (
+                    float(np.exp(point[index]))
+                    if name in positive
+                    else float(point[index])
+                )
+            if not np.isfinite(value) or (name in positive and value <= 0.0):
+                return None, False
+            rate_point[name] = value
+        try:
+            evaluated.append(float(evaluator(rate_point)))
+        except (FloatingPointError, OverflowError, ValueError, np.linalg.LinAlgError):
+            return None, False
     evaluated_array = np.asarray(evaluated, dtype=np.float64)
     if not np.all(np.isfinite(evaluated_array)):
         return None, False
