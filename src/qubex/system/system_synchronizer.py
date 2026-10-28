@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -28,6 +29,24 @@ class SystemSynchronizer(Protocol):
     @property
     def supports_mutable_backend_settings_cache(self) -> bool:
         """Return whether mutable backend-settings cache writes are supported."""
+        ...
+
+    def modified_capture_delay(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        capture_delay: Mapping[int, int | float],
+    ) -> AbstractContextManager[None]:
+        """
+        Convert nanosecond delays and temporarily apply backend-specific settings.
+
+        Notes
+        -----
+        The manager validates mux keys and finite, non-negative numeric values.
+        The synchronizer validates the backend resolution and owns temporary
+        control parameters and controller state, restoring both on exit,
+        including partial entry failures.
+        """
         ...
 
     def resolve_custom_target_channel(

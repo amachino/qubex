@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Final
+from collections.abc import Mapping
+from typing import Any, Final
 
+from qubex.backend.quel1.capture_delay import validate_capture_delay_word
 from qubex.system.control_parameter_defaults import ControlParameterDefaults
 
 DEFAULT_CONTROL_AMPLITUDE: Final[float] = 0.1
@@ -38,3 +40,15 @@ class Quel1ControlParameterDefaults(ControlParameterDefaults):
             pump_frequency=DEFAULT_PUMP_FREQUENCY_GHZ,
             pump_amplitude=DEFAULT_PUMP_AMPLITUDE,
         )
+
+    def _validate_resolved_values(self, resolved: Mapping[str, Any]) -> None:
+        """Reject capture word offsets outside the decimated capture grid."""
+        for mux, word in resolved["capture_delay_word"].items():
+            if word is None:
+                continue
+            try:
+                validate_capture_delay_word(word)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid capture_delay_word for MUX{mux}: {exc}"
+                ) from exc
