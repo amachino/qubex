@@ -24,6 +24,9 @@ from qubex.backend.quel1 import (
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 from qubex.measurement.classifiers.state_classifier import StateClassifier
+from qubex.measurement.legacy_request_validation import (
+    reject_legacy_state_classification_request,
+)
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
@@ -32,7 +35,6 @@ from qubex.measurement.measurement_context import MeasurementContext
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
 from qubex.measurement.measurement_result_converter import (
     MeasurementResultConverter,
-    reject_legacy_state_classification_request,
 )
 from qubex.measurement.measurement_schedule_builder import (
     CapturePlacement,

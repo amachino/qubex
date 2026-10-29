@@ -78,7 +78,7 @@ from qubex.measurement import (
     SweepPoint,
     SweepValue,
 )
-from qubex.measurement.measurement_result_converter import (
+from qubex.measurement.legacy_request_validation import (
     reject_legacy_state_classification_request,
 )
 from qubex.measurement.measurement_schedule_builder import CapturePlacement

@@ -1175,6 +1175,80 @@ def test_converter_falls_back_to_empty_config_when_missing() -> None:
     assert single.config == {}
 
 
+@pytest.mark.parametrize("entry_point", ["figure", "plot", "plot_return_figure"])
+@pytest.mark.parametrize("time_integration", [False, True])
+@pytest.mark.parametrize("with_iq", [False, True])
+def test_measurement_result_plotting_rejects_state_payload_before_rendering(
+    monkeypatch: pytest.MonkeyPatch,
+    entry_point: str,
+    time_integration: bool,
+    with_iq: bool,
+) -> None:
+    """State payloads should fail before any rendering, even alongside IQ captures."""
+    iq_config = _make_config(mode="single", shots=2, time_integration=True)
+    state_config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=time_integration,
+        state_classification=True,
+        return_items=(ReturnItem.STATE_SERIES, ReturnItem.IQ_SERIES) if with_iq else (),
+    )
+    iq_data = np.array([1.0 + 2.0j, 3.0 + 4.0j])
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=iq_data,
+                    measurement_config=iq_config,
+                    sampling_period=0.8,
+                )
+            ],
+            "Q01": [
+                CaptureData(
+                    target="Q01",
+                    config=state_config,
+                    payload=CapturePayload(
+                        state_series=np.array([0, -1]),
+                        iq_series=iq_data if with_iq else None,
+                    ),
+                    sampling_period=0.8,
+                )
+            ],
+        },
+        measurement_config=iq_config,
+    )
+
+    def unexpected_plot(**kwargs: object) -> None:
+        raise AssertionError(f"Unexpected plotting call: {kwargs}")
+
+    for name in (
+        "scatter_iq_data",
+        "plot_waveform",
+        "make_iq_scatter_figure",
+        "make_waveform_figure",
+        "save_figure",
+    ):
+        monkeypatch.setattr(
+            f"qubex.measurement.models.measurement_result.viz.{name}",
+            unexpected_plot,
+        )
+
+    if entry_point == "plot_return_figure":
+        with (
+            pytest.warns(DeprecationWarning, match=r"figure\("),
+            pytest.raises(NotImplementedError, match="state_series"),
+        ):
+            result.plot(return_figure=True, save_image=True)
+    elif entry_point == "figure":
+        with pytest.raises(NotImplementedError, match="state_series"):
+            result.figure()
+    else:
+        with pytest.raises(NotImplementedError, match="state_series"):
+            result.plot(save_image=True)
+
+
 def test_plot_calls_waveform_plot_for_avg_mode(monkeypatch) -> None:
     """Given AVG capture data, plot should call waveform plotting per capture."""
     config = _make_config(mode="avg", shots=1)
