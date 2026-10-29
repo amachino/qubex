@@ -63,6 +63,7 @@ def _deploy_configuration(
     )
     cache = InstrumentCache()
     read_calls: list[tuple[str, ...]] = []
+    read_id_calls: list[tuple[str, ...]] = []
 
     def read_infos(
         *, port_ids: Sequence[str], parallel: bool
@@ -70,9 +71,24 @@ def _deploy_configuration(
         read_calls.append(tuple(port_ids))
         return infos
 
+    def read_infos_by_ids(
+        instrument_ids: Sequence[str], *, parallel: bool
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        del parallel
+        ids = tuple(instrument_ids)
+        read_id_calls.append(ids)
+        if len(ids) != len(infos):
+            return ()
+        for info, instrument_id in zip(infos, ids, strict=True):
+            cast(Any, info).id = instrument_id
+        return infos
+
     reader = cast(
         Quel3ResourceReader,
-        SimpleNamespace(read_instrument_infos=read_infos),
+        SimpleNamespace(
+            read_instrument_infos=read_infos,
+            read_instrument_infos_by_ids=read_infos_by_ids,
+        ),
     )
 
     result = manager.deploy_instruments(
@@ -85,11 +101,8 @@ def _deploy_configuration(
     expected = {info.definition.alias: info for info in infos}
     assert result == expected
     assert cache.snapshot() == expected
-    assert read_calls == (
-        [tuple(dict.fromkeys(spec.port_id for spec in specifications))]
-        if specifications
-        else []
-    )
+    assert read_calls == []
+    assert len(read_id_calls) == (1 if specifications else 0)
     return result
 
 
@@ -415,10 +428,10 @@ def test_deploy_instruments_finishes_parallel_ports_before_retry(
             self,
             port_id: str,
             *,
-            definitions: list[object],
+            definitions: list[SimpleNamespace],
             append: bool,
         ) -> list[object]:
-            del definitions, append
+            del append
             deploy_calls.append((self.attempt, port_id))
             if self.attempt == 0 and port_id == "unit:tx_p02":
                 raise RuntimeError("First port failed")
@@ -426,7 +439,14 @@ def test_deploy_instruments_finishes_parallel_ports_before_retry(
             await asyncio.sleep(0)
             await asyncio.sleep(0)
             self.active -= 1
-            return []
+            return [
+                SimpleNamespace(
+                    id=f"id:{port_id}:{definition.alias}",
+                    port_id=port_id,
+                    definition=definition,
+                )
+                for definition in definitions
+            ]
 
     sessions: list[_FakeSession] = []
 
@@ -856,10 +876,10 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
     assert "Q00" in deployed
 
 
-def test_deploy_instruments_ignores_returned_instrument_infos(
+def test_deploy_instruments_rejects_missing_returned_instrument_infos(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given no returned instrument infos, deploy should still apply the specification."""
+    """Given no returned instrument infos, deploy should reject unverifiable readback."""
     manager = Quel3ConfigurationManager()
 
     class _Profile:
@@ -946,10 +966,13 @@ def test_deploy_instruments_ignores_returned_instrument_infos(
         alias="Q00",
     )
 
-    deployed = _deploy_configuration(manager, specifications=(specification,))
+    with pytest.raises(
+        ValueError,
+        match="Hardware readback did not return exactly one instrument",
+    ):
+        _deploy_configuration(manager, specifications=(specification,))
 
     assert [definition.alias for definition in deploy_definitions] == ["Q00"]
-    assert "Q00" in deployed
 
 
 def test_deploy_instruments_skips_client_for_empty_requests(
