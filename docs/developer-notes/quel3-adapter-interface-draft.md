@@ -47,9 +47,9 @@ configuration. Cache indexing removes the matching unit prefix from quelware
 aliases and requires unique local aliases across all units.
 
 - Deploy writes the selected definitions per port with `append=False`, then
-  reads complete instrument information back from hardware. Only touched ports
-  are replaced in the cache. Include every instrument that should remain on a
-  touched port.
+  reads complete instrument information for the IDs returned by deployment.
+  It does not discover unrelated resources. Only touched ports are replaced in
+  the cache. Include every instrument that should remain on a touched port.
 - `deploy_instrument(instrument=spec)` adds or replaces one alias with
   `append=True` by default and refreshes the entire port. Pass `append=False`
   to replace that port with just this instrument. Append is attempted once.

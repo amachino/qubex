@@ -362,8 +362,9 @@ class Quel3ConfigurationManager:
         Notes
         -----
         Old identities on listed ports are discarded before hardware writes.
-        Failed deployment or readback leaves those ports absent from the cache.
-        Other ports are retained, and an empty configuration performs no work.
+        Readback requests only the instrument IDs returned by deployment.
+        Failed deployment or readback leaves those ports absent from the cache;
+        other ports are retained. An empty configuration performs no work.
         """
         return self._deploy_and_refresh(
             specifications=configuration.instruments,
@@ -392,7 +393,7 @@ class Quel3ConfigurationManager:
         instrument_cache : InstrumentCache
             Controller-owned cache to update after deployment.
         resource_reader : Quel3ResourceReader
-            Reader for complete port readback after deployment.
+            Reader for post-deployment hardware readback.
         append : bool, default=True
             Add or replace this alias while preserving the port's other
             instruments. If false, replace every instrument on the port
@@ -409,9 +410,10 @@ class Quel3ConfigurationManager:
         Notes
         -----
         Alias replacement is handled by quelware without a pre-deployment read.
-        Append does not retry the deployment request. After either operation,
-        read the entire port into the cache. Write or readback failure leaves
-        that port uncached.
+        Append does not retry the deployment request. Append refreshes the
+        entire port; replacement reads only the resources whose IDs were
+        returned by the deployment. Write or readback failure leaves that port
+        uncached.
         """
         previous = instrument_cache.snapshot().get(instrument.alias)
         if previous is not None and previous.port_id != instrument.port_id:
@@ -489,22 +491,33 @@ class Quel3ConfigurationManager:
         append: bool,
         parallel: bool,
     ) -> dict[str, InstrumentInfoProtocol]:
-        """Invalidate touched ports, deploy definitions, and publish complete readback."""
+        """Invalidate touched ports, deploy definitions, and publish verified readback."""
         if not specifications:
             return {}
         port_ids = tuple(dict.fromkeys(spec.port_id for spec in specifications))
         instrument_cache.replace_ports(port_ids=port_ids, instrument_infos=())
-        _run_async(
+        deployed = _run_async(
             lambda: self._deploy_instruments(
                 specifications=specifications,
                 append=append,
                 parallel=parallel,
             )
         )
-        instrument_infos = resource_reader.read_instrument_infos(
-            port_ids=port_ids,
-            parallel=parallel,
-        )
+        if append:
+            instrument_infos = resource_reader.read_instrument_infos(
+                port_ids=port_ids,
+                parallel=parallel,
+            )
+        else:
+            deployed_ids = tuple(info.id for info in deployed)
+            instrument_infos = resource_reader.read_instrument_infos_by_ids(
+                deployed_ids,
+                parallel=parallel,
+            )
+            if Counter(info.id for info in instrument_infos) != Counter(deployed_ids):
+                raise ValueError(
+                    "Hardware readback did not match the deployed instrument IDs."
+                )
         readback_counts = Counter(
             (InstrumentCache.alias_for(info), info.port_id) for info in instrument_infos
         )

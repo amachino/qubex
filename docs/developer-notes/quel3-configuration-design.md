@@ -26,7 +26,9 @@ Related policy:
 - Target names are instrument aliases. The controller owns one `InstrumentCache`
   containing complete hardware information, including resource IDs.
 - QuEL-3 `push()` plans an `InstrumentConfiguration` from `TargetRegistry`, deploys through the
-  configuration manager, then reads touched ports back into the shared cache.
+  configuration manager, then reads complete information for the instrument
+  IDs returned by deployment into the shared cache without discovering
+  unrelated resources.
 - QuEL-3 pull collects an independent backend-settings snapshot. Runtime
   instrument information is acquired during connect, deploy, or explicit refresh.
 - QuEL-3 backend runtime supports only the `server` client mode.
