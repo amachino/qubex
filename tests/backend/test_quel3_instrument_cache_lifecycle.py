@@ -58,11 +58,12 @@ class _ConfigurationManager(Quel3ConfigurationManager):
         specifications: tuple[InstrumentSpec, ...],
         append: bool = False,
         parallel: bool = True,
-    ) -> None:
+    ) -> tuple[InstrumentInfoProtocol, ...]:
         assert append is False
         self.calls.append(("deploy", specifications, parallel))
         if self.fail:
             raise RuntimeError("deploy failed")
+        return ()
 
 
 class _Reader:

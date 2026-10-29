@@ -143,6 +143,61 @@ def test_lock_conflict_hint_mentions_other_users_and_unreleased_sessions():
 
 
 @pytest.mark.parametrize("kind", ["direct", "subclass", "wrapped"])
+def test_resource_not_found_preserves_cause_and_includes_recovery_advice(kind):
+    """Missing resources should expose recovery advice in the exception itself."""
+    error_type = type(
+        "ResourceNotFoundError",
+        (Exception,),
+        {"__module__": "quelware_client.core.exceptions"},
+    )
+    if kind == "subclass":
+        error_type = type("SpecializedMissingResource", (error_type,), {})
+    cause = error_type("missing instrument unit-a:old")
+    if kind == "wrapped":
+        original = cause
+        cause = RuntimeError("wrapped resource failure")
+        cause.__cause__ = original
+    session_id = "failed-session"
+    error = QuelwareSessionError(
+        "session failed", session_token=session_id, cause=cause
+    )
+    assert "exp.configure()" in str(error)
+    assert "exp.backend_controller.get_resource_snapshot()" in str(error)
+    assert "another user" in str(error)
+    assert "session_token=failed-session" in str(error)
+    assert str(cause) in str(error)
+
+
+@pytest.mark.parametrize(
+    "name", ["LockNotFoundError", "UnitNotFoundError", "RuntimeError"]
+)
+def test_other_missing_resources_do_not_suggest_instrument_reconfiguration(name):
+    """Lock and unit failures should retain their own diagnostics."""
+    error_type = type(
+        name, (Exception,), {"__module__": "quelware_client.core.exceptions"}
+    )
+    cause = error_type("resource not found")
+    cause.__cause__ = cause
+    session_id = "failed-session"
+    error = QuelwareSessionError(
+        "session failed", session_token=session_id, cause=cause
+    )
+    assert "exp.configure()" not in str(error)
+
+
+def test_missing_resource_is_not_retried_as_an_allocation_failure():
+    """Typed missing resources should bypass allocation retries regardless of wording."""
+    error_type = type(
+        "ResourceNotFoundError",
+        (Exception,),
+        {"__module__": "quelware_client.core.exceptions"},
+    )
+    assert not is_resource_allocation_error(
+        error_type("resource unavailable during acquire")
+    )
+
+
+@pytest.mark.parametrize("kind", ["direct", "subclass", "wrapped"])
 def test_exception_summary_uses_user_defined_hints(monkeypatch, kind):
     """Registered hints should apply to exception classes, subclasses, and explicit causes."""
     error_type = type(

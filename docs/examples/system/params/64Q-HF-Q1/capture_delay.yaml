@@ -1,6 +1,7 @@
 meta:
   description: Example capture delay settings for 64Q-HF chip
   # One ndelay step is 128 ns.
+  # Fine offsets use capture_delay_word.yaml in multiples of 4 words (32 ns).
   unit: ndelay
 data:
   0: 8

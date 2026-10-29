@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -18,6 +19,8 @@ from qubex.backend.quel1.quel1_backend_execution_result import (
     Quel1BackendExecutionResult,
 )
 from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
+
+pytestmark = pytest.mark.usefixtures("stub_quel1_driver")
 
 
 def test_measurement_options_restore_default_classification_lines() -> None:
@@ -108,6 +111,17 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
     called: dict[str, Any] = {}
 
     controller = Quel1BackendController()
+    monkeypatch.setattr(
+        controller._runtime_context,
+        "_driver",
+        SimpleNamespace(
+            Action=SimpleNamespace(build=object()),
+            RunitSetting=object(),
+            RunitId=object(),
+            AwgSetting=object(),
+            AwgId=object(),
+        ),
+    )
     sequencer = _Sequencer()
     controller._connection_manager.set_boxpool(cast(Any, object()))
     controller._connection_manager.set_quel1system(cast(Any, object()))

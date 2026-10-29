@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from qubex.backend.backend_controller import SystemBackendController
-    from qubex.system.control_system import Box
+    from qubex.system.control_system import Box, GenChannel
     from qubex.system.experiment_system import ExperimentSystem
+    from qubex.system.target import Target
 
 
 class SystemSynchronizer(Protocol):
@@ -27,6 +29,46 @@ class SystemSynchronizer(Protocol):
     @property
     def supports_mutable_backend_settings_cache(self) -> bool:
         """Return whether mutable backend-settings cache writes are supported."""
+        ...
+
+    def modified_capture_delay(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        capture_delay: Mapping[int, int | float],
+    ) -> AbstractContextManager[None]:
+        """
+        Convert nanosecond delays and temporarily apply backend-specific settings.
+
+        Notes
+        -----
+        The manager validates mux keys and finite, non-negative numeric values.
+        The synchronizer validates the backend resolution and owns temporary
+        control parameters and controller state, restoring both on exit,
+        including partial entry failures.
+        """
+        ...
+
+    def resolve_custom_target_channel(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        box_id: str,
+        port_number: int,
+        channel_number: int | None,
+    ) -> GenChannel:
+        """Resolve the logical channel for a custom target."""
+        ...
+
+    def register_custom_target(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        target: Target,
+        update_backend_settings: bool = False,
+        push_boxes: Callable[[Sequence[str]], None],
+    ) -> None:
+        """Register a target using backend-specific ordering and the supplied box push."""
         ...
 
     def sync_experiment_system_to_backend_controller(

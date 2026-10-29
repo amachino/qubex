@@ -7,6 +7,7 @@ built on quelware-client managers and tools.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -121,11 +122,13 @@ class Quel3BackendController(BackendController):
         session_manager : Quel3SessionManager | None, optional
             Injected session manager for testing or customization.
         configuration_manager : Quel3ConfigurationManager | None, optional
-            Injected configuration manager for testing or customization.
+            Injected configuration manager, shared with the default execution
+            manager for automatic instrument cache recovery.
         execution_manager : Quel3ExecutionManager | None, optional
             Injected execution manager for testing or customization.
         resource_reader : Quel3ResourceReader | None, optional
-            Injected resource reader for testing or customization.
+            Injected resource reader for inspection and automatic instrument
+            recovery in the default execution manager.
         execution_options : Quel3ExecutionOptions | None, optional
             Default resource limits and adjacent-job packing settings.
         """
@@ -176,6 +179,13 @@ class Quel3BackendController(BackendController):
                 runtime_config=resolved_runtime_config,
             )
         )
+        self._resource_reader = (
+            resource_reader
+            if resource_reader is not None
+            else Quel3ResourceReader(
+                runtime_config=resolved_runtime_config,
+            )
+        )
         self._execution_manager = (
             execution_manager
             if execution_manager is not None
@@ -185,19 +195,14 @@ class Quel3BackendController(BackendController):
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 session_manager=self._session_manager,
                 execution_options=execution_options,
+                resource_reader=self._resource_reader,
+                configuration_manager=self._configuration_manager,
             )
         )
         if execution_manager is not None and execution_options is not None:
             self.execution_options = execution_options
         if cable_delay_ns is not None:
             self.cable_delay_ns = cable_delay_ns
-        self._resource_reader = (
-            resource_reader
-            if resource_reader is not None
-            else Quel3ResourceReader(
-                runtime_config=resolved_runtime_config,
-            )
-        )
 
         self._monitor_tool = Quel3MonitorTool(
             configuration_manager=self._configuration_manager,
@@ -447,7 +452,8 @@ class Quel3BackendController(BackendController):
         Raises
         ------
         ValueError
-            Hardware readback is invalid.
+            Hardware readback is invalid, or the alias is already cached on
+            another port. Known cross-port collisions fail before writing.
 
         Notes
         -----
@@ -465,29 +471,75 @@ class Quel3BackendController(BackendController):
         )
 
     def modify_target_frequencies(
-        self, target_frequencies_ghz: dict[str, float]
+        self,
+        target_frequencies_ghz: dict[str, float],
+        *,
+        min_frequency_margin_ghz: float | None = None,
     ) -> None:
-        """Redeploy target instruments at the specified frequencies in GHz."""
+        """
+        Redeploy target instruments at the requested frequencies in GHz.
+
+        Parameters
+        ----------
+        target_frequencies_ghz : dict[str, float]
+            Requested frequencies in GHz keyed by target alias.
+        min_frequency_margin_ghz : float | None, optional
+            Minimum half-width in GHz to guarantee around each frequency.
+            None uses 0.1 (plus or minus 100 MHz). Must be finite and non-negative.
+            Zero requires only the requested frequency to be within the range.
+
+        Raises
+        ------
+        ValueError
+            The minimum frequency margin is negative or non-finite in Hz.
+
+        Notes
+        -----
+        Redeployment centers each instrument's range on the requested frequency
+        and reads back the updated instrument. Preserve its existing width or
+        expand it to satisfy the minimum margin. If the entire minimum range is
+        already within the cached range, including its endpoints, reuse the
+        instrument without redeployment, readback, or cache changes.
+        Other instruments are preserved.
+        """
         if not target_frequencies_ghz:
             return
+        min_margin_hz = (
+            0.1 if min_frequency_margin_ghz is None else min_frequency_margin_ghz
+        ) * 1e9
+        if not math.isfinite(min_margin_hz) or min_margin_hz < 0:
+            raise ValueError(
+                "min_frequency_margin_ghz must be non-negative and finite when converted to Hz."
+            )
         instruments = {
             instrument.alias: instrument
             for instrument in self.get_instrument_configuration().instruments
         }
         for alias, frequency in target_frequencies_ghz.items():
             instrument = instruments[alias]
-            margin = (
-                instrument.frequency_range_max_hz - instrument.frequency_range_min_hz
-            ) / 2
-            self.deploy_instrument(
+            # Compare center limits in GHz to preserve inclusive decimal boundaries.
+            if (
+                (instrument.frequency_range_min_hz + min_margin_hz) / 1e9
+                <= frequency
+                <= (instrument.frequency_range_max_hz - min_margin_hz) / 1e9
+            ):
+                continue
+            frequency_hz = frequency * 1e9
+            margin = max(
+                (instrument.frequency_range_max_hz - instrument.frequency_range_min_hz)
+                / 2,
+                min_margin_hz,
+            )
+            self._configuration_manager.replace_instruments(
                 instrument=InstrumentSpec(
                     port_id=instrument.port_id,
                     alias=alias,
                     role=instrument.role,
-                    frequency_range_min_hz=frequency * 1e9 - margin,
-                    frequency_range_max_hz=frequency * 1e9 + margin,
+                    frequency_range_min_hz=frequency_hz - margin,
+                    frequency_range_max_hz=frequency_hz + margin,
                 ),
-                append=True,
+                instrument_cache=self._instrument_cache,
+                resource_reader=self._resource_reader,
             )
 
     def deploy_instruments(
@@ -820,7 +872,13 @@ class Quel3BackendController(BackendController):
         parallel: bool = True,
         execution_options: Quel3ExecutionOptions | None = None,
     ) -> list[BackendExecutionResult]:
-        """Execute multiple backend requests as one resolved QuEL-3 batch."""
+        """
+        Execute multiple backend requests as one resolved QuEL-3 batch.
+
+        Missing resources trigger one cache refresh and complete replanning,
+        provided all aliases retain their ports. Recovery restarts the entire
+        batch, including any executions that already completed.
+        """
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_batch_async(
             requests=tuple(requests),

@@ -6,12 +6,15 @@ from typing import Final, Literal
 
 ExecutionMode = Literal["serial", "parallel"]
 DEFAULT_EXECUTION_MODE: Final[ExecutionMode] = "parallel"
-DEFAULT_CLOCK_HEALTH_CHECKS: Final[bool] = False
+DEFAULT_CLOCK_HEALTH_CHECKS: Final[bool] = True
 
 SAMPLING_PERIOD_NS: Final[float] = 2.0
 CAPTURE_DECIMATION_FACTOR: Final[int] = 4
 WORD_LENGTH: Final[int] = 4  # samples
 WORD_DURATION_NS: Final[float] = WORD_LENGTH * SAMPLING_PERIOD_NS
+# A capture word after decimation spans four input words (16 samples, 32 ns).
+CAPTURE_DELAY_WORD_STEP: Final[int] = CAPTURE_DECIMATION_FACTOR
+CAPTURE_DELAY_RESOLUTION_NS: Final[float] = CAPTURE_DELAY_WORD_STEP * WORD_DURATION_NS
 BLOCK_LENGTH: Final[int] = WORD_LENGTH * 16  # samples
 BLOCK_DURATION_NS: Final[float] = BLOCK_LENGTH * SAMPLING_PERIOD_NS
 

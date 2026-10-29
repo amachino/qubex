@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -34,11 +35,11 @@ from qubex.external_devices import (
 from qubex.typing import ConfigurationMode
 
 from .config_loader import ConfigLoader
-from .control_system import Box
+from .control_system import Box, GenChannel
 from .experiment_system import ExperimentSystem
-from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
-from .quel3.quel3_system_synchronizer import Quel3SystemSynchronizer
 from .system_synchronizer import SystemSynchronizer
+from .system_synchronizer_factory import create_system_synchronizer
+from .target import Target
 
 logger = logging.getLogger(__name__)
 
@@ -256,11 +257,7 @@ class SystemManager:
         backend_controller: SystemBackendController,
     ) -> SystemSynchronizer | None:
         """Create backend-specific system synchronizer when supported."""
-        if isinstance(backend_controller, Quel1BackendController):
-            return Quel1SystemSynchronizer(backend_controller=backend_controller)
-        if isinstance(backend_controller, Quel3BackendController):
-            return Quel3SystemSynchronizer(backend_controller=backend_controller)
-        return None
+        return create_system_synchronizer(backend_controller)
 
     def _resolve_system_synchronizer(
         self,
@@ -458,6 +455,41 @@ class SystemManager:
             raise TypeError(
                 "Expected `Quel3BackendController` for `backend_kind='quel3'`."
             )
+
+    def resolve_custom_target_channel(
+        self,
+        *,
+        box_id: str,
+        port_number: int,
+        channel_number: int | None,
+    ) -> GenChannel:
+        """Resolve a custom target channel through the active synchronizer."""
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError("Custom target registration requires an active backend.")
+        return synchronizer.resolve_custom_target_channel(
+            experiment_system=self.experiment_system,
+            box_id=box_id,
+            port_number=port_number,
+            channel_number=channel_number,
+        )
+
+    def register_custom_target(
+        self,
+        *,
+        target: Target,
+        update_backend_settings: bool = False,
+    ) -> None:
+        """Delegate registration and hardware-update ordering to the active synchronizer."""
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError("Custom target registration requires an active backend.")
+        synchronizer.register_custom_target(
+            experiment_system=self.experiment_system,
+            target=target,
+            update_backend_settings=update_backend_settings,
+            push_boxes=lambda box_ids: self.push(box_ids=box_ids),
+        )
 
     def pull(
         self,
@@ -865,6 +897,54 @@ This operation will overwrite the existing backend settings. Do you want to cont
             self.experiment_system.modify_target_frequencies(original_frequencies)
             if callable(modify_target_frequencies):
                 modify_target_frequencies(original_frequencies)
+
+    @contextmanager
+    def modified_capture_delay(
+        self,
+        capture_delay: Mapping[int, int | float],
+    ) -> Iterator[None]:
+        """
+        Temporarily override total capture delays in ns by mux index.
+
+        Parameters
+        ----------
+        capture_delay : Mapping[int, int | float]
+            Mux indices mapped to finite, non-negative delays in ns.
+            Each backend validates its resolution and converts to native units.
+            Unspecified muxes retain their configured values.
+
+        Notes
+        -----
+        Backend synchronizers restore software and controller settings even if
+        applying the override or the context body fails. Configuration files
+        are not changed.
+        """
+        if not isinstance(capture_delay, Mapping):
+            raise TypeError("Capture delay must be a mapping keyed by mux index.")
+        overrides = dict(capture_delay)
+        if not overrides:
+            yield
+            return
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError(
+                "Cannot override capture delay: backend controller is not initialized."
+            )
+        for index, delay in overrides.items():
+            if isinstance(index, bool) or not isinstance(index, int):
+                raise TypeError("Capture-delay keys must be integer mux indices.")
+            if isinstance(delay, bool) or not isinstance(delay, (int, float)):
+                raise TypeError("Capture delay must be numeric in ns.")
+            if not math.isfinite(delay) or delay < 0:
+                raise ValueError("Capture delay must be finite and non-negative in ns.")
+        system = self.experiment_system
+        unknown = overrides.keys() - system.control_params.capture_delay.keys()
+        if unknown:
+            raise ValueError(f"Unknown capture-delay mux indices: {sorted(unknown)}")
+        with synchronizer.modified_capture_delay(
+            experiment_system=system, capture_delay=overrides
+        ):
+            yield
 
     @contextmanager
     def modified_backend_settings(

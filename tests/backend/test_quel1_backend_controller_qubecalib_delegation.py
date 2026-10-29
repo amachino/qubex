@@ -13,6 +13,8 @@ import yaml
 
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
+pytestmark = pytest.mark.usefixtures("stub_quel1_driver")
+
 
 @dataclass
 class _ChannelRelation:

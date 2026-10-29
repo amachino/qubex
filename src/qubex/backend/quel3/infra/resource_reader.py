@@ -178,6 +178,46 @@ class Quel3ResourceReader:
             )
         )
 
+    def read_instrument_infos_by_ids(
+        self, instrument_ids: Sequence[str], *, parallel: bool = True
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        """Read only explicit instrument IDs without discovering unrelated resources."""
+        ids = tuple(dict.fromkeys(instrument_ids))
+        if not ids:
+            return ()
+        return _run_async(
+            lambda: self._read_instrument_infos_by_ids(ids, parallel=parallel)
+        )
+
+    async def _read_instrument_infos_by_ids(
+        self, instrument_ids: tuple[str, ...], *, parallel: bool
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        """Read complete hardware information for the requested IDs."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._runtime_config.endpoint, self._runtime_config.port
+        ) as client:
+            if not parallel:
+                return tuple(
+                    [
+                        await client.get_instrument_info(resource_id)
+                        for resource_id in instrument_ids
+                    ]
+                )
+            results = await asyncio.gather(
+                *(
+                    client.get_instrument_info(resource_id)
+                    for resource_id in instrument_ids
+                ),
+                return_exceptions=True,
+            )
+            infos: list[InstrumentInfoProtocol] = []
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+                infos.append(result)
+            return tuple(infos)
+
     async def _read_instrument_infos(
         self,
         *,

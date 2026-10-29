@@ -13,6 +13,13 @@ from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request
 
 import pytest
+
+from tests._backend_dependencies import require_distributions
+
+# Check optional installations before importing the real transport.
+# ruff: noqa: E402
+require_distributions("grpclib", "protobuf", "googleapis-common-protos")
+
 from grpclib.const import Cardinality, Status
 from grpclib.exceptions import GRPCError, StreamTerminatedError
 

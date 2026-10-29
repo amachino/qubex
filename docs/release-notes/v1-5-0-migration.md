@@ -713,3 +713,15 @@ If you need to roll back:
 Because `v1.5.0` still accepts several legacy inputs as compatibility paths,
 you can often stage the migration gradually: update imports and runtime
 selection first, then move parameter files and warning-producing call sites.
+
+## QuEL-1 capture delay alignment
+
+QuEL-1 capture word offsets now require non-negative integers divisible by 4
+(16 input samples, 32 ns). Configuration loading and measurement sequence
+construction reject unaligned `capture_delay_word` values with `ValueError`.
+Temporary total delays supplied to `check_waveform()` require multiples of
+32 ns. The coarse `capture_delay.yaml` unit remains `ndelay` (128 ns).
+
+Review existing word offsets such as 1, 2 or 3 and recalibrate them on the
+4-word grid before measuring. Values are not rounded automatically because
+rounding would change capture timing. QuEL-3 retains its 0.8 ns resolution.

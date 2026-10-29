@@ -12,6 +12,7 @@ from enum import Enum
 from io import StringIO
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, Mock
 
 import numpy as np
 import pytest
@@ -43,6 +44,7 @@ from qubex.backend.quel3.managers import (
     execution_manager as execution_manager_module,
     session_workarounds as session_workarounds_module,
 )
+from qubex.backend.quel3.managers.configuration_manager import Quel3ConfigurationManager
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
 from qubex.backend.quel3.models import Quel3ResourceLevel
@@ -147,9 +149,14 @@ def _make_payload(
     )
 
 
-def test_quel_controllers_implement_backend_controller_contract() -> None:
-    """Given QuEL controllers, both satisfy BackendController protocol."""
+@pytest.mark.usefixtures("stub_quel1_driver")
+def test_quel1_controller_implements_backend_controller_contract() -> None:
+    """The QuEL-1 controller should satisfy the backend controller protocol."""
     assert isinstance(Quel1BackendController(), BackendController)
+
+
+def test_quel3_controller_implements_backend_controller_contract() -> None:
+    """The QuEL-3 controller should satisfy the backend controller protocol."""
     assert isinstance(Quel3BackendController(), BackendController)
 
 
@@ -1150,7 +1157,6 @@ class _ParallelInstrumentDriver:
         *,
         alias: str,
         value: complex,
-        initialize_barrier: _PhaseBarrier,
         apply_barrier: _PhaseBarrier,
         fetch_barrier: _PhaseBarrier,
     ) -> None:
@@ -1160,7 +1166,6 @@ class _ParallelInstrumentDriver:
         )
         self._alias = alias
         self._value = value
-        self._initialize_barrier = initialize_barrier
         self._apply_barrier = apply_barrier
         self._fetch_barrier = fetch_barrier
         self.apply_calls: list[object] = []
@@ -1168,9 +1173,6 @@ class _ParallelInstrumentDriver:
     async def apply(self, directive: object) -> None:
         self.apply_calls.append(directive)
         await self._apply_barrier.wait()
-
-    async def initialize(self) -> None:
-        await self._initialize_barrier.wait()
 
     async def wait_for_result(self) -> object:
         await self._fetch_barrier.wait()
@@ -1195,7 +1197,6 @@ class _SerialProbeInstrumentDriver:
         *,
         alias: str,
         value: complex,
-        initialize_probe: _ConcurrencyProbe,
         apply_probe: _ConcurrencyProbe,
         fetch_probe: _ConcurrencyProbe,
     ) -> None:
@@ -1205,7 +1206,6 @@ class _SerialProbeInstrumentDriver:
         )
         self._alias = alias
         self._value = value
-        self._initialize_probe = initialize_probe
         self._apply_probe = apply_probe
         self._fetch_probe = fetch_probe
         self.apply_calls: list[object] = []
@@ -1213,9 +1213,6 @@ class _SerialProbeInstrumentDriver:
     async def apply(self, directive: object) -> None:
         self.apply_calls.append(directive)
         await self._apply_probe.step()
-
-    async def initialize(self) -> None:
-        await self._initialize_probe.step()
 
     async def wait_for_result(self) -> object:
         await self._fetch_probe.step()
@@ -1225,6 +1222,7 @@ class _SerialProbeInstrumentDriver:
 class _FakeSession:
     def __init__(self, *, session_id: str = "session-id") -> None:
         self.token = session_id
+        self.initialize_calls: list[tuple[list[str], bool]] = []
         self.trigger_calls: list[list[str]] = []
         self.lifecycle_calls: list[str] = []
         self.drivers: dict[str, Any] = {}
@@ -1239,6 +1237,11 @@ class _FakeSession:
         tb: object,
     ) -> None:
         del exc_type, exc, tb
+
+    async def initialize(
+        self, instrument_ids: list[str], parallel: bool = True
+    ) -> None:
+        self.initialize_calls.append((list(instrument_ids), parallel))
 
     async def trigger(
         self,
@@ -1311,6 +1314,399 @@ def _make_fake_execution_api(
         set_frequency_directive_factory=lambda *, hz: ("frequency", hz),
         set_capture_mode_directive_factory=lambda *, mode: ("capture_mode", mode),
     )
+
+
+@pytest.fixture
+def instrument_recovery(monkeypatch):
+    """Provide a controller whose first session references a replaced instrument."""
+    monkeypatch.setattr(session_workarounds_module.asyncio, "sleep", AsyncMock())
+    error_type = type(
+        "ResourceNotFoundError",
+        (Exception,),
+        {"__module__": "quelware_client.core.exceptions"},
+    )
+    old = _FakeInstrumentInfo(
+        id="unit-a:old",
+        port_id="unit-a:trx_p00",
+        definition=_FakeInstrumentDefinition(role="TRANSCEIVER", alias="alias-rq00"),
+    )
+    latest = replace(
+        old,
+        id="unit-a:new",
+        definition=replace(
+            old.definition,
+            profile=SimpleNamespace(
+                frequency_range_min=7e9,
+                frequency_range_max=9e9,
+            ),
+        ),
+    )
+    unrelated = replace(
+        old,
+        id="unit-b:other",
+        port_id="unit-b:trx_p00",
+        definition=replace(old.definition, alias="other"),
+    )
+    reader = SimpleNamespace(read_instrument_infos=Mock(return_value=(latest,)))
+    configuration = Quel3ConfigurationManager()
+    refresh = Mock(wraps=configuration.refresh_instrument_cache)
+    monkeypatch.setattr(configuration, "refresh_instrument_cache", refresh)
+    controller = Quel3BackendController(
+        resource_reader=cast(Any, reader),
+        configuration_manager=configuration,
+    )
+    controller._instrument_cache.replace_all(
+        instrument_infos=cast(Any, (old, unrelated))
+    )
+    state = SimpleNamespace(
+        controller=controller,
+        cache=controller._instrument_cache,
+        reader=reader,
+        refresh=refresh,
+        old=old,
+        latest=latest,
+        unrelated=unrelated,
+        error_type=error_type,
+        fail_attempts={1},
+        attempts=[],
+        clients=[],
+        session=_FakeSession(),
+        drivers=[],
+        driver_infos=[],
+    )
+
+    class Client(_FakeClient):
+        def create_session(self, resource_ids, **kwargs):
+            state.attempts.append(tuple(resource_ids))
+            if len(state.attempts) in state.fail_attempts:
+                raise error_type(
+                    "missing resource; resources unavailable during acquire"
+                )
+            return super().create_session(resource_ids, **kwargs)
+
+    def create_client(endpoint, port):
+        client = Client(state.session)
+        state.clients.append(client)
+        return client
+
+    def create_driver(session, info):
+        driver = _FakeInstrumentDriver()
+        driver.instrument_config = info.config
+        state.drivers.append(driver)
+        state.driver_infos.append(info)
+        return driver
+
+    monkeypatch.setattr(
+        controller._execution_manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=create_client,
+            fixed_timeline_driver_factory=create_driver,
+        ),
+    )
+    return state
+
+
+@pytest.mark.parametrize("entrypoint", ["sync", "async", "batch"])
+def test_execution_refreshes_replaced_instrument_before_batch_starts(
+    instrument_recovery, entrypoint
+):
+    """Execution should refresh once and use current IDs, profiles, and driver information."""
+    state = instrument_recovery
+    request = BackendExecutionRequest(payload=_make_payload())
+    if entrypoint == "sync":
+        results = [state.controller.execute_sync(request=request)]
+    elif entrypoint == "async":
+        results = [asyncio.run(state.controller.execute_async(request=request))]
+    else:
+        results = asyncio.run(
+            state.controller.execute_batch_async(
+                requests=[request, request],
+                execution_options=Quel3ExecutionOptions(merge_jobs=False),
+            )
+        )
+    assert len(results) == (2 if entrypoint == "batch" else 1)
+    assert state.attempts == [("unit-a:old",)] + [("unit-a:new",)] * len(results)
+    assert state.session.trigger_calls == [["unit-a:new"]] * len(results)
+    state.reader.read_instrument_infos.assert_called_once_with(
+        unit_labels=("unit-a",), parallel=True
+    )
+    assert all(info is state.latest for info in state.driver_infos)
+    assert state.cache.get("alias-rq00") is state.latest
+    assert state.cache.get("other") is state.unrelated
+    assert all(client.exit_calls == 1 for client in state.clients)
+
+
+def test_recovery_replans_shot_limits_using_latest_sampling_information(
+    instrument_recovery,
+):
+    """A sampling change should rebuild the plan and split shots using the new limits."""
+    state = instrument_recovery
+    latest = replace(
+        state.latest,
+        config=SimpleNamespace(sampling_period_fs=200_000, timeline_step_samples=64),
+    )
+    state.reader.read_instrument_infos.return_value = (latest,)
+    result = state.controller.execute_sync(
+        request=BackendExecutionRequest(payload=_make_payload()),
+        execution_options=Quel3ExecutionOptions(max_capture_samples=2),
+    )
+    assert state.session.trigger_calls == [["unit-a:new"], ["unit-a:new"]]
+    assert result.config["sampling_period_ns"] == 0.2
+    assert all(info is latest for info in state.driver_infos)
+
+
+def test_recovery_uses_the_controller_configuration_manager(instrument_recovery):
+    """Recovery should use the injected configuration manager and shared cache and reader."""
+    state = instrument_recovery
+    result = state.controller.execute_sync(
+        request=BackendExecutionRequest(payload=_make_payload())
+    )
+    assert result.data["alias-rq00"][0].shape == (1,)
+    state.refresh.assert_called_once_with(
+        instrument_cache=state.cache,
+        resource_reader=state.reader,
+        unit_labels=("unit-a",),
+        parallel=True,
+    )
+
+
+def test_recovery_failure_preserves_the_actual_readback_cause(instrument_recovery):
+    """Failed readback should be the direct cause while the original resource error remains in context."""
+    state = instrument_recovery
+    failure = RuntimeError("readback unavailable")
+    state.reader.read_instrument_infos.side_effect = failure
+    with pytest.raises(QuelwareSessionError, match="readback unavailable") as error:
+        state.controller.execute_sync(
+            request=BackendExecutionRequest(payload=_make_payload())
+        )
+    assert error.value.__cause__ is failure
+    assert isinstance(failure.__context__, QuelwareSessionError)
+    assert "missing resource" in str(failure.__context__)
+    assert "exp.configure()" in str(error.value)
+    assert state.attempts == [("unit-a:old",)]
+
+
+def test_recovery_replans_packing_using_latest_frequency_profile(instrument_recovery):
+    """A changed default frequency should separate jobs that previously could be merged."""
+    state = instrument_recovery
+    results = asyncio.run(
+        state.controller.execute_batch_async(
+            requests=[
+                BackendExecutionRequest(payload=_make_payload()),
+                BackendExecutionRequest(payload=_make_payload(frequency_hz=6e9)),
+            ]
+        )
+    )
+    assert len(results) == 2
+    assert state.session.trigger_calls == [["unit-a:new"], ["unit-a:new"]]
+    assert ("frequency", 6e9) in state.drivers[1].apply_calls[0]
+
+
+def test_recovery_rejects_invalid_latest_sampling_settings(instrument_recovery):
+    """Invalid current settings should fail normal validation before any execution starts."""
+    state = instrument_recovery
+    state.reader.read_instrument_infos.return_value = (
+        replace(
+            state.latest,
+            config=SimpleNamespace(sampling_period_fs=0, timeline_step_samples=64),
+        ),
+    )
+    with pytest.raises(
+        QuelwareSessionError, match="Invalid cached sampling configuration"
+    ) as error:
+        state.controller.execute_sync(
+            request=BackendExecutionRequest(payload=_make_payload())
+        )
+    assert isinstance(error.value.__cause__, ValueError)
+    assert "exp.configure()" in str(error.value)
+    assert state.session.trigger_calls == []
+    assert state.attempts == [("unit-a:old",)]
+
+
+def test_recovery_checks_ports_for_later_batch_jobs(instrument_recovery):
+    """Refreshing the first session should also check bindings required by later jobs."""
+    state = instrument_recovery
+    second = replace(
+        state.old,
+        id="unit-a:second-old",
+        port_id="unit-a:trx_p02",
+        definition=replace(state.old.definition, alias="second"),
+    )
+    state.cache.replace_all(instrument_infos=(state.old, second))
+    second_latest = replace(second, id="unit-a:second-new", port_id="unit-a:trx_p04")
+    state.reader.read_instrument_infos.return_value = (state.latest, second_latest)
+    payload = _make_payload()
+    second_payload = replace(
+        payload, fixed_timelines={"second": payload.fixed_timelines["alias-rq00"]}
+    )
+    with pytest.raises(QuelwareSessionError, match=r"second.*trx_p02.*trx_p04"):
+        asyncio.run(
+            state.controller.execute_batch_async(
+                requests=[
+                    BackendExecutionRequest(payload=payload),
+                    BackendExecutionRequest(payload=second_payload),
+                ],
+                execution_options=Quel3ExecutionOptions(merge_jobs=False),
+            )
+        )
+    assert state.session.trigger_calls == []
+    assert state.cache.snapshot() == {
+        "alias-rq00": state.latest,
+        "second": second_latest,
+    }
+
+
+def test_recovery_reads_resources_outside_the_execution_event_loop(instrument_recovery):
+    """Synchronous readback should run off the event loop and preserve serial read options."""
+    state = instrument_recovery
+
+    def read_instrument_infos(**kwargs):
+        with pytest.raises(RuntimeError, match="no running event loop"):
+            asyncio.get_running_loop()
+        return (state.latest,)
+
+    state.reader.read_instrument_infos.side_effect = read_instrument_infos
+    result = asyncio.run(
+        state.controller.execute_async(
+            request=BackendExecutionRequest(payload=_make_payload()),
+            parallel=False,
+        )
+    )
+    assert result.config["sampling_period_ns"] == 0.4
+    state.reader.read_instrument_infos.assert_called_once_with(
+        unit_labels=("unit-a",), parallel=False
+    )
+
+
+@pytest.mark.parametrize(
+    "failure", ["missing_alias", "changed_port", "duplicate", "read_failure"]
+)
+def test_invalid_recovery_does_not_retry_execution(instrument_recovery, failure):
+    """Recovery should stop on invalid bindings while retaining successfully refreshed information."""
+    state = instrument_recovery
+    changed_port_info = replace(state.latest, port_id="unit-a:trx_p02")
+    if failure == "missing_alias":
+        state.reader.read_instrument_infos.return_value = ()
+    elif failure == "changed_port":
+        state.reader.read_instrument_infos.return_value = (changed_port_info,)
+    elif failure == "duplicate":
+        state.reader.read_instrument_infos.return_value = (
+            state.latest,
+            replace(state.latest, id="unit-a:duplicate"),
+        )
+    else:
+        state.reader.read_instrument_infos.side_effect = RuntimeError(
+            "readback unavailable"
+        )
+    before = state.cache.snapshot()
+    with pytest.raises(QuelwareSessionError, match=r"exp.configure\(\)") as error:
+        state.controller.execute_sync(
+            request=BackendExecutionRequest(payload=_make_payload())
+        )
+    assert "get_resource_snapshot()" in str(error.value)
+    assert error.value.__cause__ is not None
+    assert "missing resource" in str(error.value.__cause__.__context__)
+    if failure == "missing_alias":
+        assert state.cache.snapshot() == {"other": state.unrelated}
+    elif failure == "changed_port":
+        assert state.cache.snapshot() == {
+            "alias-rq00": changed_port_info,
+            "other": state.unrelated,
+        }
+    else:
+        assert state.cache.snapshot() == before
+    assert state.attempts == [("unit-a:old",)]
+    assert state.session.trigger_calls == []
+    state.reader.read_instrument_infos.assert_called_once()
+
+
+def test_recovery_stops_after_one_refresh(instrument_recovery):
+    """A second missing-resource failure should stop without another refresh or stale-ID retry."""
+    state = instrument_recovery
+    state.fail_attempts = {1, 2}
+    with pytest.raises(QuelwareSessionError, match=r"exp.configure\(\)"):
+        state.controller.execute_sync(
+            request=BackendExecutionRequest(payload=_make_payload())
+        )
+    assert state.attempts == [("unit-a:old",), ("unit-a:new",)]
+    state.reader.read_instrument_infos.assert_called_once()
+    assert state.session.trigger_calls == []
+
+
+def test_missing_resource_during_execution_refreshes_and_retries_once(
+    instrument_recovery,
+):
+    """A resource failure during execution should refresh and restart the batch once."""
+    state = instrument_recovery
+    state.fail_attempts = set()
+    state.session.trigger = AsyncMock(
+        side_effect=[state.error_type("resource lost during trigger"), 0]
+    )
+    result = state.controller.execute_sync(
+        request=BackendExecutionRequest(payload=_make_payload())
+    )
+    assert result.data["alias-rq00"][0].shape == (1,)
+    assert state.session.trigger.await_count == 2
+    state.reader.read_instrument_infos.assert_called_once()
+    assert state.attempts == [("unit-a:old",), ("unit-a:new",)]
+
+
+def test_missing_resource_mid_batch_refreshes_and_restarts_whole_batch(
+    instrument_recovery,
+):
+    """A later resource failure should restart the whole batch and repeat completed runs."""
+    state = instrument_recovery
+    state.fail_attempts = {2}
+    request = BackendExecutionRequest(payload=_make_payload())
+    results = asyncio.run(
+        state.controller.execute_batch_async(
+            requests=[request, request],
+            execution_options=Quel3ExecutionOptions(merge_jobs=False),
+        )
+    )
+    assert len(results) == 2
+    assert state.session.trigger_calls == [
+        ["unit-a:old"],
+        ["unit-a:new"],
+        ["unit-a:new"],
+    ]
+    assert state.attempts == [
+        ("unit-a:old",),
+        ("unit-a:old",),
+        ("unit-a:new",),
+        ("unit-a:new",),
+    ]
+    state.reader.read_instrument_infos.assert_called_once()
+
+
+def test_missing_resource_after_an_operation_retry_refreshes_and_restarts_batch(
+    instrument_recovery,
+):
+    """A resource failure should trigger recovery regardless of earlier operation attempts."""
+    state = instrument_recovery
+    state.fail_attempts = {2}
+    state.session.trigger = AsyncMock(
+        side_effect=[RuntimeError("temporary request failure"), 0]
+    )
+    result = state.controller.execute_sync(
+        request=BackendExecutionRequest(payload=_make_payload())
+    )
+    assert result.data["alias-rq00"][0].shape == (1,)
+    assert state.session.trigger.await_count == 2
+    state.reader.read_instrument_infos.assert_called_once()
+    assert state.attempts == [("unit-a:old",), ("unit-a:old",), ("unit-a:new",)]
+
+
+def test_successful_execution_does_not_refresh_instruments(instrument_recovery):
+    """A healthy cache should execute without additional discovery."""
+    state = instrument_recovery
+    state.fail_attempts = set()
+    state.controller.execute_sync(
+        request=BackendExecutionRequest(payload=_make_payload())
+    )
+    assert state.session.trigger_calls == [["unit-a:old"]]
+    state.reader.read_instrument_infos.assert_not_called()
 
 
 def test_execution_api_resolves_only_requested_capture_mode() -> None:
@@ -1766,6 +2162,65 @@ def test_execute_batch_retries_only_failed_payload_after_transient_request_failu
     assert sessions[2].trigger_calls == [["alias-rq00"]]
 
 
+@pytest.mark.parametrize("initialize_fails", [False, True])
+def test_execute_initializes_session_before_applying_directives(
+    monkeypatch: pytest.MonkeyPatch,
+    initialize_fails: bool,
+) -> None:
+    """Execution should await session initialization and stop before apply if it fails."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        session_workarounds_module, "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS", 1
+    )
+
+    class Session(_FakeSession):
+        async def initialize(self, instrument_ids, parallel=True):
+            await asyncio.sleep(0)
+            calls.append("initialize")
+            if initialize_fails:
+                raise ValueError("initialization failed")
+            await super().initialize(instrument_ids, parallel)
+
+    class Driver(_FakeInstrumentDriver):
+        async def apply(self, directive):
+            assert calls == ["initialize"]
+            calls.append("apply")
+            await super().apply(directive)
+
+    session = Session()
+    driver = Driver()
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=4)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00", _FakeInstrumentDefinition("TRANSCEIVER")
+            )
+        }
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: _FakeClient(session),
+            fixed_timeline_driver_factory=lambda session, info: driver,
+        ),
+    )
+    execution = manager.execute_async(
+        request=BackendExecutionRequest(payload=_make_payload()), instrument_cache=cache
+    )
+    if initialize_fails:
+        with pytest.raises(QuelwareSessionError, match="initialization failed"):
+            asyncio.run(execution)
+        assert calls == ["initialize"]
+        assert driver.apply_calls == []
+        assert session.trigger_calls == []
+    else:
+        asyncio.run(execution)
+        assert calls == ["initialize", "apply"]
+        assert session.trigger_calls == [["alias-rq00"]]
+    assert not driver.initialized
+
+
 def test_execute_batches_capture_mode_with_timeline_directive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1804,7 +2259,8 @@ def test_execute_batches_capture_mode_with_timeline_directive(
         )
     )
 
-    assert driver.initialized is True
+    assert session.initialize_calls == [(["alias-rq00"], True)]
+    assert not driver.initialized
     assert driver.apply_calls == [
         [("capture_mode", _FakeCaptureMode.AVERAGED_VALUE), ("timeline", "alias-rq00")]
     ]
@@ -1994,21 +2450,18 @@ def test_execute_parallelizes_driver_phases(
             ),
         }
     )
-    initialize_barrier = _PhaseBarrier(expected=2)
     apply_barrier = _PhaseBarrier(expected=2)
     fetch_barrier = _PhaseBarrier(expected=2)
     drivers = {
         "alias-rq00": _ParallelInstrumentDriver(
             alias="alias-rq00",
             value=1.0 + 0.0j,
-            initialize_barrier=initialize_barrier,
             apply_barrier=apply_barrier,
             fetch_barrier=fetch_barrier,
         ),
         "alias-rq01": _ParallelInstrumentDriver(
             alias="alias-rq01",
             value=2.0 + 0.0j,
-            initialize_barrier=initialize_barrier,
             apply_barrier=apply_barrier,
             fetch_barrier=fetch_barrier,
         ),
@@ -2039,6 +2492,9 @@ def test_execute_parallelizes_driver_phases(
     ]
     assert drivers["alias-rq01"].apply_calls == [
         [("capture_mode", _FakeCaptureMode.AVERAGED_VALUE), ("timeline", "alias-rq01")]
+    ]
+    assert [ids for ids, _ in session.initialize_calls] == [
+        ["alias-rq00", "alias-rq01"]
     ]
     assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
     assert np.array_equal(
@@ -2110,6 +2566,7 @@ def test_execute_batch_async_reopens_session_per_payload(
         )
     )
     assert create_session_calls == [("alias-rq00",), ("alias-rq00",)]
+    assert session.initialize_calls == [(["alias-rq00"], True)] * 2
     assert len(session.trigger_calls) == 2
     assert len(driver.apply_calls) == 2
     assert len(results) == 2
@@ -2159,6 +2616,11 @@ def test_execute_async_uses_updated_cache_without_discovery(
 
     assert len(clients) == 3
     assert [client.exit_calls for client in clients] == [1, 1, 1]
+    assert [session.initialize_calls for session in sessions] == [
+        [(["first-resource"], True)],
+        [(["first-resource"], True)],
+        [(["second-resource"], True)],
+    ]
     assert [session.trigger_calls for session in sessions] == [
         [["first-resource"]],
         [["first-resource"]],
@@ -2197,21 +2659,18 @@ def test_execute_serializes_driver_phases_when_parallel_disabled(
             ),
         }
     )
-    initialize_probe = _ConcurrencyProbe()
     apply_probe = _ConcurrencyProbe()
     fetch_probe = _ConcurrencyProbe()
     drivers = {
         "alias-rq00": _SerialProbeInstrumentDriver(
             alias="alias-rq00",
             value=1.0 + 0.0j,
-            initialize_probe=initialize_probe,
             apply_probe=apply_probe,
             fetch_probe=fetch_probe,
         ),
         "alias-rq01": _SerialProbeInstrumentDriver(
             alias="alias-rq01",
             value=2.0 + 0.0j,
-            initialize_probe=initialize_probe,
             apply_probe=apply_probe,
             fetch_probe=fetch_probe,
         ),
@@ -2238,9 +2697,12 @@ def test_execute_serializes_driver_phases_when_parallel_disabled(
         )
     )
 
-    assert initialize_probe.max_active == 1
+    assert session.initialize_calls == [(["alias-rq00", "alias-rq01"], False)]
     assert apply_probe.max_active == 1
     assert fetch_probe.max_active == 2
+    assert [ids for ids, _ in session.initialize_calls] == [
+        ["alias-rq00", "alias-rq01"]
+    ]
     assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
     assert np.array_equal(
         result.data["alias-rq00"][0],
@@ -2621,10 +3083,6 @@ def test_execution_phase_timings_measure_hardware_operations(
     caplog.set_level(logging.DEBUG, logger="qubex.backend.quel3")
 
     class Driver(_FakeInstrumentDriver):
-        async def initialize(self):
-            clock.now += 2
-            await super().initialize()
-
         async def apply(self, directive):
             clock.now += 3
             await super().apply(directive)
@@ -2634,6 +3092,10 @@ def test_execution_phase_timings_measure_hardware_operations(
             return await super().wait_for_result()
 
     class Session(_FakeSession):
+        async def initialize(self, instrument_ids, parallel=True):
+            clock.now += 2
+            await super().initialize(instrument_ids, parallel)
+
         async def __aenter__(self):
             clock.now += 1
             return await super().__aenter__()
