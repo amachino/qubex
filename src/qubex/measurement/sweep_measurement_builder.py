@@ -199,6 +199,7 @@ class SweepMeasurementBuilder:
         return MeasurementSchedule(
             pulse_schedule=pulse_schedule,
             capture_schedule=capture_schedule,
+            capture_placement="pulse_aligned",
         )
 
     def _build_pulse_schedule(self, state: SweepState) -> PulseSchedule:
