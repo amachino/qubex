@@ -57,4 +57,9 @@ jobs:
         run: uv run ruff check --output-format=github
 
       - name: Test (pytest)
-        run: uv run pytest -v -ra --tb=short --durations=20 -n auto
+        id: pytest
+        run: uv run pytest -v -ra --tb=short --durations=20 -n auto --junitxml="${RUNNER_TEMP}/pytest-results.xml"
+
+      - name: Report pytest results
+        if: ${{ !cancelled() && (steps.pytest.outcome == 'success' || steps.pytest.outcome == 'failure') }}
+        run: uv run python .github/scripts/check_pytest_results.py "${RUNNER_TEMP}/pytest-results.xml"
