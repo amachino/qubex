@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from qxpulse import PulseSchedule
 
-from qubex.backend import BackendExecutionRequest
+from qubex.backend import BackendExecutionRequest, BackendKind
 from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
@@ -101,6 +101,7 @@ def _bind_runtime(
     backend_controller: object,
     experiment_system: object,
     rawdata_dir: object = None,
+    backend_kind: BackendKind | None = None,
 ) -> None:
     context = type(
         "_CTX",
@@ -109,7 +110,11 @@ def _bind_runtime(
             "backend_controller": backend_controller,
             "experiment_system": experiment_system,
             "mux_dict": {},
-            "system_manager": type("_SM", (), {"rawdata_dir": rawdata_dir})(),
+            "system_manager": type(
+                "_SM",
+                (),
+                {"rawdata_dir": rawdata_dir, "backend_kind": backend_kind},
+            )(),
         },
     )()
     session_service = type(
@@ -1323,6 +1328,71 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
+def test_measure_rejects_dsp_classification_before_execute() -> None:
+    """Legacy measure should direct DSP users to canonical run_measurement."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    multiple = _make_multiple_result()
+    called: dict[str, Any] = {}
+
+    def fake_execute(
+        self: MeasurementExecutionService, **kwargs: object
+    ) -> MultipleMeasureResult:
+        called["kwargs"] = kwargs
+        return multiple
+
+    measurement.execution_service.execute = MethodType(
+        fake_execute,
+        measurement.execution_service,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=object(),
+        experiment_system=object(),
+        backend_kind="quel1",
+    )
+
+    with pytest.raises(ValueError, match="run_measurement"):
+        measurement.measure(
+            waveforms={"Q00": np.array([0.0 + 0.0j])},
+            state_classification=True,
+        )
+    with pytest.raises(ValueError, match="run_measurement"):
+        measurement.measure(
+            waveforms={"Q00": np.array([0.0 + 0.0j])},
+            enable_dsp_classification=True,
+        )
+
+    assert "kwargs" not in called
+
+
+def test_execute_rejects_dsp_classification_for_legacy_result() -> None:
+    """Legacy execute should reject DSP output regardless of capture options."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=object(),
+        experiment_system=object(),
+        backend_kind="quel1",
+    )
+
+    with pytest.raises(ValueError, match="run_measurement"):
+        measurement.execute(
+            schedule={"Q00": np.array([0.0 + 0.0j])},
+            time_integration=False,
+            state_classification=True,
+        )
+
+
 def test_measure_accepts_deprecated_alias_options() -> None:
     """Given deprecated alias options, when measure is called, then it forwards them for compatibility."""
     measurement = Measurement(
@@ -1476,7 +1546,7 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
 def test_execute_initializes_optional_flags_with_execute_defaults(
     monkeypatch,
 ) -> None:
-    """Given None optional flags, when execute is called, then it applies execute defaults."""
+    """Given None optional flags, execute should apply regular defaults."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1508,8 +1578,9 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
             config: MeasurementConfig,
             quel1_options: Quel1MeasurementOptions | None = None,
         ) -> MeasurementResult:
-            _ = (schedule, quel1_options)
+            _ = schedule
             called["config"] = config
+            called["run_quel1_options"] = quel1_options
             return MeasurementResultConverter.from_multiple(
                 multiple,
                 measurement_config=_make_config(),
@@ -1538,6 +1609,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
         backend_controller=backend_controller,
         experiment_system=experiment_system,
         rawdata_dir=None,
+        backend_kind="quel1",
     )
 
     measurement.execute(
@@ -1552,6 +1624,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
     config = called["config"]
     assert config.time_integration is True
     assert config.state_classification is False
+    assert called["run_quel1_options"] is None
 
 
 def test_run_measurement_delegates_to_executor(

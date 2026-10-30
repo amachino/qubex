@@ -13,7 +13,12 @@ from .adapters import (
     Quel3ExecutionPayload,
     Quel3MeasurementBackendAdapter,
 )
-from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
+from .classifiers import (
+    StateClassifier,
+    StateClassifierGMM,
+    StateClassifierKMeans,
+    StateClassifierLinear,
+)
 from .measurement import Measurement
 from .measurement_config_factory import MeasurementConfigFactory
 from .measurement_constraint_profile import MeasurementConstraintProfile
@@ -80,6 +85,7 @@ __all__ = [
     "StateClassifier",
     "StateClassifierGMM",
     "StateClassifierKMeans",
+    "StateClassifierLinear",
     "SweepAxes",
     "SweepCommandContext",
     "SweepCommandFactory",

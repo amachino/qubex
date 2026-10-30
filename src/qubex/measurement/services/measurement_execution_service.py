@@ -24,13 +24,18 @@ from qubex.backend.quel1 import (
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 from qubex.measurement.classifiers.state_classifier import StateClassifier
+from qubex.measurement.legacy_request_validation import (
+    reject_legacy_state_classification_request,
+)
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
-from qubex.measurement.measurement_result_converter import MeasurementResultConverter
+from qubex.measurement.measurement_result_converter import (
+    MeasurementResultConverter,
+)
 from qubex.measurement.measurement_schedule_builder import (
     CapturePlacement,
     MeasurementScheduleBuilder,
@@ -199,6 +204,7 @@ class MeasurementExecutionService:
             experiment_system=self.experiment_system,
             execution_mode=self._execution_mode,
             clock_health_checks=self._clock_health_checks,
+            classifiers=self.classifiers,
         )
 
     @property
@@ -857,8 +863,6 @@ class MeasurementExecutionService:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
@@ -879,7 +883,8 @@ class MeasurementExecutionService:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -905,10 +910,6 @@ class MeasurementExecutionService:
 
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
-        classification_line_param0 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 1.
 
         Returns
         -------
@@ -916,6 +917,12 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
+        reject_legacy_state_classification_request(
+            state_classification=state_classification,
+            enable_dsp_classification=deprecated_options.get(
+                "enable_dsp_classification"
+            ),
+        )
         if (
             time_integration is None
             and deprecated_options.get("enable_dsp_sum") is None
@@ -939,8 +946,6 @@ class MeasurementExecutionService:
             readout_ramp_type=readout_ramp_type,
             readout_amplification=readout_amplification,
             final_measurement=True,
-            classification_line_param0=classification_line_param0,
-            classification_line_param1=classification_line_param1,
             plot=plot,
             **deprecated_options,
         )
@@ -970,8 +975,6 @@ class MeasurementExecutionService:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
@@ -992,7 +995,8 @@ class MeasurementExecutionService:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -1020,10 +1024,6 @@ class MeasurementExecutionService:
             Whether to apply readout amplification pulses.
         final_measurement : bool | None, optional
             Whether to append a final readout measurement.
-        classification_line_param0 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 1.
         plot : bool | None, optional
             Whether to plot the results.
 
@@ -1033,6 +1033,12 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
+        reject_legacy_state_classification_request(
+            state_classification=state_classification,
+            enable_dsp_classification=deprecated_options.get(
+                "enable_dsp_classification"
+            ),
+        )
         legacy_options: dict[str, Any] = dict(deprecated_options)
         legacy_keys = {
             "mode",
@@ -1044,8 +1050,6 @@ class MeasurementExecutionService:
             "enable_dsp_demodulation",
             "enable_dsp_sum",
             "enable_dsp_classification",
-            "line_param0",
-            "line_param1",
         }
         unknown_keys = sorted(set(legacy_options) - legacy_keys)
         if unknown_keys:
@@ -1066,9 +1070,6 @@ class MeasurementExecutionService:
                 )
             if shot_averaging is None:
                 shot_averaging = legacy_shot_averaging
-        if shot_averaging is None:
-            shot_averaging = True
-
         n_shots = self._resolve_deprecated_alias(
             new_value=n_shots,
             old_value=legacy_options.pop("shots", None),
@@ -1142,18 +1143,8 @@ class MeasurementExecutionService:
         if plot is None:
             plot = False
 
-        classification_line_param0 = self._resolve_deprecated_alias(
-            new_value=classification_line_param0,
-            old_value=legacy_options.pop("line_param0", None),
-            old_name="line_param0",
-            new_name="classification_line_param0",
-        )
-        classification_line_param1 = self._resolve_deprecated_alias(
-            new_value=classification_line_param1,
-            old_value=legacy_options.pop("line_param1", None),
-            old_name="line_param1",
-            new_name="classification_line_param1",
-        )
+        if shot_averaging is None:
+            shot_averaging = True
 
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
@@ -1181,21 +1172,10 @@ class MeasurementExecutionService:
             plot=plot,
         )
 
-        if classification_line_param0 is None and classification_line_param1 is None:
-            result = self.measurement_schedule_runner.execute_sync(
-                schedule=measurement_schedule,
-                config=measurement_config,
-            )
-        else:
-            quel1_options = Quel1MeasurementOptions(
-                classification_line_param0=classification_line_param0,
-                classification_line_param1=classification_line_param1,
-            )
-            result = self.measurement_schedule_runner.execute_sync(
-                schedule=measurement_schedule,
-                config=measurement_config,
-                quel1_options=quel1_options,
-            )
+        result = self.measurement_schedule_runner.execute_sync(
+            schedule=measurement_schedule,
+            config=measurement_config,
+        )
 
         rawdata_dir = self.system_manager.rawdata_dir
         if rawdata_dir is not None:

@@ -283,6 +283,27 @@ def _pulse_array(
     )
 
 
+def test_quel3_adapter_rejects_unsupported_state_classification_before_io() -> None:
+    """QuEL-3 should reject unsupported classified-state output before request build."""
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+    )
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+
+    with pytest.raises(
+        NotImplementedError, match="does not support state classification"
+    ):
+        adapter.build_execution_request(schedule=cast(Any, object()), config=config)
+
+
 def test_quel3_adapter_accepts_relaxed_schedule() -> None:
     """Given relaxed schedule, when validating, then no error is raised."""
     target = "RQ00"
@@ -1208,7 +1229,7 @@ def test_quel3_adapter_build_measurement_result_squeezes_avg_mode_waveform() -> 
 
 
 def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> None:
-    """Given integrated single-shot data, adapter conversion should expose one IQ value per shot."""
+    """Given integrated single-shot data, conversion should expose one IQ per shot."""
     target = "RQ00"
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(

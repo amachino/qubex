@@ -39,6 +39,20 @@ class MeasurementResult(DataModel):
             f"state_classification={config.state_classification})"
         )
 
+    def get_state_counts(
+        self,
+        *,
+        include_rejected: bool = False,
+    ) -> dict[str, list[dict[int, int]]]:
+        """Return logical-state counts for every target and capture."""
+        return {
+            target: [
+                capture.get_state_counts(include_rejected=include_rejected)
+                for capture in captures
+            ]
+            for target, captures in self.data.items()
+        }
+
     @model_validator(mode="after")
     def _validate_classifier_refs(self) -> MeasurementResult:
         """Validate classifier-ref keys and infer mapping from capture metadata."""
@@ -78,7 +92,15 @@ class MeasurementResult(DataModel):
         return_figure: bool = False,
         save_image: bool = False,
     ) -> Any:
-        """Plot measurement data for each capture."""
+        """
+        Plot measurement data for each capture.
+
+        Raises
+        ------
+        NotImplementedError
+            If a capture contains `state_series`. Inspect `state_series` or
+            use `get_state_counts()` for classified results.
+        """
         if return_figure:
             warnings.warn(
                 "`return_figure` is deprecated; use `figure()` instead.",
@@ -103,6 +125,7 @@ class MeasurementResult(DataModel):
                         figure_index += 1
             return figures
 
+        self._reject_state_series_plotting()
         for target, captures in self.data.items():
             for capture_index, capture in enumerate(captures):
                 title = f"{target} : data[{capture_index}]"
@@ -141,7 +164,16 @@ class MeasurementResult(DataModel):
         return None
 
     def figure(self) -> list[Any]:
-        """Return figure objects for all capture entries without rendering."""
+        """
+        Return figure objects for all capture entries without rendering.
+
+        Raises
+        ------
+        NotImplementedError
+            If a capture contains `state_series`. Inspect `state_series` or
+            use `get_state_counts()` for classified results.
+        """
+        self._reject_state_series_plotting()
         figures: list[Any] = []
         for target, captures in self.data.items():
             for capture_index, capture in enumerate(captures):
@@ -182,6 +214,18 @@ class MeasurementResult(DataModel):
                     )
                 )
         return figures
+
+    def _reject_state_series_plotting(self) -> None:
+        """Reject state payloads before rendering or saving any capture."""
+        if any(
+            capture.state_series is not None
+            for captures in self.data.values()
+            for capture in captures
+        ):
+            raise NotImplementedError(
+                "Plotting state_series payloads is not supported. Inspect "
+                "state_series or use get_state_counts() for classified results."
+            )
 
     def save(
         self,
