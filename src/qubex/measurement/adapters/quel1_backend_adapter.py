@@ -83,6 +83,8 @@ class Quel1MeasurementBackendAdapter:
         if len(channel_captures) == 0:
             raise ValueError("Capture schedule must not be empty.")
 
+        explicit_placement = schedule.capture_schedule.placement == "explicit"
+
         range_targets = self._resolve_pulse_range_targets(
             pulse_schedule=pulse_schedule,
             capture_targets=list(channel_captures),
@@ -137,6 +139,12 @@ class Quel1MeasurementBackendAdapter:
                     raise ValueError(
                         f"Capture duration must be a multiple of {word_duration} ns."
                     )
+
+            if explicit_placement:
+                # Explicit windows are positioned by the caller, so they are not
+                # expected to match the readout pulse ranges. Every other
+                # QuEL-1 constraint above and below still applies.
+                continue
 
             if self._is_entire_schedule_capture(
                 captures=sorted_captures,
@@ -201,6 +209,34 @@ class Quel1MeasurementBackendAdapter:
                     f"Final post-blank must be a multiple of {word_duration} ns."
                 )
 
+    def _validate_explicit_captures_for_decimation(
+        self,
+        schedule: MeasurementSchedule,
+    ) -> None:
+        """
+        Reject caller-positioned windows that decimation would truncate.
+
+        Demodulation enables the decimation DSP stage, which emits one sample
+        per word and drops the remainder of a section that is not a multiple of
+        four words. Generated windows satisfy this by construction; explicit
+        windows are checked here because the option is only known at run time.
+        """
+        if schedule.capture_schedule.placement != "explicit":
+            return
+        granularity = self._constraint_profile.decimation_capture_granularity_ns
+        if granularity is None:
+            return
+        for channel, captures in schedule.capture_schedule.channels.items():
+            for capture in captures:
+                if capture.is_workaround:
+                    continue
+                if not self._is_multiple(capture.duration, granularity):
+                    raise ValueError(
+                        f"Capture window ({capture.start_time}, {capture.duration}) "
+                        f"on `{channel}`: duration must be a multiple of "
+                        f"{granularity} ns while demodulation (decimation) is enabled."
+                    )
+
     def build_execution_request(
         self,
         *,
@@ -211,6 +247,13 @@ class Quel1MeasurementBackendAdapter:
         """Build a QuEL backend execution request from measurement inputs."""
         profile = self._constraint_profile
         block_duration = profile.block_duration_ns
+        dsp_demodulation = (
+            True
+            if quel1_options is None or quel1_options.demodulation is None
+            else quel1_options.demodulation
+        )
+        if dsp_demodulation:
+            self._validate_explicit_captures_for_decimation(schedule)
         measure_mode = MeasureMode.AVG if config.shot_averaging else MeasureMode.SINGLE
         base_duration = schedule.pulse_schedule.duration
         if profile.enforce_block_alignment and block_duration is not None:
@@ -252,12 +295,6 @@ class Quel1MeasurementBackendAdapter:
             target: resource_map_by_lookup_target[lookup_target]
             for target, lookup_target in resource_lookup_target_by_target.items()
         }
-        dsp_demodulation = (
-            True
-            if quel1_options is None or quel1_options.demodulation is None
-            else quel1_options.demodulation
-        )
-
         payload = Quel1ExecutionPayload(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,

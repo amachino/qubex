@@ -1130,6 +1130,7 @@ class Measurement:
         final_measurement: bool | None = None,
         capture_placement: CapturePlacement | None = None,
         capture_targets: list[str] | None = None,
+        capture_windows: Mapping[str, Sequence[tuple[float, float]]] | None = None,
         plot: bool | None = None,
     ) -> MeasurementSchedule:
         """
@@ -1163,6 +1164,17 @@ class Measurement:
             Capture-window placement (`pulse_aligned` or `entire_schedule`).
         capture_targets : list[str] | None, optional
             Explicit capture-channel labels for `entire_schedule` placement.
+        capture_windows : Mapping[str, Sequence[tuple[float, float]]] | None, optional
+            Capture windows for `explicit` placement, keyed by channel label.
+            Each window is `(start, duration)` in ns on the time axis of
+            `pulse_schedule` and is used exactly as given; any number of windows
+            per channel is accepted and they need not line up with readout
+            pulses. Windows that violate the backend constraints raise
+            `ValueError` before anything is sent to the hardware: on QuEL-1,
+            start and duration must lie on the 8 ns grid, windows must not
+            overlap and need at least 8 ns between them, and while demodulation
+            is enabled (the default) the duration must also be a multiple of
+            32 ns, which is checked when the measurement is run.
         plot : bool | None, optional
             Whether to plot the generated schedule.
 
@@ -1190,5 +1202,6 @@ class Measurement:
             final_measurement=final_measurement,
             capture_placement=capture_placement,
             capture_targets=capture_targets,
+            capture_windows=capture_windows,
             plot=plot,
         )
