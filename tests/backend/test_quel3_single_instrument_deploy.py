@@ -99,6 +99,7 @@ class _Hardware:
         self.infos = [_info("Q00"), _info("Q01", "unit-b:tx_p02")]
         self.deploy_calls: list[tuple[str, bool]] = []
         self.read_calls: list[tuple[str, ...]] = []
+        self.read_id_calls: list[tuple[str, ...]] = []
         self.closed_sessions = 0
         self.fail_after_write = False
         self.fail_read_number: int | None = None
@@ -178,6 +179,18 @@ class _Hardware:
         return tuple(
             info for info in self.infos if not port_ids or info.port_id in port_ids
         )
+
+    def read_instrument_infos_by_ids(
+        self,
+        instrument_ids: Sequence[str],
+        *,
+        parallel: bool = True,
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        del parallel
+        ids = tuple(instrument_ids)
+        self.read_id_calls.append(ids)
+        selected = set(ids)
+        return tuple(info for info in self.infos if info.id in selected)
 
 
 @pytest.fixture
@@ -531,11 +544,11 @@ def test_modified_frequencies_restores_software_without_redeployment(
 
 
 @pytest.mark.parametrize("append", [True, False])
-def test_single_deploy_updates_the_full_port_and_returns_one_readback(
+def test_single_deploy_scopes_readback_to_the_required_resources(
     deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
     append: bool,
 ) -> None:
-    """Single deployment should honor append and preserve other ports in the cache."""
+    """Single deployment should read the full port only when append preserves siblings."""
     manager, hardware, cache = deployment
     untouched = cache.get("Q01")
 
@@ -548,7 +561,8 @@ def test_single_deploy_updates_the_full_port_and_returns_one_readback(
     )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", append)]
-    assert hardware.read_calls == [("unit-a:tx_p01",)]
+    assert hardware.read_calls == ([("unit-a:tx_p01",)] if append else [])
+    assert hardware.read_id_calls == ([] if append else [(result.id,)])
     assert cache.get("Q02") is result
     assert cache.get("Q01") is untouched
     assert set(cache.snapshot()) == (
