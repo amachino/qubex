@@ -1,0 +1,2234 @@
+"""
+Orchestrate CR dissipation acquisition and user-facing output.
+
+This module owns public-call validation, diagnostic IX45 calibration, hardware
+acquisition, conversion to the records in `types`, plotting/reporting, and final
+`Result` assembly. Pulse construction and numerical inference remain in
+`pulses` and `analysis`, respectively. The stable facade is
+`qubex.contrib.experiment.cr_dissipation`.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from itertools import pairwise
+from math import ceil, floor
+from numbers import Integral, Real
+from typing import Any, TypedDict, cast
+
+import numpy as np
+import plotly.graph_objects as go
+from numpy.typing import NDArray
+from plotly.subplots import make_subplots
+from scipy.interpolate import PchipInterpolator
+
+from qubex import visualization as viz
+from qubex.analysis import fitting
+from qubex.contrib.experiment._single_shot_batch import measure_single_shot_batch
+from qubex.contrib.experiment.gef_population_estimation import (
+    bootstrap_gef_populations,
+    measure_gef_populations,
+)
+from qubex.experiment import Experiment
+from qubex.experiment.models.result import Result
+from qubex.measurement.measurement_defaults import resolve_measurement_defaults
+from qubex.pulse import FlatTop, PulseSchedule, Waveform
+
+from .analysis import (
+    BOUNDARY_FRACTION_CHANGE_THRESHOLD,
+    CD_NONNEGATIVE_RATE_START_FRACTIONS,
+    CD_SIGNED_DIAGNOSTIC_POLICY,
+    CD_SIGNED_RATE_START_FRACTIONS,
+    CHANGE_SIGMA_THRESHOLD,
+    LEAKAGE_MINIMUM_CHANGE,
+    MODEL_SELECTION_DELTA_AICC,
+    PARAMETER_SIGNIFICANCE_THRESHOLD,
+    POPULATION_MINIMUM_CHANGE,
+    PSD_RELATIVE_TOLERANCE,
+    analyze_cr_dissipation,
+    computational_polarization,
+    nonnormalized_ge_expectation,
+    simplex_boundary_bootstrap_required,
+)
+from .fit import (
+    GOODNESS_OF_FIT_MAX_MAHALANOBIS_RESIDUAL_LIMIT,
+    GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
+)
+from .pulses import (
+    PROTOCOL_A,
+    PROTOCOL_B,
+    PROTOCOL_C,
+    PROTOCOL_D,
+    PROTOCOLS,
+    ProtocolSchedules,
+    ZX90Descriptor,
+    append_analyzer,
+    build_protocol_schedules,
+    build_reference_schedules,
+    resolve_zx90_descriptor,
+)
+from .types import (
+    CrDissipationAnalysis,
+    CrDissipationFidelityEstimate,
+    CrDissipationFidelityStatus,
+    CrDissipationFitQuality,
+    CrDissipationMeasurements,
+    CrDissipationPauliData,
+    CrDissipationProtocolData,
+    CrDissipationProtocolMeasurements,
+    CrDissipationRateStatus,
+    GefPopulationSeries,
+    IdleNoiseParameters,
+)
+
+DEFAULT_N_SHOTS = 2048
+DEFAULT_GEF_MEASUREMENT_N_SHOTS = 4096
+DEFAULT_GEF_CALIBRATION_N_SHOTS = 8192
+_REFERENCE_CALIBRATION_NOTE_KEY = "cr_dissipation_reference_ix45"
+
+
+# Input validation and stored idle-coherence resolution
+
+
+@dataclass(frozen=True)
+class _ReferenceIx45Calibration:
+    """Store a CR-envelope IX45 calibration and cache fingerprint."""
+
+    amplitude: float
+    duration: float
+    ramptime: float
+    beta: float | None
+    ramp_type: str
+    sampling_period: float
+    r_squared: float
+    timestamp: str
+
+    @property
+    def fingerprint(self) -> tuple[float, float, float | None, str, float]:
+        """Return pulse-shape fields used for cache compatibility."""
+        return (
+            self.duration,
+            self.ramptime,
+            self.beta,
+            self.ramp_type,
+            self.sampling_period,
+        )
+
+
+def _validate_repetition_counts(values: Sequence[int]) -> tuple[int, ...]:
+    """Return the validated strictly increasing protocol repetition grid."""
+    resolved = tuple(values)
+    if len(resolved) < 5:
+        raise ValueError("repetition_counts must contain at least five points.")
+    if any(
+        isinstance(value, bool) or not isinstance(value, Integral) for value in resolved
+    ):
+        raise TypeError("repetition_counts must contain integers only.")
+    normalized = tuple(int(value) for value in resolved)
+    if normalized[0] != 0:
+        raise ValueError("repetition_counts must start at zero.")
+    if any(value < 0 for value in normalized):
+        raise ValueError("repetition_counts must be nonnegative.")
+    if any(right <= left for left, right in pairwise(normalized)):
+        raise ValueError("repetition_counts must be unique and strictly increasing.")
+    return normalized
+
+
+def _default_repetition_counts(
+    *,
+    longest_idle_t1_ns: float,
+    ab_block_duration_ns: float,
+) -> tuple[int, ...]:
+    """Return zero plus nine geometric counts ending at two idle T1 times."""
+    if not np.isfinite(longest_idle_t1_ns) or longest_idle_t1_ns <= 0.0:
+        raise ValueError(
+            "A finite positive idle T1 is required to generate default "
+            "repetition_counts; specify repetition_counts explicitly."
+        )
+    if not np.isfinite(ab_block_duration_ns) or ab_block_duration_ns <= 0.0:
+        raise ValueError(
+            f"The `{PROTOCOL_A}`/`{PROTOCOL_B}` block duration must be positive "
+            "and finite."
+        )
+    endpoint = int(np.rint(2.0 * longest_idle_t1_ns / ab_block_duration_ns))
+    positive_size = 9
+    if endpoint < positive_size:
+        raise ValueError(
+            f"Twice the longer idle T1 spans fewer than nine `{PROTOCOL_A}`/"
+            f"`{PROTOCOL_B}` blocks; "
+            "specify repetition_counts explicitly."
+        )
+    geometric = np.geomspace(1.0, float(endpoint), positive_size)
+    positive: list[int] = []
+    for index, raw_value in enumerate(geometric):
+        lower = 1 if index == 0 else positive[-1] + 1
+        upper = endpoint - (positive_size - index - 1)
+        positive.append(int(np.clip(np.rint(raw_value), lower, upper)))
+    return (0, *positive)
+
+
+def _positive_integer(value: int, name: str) -> int:
+    """Validate an integer lower bound without accepting booleans."""
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise TypeError(f"{name} must be an integer.")
+    if value < 2:
+        raise ValueError(f"{name} must be at least two.")
+    return int(value)
+
+
+def _nonnegative_integer(value: int, name: str) -> int:
+    """Validate a nonnegative integer without accepting booleans."""
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise TypeError(f"{name} must be a nonnegative integer.")
+    if value < 0:
+        raise ValueError(f"{name} must be a nonnegative integer.")
+    return int(value)
+
+
+def _optional_seed(value: int | None) -> int | None:
+    """Validate an optional nonnegative bootstrap seed."""
+    if value is None:
+        return None
+    return _nonnegative_integer(value, "gef_bootstrap_seed")
+
+
+def _positive_finite(value: float, name: str) -> float:
+    """Validate and normalize a positive finite real value."""
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(f"{name} must be a real number.")
+    normalized = float(value)
+    if not np.isfinite(normalized) or normalized <= 0.0:
+        raise ValueError(f"{name} must be positive and finite.")
+    return normalized
+
+
+def _validate_gef_diagnostic_frequency_overrides(
+    exp: Experiment,
+    targets: Sequence[str],
+    schedules: Mapping[str, Sequence[PulseSchedule]],
+) -> None:
+    """Reject schedule frequencies that would alter GEF analyzers or readout."""
+    protected_labels = {
+        label
+        for target in targets
+        for label in (
+            exp.ctx.resolve_ge_label(target),
+            exp.ctx.resolve_ef_label(target),
+            exp.ctx.resolve_read_label(target),
+        )
+    }
+    for protocol, protocol_schedules in schedules.items():
+        for index, schedule in enumerate(protocol_schedules):
+            conflicting = sorted(
+                label
+                for label, frequency in schedule.get_frequencies().items()
+                if label in protected_labels and frequency is not None
+            )
+            if conflicting:
+                labels = ", ".join(conflicting)
+                raise ValueError(
+                    f"Protocol `{protocol}` schedule {index} contains frequency "
+                    f"overrides on calibrated GEF diagnostic channels: {labels}."
+                )
+
+
+def _load_idle_noise(
+    exp: Experiment,
+    control: str,
+    target: str,
+    idle_t1: Mapping[str, float] | None,
+    idle_t2_echo: Mapping[str, float] | None,
+) -> tuple[IdleNoiseParameters, IdleNoiseParameters]:
+    """Resolve fixed control and target idle-noise inputs before acquisition."""
+
+    def load_stored(name: str) -> Mapping[str, float]:
+        try:
+            values = exp.ctx.system_manager.config_loader.load_param_data(name)
+        except (
+            AttributeError,
+            FileNotFoundError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise ValueError(
+                f"Stored idle `{name}` values could not be resolved before acquisition."
+            ) from exc
+        if not isinstance(values, Mapping):
+            raise TypeError(f"Stored idle `{name}` data must be a mapping.")
+        return values
+
+    t1 = load_stored("t1") if idle_t1 is None else idle_t1
+    t2 = load_stored("t2_echo") if idle_t2_echo is None else idle_t2_echo
+    try:
+        return (
+            IdleNoiseParameters(t1[control], t2[control]),
+            IdleNoiseParameters(t1[target], t2[target]),
+        )
+    except KeyError as exc:
+        raise ValueError(
+            f"Idle coherence data missing for qubit {exc.args[0]}."
+        ) from exc
+
+
+# CR-envelope IX45 reference calibration
+
+
+def _flat_top_unit_area(pulse: FlatTop) -> float:
+    """Return the sampled area of a unit-amplitude matching `FlatTop`."""
+    unit = FlatTop(
+        duration=pulse.duration,
+        amplitude=1.0,
+        tau=pulse.tau,
+        beta=pulse.beta,
+        type=pulse.type,
+        sampling_period=pulse.sampling_period,
+    )
+    area = float(np.sum(unit.real) * unit.sampling_period)
+    if not np.isfinite(area) or area <= 0.0:
+        raise ValueError("Reference pulse envelope must have positive finite area.")
+    return area
+
+
+def _make_ix45(
+    cr_envelope: FlatTop, amplitude: float, *, allow_zero: bool = False
+) -> FlatTop:
+    """Copy a CR envelope with the requested IX45 amplitude."""
+    lower = 0.0 if allow_zero else np.nextafter(0.0, 1.0)
+    if not np.isfinite(amplitude) or not lower <= amplitude <= 1.0:
+        interval = "[0, 1]" if allow_zero else "(0, 1]"
+        raise ValueError(f"reference_ix45_amplitude must be in {interval}.")
+    return FlatTop(
+        duration=cr_envelope.duration,
+        amplitude=amplitude,
+        tau=cr_envelope.tau,
+        beta=cr_envelope.beta,
+        type=cr_envelope.type,
+        sampling_period=cr_envelope.sampling_period,
+    )
+
+
+def _reference_fingerprint(
+    pulse: FlatTop,
+) -> tuple[float, float, float | None, str, float]:
+    """Return pulse-shape fields that determine IX45 cache compatibility."""
+    return (
+        float(pulse.duration),
+        float(pulse.tau),
+        None if pulse.beta is None else float(pulse.beta),
+        str(pulse.type),
+        float(pulse.sampling_period),
+    )
+
+
+def _usable_reference_cache_entry(
+    candidate: _ReferenceIx45Calibration,
+    fingerprint: tuple[float, float, float | None, str, float],
+) -> bool:
+    """Return whether a deserialized IX45 calibration is valid and compatible."""
+    if (
+        isinstance(candidate.amplitude, bool)
+        or not isinstance(candidate.amplitude, Real)
+        or isinstance(candidate.r_squared, bool)
+        or not isinstance(candidate.r_squared, Real)
+    ):
+        return False
+    amplitude = float(candidate.amplitude)
+    r_squared = float(candidate.r_squared)
+    try:
+        compatible = candidate.fingerprint == fingerprint
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        compatible
+        and np.isfinite(amplitude)
+        and 0.0 < amplitude <= 1.0
+        and np.isfinite(r_squared)
+        and r_squared >= 0.5
+    )
+
+
+def _calibrate_reference_ix45(
+    exp: Experiment,
+    target: str,
+    cr_envelope: FlatTop,
+    *,
+    n_shots: int,
+    shot_interval: float,
+    plot: bool,
+    enable_tqdm: bool,
+) -> _ReferenceIx45Calibration:
+    """Calibrate an IX45 amplitude using two repeated CR-shaped pulses."""
+    _announce_acquisition(
+        "Reference IX45 calibration (CR-shaped IX45 pair amplitude sweep)",
+        enable_tqdm=enable_tqdm,
+    )
+    hpi = exp.pulse.get_hpi_pulse(target)
+    if not isinstance(hpi, FlatTop):
+        raise TypeError("The calibrated target hpi pulse must be a FlatTop pulse.")
+    initial = (
+        0.5
+        * float(hpi.amplitude)
+        * _flat_top_unit_area(hpi)
+        / _flat_top_unit_area(cr_envelope)
+    )
+    amplitudes = np.linspace(max(0.0, 0.75 * initial), min(1.0, 1.25 * initial), 21)
+    if amplitudes[0] >= amplitudes[-1]:
+        amplitudes = np.linspace(0.0, 1.0, 21)
+
+    def sequence(amplitude: float) -> dict[str, Waveform]:
+        return {
+            target: _make_ix45(cr_envelope, float(amplitude), allow_zero=True).repeated(
+                2
+            )
+        }
+
+    sweep = exp.measurement_service.sweep_parameter(
+        sequence=sequence,
+        sweep_range=amplitudes,
+        repetitions=8,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        plot=False,
+        enable_tqdm=enable_tqdm,
+    ).data[target]
+    fit = fitting.fit_ampl_calib_data(
+        target=target,
+        amplitude_range=amplitudes,
+        data=np.asarray(sweep.normalized, dtype=np.float64),
+        plot=plot,
+        title="CR-shaped IX45 pair calibration",
+        ylabel="Normalized signal",
+    )
+    amplitude = float(fit["amplitude"])
+    r_squared = float(fit["r2"])
+    if (
+        not np.isfinite(amplitude)
+        or not 0.0 < amplitude <= 1.0
+        or not np.isfinite(r_squared)
+        or r_squared < 0.5
+    ):
+        raise RuntimeError(
+            "CR-shaped IX45 calibration failed quality validation: "
+            f"amplitude={amplitude!r}, r_squared={r_squared!r}."
+        )
+    duration, ramptime, beta, ramp_type, sampling_period = _reference_fingerprint(
+        cr_envelope
+    )
+    return _ReferenceIx45Calibration(
+        amplitude,
+        duration,
+        ramptime,
+        beta,
+        ramp_type,
+        sampling_period,
+        r_squared,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
+def _resolve_reference_ix45(
+    exp: Experiment,
+    control: str,
+    target: str,
+    descriptor: ZX90Descriptor,
+    *,
+    amplitude: float | None,
+    force: bool,
+    n_shots: int,
+    shot_interval: float,
+    plot: bool,
+    enable_tqdm: bool,
+) -> tuple[FlatTop, _ReferenceIx45Calibration, bool]:
+    """Resolve an explicit, cached, or newly calibrated reference IX45 pulse."""
+    cr_envelope = getattr(descriptor.echoed, "cr_waveform", None)
+    if not isinstance(cr_envelope, FlatTop):
+        raise ValueError(  # noqa: TRY004 - incompatible overrides are ValueError
+            "Reference acquisition requires a FlatTop ZX90 cr_waveform."
+        )
+    fingerprint = _reference_fingerprint(cr_envelope)
+    if amplitude is not None:
+        return (
+            _make_ix45(cr_envelope, amplitude),
+            _ReferenceIx45Calibration(
+                amplitude,
+                *fingerprint,
+                float("nan"),
+                "user-supplied",
+            ),
+            False,
+        )
+    key = f"{control}-{target}"
+    cached: Any = None
+    if not force:
+        try:
+            cached = exp.ctx.calib_note.get_property(
+                _REFERENCE_CALIBRATION_NOTE_KEY,
+                key,
+                None,
+            )
+        except (AttributeError, KeyError, TypeError, ValueError):
+            cached = None
+    if isinstance(cached, Mapping):
+        try:
+            candidate = _ReferenceIx45Calibration(**cached)
+        except (TypeError, ValueError):
+            candidate = None
+        if candidate is not None and _usable_reference_cache_entry(
+            candidate, fingerprint
+        ):
+            return (
+                _make_ix45(cr_envelope, float(candidate.amplitude)),
+                candidate,
+                False,
+            )
+    calibration = _calibrate_reference_ix45(
+        exp,
+        target,
+        cr_envelope,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        plot=plot,
+        enable_tqdm=enable_tqdm,
+    )
+    exp.ctx.calib_note.put_property(
+        _REFERENCE_CALIBRATION_NOTE_KEY,
+        key,
+        asdict(calibration),
+    )
+    return _make_ix45(cr_envelope, calibration.amplitude), calibration, True
+
+
+# Measurement acquisition and conversion to analysis data
+
+
+def _gef_series(
+    result: Result, names: Sequence[str], target: str
+) -> GefPopulationSeries:
+    """Collect named GEF fits into one ordered population series."""
+    fits = [result.data["fits"][name][target] for name in names]  # type: ignore[index]
+    bootstraps = [result.data["bootstrap"][name][target] for name in names]  # type: ignore[index]
+    diagnostics = tuple(
+        {
+            "objective": fit.objective,
+            "residual": fit.residual,
+            "success": fit.success,
+            "message": fit.message,
+            "design_rank": fit.design_rank,
+            "design_condition_number": fit.design_condition_number,
+        }
+        for fit in fits
+    )
+    return GefPopulationSeries(
+        population=np.asarray([fit.population for fit in fits], dtype=np.float64),
+        covariance=np.asarray(
+            [fit.population_covariance for fit in fits], dtype=np.float64
+        ),
+        standard_error=np.asarray(
+            [fit.population_standard_error for fit in fits], dtype=np.float64
+        ),
+        population_unconstrained=np.asarray(
+            [fit.population_unconstrained for fit in fits], dtype=np.float64
+        ),
+        fit_diagnostics=diagnostics,
+        bootstrap=tuple(bootstraps),
+    )
+
+
+def _protocol_data(
+    result: Result,
+    names: Sequence[str],
+    control: str,
+    target: str,
+    protocol: str,
+) -> CrDissipationProtocolData:
+    """Convert one protocol's GEF result into its primary observables."""
+    if protocol in (PROTOCOL_A, PROTOCOL_B):
+        control_series = _gef_series(result, names, control)
+        target_series = _gef_series(result, names, target)
+        target_x, target_x_error = computational_polarization(target_series)
+        return CrDissipationProtocolData(
+            control_gef=control_series,
+            target_gef=target_series,
+            target_x_comp=target_x,
+            target_x_comp_standard_error=target_x_error,
+        )
+    primary_series = _gef_series(
+        result,
+        names,
+        control if protocol == PROTOCOL_C else target,
+    )
+    primary, primary_error = nonnormalized_ge_expectation(
+        primary_series,
+        population_order="e_minus_g" if protocol == PROTOCOL_C else "g_minus_e",
+    )
+    return CrDissipationProtocolData(
+        control_gef=primary_series if protocol == PROTOCOL_C else None,
+        target_gef=primary_series if protocol == PROTOCOL_D else None,
+        primary_expectation=primary,
+        primary_standard_error=primary_error,
+    )
+
+
+def _select_boundary_bootstrap_sequence_names(
+    result: Result,
+    names_by_protocol: Mapping[str, Sequence[str]],
+    control: str,
+    target: str,
+) -> dict[str, tuple[str, ...]]:
+    """Select A/B raw-IQ series requiring a boundary bootstrap diagnostic."""
+    selected: dict[str, list[str]] = {control: [], target: []}
+    for protocol in (PROTOCOL_A, PROTOCOL_B):
+        data = _protocol_data(
+            result,
+            names_by_protocol[protocol],
+            control,
+            target,
+            protocol,
+        )
+        for qubit, series in (
+            (control, data.control_gef),
+            (target, data.target_gef),
+        ):
+            if series is not None and simplex_boundary_bootstrap_required(
+                series,
+                2,
+                minimum_change=LEAKAGE_MINIMUM_CHANGE,
+            ):
+                selected[qubit].extend(names_by_protocol[protocol])
+    return {
+        qubit: tuple(sequence_names)
+        for qubit, sequence_names in selected.items()
+        if sequence_names
+    }
+
+
+def _run_selective_ab_bootstrap(
+    result: Result,
+    names_by_protocol: Mapping[str, Sequence[str]],
+    control: str,
+    target: str,
+    *,
+    n_resamples: int,
+    seed: int | None,
+    confidence_level: float,
+    covariance_rcond: float,
+) -> dict[str, tuple[str, ...]]:
+    """Bootstrap only A/B GEF series whose boundary diagnostics need it."""
+    if n_resamples == 0:
+        return {}
+    selected = _select_boundary_bootstrap_sequence_names(
+        result,
+        names_by_protocol,
+        control,
+        target,
+    )
+    calibration = result.data["calibration"]
+    raw_iq = result.data["raw_iq"]
+    bootstrap = result.data["bootstrap"]
+    for qubit, sequence_names in selected.items():
+        selected_bootstrap = bootstrap_gef_populations(
+            {qubit: calibration[qubit]},
+            {name: raw_iq[name] for name in sequence_names},
+            n_resamples=n_resamples,
+            seed=seed,
+            confidence_level=confidence_level,
+            covariance_rcond=covariance_rcond,
+        )
+        for name, values in selected_bootstrap.items():
+            bootstrap[name].update(values)
+    return selected
+
+
+def _named_sequences(
+    schedules: Mapping[str, Sequence[PulseSchedule]],
+    prefix: str,
+    protocols: Sequence[str] = PROTOCOLS,
+) -> tuple[dict[str, PulseSchedule], dict[str, tuple[str, ...]]]:
+    """Assign stable result names to selected protocol schedules."""
+    named: dict[str, PulseSchedule] = {}
+    grouped: dict[str, tuple[str, ...]] = {}
+    for protocol in protocols:
+        names = tuple(
+            f"{prefix}:{protocol}:{index}" for index in range(len(schedules[protocol]))
+        )
+        grouped[protocol] = names
+        named.update(zip(names, schedules[protocol], strict=True))
+    return named, grouped
+
+
+def _orthogonal_acquisition(
+    exp: Experiment,
+    schedules: ProtocolSchedules,
+    control: str,
+    target: str,
+    *,
+    n_shots: int,
+    shot_interval: float,
+    enable_tqdm: bool,
+) -> tuple[
+    dict[str, CrDissipationPauliData],
+    dict[str, dict[str, NDArray[np.complex128]]],
+]:
+    """Acquire every orthogonal diagnostic with calibrated Pauli readout."""
+    requests_by_protocol = {
+        PROTOCOL_A: ((control, "X"), (control, "Y"), (target, "Y"), (target, "Z")),
+        PROTOCOL_B: ((control, "X"), (control, "Y"), (target, "Y"), (target, "Z")),
+        PROTOCOL_C: ((control, "Y"), (control, "Z")),
+        PROTOCOL_D: ((target, "X"), (target, "Y")),
+    }
+
+    def diagnostic_schedule(
+        base: PulseSchedule,
+        qubit: str,
+        basis: str,
+    ) -> PulseSchedule:
+        if basis == "X":
+            return append_analyzer(base, qubit, exp.pulse.y90m(qubit))
+        if basis == "Y":
+            return append_analyzer(base, qubit, exp.pulse.x90(qubit))
+        return base
+
+    named: dict[str, PulseSchedule] = {}
+    keys: list[tuple[str, str, str]] = []
+    for protocol, requests in requests_by_protocol.items():
+        for qubit, basis in requests:
+            for index, base in enumerate(schedules.base[protocol]):
+                name = f"orthogonal:{protocol}:{qubit}:{basis}:{index}"
+                named[name] = diagnostic_schedule(base, qubit, basis)
+                keys.append((protocol, qubit, basis))
+    _announce_acquisition(
+        f"{' / '.join(PROTOCOLS)} orthogonal Pauli diagnostics",
+        enable_tqdm=enable_tqdm,
+    )
+    results = measure_single_shot_batch(
+        exp,
+        tuple(named.values()),
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        enable_tqdm=enable_tqdm,
+    )
+    raw_iq: dict[str, dict[str, NDArray[np.complex128]]] = {}
+    values_by_component: dict[tuple[str, str, str], list[float]] = {}
+    errors_by_component: dict[tuple[str, str, str], list[float]] = {}
+    for name, key, result in zip(named, keys, results, strict=True):
+        protocol, qubit, basis = key
+        if qubit not in result:
+            raise ValueError(f"Pauli diagnostic `{name}` did not return `{qubit}`.")
+        iq = result[qubit]
+        normalized = np.asarray(
+            exp.pulse.rabi_params[qubit].normalize(iq),
+            dtype=np.float64,
+        )
+        if normalized.shape != (n_shots,) or not np.all(np.isfinite(normalized)):
+            raise ValueError(
+                f"Pauli diagnostic `{name}` normalization must return "
+                f"{n_shots} finite shots."
+            )
+        values_by_component.setdefault(key, []).append(float(np.mean(normalized)))
+        errors_by_component.setdefault(key, []).append(
+            float(np.std(normalized, ddof=1) / np.sqrt(normalized.size))
+        )
+        raw_iq[name] = {qubit: iq}
+
+    processed: dict[str, CrDissipationPauliData] = {}
+    for protocol, requests in requests_by_protocol.items():
+        components = {}
+        errors = {}
+        roles = {}
+        for qubit, basis in requests:
+            key = (protocol, qubit, basis)
+            values = np.asarray(values_by_component[key], dtype=np.float64)
+            standard_errors = np.asarray(errors_by_component[key], dtype=np.float64)
+            name = f"{qubit}:{basis}"
+            components[name] = values
+            errors[name] = standard_errors
+            roles[name] = "control" if qubit == control else "target"
+        processed[protocol] = CrDissipationPauliData(
+            expectations=components,
+            standard_errors=errors,
+            component_roles=roles,
+        )
+    return processed, raw_iq
+
+
+def _build_measurements(
+    schedules: ProtocolSchedules,
+    repetition_counts: tuple[int, ...],
+    actual_results: Mapping[str, Result],
+    actual_names: Mapping[str, Sequence[str]],
+    control: str,
+    target: str,
+    *,
+    reference_results: Mapping[str, Result] | None,
+    reference_names: Mapping[str, Sequence[str]] | None,
+    orthogonal: Mapping[str, CrDissipationPauliData] | None,
+) -> CrDissipationMeasurements:
+    """Combine protocol results, timing, references, and Pauli diagnostics."""
+    protocol_measurements: dict[str, CrDissipationProtocolMeasurements] = {}
+    for protocol in PROTOCOLS:
+        actual = _protocol_data(
+            actual_results[protocol],
+            actual_names[protocol],
+            control,
+            target,
+            protocol,
+        )
+        reference = (
+            None
+            if reference_results is None or reference_names is None
+            else _protocol_data(
+                reference_results[protocol],
+                reference_names[protocol],
+                control,
+                target,
+                protocol,
+            )
+        )
+        protocol_measurements[protocol] = CrDissipationProtocolMeasurements(
+            schedules.elapsed_time_ns[protocol],
+            schedules.cr_active_time_ns[protocol],
+            actual,
+            reference,
+            None if orthogonal is None else orthogonal[protocol],
+        )
+    counts = np.asarray(repetition_counts, dtype=np.int64)
+    return CrDissipationMeasurements(
+        counts,
+        4 * counts,
+        protocol_measurements[PROTOCOL_A],
+        protocol_measurements[PROTOCOL_B],
+        protocol_measurements[PROTOCOL_C],
+        protocol_measurements[PROTOCOL_D],
+    )
+
+
+def _merge_result_branch(
+    results: Mapping[str, Result],
+    key: str,
+) -> dict[str, Any]:
+    """Merge one named Result data branch from protocol-specific acquisitions."""
+    merged: dict[str, Any] = {}
+    seen: set[int] = set()
+    for result in results.values():
+        if id(result) in seen:
+            continue
+        seen.add(id(result))
+        merged.update(result.data[key])  # type: ignore[arg-type]
+    return merged
+
+
+# Plotting and terminal reporting
+
+
+_STATE_COLORS = dict(zip(("Pg", "Pe", "Pf"), fitting.COLORS[:3], strict=True))
+_PRIMARY_COLOR = fitting.COLORS[0]
+_PF_COLOR = _STATE_COLORS["Pf"]
+
+
+def _smooth_plot_curve(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return a shape-preserving dense interpolation for display only."""
+    x_values = np.asarray(x, dtype=np.float64)
+    y_values = np.asarray(y, dtype=np.float64)
+    valid = np.isfinite(x_values) & np.isfinite(y_values)
+    if np.count_nonzero(valid) < 2:
+        return x_values[valid], y_values[valid]
+    retained_x = x_values[valid]
+    retained_y = y_values[valid]
+    dense_x = np.linspace(float(retained_x[0]), float(retained_x[-1]), 400)
+    dense_y = PchipInterpolator(retained_x, retained_y)(dense_x)
+    return dense_x, np.asarray(dense_y, dtype=np.float64)
+
+
+def _line_trace(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    *,
+    name: str,
+    color: str,
+    dash: str = "solid",
+    width: float = 2.5,
+) -> go.Scatter:
+    """Build one Qubex-style smooth line trace."""
+    dense_x, dense_y = _smooth_plot_curve(x, y)
+    return go.Scatter(
+        x=dense_x,
+        y=dense_y,
+        mode="lines",
+        name=name,
+        line={"color": color, "dash": dash, "width": width},
+    )
+
+
+def _announce_acquisition(description: str, *, enable_tqdm: bool) -> None:
+    """Print an acquisition heading immediately before its progress bar."""
+    if enable_tqdm:
+        print(f"Measuring: {description}", flush=True)
+
+
+def _pf_axis_range(values: Sequence[NDArray[np.float64] | None]) -> list[float]:
+    """Return a zero-anchored Pf range with a span of at least 0.05."""
+    finite_values = [
+        np.asarray(value, dtype=np.float64)[np.isfinite(value)]
+        for value in values
+        if value is not None
+    ]
+    finite_values = [value for value in finite_values if value.size]
+    if not finite_values:
+        return [0.0, 0.05]
+    combined = np.concatenate(finite_values)
+    lower = min(0.0, float(np.min(combined)))
+    upper = max(0.0, float(np.max(combined)))
+    if upper - lower < 0.05:
+        upper = lower + 0.05
+    return [lower, upper]
+
+
+def _panel_position(panel: int, columns: int) -> tuple[int, int]:
+    """Return a one-based subplot row and column for a panel index."""
+    return (panel - 1) // columns + 1, (panel - 1) % columns + 1
+
+
+class _SubplotCoordinates(TypedDict):
+    """Identify one Plotly subplot using one-based coordinates."""
+
+    row: int
+    col: int
+
+
+def _panel_kwargs(panel: int, columns: int) -> _SubplotCoordinates:
+    """Return Plotly subplot coordinates for one logical panel."""
+    row, col = _panel_position(panel, columns)
+    return {"row": row, "col": col}
+
+
+def _add_zero_line(figure: go.Figure, panel: int, columns: int) -> None:
+    """Add a subtle zero baseline to one subplot."""
+    # Plotly's type stub accepts axis IDs only, while the runtime also accepts
+    # integer subplot coordinates.
+    plotly_figure: Any = figure
+    row, col = _panel_position(panel, columns)
+    plotly_figure.add_hline(
+        y=0.0,
+        line={"color": "rgba(80, 80, 80, 0.45)", "width": 1},
+        row=row,
+        col=col,
+    )
+
+
+def _configure_protocol_xaxes(
+    figure: go.Figure,
+    *,
+    panel_count: int,
+    rows: int,
+    columns: int,
+    maximum_time_us: float,
+    time_us: NDArray[np.float64],
+    cr_gate_counts: Sequence[int],
+) -> None:
+    """Add independent, uniformly spaced time and CR-gate axes to every panel."""
+    time_ticks = _nice_axis_ticks(maximum_time_us)
+    measured_maximum_time_us = float(np.max(time_us))
+    measured_maximum_gate_count = int(max(cr_gate_counts, default=0))
+    gate_limit = (
+        measured_maximum_gate_count * maximum_time_us / measured_maximum_time_us
+    )
+    gate_ticks = _nice_axis_ticks(gate_limit, quantum=4.0)
+    grid_cells = rows * columns
+    for panel in range(1, panel_count + 1):
+        row, col = _panel_position(panel, columns)
+        suffix = "" if panel == 1 else str(panel)
+        base_axis = f"x{suffix}"
+        y_axis = f"y{suffix}"
+        top_layout_key = f"xaxis{grid_cells + panel}"
+        figure.update_xaxes(
+            range=[0.0, maximum_time_us],
+            tickmode="array",
+            tickvals=time_ticks,
+            showticklabels=True,
+            title_text="Elapsed sequence time [us]",
+            automargin=True,
+            row=row,
+            col=col,
+        )
+        figure.update_layout(
+            {
+                top_layout_key: {
+                    "overlaying": base_axis,
+                    "anchor": y_axis,
+                    "side": "top",
+                    "range": [0.0, gate_limit],
+                    "tickmode": "array",
+                    "tickvals": gate_ticks,
+                    "ticktext": [str(round(value)) for value in gate_ticks],
+                    "showticklabels": True,
+                    "showgrid": False,
+                    "title": "CR gates (4n)",
+                    "automargin": True,
+                }
+            }
+        )
+        # Plotly does not reliably render a layout-only overlaid axis.  Bind a
+        # non-rendering trace to it so every panel retains its upper scale.
+        figure.add_trace(
+            go.Scatter(
+                x=[0.0, gate_limit],
+                y=[None, None],
+                xaxis=f"x{grid_cells + panel}",
+                yaxis=y_axis,
+                mode="markers",
+                marker={"opacity": 0.0},
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+
+
+def _nice_axis_ticks(
+    limit: float,
+    *,
+    target_intervals: int = 5,
+    quantum: float | None = None,
+) -> NDArray[np.float64]:
+    """Return zero-based, uniformly spaced ticks with human-friendly values."""
+    if not np.isfinite(limit) or limit <= 0.0:
+        return np.array([0.0], dtype=np.float64)
+    scaled_limit = limit if quantum is None else limit / quantum
+    raw_step = scaled_limit / max(1, target_intervals)
+    magnitude = 10.0 ** floor(np.log10(raw_step))
+    fraction = raw_step / magnitude
+    candidates = (
+        (1.0, 2.0, 5.0, 10.0) if quantum is not None else (1.0, 2.0, 2.5, 5.0, 10.0)
+    )
+    nice_fraction = next(candidate for candidate in candidates if fraction <= candidate)
+    step = nice_fraction * magnitude
+    if quantum is not None:
+        step *= quantum
+    stop = floor(limit / step + 1e-12)
+    return np.arange(stop + 1, dtype=np.float64) * step
+
+
+def _shift_subplot_titles(figure: go.Figure, count: int) -> None:
+    """Place panel titles above their upper axis title and tick labels."""
+    annotations: Any = cast(Any, figure.layout).annotations
+    for annotation in annotations[:count]:
+        annotation.update(yshift=72)
+
+
+def _marker_trace(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64] | None,
+    *,
+    name: str,
+    color: str,
+    error: NDArray[np.float64] | None = None,
+    symbol: str = "circle",
+) -> go.Scatter:
+    """Build one Qubex-style marker trace with optional statistical errors."""
+    return go.Scatter(
+        x=x,
+        y=y,
+        mode="markers",
+        name=name,
+        marker={"color": color, "size": 7, "symbol": symbol},
+        error_y=None
+        if error is None
+        else {"type": "data", "array": error, "visible": True},
+    )
+
+
+def _plot_cr_dissipation(
+    measurements: CrDissipationMeasurements,
+    analysis: CrDissipationAnalysis,
+) -> dict[str, go.Figure]:
+    """Build consistently styled protocol figures with display-only smoothing."""
+    figures: dict[str, go.Figure] = {}
+    maximum_time_us = (
+        max(
+            float(np.max(getattr(measurements, protocol).elapsed_time_ns))
+            for protocol in PROTOCOLS
+        )
+        / 1000.0
+    )
+    for protocol in PROTOCOLS:
+        measured = getattr(measurements, protocol)
+        time_us = np.asarray(measured.elapsed_time_ns / 1000.0, dtype=np.float64)
+        has_orthogonal = measured.orthogonal is not None
+        if protocol in (PROTOCOL_A, PROTOCOL_B):
+            pf_values: list[NDArray[np.float64] | None] = []
+            if has_orthogonal:
+                titles = [
+                    "Control GEF population",
+                    "Control orthogonal diagnostics",
+                    "Target Xcomp",
+                    "Target Pf",
+                    "Target orthogonal diagnostics",
+                ]
+                target_x_row = 3
+                target_pf_row = 4
+                control_orthogonal_row = 2
+                target_orthogonal_row = 5
+                y_titles = [
+                    "Population",
+                    "Expectation value",
+                    "Xcomp",
+                    "Pf",
+                    "Expectation value",
+                ]
+            else:
+                titles = ["Control GEF population", "Target Xcomp", "Target Pf"]
+                target_x_row = 2
+                target_pf_row = 3
+                control_orthogonal_row = None
+                target_orthogonal_row = None
+                y_titles = ["Population", "Xcomp", "Pf"]
+            columns = min(2, len(titles))
+            rows = ceil(len(titles) / columns)
+            figure = make_subplots(
+                rows=rows,
+                cols=columns,
+                shared_xaxes=False,
+                subplot_titles=titles,
+                vertical_spacing=0.18 if rows > 1 else 0.0,
+                horizontal_spacing=0.12,
+            )
+            control = measured.actual.control_gef
+            fitted = analysis.fits.control_population_ab.fitted_populations.get(
+                protocol
+            )
+            idle = analysis.idle_predictions[protocol].observables
+            idle_control = idle.get("control_population")
+            if control is not None:
+                for index, state in enumerate(("Pg", "Pe", "Pf")):
+                    color = _STATE_COLORS[state]
+                    figure.add_trace(
+                        _marker_trace(
+                            time_us,
+                            control.population[:, index],
+                            error=control.standard_error[:, index],
+                            name=f"actual {state}",
+                            color=color,
+                        ),
+                        **_panel_kwargs(1, columns),
+                    )
+                    if fitted is not None:
+                        figure.add_trace(
+                            _line_trace(
+                                time_us,
+                                fitted[:, index],
+                                name=f"fit {state}",
+                                color=color,
+                            ),
+                            **_panel_kwargs(1, columns),
+                        )
+                    if idle_control is not None:
+                        figure.add_trace(
+                            _line_trace(
+                                time_us,
+                                idle_control[:, index],
+                                name=f"idle-only {state}",
+                                color=color,
+                                dash="dash",
+                            ),
+                            **_panel_kwargs(1, columns),
+                        )
+            if measured.actual.target_x_comp is not None:
+                figure.add_trace(
+                    _marker_trace(
+                        time_us,
+                        measured.actual.target_x_comp,
+                        error=measured.actual.target_x_comp_standard_error,
+                        name="actual Xcomp",
+                        color=_PRIMARY_COLOR,
+                    ),
+                    **_panel_kwargs(target_x_row, columns),
+                )
+            target = measured.actual.target_gef
+            if target is not None:
+                pf_values.append(target.population[:, 2])
+                figure.add_trace(
+                    _marker_trace(
+                        time_us,
+                        target.population[:, 2],
+                        error=target.standard_error[:, 2],
+                        name="actual target Pf",
+                        color=_PF_COLOR,
+                    ),
+                    **_panel_kwargs(target_pf_row, columns),
+                )
+            t1_fit = (
+                analysis.fits.target_a_t1rho
+                if protocol == PROTOCOL_A
+                else analysis.fits.target_b_t1rho
+            )
+            leakage_fit = (
+                analysis.fits.target_a_leakage
+                if protocol == PROTOCOL_A
+                else analysis.fits.target_b_leakage
+            )
+            for row, values, name, color in (
+                (
+                    target_x_row,
+                    t1_fit.fitted_values,
+                    "T1rho fit",
+                    _PRIMARY_COLOR,
+                ),
+                (
+                    target_pf_row,
+                    leakage_fit.fitted_values,
+                    "leak/seep fit",
+                    _PF_COLOR,
+                ),
+                (
+                    target_x_row,
+                    idle["target_x_comp"],
+                    "idle-only Xcomp",
+                    _PRIMARY_COLOR,
+                ),
+                (
+                    target_pf_row,
+                    idle["target_pf"],
+                    "idle-only Pf",
+                    _PF_COLOR,
+                ),
+            ):
+                if row == target_pf_row:
+                    pf_values.append(values)
+                figure.add_trace(
+                    _line_trace(
+                        time_us,
+                        values,
+                        name=name,
+                        color=color,
+                        dash="dash" if name.startswith("idle-only") else "solid",
+                    ),
+                    **_panel_kwargs(row, columns),
+                )
+            if measured.reference is not None:
+                reference_control = measured.reference.control_gef
+                if reference_control is not None:
+                    for index, state in enumerate(("Pg", "Pe", "Pf")):
+                        figure.add_trace(
+                            _marker_trace(
+                                time_us,
+                                reference_control.population[:, index],
+                                error=reference_control.standard_error[:, index],
+                                name=f"reference {state}",
+                                color=_STATE_COLORS[state],
+                                symbol="circle-open",
+                            ),
+                            **_panel_kwargs(1, columns),
+                        )
+                if measured.reference.target_x_comp is not None:
+                    figure.add_trace(
+                        _marker_trace(
+                            time_us,
+                            measured.reference.target_x_comp,
+                            error=measured.reference.target_x_comp_standard_error,
+                            name="reference Xcomp",
+                            color=_PRIMARY_COLOR,
+                            symbol="circle-open",
+                        ),
+                        **_panel_kwargs(target_x_row, columns),
+                    )
+                reference_target = measured.reference.target_gef
+                if reference_target is not None:
+                    pf_values.append(reference_target.population[:, 2])
+                    figure.add_trace(
+                        _marker_trace(
+                            time_us,
+                            reference_target.population[:, 2],
+                            error=reference_target.standard_error[:, 2],
+                            name="reference target Pf",
+                            color=_PF_COLOR,
+                            symbol="circle-open",
+                        ),
+                        **_panel_kwargs(target_pf_row, columns),
+                    )
+            figure.update_yaxes(range=[0.0, 1.0], **_panel_kwargs(1, columns))
+            figure.update_yaxes(
+                range=[-1.0, 1.0], **_panel_kwargs(target_x_row, columns)
+            )
+            figure.update_yaxes(
+                range=_pf_axis_range(pf_values),
+                **_panel_kwargs(target_pf_row, columns),
+            )
+            _add_zero_line(figure, 1, columns)
+            _add_zero_line(figure, target_x_row, columns)
+            _add_zero_line(figure, target_pf_row, columns)
+            if has_orthogonal and measured.orthogonal is not None:
+                if control_orthogonal_row is None or target_orthogonal_row is None:
+                    raise ValueError(
+                        f"Missing `{PROTOCOL_A}`/`{PROTOCOL_B}` orthogonal plot rows."
+                    )
+                for index, (name, component) in enumerate(
+                    measured.orthogonal.expectations.items()
+                ):
+                    role = measured.orthogonal.component_roles.get(name)
+                    if role == "control":
+                        row = control_orthogonal_row
+                    elif role == "target":
+                        row = target_orthogonal_row
+                    else:
+                        raise ValueError(
+                            f"Orthogonal component `{name}` has no valid qubit role."
+                        )
+                    if row is None:
+                        raise ValueError(
+                            f"Orthogonal component `{name}` has no assigned plot row."
+                        )
+                    figure.add_trace(
+                        _marker_trace(
+                            time_us,
+                            component,
+                            error=measured.orthogonal.standard_errors.get(name),
+                            name=name,
+                            color=fitting.COLORS[(index + 3) % len(fitting.COLORS)],
+                        ),
+                        **_panel_kwargs(row, columns),
+                    )
+                figure.update_yaxes(
+                    range=[-1.0, 1.0],
+                    **_panel_kwargs(control_orthogonal_row, columns),
+                )
+                figure.update_yaxes(
+                    range=[-1.0, 1.0],
+                    **_panel_kwargs(target_orthogonal_row, columns),
+                )
+                _add_zero_line(figure, control_orthogonal_row, columns)
+                _add_zero_line(figure, target_orthogonal_row, columns)
+        else:
+            titles = ["Control Xge" if protocol == PROTOCOL_C else "Target Zge"]
+            y_titles = ["Expectation value"]
+            if has_orthogonal:
+                titles.append("Orthogonal diagnostics")
+                y_titles.append("Expectation value")
+            columns = min(2, len(titles))
+            rows = ceil(len(titles) / columns)
+            figure = make_subplots(
+                rows=rows,
+                cols=columns,
+                shared_xaxes=False,
+                subplot_titles=titles,
+                vertical_spacing=0.18 if rows > 1 else 0.0,
+                horizontal_spacing=0.12,
+            )
+            values = measured.actual.primary_expectation
+            errors = measured.actual.primary_standard_error
+            if values is not None:
+                figure.add_trace(
+                    _marker_trace(
+                        time_us,
+                        values,
+                        error=errors,
+                        name="actual",
+                        color=_PRIMARY_COLOR,
+                    ),
+                    **_panel_kwargs(1, columns),
+                )
+                fit = (
+                    analysis.fits.control_pure_dephasing_c
+                    if protocol == PROTOCOL_C
+                    else analysis.fits.target_rotating_frame_pure_dephasing_d
+                )
+                figure.add_trace(
+                    _line_trace(
+                        time_us,
+                        fit.fitted_values,
+                        name="physical fit",
+                        color=_PRIMARY_COLOR,
+                    ),
+                    **_panel_kwargs(1, columns),
+                )
+            idle_values = analysis.idle_predictions[protocol].observables.get(
+                "primary_expectation"
+            )
+            if idle_values is not None:
+                figure.add_trace(
+                    _line_trace(
+                        time_us,
+                        idle_values,
+                        name="idle-only prediction",
+                        color=_PRIMARY_COLOR,
+                        dash="dash",
+                    ),
+                    **_panel_kwargs(1, columns),
+                )
+            if measured.reference is not None:
+                figure.add_trace(
+                    _marker_trace(
+                        time_us,
+                        measured.reference.primary_expectation,
+                        error=measured.reference.primary_standard_error,
+                        name="reference (diagnostic)",
+                        color=_PRIMARY_COLOR,
+                        symbol="circle-open",
+                    ),
+                    **_panel_kwargs(1, columns),
+                )
+                reference_idle_values = analysis.idle_predictions[
+                    protocol
+                ].observables.get("reference_primary_expectation")
+                if reference_idle_values is not None:
+                    figure.add_trace(
+                        _line_trace(
+                            time_us,
+                            reference_idle_values,
+                            name="reference idle-only prediction",
+                            color=_PRIMARY_COLOR,
+                            dash="dot",
+                            width=1.25,
+                        ),
+                        **_panel_kwargs(1, columns),
+                    )
+            figure.update_yaxes(range=[-1.0, 1.0], **_panel_kwargs(1, columns))
+            _add_zero_line(figure, 1, columns)
+            if has_orthogonal and measured.orthogonal is not None:
+                for index, (name, component) in enumerate(
+                    measured.orthogonal.expectations.items()
+                ):
+                    figure.add_trace(
+                        _marker_trace(
+                            time_us,
+                            component,
+                            error=measured.orthogonal.standard_errors.get(name),
+                            name=name,
+                            color=fitting.COLORS[(index + 3) % len(fitting.COLORS)],
+                        ),
+                        **_panel_kwargs(2, columns),
+                    )
+                figure.update_yaxes(range=[-1.0, 1.0], **_panel_kwargs(2, columns))
+                _add_zero_line(figure, 2, columns)
+        figure.update_layout(
+            template=viz.DEFAULT_TEMPLATE,
+            title={"text": protocol, "x": 0.5, "xanchor": "center", "y": 0.995},
+            width=1500,
+            height=420 * rows + 140,
+            margin={
+                "t": 165,
+                "r": 220,
+                "b": 90,
+                "l": 95,
+            },
+            legend={"x": 1.02, "xanchor": "left", "y": 1.0, "yanchor": "top"},
+        )
+        for panel, y_title in enumerate(y_titles, start=1):
+            figure.update_yaxes(
+                title_text=y_title,
+                automargin=True,
+                **_panel_kwargs(panel, columns),
+            )
+        for panel in range(len(titles) + 1, rows * columns + 1):
+            figure.update_xaxes(visible=False, **_panel_kwargs(panel, columns))
+            figure.update_yaxes(visible=False, **_panel_kwargs(panel, columns))
+        _shift_subplot_titles(figure, len(titles))
+        _configure_protocol_xaxes(
+            figure,
+            panel_count=len(titles),
+            rows=rows,
+            columns=columns,
+            maximum_time_us=maximum_time_us,
+            time_us=time_us,
+            cr_gate_counts=tuple(int(value) for value in measurements.cr_gate_counts),
+        )
+        figures[protocol] = figure
+    return figures
+
+
+def _print_summary(
+    analysis: CrDissipationAnalysis,
+    control_idle: IdleNoiseParameters,
+    target_idle: IdleNoiseParameters,
+) -> None:
+    """Print the compact rate, fidelity, and diagnostic measurement summary."""
+    print("CR dissipation characterization")
+    print(
+        "Idle inputs [us]: "
+        f"control T1={control_idle.t1_ns / 1000:.3g}, "
+        f"T2_echo={control_idle.t2_echo_ns / 1000:.3g}; "
+        f"target T1={target_idle.t1_ns / 1000:.3g}, "
+        f"T2_echo={target_idle.t2_echo_ns / 1000:.3g}"
+    )
+    headings = (
+        "Indicator",
+        "CR-active rate [/us]",
+        "Equivalent time [us]",
+        "Idle-only equivalent [us]",
+        "Status",
+    )
+    rows: list[tuple[str, str, str, str, str]] = []
+    for name, estimate in analysis.rates.items():
+        failed = estimate.status == CrDissipationRateStatus.FIT_FAILED
+        rate = "—" if failed else f"{estimate.rate_per_ns * 1000.0:.3g}"
+        if not failed and estimate.rate_standard_error_per_ns is not None:
+            rate += f" ± {estimate.rate_standard_error_per_ns * 1000.0:.3g}"
+        lifetime = (
+            "—"
+            if failed or not np.isfinite(estimate.lifetime_ns)
+            else f"{estimate.lifetime_ns / 1000.0:.3g}"
+        )
+        if estimate.lifetime_ns == float("inf"):
+            lifetime = "inf"
+        if not failed and estimate.lifetime_interval_1sigma_ns is not None:
+            low, high = estimate.lifetime_interval_1sigma_ns
+            high_text = "inf" if np.isinf(high) else f"{high / 1000.0:.3g}"
+            lifetime += f" [{low / 1000.0:.3g}, {high_text}]"
+        idle_lifetime = estimate.idle_equivalent_lifetime_ns
+        idle = (
+            "—"
+            if np.isnan(idle_lifetime)
+            else "inf"
+            if np.isinf(idle_lifetime)
+            else f"{idle_lifetime / 1000.0:.3g}"
+        )
+        rows.append((name, rate, lifetime, idle, estimate.status.value))
+    widths = [
+        max(len(headings[index]), *(len(row[index]) for row in rows))
+        for index in range(len(headings))
+    ]
+    print(
+        "  ".join(
+            value.ljust(width) for value, width in zip(headings, widths, strict=True)
+        )
+    )
+    print("  ".join("-" * width for width in widths))
+    for row in rows:
+        print(
+            "  ".join(
+                value.ljust(width) for value, width in zip(row, widths, strict=True)
+            )
+        )
+    quality_entries = _fit_quality_entries(analysis.metadata)
+
+    print("\nFidelity limits")
+    has_conditional_fidelity = False
+    for label, estimate in (
+        ("idle coherence", analysis.fidelity.idle_coherence_limited),
+        ("CR-on coherence", analysis.fidelity.cr_on_coherence_limited),
+        ("CR-on dissipative", analysis.fidelity.cr_on_dissipative_limited),
+    ):
+        value, conditional = _format_fidelity_summary_value(estimate)
+        has_conditional_fidelity |= conditional
+        print(f"  {label:<21} {value}")
+
+    if quality_entries:
+        mismatch_count = sum(
+            entry.get("quality") == CrDissipationFitQuality.STATISTICAL_MISMATCH.value
+            for entry in quality_entries
+        )
+        unassessed_count = sum(
+            entry.get("quality") == CrDissipationFitQuality.NOT_ASSESSED.value
+            for entry in quality_entries
+        )
+        if mismatch_count:
+            suffix = ""
+            if unassessed_count == 1:
+                suffix = "; 1 fit was not assessed"
+            elif unassessed_count > 1:
+                suffix = f"; {unassessed_count} fits were not assessed"
+            print(
+                "\nFit diagnostics: "
+                f"{mismatch_count}/{len(quality_entries)} fits show a "
+                f"statistical mismatch{suffix}."
+            )
+        elif unassessed_count:
+            print(
+                "\nFit diagnostics: "
+                f"{unassessed_count}/{len(quality_entries)} fits were not assessed."
+            )
+        else:
+            print(f"\nFit diagnostics: all {len(quality_entries)} fits accepted.")
+    if analysis.warnings:
+        codes: dict[str, int] = {}
+        for item in analysis.warnings:
+            codes[item.code] = codes.get(item.code, 0) + 1
+        code_text = ", ".join(
+            code.replace("_", " ")
+            if count == 1
+            else f"{code.replace('_', ' ')} ({count})"
+            for code, count in codes.items()
+        )
+        suffix = (
+            "; starred fidelities are conditional" if has_conditional_fidelity else ""
+        )
+        print(f"Warnings: {len(analysis.warnings)} — {code_text}{suffix}.")
+    elif has_conditional_fidelity:
+        print("* Starred fidelities are conditional.")
+
+
+def _fit_quality_entries(
+    metadata: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
+    """Return the fit-quality records represented in the compact summary."""
+    fit_quality = metadata.get("fit_quality")
+    if not isinstance(fit_quality, Mapping):
+        return ()
+    quality_entries: list[Mapping[str, Any]] = []
+    control_quality = fit_quality.get("control_population_ab", {})
+    if isinstance(control_quality, Mapping):
+        selected = control_quality.get("selected")
+        if isinstance(selected, Mapping):
+            quality_entries.append(selected)
+        by_protocol = control_quality.get("by_protocol")
+        if isinstance(by_protocol, Mapping):
+            quality_entries.extend(
+                goodness
+                for goodness in by_protocol.values()
+                if isinstance(goodness, Mapping)
+            )
+    for key in (
+        "target_a_t1rho",
+        "target_a_leakage",
+        "target_b_t1rho",
+        "target_b_leakage",
+    ):
+        goodness = fit_quality.get(key)
+        if isinstance(goodness, Mapping):
+            quality_entries.append(goodness)
+    for key in (
+        "control_pure_dephasing_c",
+        "target_rotating_frame_pure_dephasing_d",
+    ):
+        entry = fit_quality.get(key, {})
+        goodness = entry.get("local") if isinstance(entry, Mapping) else None
+        if isinstance(goodness, Mapping):
+            quality_entries.append(goodness)
+    return tuple(quality_entries)
+
+
+def _format_fidelity_summary_value(
+    estimate: CrDissipationFidelityEstimate,
+) -> tuple[str, bool]:
+    """Format one fidelity as a percentage and report conditional status."""
+    if not estimate.available:
+        return "unavailable", False
+    value = f"{estimate.value * 100.0:.2f}"
+    if estimate.standard_error is not None:
+        value += f" ± {estimate.standard_error * 100.0:.2g}"
+    value += " %"
+    conditional = (
+        estimate.status == CrDissipationFidelityStatus.CONDITIONAL_STATISTICAL_MISMATCH
+    )
+    return value + (" *" if conditional else ""), conditional
+
+
+# Public experiment orchestration
+
+
+def characterize_cr_dissipation(
+    exp: Experiment,
+    control_qubit: str,
+    target_qubit: str,
+    *,
+    repetition_counts: Sequence[int] | None = None,
+    n_shots: int = DEFAULT_N_SHOTS,
+    gef_measurement_n_shots: int = DEFAULT_GEF_MEASUREMENT_N_SHOTS,
+    shot_interval: float | None = None,
+    measure_reference: bool = True,
+    measure_orthogonal_components: bool = True,
+    zx90_no_echo: PulseSchedule | None = None,
+    zx90_echo: PulseSchedule | None = None,
+    idle_t1: Mapping[str, float] | None = None,
+    idle_t2_echo: Mapping[str, float] | None = None,
+    gef_calibration_n_shots: int = DEFAULT_GEF_CALIBRATION_N_SHOTS,
+    gef_bootstrap_n_resamples: int = 1000,
+    gef_bootstrap_seed: int | None = 0,
+    gef_bootstrap_confidence_level: float = 0.95,
+    gef_covariance_rcond: float = 1e-12,
+    reference_ix45_amplitude: float | None = None,
+    force_reference_ix45_calibration: bool = False,
+    compute_fidelity_uncertainty: bool = False,
+    enable_tqdm: bool = True,
+    plot: bool = True,
+) -> Result:
+    """
+    Characterize CR-active dissipation and compute three fidelity limits.
+
+    All public time inputs and raw timings are in ns; rates are in 1/ns.
+    Protocol C uses non-normalized `Pe-Pg` after its fixed `+Y90` analyzer;
+    protocol D directly uses non-normalized `Pg-Pe`. Reference and orthogonal
+    acquisitions are diagnostic-only and never enter primary inference. A/B
+    use same-sign CR lobes with the calibrated cancellation tone but without
+    rotary; C/D retain the complete calibrated echoed ZX90. The C/D and
+    fidelity forward models use intended rotations with actual pulse timing.
+    If the calibrated schedule does not expose pre-combination rotary
+    angle/phase metadata, its semantic rotary term is omitted under the
+    echoed-gate approximation that the coherent IX rotation cancels; the
+    hardware pulse is unchanged.
+
+    Parameters
+    ----------
+    exp : Experiment
+        Experiment used for pulse construction, acquisition, and calibration
+        storage.
+    control_qubit, target_qubit : str
+        Distinct qubit labels defining the calibrated CR pair.
+    repetition_counts : Sequence[int] | None, optional
+        Strictly increasing nonnegative repetition counts starting at zero.
+        At least five points are required. When omitted, use zero followed by
+        nine geometrically spaced integer counts from one to the A/B count whose
+        elapsed time is twice the longer control/target idle T1.
+    n_shots : int, optional
+        Shots per non-GEF measurement configuration, including all orthogonal
+        Pauli diagnostics and IX45 reference calibration. Must be at least two to
+        estimate a shot-to-shot standard error. Defaults to 2048.
+    gef_measurement_n_shots : int, optional
+        Shots per GEF population measurement configuration. Used by A/B/C/D
+        primary and GEF reference acquisitions. Must be at least two and defaults
+        to 4096.
+    shot_interval : float | None, optional
+        Interval between shots in ns. When omitted, use the configured
+        measurement default.
+    measure_reference : bool, optional
+        Whether to acquire duration-matched diagnostic reference sequences.
+        Reference data never enter primary fits or fidelity estimates. Defaults
+        to `True`.
+    measure_orthogonal_components : bool, optional
+        Whether to acquire diagnostic components orthogonal to each primary
+        observable using Pauli readout. These data never enter primary inference.
+        Defaults to `True`.
+    zx90_no_echo : PulseSchedule | None, optional
+        Optional full un-echoed ZX90-equivalent schedule used by A/B. It must
+        contain both same-sign CR lobes, expose `echo=False`, and match the total
+        and CR-active durations of `zx90_echo`. It is also expected to contain no
+        rotary component; this cannot be inferred from a generic schedule. A
+        single-lobe schedule returned by `exp.pulse.zx90(..., echo=False)` is not
+        sufficient. Its CR-channel frequency metadata are preserved independently
+        of `zx90_echo`. When omitted, build a rotary-free schedule from the
+        calibrated CR and cancellation waveforms.
+    zx90_echo : PulseSchedule | None, optional
+        Optional echoed calibrated ZX90 schedule. When omitted, resolve it from
+        the pulse service. This schedule is used by C/D and fidelity simulation.
+        When `zx90_no_echo` is omitted, the pulse service is also queried with
+        zero rotary to build A/B; that schedule must match this schedule's timing
+        and CR waveform.
+    idle_t1, idle_t2_echo : Mapping[str, float] | None, optional
+        Optional mappings of qubit labels to fixed idle coherence times in ns.
+        When omitted, load the saved `t1` and `t2_echo` parameters.
+    gef_calibration_n_shots : int, optional
+        Shots per GEF calibration configuration. Must be at least two for the
+        IQ moment covariance and defaults to 8192.
+    gef_bootstrap_n_resamples : int, optional
+        Maximum number of raw-shot bootstrap resamples for A/B primary GEF
+        boundary diagnostics. Bootstrap runs only for series whose simplex
+        boundary ambiguity is unresolved by unconstrained populations. C/D
+        primary and all reference data use analytic covariance only. Zero
+        disables bootstrap uncertainty everywhere.
+    gef_bootstrap_seed : int | None, optional
+        Nonnegative bootstrap seed, or `None` for nondeterministic sampling.
+    gef_bootstrap_confidence_level : float, optional
+        Marginal bootstrap confidence level strictly between zero and one.
+    gef_covariance_rcond : float, optional
+        Relative cutoff in `[0, 1)` for GEF and downstream covariance
+        pseudo-inverses.
+    reference_ix45_amplitude : float | None, optional
+        Optional pre-calibrated positive CR-envelope IX45 amplitude no greater
+        than one. Used only when `measure_reference=True`.
+    force_reference_ix45_calibration : bool, optional
+        Whether to ignore a compatible cached IX45 calibration and recalibrate.
+        When `measure_reference=True`, this cannot be combined with an explicit
+        `reference_ix45_amplitude`. It is ignored otherwise.
+    compute_fidelity_uncertainty : bool, optional
+        Whether to propagate fitted-rate covariance into the two CR-on fidelity
+        limits with sigma points. Disable to retain central fidelities while
+        skipping the most expensive post-fit uncertainty calculation. Defaults
+        to `False`. Rates on the physical zero boundary are fixed during this
+        local propagation because Gaussian sigma points cannot remain nonnegative.
+    enable_tqdm : bool, optional
+        Whether acquisition services display progress bars.
+    plot : bool, optional
+        Whether to build and display protocol figures and print the user-facing
+        summary.
+
+    Returns
+    -------
+    Result
+        Measurements, physical fits, rates, fidelity limits, raw GEF/Pauli IQ,
+        resolved timing, and reproducibility metadata.
+
+    Notes
+    -----
+    This function performs hardware acquisition. When reference calibration is
+    requested, it may also update the experiment calibration-note store.
+    Explicit frequency overrides on either qubit's calibrated GE, EF, or readout
+    channel are rejected before acquisition because they would also alter the
+    appended population analyzers or final readout.
+    A/B initial populations and contrasts are fitted nuisance parameters;
+    measured `n=0` values constrain them as ordinary observations rather than
+    being fixed as exact initial conditions.
+    Rate candidates use deterministic multi-start optimization and global AICc
+    competition. Sub-2-sigma free rates retain their fitted central values,
+    while absolute shot-noise goodness-of-fit is reported independently from
+    rate resolution. If that diagnostic reports statistical mismatch, central
+    dependent fidelities remain available as conditional values, but their
+    uncertainty is not reported. The costly signed C/D diagnostic runs only
+    when the null model is selected or the nonnegative free rate is unresolved.
+    """
+    for name, value in (
+        ("measure_reference", measure_reference),
+        ("measure_orthogonal_components", measure_orthogonal_components),
+        ("force_reference_ix45_calibration", force_reference_ix45_calibration),
+        ("compute_fidelity_uncertainty", compute_fidelity_uncertainty),
+        ("enable_tqdm", enable_tqdm),
+        ("plot", plot),
+    ):
+        if not isinstance(value, bool):
+            raise TypeError(f"{name} must be boolean.")
+    if measure_reference:
+        if reference_ix45_amplitude is not None:
+            if isinstance(reference_ix45_amplitude, bool) or not isinstance(
+                reference_ix45_amplitude, Real
+            ):
+                raise TypeError("reference_ix45_amplitude must be a real number.")
+            reference_ix45_amplitude = float(reference_ix45_amplitude)
+            if (
+                not np.isfinite(reference_ix45_amplitude)
+                or not 0.0 < reference_ix45_amplitude <= 1.0
+            ):
+                raise ValueError("reference_ix45_amplitude must be in (0, 1].")
+        if reference_ix45_amplitude is not None and force_reference_ix45_calibration:
+            raise ValueError(
+                "reference_ix45_amplitude and force_reference_ix45_calibration=True "
+                "cannot be specified together."
+            )
+    else:
+        reference_ix45_amplitude = None
+        force_reference_ix45_calibration = False
+    counts = (
+        None
+        if repetition_counts is None
+        else _validate_repetition_counts(repetition_counts)
+    )
+    shots = _positive_integer(n_shots, "n_shots")
+    gef_shots = _positive_integer(
+        gef_measurement_n_shots,
+        "gef_measurement_n_shots",
+    )
+    calibration_shots = _positive_integer(
+        gef_calibration_n_shots,
+        "gef_calibration_n_shots",
+    )
+    bootstrap_resamples = _nonnegative_integer(
+        gef_bootstrap_n_resamples,
+        "gef_bootstrap_n_resamples",
+    )
+    bootstrap_seed = _optional_seed(gef_bootstrap_seed)
+    if isinstance(gef_bootstrap_confidence_level, bool) or not isinstance(
+        gef_bootstrap_confidence_level, Real
+    ):
+        raise TypeError("gef_bootstrap_confidence_level must be a real number.")
+    confidence = float(gef_bootstrap_confidence_level)
+    if not np.isfinite(confidence) or not 0.0 < confidence < 1.0:
+        raise ValueError("gef_bootstrap_confidence_level must be in (0, 1).")
+    if isinstance(gef_covariance_rcond, bool) or not isinstance(
+        gef_covariance_rcond, Real
+    ):
+        raise TypeError("gef_covariance_rcond must be a real number.")
+    covariance_rcond = float(gef_covariance_rcond)
+    if not np.isfinite(covariance_rcond) or not 0.0 <= covariance_rcond < 1.0:
+        raise ValueError("gef_covariance_rcond must be in [0, 1).")
+    configured_interval = resolve_measurement_defaults(
+        exp.ctx.experiment_system.measurement_defaults
+    ).execution.shot_interval_ns
+    interval = (
+        _positive_finite(configured_interval, "configured shot_interval")
+        if shot_interval is None
+        else _positive_finite(shot_interval, "shot_interval")
+    )
+    control = exp.ctx.resolve_qubit_label(control_qubit)
+    target = exp.ctx.resolve_qubit_label(target_qubit)
+    if control == target:
+        raise ValueError("control_qubit and target_qubit must differ.")
+
+    # Resolve every required input before the first hardware acquisition.
+    control_idle, target_idle = _load_idle_noise(
+        exp,
+        control,
+        target,
+        idle_t1,
+        idle_t2_echo,
+    )
+    descriptor = resolve_zx90_descriptor(
+        exp,
+        control,
+        target,
+        zx90_echo,
+        zx90_no_echo,
+    )
+    if counts is None:
+        counts = _default_repetition_counts(
+            longest_idle_t1_ns=max(control_idle.t1_ns, target_idle.t1_ns),
+            ab_block_duration_ns=4.0 * float(descriptor.full_un_echoed.duration),
+        )
+    schedules = build_protocol_schedules(exp, control, target, descriptor, counts)
+    _validate_gef_diagnostic_frequency_overrides(
+        exp,
+        (control, target),
+        schedules.actual,
+    )
+
+    reference_calibration: _ReferenceIx45Calibration | None = None
+    reference_calibrated = False
+    reference_schedules: dict[str, tuple[PulseSchedule, ...]] | None = None
+    if measure_reference:
+        ix45, reference_calibration, reference_calibrated = _resolve_reference_ix45(
+            exp,
+            control,
+            target,
+            descriptor,
+            amplitude=reference_ix45_amplitude,
+            force=force_reference_ix45_calibration,
+            n_shots=shots,
+            shot_interval=interval,
+            plot=plot,
+            enable_tqdm=enable_tqdm,
+        )
+        reference_schedules = build_reference_schedules(
+            exp,
+            control,
+            target,
+            descriptor,
+            counts,
+            ix45,
+        )
+
+    actual_results: dict[str, Result] = {}
+    actual_names: dict[str, tuple[str, ...]] = {}
+    ab_sequences, ab_names = _named_sequences(
+        schedules.actual,
+        "actual",
+        (PROTOCOL_A, PROTOCOL_B),
+    )
+    ab_result = measure_gef_populations(
+        exp,
+        targets=[control, target],
+        sequences=ab_sequences,
+        n_shots=gef_shots,
+        calibration_n_shots=calibration_shots,
+        shot_interval=interval,
+        covariance_rcond=covariance_rcond,
+        n_bootstrap=0,
+        bootstrap_seed=bootstrap_seed,
+        bootstrap_confidence_level=confidence,
+        enable_tqdm=enable_tqdm,
+        progress_label=f"{PROTOCOL_A} / {PROTOCOL_B} primary",
+    )
+    calibration = ab_result.data["calibration"]
+    for protocol in (PROTOCOL_A, PROTOCOL_B):
+        actual_results[protocol] = ab_result
+        actual_names[protocol] = ab_names[protocol]
+    selected_ab_bootstrap = _run_selective_ab_bootstrap(
+        ab_result,
+        ab_names,
+        control,
+        target,
+        n_resamples=bootstrap_resamples,
+        seed=bootstrap_seed,
+        confidence_level=confidence,
+        covariance_rcond=covariance_rcond,
+    )
+
+    def selected_bootstrap_resamples(protocol: str, qubit: str) -> int:
+        """Return the actual bootstrap count for one A/B protocol and qubit."""
+        selected_names = set(selected_ab_bootstrap.get(qubit, ()))
+        return (
+            bootstrap_resamples
+            if any(name in selected_names for name in ab_names[protocol])
+            else 0
+        )
+
+    for protocol, measured_target in (
+        (PROTOCOL_C, control),
+        (PROTOCOL_D, target),
+    ):
+        sequences, names = _named_sequences(
+            schedules.actual,
+            "actual",
+            (protocol,),
+        )
+        result = measure_gef_populations(
+            exp,
+            targets=[measured_target],
+            sequences=sequences,
+            calibration={measured_target: calibration[measured_target]},  # type: ignore[index]
+            n_shots=gef_shots,
+            shot_interval=interval,
+            covariance_rcond=covariance_rcond,
+            n_bootstrap=0,
+            bootstrap_seed=bootstrap_seed,
+            bootstrap_confidence_level=confidence,
+            enable_tqdm=enable_tqdm,
+            progress_label=f"{protocol} primary ({measured_target})",
+        )
+        actual_results[protocol] = result
+        actual_names[protocol] = names[protocol]
+
+    reference_results: dict[str, Result] | None = None
+    reference_names: dict[str, tuple[str, ...]] | None = None
+    if reference_schedules is not None:
+        reference_results = {}
+        reference_names = {}
+        ab_reference, ab_reference_names = _named_sequences(
+            reference_schedules,
+            "reference",
+            (PROTOCOL_A, PROTOCOL_B),
+        )
+        ab_reference_result = measure_gef_populations(
+            exp,
+            targets=[control, target],
+            sequences=ab_reference,
+            calibration=calibration,  # type: ignore[arg-type]
+            n_shots=gef_shots,
+            shot_interval=interval,
+            covariance_rcond=covariance_rcond,
+            n_bootstrap=0,
+            bootstrap_seed=bootstrap_seed,
+            bootstrap_confidence_level=confidence,
+            enable_tqdm=enable_tqdm,
+            progress_label=f"{PROTOCOL_A} / {PROTOCOL_B} diagnostic reference",
+        )
+        for protocol in (PROTOCOL_A, PROTOCOL_B):
+            reference_results[protocol] = ab_reference_result
+            reference_names[protocol] = ab_reference_names[protocol]
+        for protocol, measured_target in (
+            (PROTOCOL_C, control),
+            (PROTOCOL_D, target),
+        ):
+            sequences, names = _named_sequences(
+                reference_schedules,
+                "reference",
+                (protocol,),
+            )
+            result = measure_gef_populations(
+                exp,
+                targets=[measured_target],
+                sequences=sequences,
+                calibration={measured_target: calibration[measured_target]},  # type: ignore[index]
+                n_shots=gef_shots,
+                shot_interval=interval,
+                covariance_rcond=covariance_rcond,
+                n_bootstrap=0,
+                bootstrap_seed=bootstrap_seed,
+                bootstrap_confidence_level=confidence,
+                enable_tqdm=enable_tqdm,
+                progress_label=f"{protocol} diagnostic reference ({measured_target})",
+            )
+            reference_results[protocol] = result
+            reference_names[protocol] = names[protocol]
+
+    orthogonal: dict[str, CrDissipationPauliData] | None = None
+    pauli_raw_iq: dict[str, Any] | None = None
+    if measure_orthogonal_components:
+        orthogonal, pauli_raw_iq = _orthogonal_acquisition(
+            exp,
+            schedules,
+            control,
+            target,
+            n_shots=shots,
+            shot_interval=interval,
+            enable_tqdm=enable_tqdm,
+        )
+    measurements = _build_measurements(
+        schedules,
+        counts,
+        actual_results,
+        actual_names,
+        control,
+        target,
+        reference_results=reference_results,
+        reference_names=reference_names,
+        orthogonal=orthogonal,
+    )
+    analysis = analyze_cr_dissipation(
+        measurements,
+        descriptor,
+        schedules,
+        control_idle,
+        target_idle,
+        covariance_rcond=covariance_rcond,
+        compute_fidelity_uncertainty=compute_fidelity_uncertainty,
+    )
+    figures = _plot_cr_dissipation(measurements, analysis) if plot else {}
+    if plot:
+        _print_summary(analysis, control_idle, target_idle)
+        for figure in figures.values():
+            figure.show()
+
+    pulse_timing = {
+        "zx90_echo": {
+            "duration_ns": descriptor.total_duration_ns,
+            "cr_active_duration_ns": descriptor.cr_active_duration_ns,
+            "cr_lobe_duration_ns": descriptor.cr_lobe_duration_ns,
+            "echo_slot_duration_ns": descriptor.echo_slot_duration_ns,
+        },
+        "zx90_full_un_echoed": {
+            "duration_ns": float(descriptor.full_un_echoed.duration),
+            "cr_active_duration_ns": descriptor.cr_active_duration_ns,
+            "rotary_included": False,
+            "source": "override" if zx90_no_echo is not None else "generated",
+        },
+        "protocols": schedules.timing,
+        "reference_ix45": (
+            None
+            if reference_calibration is None
+            else {
+                "amplitude": reference_calibration.amplitude,
+                "duration_ns": reference_calibration.duration,
+                "ramptime_ns": reference_calibration.ramptime,
+                "beta": reference_calibration.beta,
+                "ramp_type": reference_calibration.ramp_type,
+                "sampling_period_ns": reference_calibration.sampling_period,
+                "r_squared": reference_calibration.r_squared,
+                "timestamp": reference_calibration.timestamp,
+                "calibrated": reference_calibrated,
+            }
+        ),
+        "semantic_rotary_available": descriptor.rotary_integrated_angle_rad is not None,
+        "actual_echoed_pulse_preserved": True,
+        "semantic_rotary_treatment": (
+            "explicit"
+            if descriptor.rotary_integrated_angle_rad is not None
+            else "omitted_assumed_echo_cancelled"
+        ),
+    }
+    measurement_options = {
+        "repetition_counts": counts,
+        "n_shots": shots,
+        "gef_measurement_n_shots": gef_shots,
+        "shot_interval_ns": interval,
+        "measure_reference": measure_reference,
+        "measure_orthogonal_components": measure_orthogonal_components,
+        "gef_calibration_n_shots": calibration_shots,
+        "gef_bootstrap_n_resamples": bootstrap_resamples,
+        "gef_bootstrap_seed": bootstrap_seed,
+        "gef_bootstrap_confidence_level": confidence,
+        "ab_bootstrap_strategy": "simplex_boundary_selective",
+        "ab_bootstrap_selected_sequence_names": selected_ab_bootstrap,
+        "gef_covariance_rcond": covariance_rcond,
+        "primary_readout": {
+            PROTOCOL_A: "gef_control_and_target",
+            PROTOCOL_B: "gef_control_and_target",
+            PROTOCOL_C: "gef_control_only",
+            PROTOCOL_D: "gef_target_only",
+        },
+        "primary_observable": {
+            PROTOCOL_A: "target_Xcomp_normalized_Pe_minus_Pg_and_control_GEF",
+            PROTOCOL_B: "target_Xcomp_normalized_Pe_minus_Pg_and_control_GEF",
+            PROTOCOL_C: "control_Xge_unnormalized_Pe_minus_Pg",
+            PROTOCOL_D: "target_Zge_unnormalized_Pg_minus_Pe",
+        },
+        "orthogonal_observables": (
+            {
+                PROTOCOL_A: ("control_X", "control_Y", "target_Y", "target_Z"),
+                PROTOCOL_B: ("control_X", "control_Y", "target_Y", "target_Z"),
+                PROTOCOL_C: ("control_Y", "control_Z"),
+                PROTOCOL_D: ("target_X", "target_Y"),
+            }
+            if measure_orthogonal_components
+            else {}
+        ),
+        "primary_bootstrap": {
+            PROTOCOL_A: {
+                control: selected_bootstrap_resamples(PROTOCOL_A, control),
+                target: selected_bootstrap_resamples(PROTOCOL_A, target),
+            },
+            PROTOCOL_B: {
+                control: selected_bootstrap_resamples(PROTOCOL_B, control),
+                target: selected_bootstrap_resamples(PROTOCOL_B, target),
+            },
+            PROTOCOL_C: {control: 0},
+            PROTOCOL_D: {target: 0},
+        },
+        "orthogonal_readout": "pauli" if measure_orthogonal_components else None,
+        "reference_readout": "gef" if measure_reference else None,
+        "reference_ix45_amplitude": reference_ix45_amplitude,
+        "force_reference_ix45_calibration": force_reference_ix45_calibration,
+        "compute_fidelity_uncertainty": compute_fidelity_uncertainty,
+        "enable_tqdm": enable_tqdm,
+    }
+    analysis_options = {
+        "population_minimum_change": POPULATION_MINIMUM_CHANGE,
+        "leakage_minimum_change": LEAKAGE_MINIMUM_CHANGE,
+        "change_sigma_threshold": CHANGE_SIGMA_THRESHOLD,
+        "model_selection_delta_aicc": MODEL_SELECTION_DELTA_AICC,
+        "parameter_significance_threshold": PARAMETER_SIGNIFICANCE_THRESHOLD,
+        "boundary_fraction_change_threshold": BOUNDARY_FRACTION_CHANGE_THRESHOLD,
+        "preliminary_optimizer_loss": "soft_l1",
+        "final_optimizer_loss": "linear",
+        "model_selection_statistic": "gaussian_gls_aicc",
+        "model_selection_rule": "simplest_within_global_delta_aicc",
+        "rate_optimizer_initialization": "deterministic_multistart",
+        "c_d_rate_optimizer_initialization": "initial_guess_plus_interval_fractions",
+        "c_d_rate_start_fractions": {
+            "nonnegative": CD_NONNEGATIVE_RATE_START_FRACTIONS,
+            "signed": CD_SIGNED_RATE_START_FRACTIONS,
+        },
+        "c_d_rate_optimizer_maximum_starts": 1
+        + max(
+            len(CD_NONNEGATIVE_RATE_START_FRACTIONS),
+            len(CD_SIGNED_RATE_START_FRACTIONS),
+        ),
+        "c_d_signed_diagnostic": CD_SIGNED_DIAGNOSTIC_POLICY,
+        "goodness_of_fit_reduced_chi_squared_limit": (
+            GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT
+        ),
+        "goodness_of_fit_maximum_mahalanobis_residual_limit": (
+            GOODNESS_OF_FIT_MAX_MAHALANOBIS_RESIDUAL_LIMIT
+        ),
+        "rate_uncertainty_method": "local_gls_covariance",
+        "initial_condition_treatment": "latent_nuisance_with_n0_observation",
+        "c_d_fit_method": "two_qutrit_physical_forward_variable_projection",
+        "c_d_nonlinear_parameter_count": 1,
+        "fidelity_uncertainty_method": (
+            "scaled_unscented_transform" if compute_fidelity_uncertainty else "disabled"
+        ),
+        "fidelity_uncertainty_enabled": compute_fidelity_uncertainty,
+        "fidelity_uncertainty_is_conditional_on_idle_coherence_and_gef_calibration": (
+            compute_fidelity_uncertainty
+        ),
+        "cross_protocol_covariance_approximation": "block_diagonal",
+        "sigma_point_covariance_psd_relative_tolerance": PSD_RELATIVE_TOLERANCE,
+        "cr_sign_dependent_dissipation": False,
+        "semantic_hamiltonian_model": "intended_rotation_with_actual_timing",
+        "semantic_rotary_treatment": (
+            "explicit"
+            if descriptor.rotary_integrated_angle_rad is not None
+            else "omitted_assumed_echo_cancelled"
+        ),
+    }
+    actual_raw_iq = _merge_result_branch(actual_results, "raw_iq")
+    population_fits = _merge_result_branch(actual_results, "fits")
+    moment_summaries = _merge_result_branch(actual_results, "moment_summaries")
+    bootstrap = _merge_result_branch(actual_results, "bootstrap")
+    reference_raw_iq = (
+        None
+        if reference_results is None
+        else _merge_result_branch(reference_results, "raw_iq")
+    )
+    return Result(
+        data={
+            "measurements": measurements,
+            "analysis": analysis,
+            "raw_data": {
+                "gef": {
+                    "calibration": calibration,
+                    "raw_iq": actual_raw_iq,
+                    "population_fits": population_fits,
+                    "moment_summaries": moment_summaries,
+                    "bootstrap": bootstrap,
+                    "reference_raw_iq": reference_raw_iq,
+                },
+                "pauli_raw_iq": pauli_raw_iq,
+            },
+            "measurement_options": measurement_options,
+            "analysis_options": analysis_options,
+            "pulse_timing": pulse_timing,
+        },
+        figure=figures.get(PROTOCOL_A),
+        figures=figures,
+    )

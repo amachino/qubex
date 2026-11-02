@@ -14,6 +14,7 @@ from .cpmg_noise_spectroscopy import (
     cpmg_noise_spectroscopy,
     plot_cpmg_results,
 )
+from .cr_dissipation import characterize_cr_dissipation
 from .cr_xt_decomposition import decompose_cr_crosstalk
 from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
@@ -132,6 +133,7 @@ __all__ = [
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
     "characterize_coarse_readout_parameters",
+    "characterize_cr_dissipation",
     "characterize_readout_mist",
     "characterize_readout_parameters",
     "ckp_measurement_v2",

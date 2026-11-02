@@ -1,0 +1,24 @@
+"""
+Provide the private implementation of CR dissipation characterization.
+
+Modules are organized by responsibility and follow the execution flow:
+
+- `experiment`: public-call validation, IX45 calibration, acquisition, conversion
+  to typed measurements, plotting/reporting, and final `Result` assembly.
+- `pulses`: calibrated hardware schedules, diagnostic references, and matching
+  semantic operations used by the simulator.
+- `analysis`: observable reconstruction, latent-initial A/B fits, physical C/D
+  fits, non-recursive idle baselines, rate/status and fit-quality assembly, and
+  fidelity limits.
+- `fit`: generic GLS, C/D variable-projection fitting, and covariance helpers.
+- `simulation`: cached semantic two-qutrit channels, observables, leakage-aware
+  fidelity, and optional sigma-point uncertainty propagation.
+- `types`: immutable records exchanged between these layers.
+
+Only `qubex.contrib.experiment.cr_dissipation` is a public API.
+
+The protocol split is intentional: A/B estimate population exchange, target
+T1rho, leakage, and seepage; C estimates control pure dephasing; D estimates
+target rotating-frame pure dephasing. Reference and orthogonal acquisitions are
+diagnostic-only.
+"""
