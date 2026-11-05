@@ -3177,3 +3177,63 @@ def test_quel1_does_not_load_quel3_cable_delay_file(tmp_path: Path) -> None:
         system_id=chip_id, config_dir=config_dir, params_dir=params_dir
     )
     assert "cable_delay_ns" not in loader.backend_runtime_config
+
+
+@pytest.mark.parametrize("limit", [None, 1_000_000, 3_125_000])
+def test_system_yaml_configures_quel3_return_capture_budget(
+    tmp_path: Path, limit: int | None
+) -> None:
+    """System YAML should configure the return budget while preserving omitted defaults."""
+    from qubex.backend.quel3 import Quel3BackendController
+
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(config_dir / "box.yaml", {"BOX1": {"name": "BOX1", "type": "quel3"}})
+    execution = {} if limit is None else {"max_return_capture_samples": limit}
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            chip_id: {
+                "chip_id": chip_id,
+                "backend": "quel3",
+                "quel3": {"execution": execution},
+            },
+        },
+    )
+    loader = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir, autoload=False
+    )
+    loader.load(backend_kind=BACKEND_KIND_QUEL3)
+    controller = Quel3BackendController.from_config_mapping(
+        loader.backend_runtime_config
+    )
+    assert controller.execution_options.max_return_capture_samples == (
+        3_125_000 if limit is None else limit
+    )
+    assert controller.execution_options.max_waveform_samples == 60_000
+    assert controller.execution_options.max_capture_samples == 15_000_000
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, "1000000"])
+def test_system_yaml_rejects_invalid_quel3_return_capture_budget(
+    tmp_path: Path, limit: object
+) -> None:
+    """Invalid return budgets loaded from YAML should fail controller construction."""
+    from qubex.backend.quel3 import Quel3BackendController
+
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(config_dir / "box.yaml", {"BOX1": {"name": "BOX1", "type": "quel3"}})
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            chip_id: {
+                "chip_id": chip_id,
+                "quel3": {"execution": {"max_return_capture_samples": limit}},
+            },
+        },
+    )
+    loader = ConfigLoader(
+        system_id=chip_id, config_dir=config_dir, params_dir=params_dir, autoload=False
+    )
+    loader.load(backend_kind=BACKEND_KIND_QUEL3)
+    with pytest.raises(ValueError, match="max_return_capture_samples"):
+        Quel3BackendController.from_config_mapping(loader.backend_runtime_config)
