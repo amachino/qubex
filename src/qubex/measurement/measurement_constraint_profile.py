@@ -98,3 +98,17 @@ class MeasurementConstraintProfile:
         return (
             self.extra_sum_section_length_samples + self.extra_post_blank_length_samples
         ) * self.sampling_period_ns
+
+    @property
+    def entire_schedule_capture_start_ns(self) -> float:
+        """Return full-span capture start after the workaround and an aligned blank."""
+        if not self.require_workaround_capture:
+            return 0.0
+        return 2 * self.workaround_capture_duration_ns
+
+    @property
+    def entire_schedule_post_blank_duration_ns(self) -> float:
+        """Return trailing blank reserved inside full-span generation schedules."""
+        if not self.require_workaround_capture:
+            return 0.0
+        return self.workaround_capture_duration_ns

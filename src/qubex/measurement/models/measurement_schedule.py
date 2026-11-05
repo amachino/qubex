@@ -11,12 +11,24 @@ from qubex.core import Model
 
 from .capture_schedule import CaptureSchedule
 
+CapturePlacement = Literal["pulse_aligned", "entire_schedule"]
+
 
 class MeasurementSchedule(Model):
-    """Pair of pulse and capture schedules for measurement."""
+    """
+    Pair of pulse and capture schedules with explicit capture placement.
+
+    Notes
+    -----
+    Existing constructors default to `pulse_aligned`. Manually constructed
+    full-span captures must set `capture_placement="entire_schedule"` so the
+    backend uses absolute capture coordinates without applying capture delay.
+    Window lengths and positions do not determine the placement mode.
+    """
 
     pulse_schedule: PulseSchedule
     capture_schedule: CaptureSchedule
+    capture_placement: CapturePlacement = "pulse_aligned"
 
     def plot(
         self,

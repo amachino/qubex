@@ -1161,6 +1161,10 @@ class Measurement:
             Whether to append a final measurement at schedule tail.
         capture_placement : CapturePlacement | None, optional
             Capture-window placement (`pulse_aligned` or `entire_schedule`).
+            QuEL-1 `entire_schedule` adds a 64 ns prefix containing the
+            workaround capture and post blank, and reserves a 32 ns trailing
+            post blank before block alignment. All requested waveforms remain
+            within the main capture, regardless of `shot_interval`.
         capture_targets : list[str] | None, optional
             Explicit capture-channel labels for `entire_schedule` placement.
         plot : bool | None, optional
