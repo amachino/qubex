@@ -5,9 +5,10 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from qxpulse import Blank, Pulse, PulseArray
+from qxpulse import Blank, FlatTop, Pulse, PulseArray, Rect
 
 from qubex.backend.quel3.models import Quel3Waveform, Quel3WaveformEvent
+from qubex.backend.quel3.models.payload import Quel3CompressionHint
 from qubex.backend.quel3.quel3_backend_constants import READOUT_SAMPLING_PERIOD_NS
 
 
@@ -68,6 +69,18 @@ class Quel3PulseEventBuilder:
                     shape=shape,
                     sampling_period_ns=sampling_period_ns,
                 )
+                hint = None
+                if type(waveform) in (Rect, FlatTop):
+                    margin = (
+                        math.ceil(waveform.tau / waveform.sampling_period) + 2
+                        if isinstance(waveform, FlatTop)
+                        else 0
+                    )
+                    ratio = sampling_period_ns / waveform.sampling_period
+                    start = math.ceil(margin / ratio)
+                    stop = math.floor((waveform.length - margin) / ratio)
+                    if stop > start:
+                        hint = Quel3CompressionHint(start, stop, waveform.detuning)
                 if not np.all(np.isfinite(shape.real) & np.isfinite(shape.imag)):
                     raise ValueError("Waveform IQ values must be finite.")
                 shape_key = (
@@ -81,6 +94,7 @@ class Quel3PulseEventBuilder:
                     waveform_library[waveform_name] = Quel3Waveform(
                         iq_array=shape,
                         sampling_period_ns=sampling_period_ns,
+                        compression_hint=hint,
                     )
                     waveform_name_by_shape_key[shape_key] = waveform_name
                 events.append(

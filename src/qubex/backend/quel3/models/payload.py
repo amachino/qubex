@@ -29,11 +29,21 @@ class Quel3WaveformEvent:
 
 
 @dataclass(frozen=True)
+class Quel3CompressionHint:
+    """Candidate constant-envelope interval on the registered sample grid."""
+
+    start_sample: int
+    stop_sample: int
+    detuning_ghz: float
+
+
+@dataclass(frozen=True)
 class Quel3Waveform:
     """Registered waveform definition for one name in QuEL-3 execution."""
 
     iq_array: npt.NDArray[np.complex128]
     sampling_period_ns: float | None = None
+    compression_hint: Quel3CompressionHint | None = None
 
 
 @dataclass(frozen=True)
