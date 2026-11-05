@@ -15,7 +15,10 @@ from qubex.contrib import (
     cpmg_noise_spectroscopy,
     plot_cpmg_results,
 )
-from qubex.contrib.experiment.cpmg_noise_spectroscopy import _make_frequency_plan
+from qubex.contrib.experiment.cpmg_noise_spectroscopy import (
+    _make_frequency_plan,
+    _normalize_targets,
+)
 
 
 def test_all_cpmg_noise_spectroscopy_functions_are_exported_from_contrib() -> None:
@@ -32,6 +35,12 @@ def test_public_experiment_excludes_removed_pulse_count_limits() -> None:
     assert "max_pi_pulses" not in parameters
     assert "max_sequence_time_ns" not in parameters
     assert parameters["show_t1"].default is False
+
+
+def test_cpmg_targets_reject_duplicate_labels() -> None:
+    """Duplicate targets should fail before result mappings can overwrite data."""
+    with pytest.raises(ValueError, match="duplicate"):
+        _normalize_targets(SimpleNamespace(), ["Q00", "Q00"])  # type: ignore[arg-type]
 
 
 def test_cpmg_frequency_plan_rejects_zero_frequency() -> None:
@@ -86,6 +95,8 @@ def test_plot_cpmg_results_defaults_to_both_summary_modes() -> None:
     np.testing.assert_array_equal(figure_data[0]["customdata"], [2, 2])
     assert figure_data[0].get("yaxis", "y") == "y"
     assert figure_data[1]["yaxis"] == "y2"
+    assert figure_data[0]["line"]["dash"] == "solid"
+    assert figure_data[1]["line"]["dash"] == "dot"
     assert fig.layout.yaxis2.overlaying == "y"
     assert fig.layout.xaxis.rangemode is None
     assert fig.layout.yaxis.rangemode == "tozero"
