@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import plotly.graph_objects as go
 import pytest
+from numpy.typing import ArrayLike
 from scipy.linalg import expm
 
 import qubex.contrib.experiment.gef_relaxation as relaxation_module
@@ -141,6 +143,60 @@ def test_analysis_reports_directional_and_total_f_lifetimes() -> None:
     assert analysis.derived_times_ns["ef_pair_relaxation_time"].value == pytest.approx(
         1_000.0 / (rates["f_to_e"] + rates["e_to_f"]), rel=2e-4
     )
+    assert analysis.derived_times_ns["t1_e_to_g"].value == pytest.approx(
+        1_000.0 / rates["e_to_g"], rel=2e-4
+    )
+    assert analysis.derived_times_ns["t1_f_to_g"].value == pytest.approx(
+        1_000.0 / rates["f_to_g"], rel=2e-4
+    )
+
+
+def test_population_figure_matches_mist_layout_and_uses_smooth_fit() -> None:
+    """Population plots should use stacked panels, zero-based axes, and dense fits."""
+    measurements, _ = _synthetic_measurements()
+    fit = analyze_gef_relaxation(measurements)
+
+    figure = relaxation_module._population_figure(  # noqa: SLF001
+        "Q0", measurements, fit
+    )
+    traces = cast(tuple[go.Scatter, ...], figure.data)
+    fit_trace = next(trace for trace in traces if trace.name == "fit Pg")
+    fit_x = np.asarray(cast(ArrayLike, fit_trace.x), dtype=np.float64)
+
+    assert fit_x.size == 1000
+    assert fit_x[0] == pytest.approx(0.0)
+    assert fit_x[-1] == pytest.approx(measurements.time_ns[-1] * 1e-3)
+    assert figure.layout.xaxis.range[0] == pytest.approx(0.0)
+    assert figure.layout.xaxis2.range[0] == pytest.approx(0.0)
+    assert figure.layout.xaxis3.range[0] == pytest.approx(0.0)
+    assert figure.layout.width == 800
+    assert figure.layout.height == 850
+    assert figure.layout.margin.t == 160
+    assert figure.layout.template.layout.plot_bgcolor == "white"
+    assert "T1 e→g" in figure.layout.title.text
+    assert "T1 f→e" in figure.layout.title.text
+    assert "T1 f→g" in figure.layout.title.text
+
+
+def test_rate_figure_displays_rate_values_inside_colored_cells() -> None:
+    """Rate heatmaps should show numeric estimates and MIST-style matrix axes."""
+    measurements, _ = _synthetic_measurements()
+    fit = analyze_gef_relaxation(measurements)
+
+    figure = relaxation_module._rate_figure("Q0", fit)  # noqa: SLF001
+    trace = cast(go.Heatmap, figure.data[0])
+    text = np.asarray(trace.text)
+
+    assert trace.texttemplate == "%{text}"
+    assert text.shape == (3, 3)
+    assert text[0, 0] == "—"
+    assert "±" in text[1, 0]
+    assert figure.layout.coloraxis.cmin == pytest.approx(0.0)
+    assert figure.layout.yaxis.autorange == "reversed"
+    assert figure.layout.xaxis.title.text == "Initial state"
+    assert figure.layout.yaxis.title.text == "Final state"
+    assert figure.layout.width == 520
+    assert figure.layout.template.layout.plot_bgcolor == "white"
 
 
 class _Context:
@@ -351,6 +407,26 @@ def test_boolean_time_point_fails_before_acquisition(
             _experiment(),
             "Q0",
             time_range=[0, True, 100, 200, 300],
+            enable_tqdm=False,
+            plot=False,
+        )
+
+
+def test_numeric_string_time_points_fail_before_acquisition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Numeric strings should not be accepted as physical delay values."""
+    monkeypatch.setattr(
+        relaxation_module,
+        "measure_gef_populations",
+        lambda *_args, **_kwargs: pytest.fail("acquisition should not run"),
+    )
+
+    with pytest.raises(TypeError, match="time_range"):
+        characterize_gef_relaxation(
+            _experiment(),
+            "Q0",
+            time_range=["0", "100", "200", "300", "400"],
             enable_tqdm=False,
             plot=False,
         )

@@ -20,6 +20,7 @@ from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from scipy.linalg import expm
 
+from qubex.analysis import fitting
 from qubex.contrib.experiment.gef_population_estimation import (
     GefPopulationCalibration,
     measure_gef_populations,
@@ -51,6 +52,8 @@ DEFAULT_TIME_RANGE_NS = tuple(
 )
 DEFAULT_GEF_MEASUREMENT_N_SHOTS = 4096
 DEFAULT_GEF_CALIBRATION_N_SHOTS = 8192
+_NS_TO_US = 1e-3
+_US_TO_NS = 1e3
 _RATE_COUNT = len(TRANSITION_ORDER)
 _PARAMETER_COUNT = _RATE_COUNT + 2 * len(PROTOCOL_ORDER)
 _INITIAL_ANCHORS = {"initial_g": 0, "initial_e": 1, "initial_f": 2}
@@ -60,7 +63,9 @@ _PHYSICAL_PARAMETER_ORDER = (
     *(f"{protocol}_{state}" for protocol in PROTOCOL_ORDER for state in STATE_ORDER),
 )
 _DERIVED_TIME_RATES = {
+    "t1_e_to_g": ("e_to_g",),
     "t1_f_to_e": ("f_to_e",),
+    "t1_f_to_g": ("f_to_g",),
     "f_state_exit_lifetime": ("f_to_e", "f_to_g"),
     "ef_pair_relaxation_time": ("f_to_e", "e_to_f"),
 }
@@ -206,17 +211,26 @@ def _encode_parameters(
     )
 
 
+def _population_trajectories(
+    generator_per_us: NDArray[np.float64],
+    initial_populations: Mapping[str, NDArray[np.float64]],
+    time_ns: NDArray[np.float64],
+) -> dict[str, NDArray[np.float64]]:
+    """Propagate each initial population over a shared time grid in ns."""
+    propagators = tuple(expm(generator_per_us * (time * _NS_TO_US)) for time in time_ns)
+    return {
+        protocol: np.stack(
+            [propagator @ initial_populations[protocol] for propagator in propagators]
+        )
+        for protocol in PROTOCOL_ORDER
+    }
+
+
 def _predictions(
     parameters: NDArray[np.float64], time_ns: NDArray[np.float64]
 ) -> dict[str, NDArray[np.float64]]:
     generator, initial = _decode_parameters(parameters)
-    propagators = tuple(expm(generator * (time * 1e-3)) for time in time_ns)
-    return {
-        protocol: np.stack(
-            [propagator @ initial[protocol] for propagator in propagators]
-        )
-        for protocol in PROTOCOL_ORDER
-    }
+    return _population_trajectories(generator, initial, time_ns)
 
 
 def _physical_vector(parameters: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -278,7 +292,7 @@ def _initializations(
             for protocol in PROTOCOL_ORDER
         ]
     )
-    delta_time_us = measurements.time_ns[first_positive] * 1e-3
+    delta_time_us = measurements.time_ns[first_positive] * _NS_TO_US
     approximate_generator = ((p1 - p0) @ np.linalg.pinv(p0)) / delta_time_us
     estimated_rates = np.asarray(
         [
@@ -356,7 +370,7 @@ def _inverse_rate_time_function(
 
     def evaluate(parameters: NDArray[np.float64]) -> float:
         rates = _physical_vector(parameters)[:_RATE_COUNT]
-        return float(1_000.0 / np.sum(rates[list(rate_indices)]))
+        return float(_US_TO_NS / np.sum(rates[list(rate_indices)]))
 
     return evaluate
 
@@ -379,7 +393,7 @@ def analyze_gef_relaxation(
     Returns
     -------
     GefRelaxationFit
-        Six rates, derived EF times, fitted populations, and GLS diagnostics.
+        Six rates, derived relaxation times, fitted populations, and GLS diagnostics.
     """
     covariance_rcond = _validate_covariance_rcond(covariance_rcond)
     blocks = [
@@ -558,8 +572,11 @@ def _resolve_time_range(
     object_values = np.asarray(supplied, dtype=object)
     if object_values.ndim != 1:
         raise ValueError("time_range must be a one-dimensional array.")
-    if any(isinstance(value, (bool, np.bool_)) for value in object_values):
-        raise TypeError("time_range must contain real numbers, not booleans.")
+    if any(
+        isinstance(value, (bool, np.bool_)) or not isinstance(value, Real)
+        for value in object_values
+    ):
+        raise TypeError("time_range must contain real numbers and not booleans.")
     values = np.asarray(supplied, dtype=np.float64)
     if values.ndim != 1 or not np.all(np.isfinite(values)) or np.any(values < 0.0):
         raise ValueError(
@@ -686,61 +703,185 @@ def _population_figure(
     measurements: GefRelaxationMeasurements,
     fit: GefRelaxationFit,
 ) -> go.Figure:
-    figure = make_subplots(rows=1, cols=3, subplot_titles=PROTOCOL_ORDER)
-    colors = ("#1f77b4", "#ff7f0e", "#2ca02c")
-    for column, protocol in enumerate(PROTOCOL_ORDER, start=1):
+    """Plot observed and smoothly fitted populations by preparation protocol."""
+    figure = make_subplots(
+        rows=3,
+        cols=1,
+        shared_xaxes=True,
+        subplot_titles=("Initial g", "Initial e", "Initial f"),
+        vertical_spacing=0.08,
+    )
+    colors = fitting.COLORS[:3]
+    fit_time_ns = np.linspace(0.0, float(measurements.time_ns[-1]), 1000)
+    fitted_populations = (
+        _population_trajectories(
+            fit.generator_matrix_per_us,
+            fit.initial_populations,
+            fit_time_ns,
+        )
+        if fit.success
+        else {}
+    )
+    for row, protocol in enumerate(PROTOCOL_ORDER, start=1):
         series = measurements.protocols[protocol]
         for state_index, state in enumerate(STATE_ORDER):
             figure.add_trace(
                 go.Scatter(
-                    x=measurements.time_ns * 1e-3,
+                    x=measurements.time_ns * _NS_TO_US,
                     y=series.population[:, state_index],
-                    error_y={"array": series.standard_error[:, state_index]},
+                    error_y={
+                        "type": "data",
+                        "array": series.standard_error[:, state_index],
+                        "visible": True,
+                    },
                     mode="markers",
-                    name=f"P{state}",
-                    legendgroup=state,
-                    showlegend=column == 1,
                     marker={"color": colors[state_index]},
+                    name=f"observed P{state}",
+                    legendgroup=f"observed-{state}",
+                    showlegend=row == 1,
                 ),
-                row=1,
-                col=column,
+                row=row,
+                col=1,
             )
             if fit.success:
                 figure.add_trace(
                     go.Scatter(
-                        x=measurements.time_ns * 1e-3,
-                        y=fit.fitted_populations[protocol][:, state_index],
+                        x=fit_time_ns * _NS_TO_US,
+                        y=fitted_populations[protocol][:, state_index],
                         mode="lines",
-                        name=f"P{state} fit",
-                        legendgroup=state,
-                        showlegend=False,
                         line={"color": colors[state_index]},
+                        name=f"fit P{state}",
+                        legendgroup=f"fit-{state}",
+                        showlegend=row == 1,
                     ),
-                    row=1,
-                    col=column,
+                    row=row,
+                    col=1,
                 )
-    figure.update_layout(title=f"GEF relaxation: {target}")
-    figure.update_xaxes(title_text="Time (us)")
-    figure.update_yaxes(title_text="Population", range=[0.0, 1.0])
+        figure.update_yaxes(
+            title_text="GEF population",
+            range=[-0.03, 1.03],
+            row=row,
+            col=1,
+        )
+    maximum_time_us = float(measurements.time_ns[-1] * _NS_TO_US)
+    figure.update_xaxes(range=[0.0, maximum_time_us])
+    figure.update_xaxes(title_text="Time (us)", row=3, col=1)
+    figure.update_layout(
+        title=(
+            f"GEF relaxation: {target}"
+            f"<br><sup>{_fit_diagnostic_text(fit)}"
+            f"<br>{_relaxation_time_summary(fit)}</sup>"
+        ),
+        template="plotly_white",
+        height=850,
+        width=800,
+        margin={"t": 160},
+    )
     return figure
 
 
-def _rate_figure(target: str, fit: GefRelaxationFit) -> go.Figure:
-    values = fit.generator_matrix_per_us.copy()
-    np.fill_diagonal(values, np.nan)
-    figure = go.Figure(
-        go.Heatmap(
-            z=values,
-            x=STATE_ORDER,
-            y=STATE_ORDER,
-            colorbar={"title": "1/us"},
-            hovertemplate="initial=%{x}<br>final=%{y}<br>rate=%{z:.4g} 1/us<extra></extra>",
+def _fit_diagnostic_text(fit: GefRelaxationFit) -> str:
+    """Format complementary fit diagnostics as one compact line."""
+    if not fit.success:
+        return f"optimizer=failed, rank={fit.jacobian_rank}/{_PARAMETER_COUNT}"
+    goodness = fit.goodness_of_fit
+    return (
+        f"optimizer=success, rank={fit.jacobian_rank}/{_PARAMETER_COUNT}, "
+        f"χ²/DoF={goodness.reduced_chi_squared:.3g}, "
+        f"max dM={goodness.maximum_mahalanobis_residual:.3g}"
+    )
+
+
+def _format_relaxation_time(
+    label: str,
+    estimate: GefRelaxationTimeEstimate | None,
+) -> str:
+    """Format one relaxation time and optional local standard error in us."""
+    if estimate is None or not np.isfinite(estimate.value):
+        return f"{label}=unavailable"
+    value_us = estimate.value * _NS_TO_US
+    if estimate.standard_error is None or not np.isfinite(estimate.standard_error):
+        return f"{label}={value_us:.3g} us"
+    error_us = estimate.standard_error * _NS_TO_US
+    return f"{label}={value_us:.3g} ± {error_us:.2g} us"
+
+
+def _relaxation_time_summary(fit: GefRelaxationFit) -> str:
+    """Format the three directional T1 values requested for the figure."""
+    labels = (
+        ("T1 e→g", "t1_e_to_g"),
+        ("T1 f→e", "t1_f_to_e"),
+        ("T1 f→g", "t1_f_to_g"),
+    )
+    return " · ".join(
+        _format_relaxation_time(label, fit.derived_times_ns.get(name))
+        for label, name in labels
+    )
+
+
+def _rate_matrix_text(fit: GefRelaxationFit) -> NDArray[np.str_]:
+    """Format directional transition rates and available standard errors."""
+    text = np.full((3, 3), "—", dtype=object)
+    for name, final_state, initial_state in TRANSITION_MATRIX_INDICES:
+        estimate = fit.transition_rates[name]
+        text[final_state, initial_state] = (
+            f"{estimate.value_per_us:.5g}<br>± {estimate.standard_error_per_us:.2g}"
+            if estimate.standard_error_per_us is not None
+            else f"{estimate.value_per_us:.5g}"
         )
+    return np.asarray(text, dtype=str)
+
+
+def _rate_figure(target: str, fit: GefRelaxationFit) -> go.Figure:
+    """Plot directional transition rates as a labeled MIST-style heatmap."""
+    figure = make_subplots(rows=1, cols=1)
+    if fit.success:
+        values = fit.generator_matrix_per_us.copy()
+        np.fill_diagonal(values, np.nan)
+        finite_rates = values[np.isfinite(values)]
+        maximum_rate = float(np.max(finite_rates)) if finite_rates.size else 1.0
+        figure.add_trace(
+            go.Heatmap(
+                z=values,
+                x=STATE_ORDER,
+                y=STATE_ORDER,
+                text=_rate_matrix_text(fit),
+                texttemplate="%{text}",
+                coloraxis="coloraxis",
+                hovertemplate=(
+                    "Final %{y}<br>Initial %{x}<br>%{text} 1/us<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=1,
+        )
+    else:
+        maximum_rate = 1.0
+        figure.add_annotation(
+            x=0.5,
+            y=0.5,
+            xref="x domain",
+            yref="y domain",
+            text="Fit unavailable",
+            showarrow=False,
+        )
+    figure.update_xaxes(title_text="Initial state", row=1, col=1)
+    figure.update_yaxes(
+        title_text="Final state",
+        autorange="reversed",
+        row=1,
+        col=1,
     )
     figure.update_layout(
-        title=f"GEF transition rates: {target}",
-        xaxis_title="Initial state",
-        yaxis_title="Final state",
+        title=f"Transition rates Q[final, initial]: {target} (estimate ± local SE)",
+        template="plotly_white",
+        width=520,
+        coloraxis={
+            "colorscale": "Blues",
+            "cmin": 0.0,
+            "cmax": maximum_rate,
+            "colorbar": {"title": "Rate (1/us)"},
+        },
     )
     return figure
 
@@ -794,12 +935,14 @@ def characterize_gef_relaxation(
     Returns
     -------
     Result
-        Measurements, six-rate fits, derived EF times, raw GEF data, and figures.
+        Measurements, six-rate fits, derived relaxation times, raw GEF data, and
+        figures.
 
     Notes
     -----
     This function performs hardware acquisition. Rates are reported in `1/us`.
-    `t1_f_to_e` is `1 / k_f_to_e`; `f_state_exit_lifetime` also includes direct
+    Directional `t1_e_to_g`, `t1_f_to_e`, and `t1_f_to_g` values are inverse
+    transition rates. `f_state_exit_lifetime` includes both direct `f_to_e` and
     `f_to_g` decay. Local GLS uncertainty is conditional on the fixed GEF
     calibration.
     """
