@@ -887,12 +887,16 @@ def test_controller_config_without_execution_options_uses_defaults(config) -> No
     assert controller.quelware_endpoint == ("worker-host" if config else "localhost")
 
 
+@pytest.mark.parametrize(
+    "limit_name", ["max_capture_samples", "max_return_capture_samples"]
+)
 def test_controller_planning_uses_configured_limits_and_per_call_options(
     monkeypatch,
+    limit_name,
 ) -> None:
     """Controller plans should honor backend defaults and complete call overrides."""
     controller = Quel3BackendController.from_config_mapping(
-        {"execution": {"max_capture_samples": 8}}
+        {"execution": {limit_name: 8}}
     )
     cached = list(make_cache().snapshot().values())
     monkeypatch.setattr(

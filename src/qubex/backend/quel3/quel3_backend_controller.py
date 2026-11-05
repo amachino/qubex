@@ -64,7 +64,13 @@ class Quel3BackendController(BackendController):
         cls,
         value: Mapping[str, object] | None,
     ) -> Quel3BackendController:
-        """Create a controller from one QuEL-3 system configuration."""
+        """
+        Create a controller from one QuEL-3 system configuration.
+
+        The `quel3.execution` mapping in `system.yaml` supplies execution
+        options, including `max_return_capture_samples`. Omitted fields use
+        `Quel3ExecutionOptions` defaults; invalid limits fail validation.
+        """
         if value is None:
             return cls()
         return cls(
