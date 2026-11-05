@@ -11,6 +11,7 @@ import numpy as np
 
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces import InstrumentInfoProtocol
+from qubex.backend.quel3.models.execution_plan import Quel3ExecutionOptions
 from qubex.backend.quel3.models.payload import (
     Quel3CaptureMode,
     Quel3ExecutionPayload,
@@ -18,6 +19,7 @@ from qubex.backend.quel3.models.payload import (
     Quel3Waveform,
 )
 
+from .compression import compress_payload
 from .timing import normalize_timeline, sample_count
 
 
@@ -86,6 +88,8 @@ class Quel3PayloadAnalyzer:
         self,
         payloads: tuple[Quel3ExecutionPayload, ...],
         instrument_cache: InstrumentCache,
+        *,
+        options: Quel3ExecutionOptions | None = None,
     ) -> tuple[PayloadAnalysis, ...]:
         """Analyze the complete batch against explicitly cached instruments."""
         instruments = {
@@ -94,12 +98,16 @@ class Quel3PayloadAnalyzer:
             for alias, timeline in payload.fixed_timelines.items()
             if timeline.events or timeline.capture_windows
         }
-        return tuple(self.analyze(payload, instruments) for payload in payloads)
+        return tuple(
+            self.analyze(payload, instruments, options=options) for payload in payloads
+        )
 
     def analyze(
         self,
         payload: Quel3ExecutionPayload,
         instruments: dict[str, InstrumentInfoProtocol],
+        *,
+        options: Quel3ExecutionOptions | None = None,
     ) -> PayloadAnalysis:
         """Validate one payload and extract independent planning metadata."""
         self._validate_execution_settings(payload)
@@ -122,6 +130,16 @@ class Quel3PayloadAnalyzer:
         normalized = replace(
             payload, fixed_timelines=timelines, waveform_library=library
         )
+        resolved = options or Quel3ExecutionOptions()
+        if resolved.compress_waveforms:
+            normalized = compress_payload(
+                normalized,
+                {
+                    alias: info.config.sampling_period_fs
+                    for alias, info in instruments.items()
+                },
+                resolved.max_waveform_samples,
+            )
         return PayloadAnalysis(normalized, self._planning_info(normalized, instruments))
 
     def _analyze_timeline(

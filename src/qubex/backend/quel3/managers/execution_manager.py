@@ -250,7 +250,11 @@ class Quel3ExecutionManager:
         session_id = "<unavailable>"
         for attempt in range(2):
             try:
-                analyses = self._analyze_requests(requests, instrument_cache)
+                analyses = self._analyze_requests(
+                    requests,
+                    instrument_cache,
+                    execution_options or self.execution_options,
+                )
                 plan = self._planner.plan(
                     tuple(analysis.planning for analysis in analyses),
                     options=options,
@@ -357,7 +361,9 @@ class Quel3ExecutionManager:
         execution_options: Quel3ExecutionOptions | None = None,
     ) -> Quel3ExecutionPlan:
         """Plan a batch using cached instruments without loading or contacting quelware."""
-        analyses = self._analyze_requests(requests, instrument_cache)
+        analyses = self._analyze_requests(
+            requests, instrument_cache, execution_options or self.execution_options
+        )
         return self._planner.plan(
             tuple(analysis.planning for analysis in analyses),
             options=execution_options or self.execution_options,
@@ -367,6 +373,7 @@ class Quel3ExecutionManager:
         self,
         requests: Sequence[BackendExecutionRequest],
         instrument_cache: InstrumentCache,
+        options: Quel3ExecutionOptions,
     ) -> tuple[PayloadAnalysis, ...]:
         """Resolve request defaults and analyze all payloads before hardware IO."""
         payloads = []
@@ -390,7 +397,9 @@ class Quel3ExecutionManager:
                                 f"Cable delay for {unit}:{port} must be finite and nonnegative."
                             )
             payloads.append(replace(payload, cable_delay_ns=delays))
-        return self._analyzer.analyze_all(tuple(payloads), instrument_cache)
+        return self._analyzer.analyze_all(
+            tuple(payloads), instrument_cache, options=options
+        )
 
     async def _execute_built_payloads(
         self,

@@ -17,6 +17,10 @@ class Quel3ExecutionOptions(BaseModel):
     packed only when all requested shots fit in one run. Shots are split only
     for individual jobs that cannot execute all requested shots in one run.
     Waveforms from different jobs are counted separately, even for equal IQ.
+    `compress_waveforms` defaults to True and reduces verified Rect/FlatTop
+    constant-envelope regions on control and readout channels before planning.
+    Set it to False to preserve uncompressed registration. Configure it under
+    `quel3.execution` in `system.yaml` or override the complete execution options.
     Passing options to an execution replaces the controller's complete options.
     """
 
@@ -25,6 +29,7 @@ class Quel3ExecutionOptions(BaseModel):
     )
 
     merge_jobs: bool = True
+    compress_waveforms: bool = True
     max_waveform_samples: int = Field(default=65_536, gt=0)
     max_capture_samples: int = Field(default=15_000_000, gt=0)
     max_execution_duration_ns: float = Field(default=15_000_000_000, gt=0)
