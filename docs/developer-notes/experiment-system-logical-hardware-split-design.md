@@ -87,7 +87,8 @@ Responsibilities:
   - create `InstrumentDefinition` with fixed timeline profile
   - call `session.deploy_instruments(...)`
   - send all selected definitions for a port together with `append=False`
-  - acquire complete instrument information after deployment
+  - acquire complete instrument information for the IDs returned by deployment
+    without discovering unrelated resources
   - replace touched ports in the supplied cache, preserving other ports
 - backend controller:
   - own the shared cache and delegate instrument operations to managers
@@ -227,8 +228,9 @@ Optional delegation:
 5. Controller delegates to the configuration manager, passing its shared cache
    and resource reader. The manager invalidates touched ports and deploys
    the selected definitions.
-6. The configuration manager reads complete hardware information through the
-   resource reader and replaces the touched ports in the supplied `InstrumentCache`.
+6. The configuration manager reads complete hardware information for the IDs
+   returned by deployment through the resource reader and replaces the touched
+   ports in the supplied `InstrumentCache`.
 7. Push reads a pure backend-settings snapshot for manager state. Execution
    subsequently uses the cached instruments without resolver discovery.
 

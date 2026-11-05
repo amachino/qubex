@@ -43,6 +43,7 @@ class _Reader:
     def __init__(self, infos: tuple[InstrumentInfoProtocol, ...]) -> None:
         self.infos = infos
         self.reads = 0
+        self.read_ids: list[tuple[str, ...]] = []
         self.state = Quel3ResourceSnapshot(
             generated_at="2026-09-10T00:00:00Z",
             endpoint="localhost",
@@ -69,6 +70,15 @@ class _Reader:
     ) -> tuple[InstrumentInfoProtocol, ...]:
         self.reads += 1
         return self.infos
+
+    def read_instrument_infos_by_ids(
+        self, instrument_ids: Sequence[str], *, parallel: bool = True
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        del parallel
+        ids = tuple(instrument_ids)
+        self.reads += 1
+        self.read_ids.append(ids)
+        return tuple(info for info in self.infos if info.id in ids)
 
     def collect_snapshot(self, **kwargs: object) -> Quel3ResourceSnapshot:
         return self.state
@@ -133,9 +143,10 @@ def test_controller_deploys_loaded_configuration_and_passes_readback_to_executio
     deployed: list[object] = []
     actual = _info("unit-a:new")
 
-    async def deploy(**kwargs: object) -> None:
+    async def deploy(**kwargs: object) -> tuple[InstrumentInfoProtocol, ...]:
         deployed.append(kwargs["specifications"])
         reader.infos = (actual,)
+        return (actual,)
 
     monkeypatch.setattr(manager, "_deploy_instruments", deploy)
     observed: list[InstrumentInfoProtocol] = []
@@ -175,6 +186,7 @@ def test_controller_deploys_loaded_configuration_and_passes_readback_to_executio
     assert deployed == [configuration.instruments]
     assert result == {"Q00": actual}
     assert reader.reads == 2
+    assert reader.read_ids == [(actual.id,)]
     assert observed[0] is actual
     assert executed == "executed"
     assert controller.hash != old_hash

@@ -47,9 +47,16 @@ def _specification(
 
 
 class _ConfigurationManager(Quel3ConfigurationManager):
-    def __init__(self, calls: list[object], *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        calls: list[object],
+        *,
+        deployed: tuple[InstrumentInfoProtocol, ...] = (),
+        fail: bool = False,
+    ) -> None:
         super().__init__()
         self.calls = calls
+        self.deployed = deployed
         self.fail = fail
 
     async def _deploy_instruments(
@@ -63,7 +70,7 @@ class _ConfigurationManager(Quel3ConfigurationManager):
         self.calls.append(("deploy", specifications, parallel))
         if self.fail:
             raise RuntimeError("deploy failed")
-        return ()
+        return self.deployed
 
 
 class _Reader:
@@ -90,6 +97,19 @@ class _Reader:
             raise RuntimeError("read failed")
         return self.infos
 
+    def read_instrument_infos_by_ids(
+        self,
+        instrument_ids: Sequence[str],
+        *,
+        parallel: bool = True,
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        ids = tuple(instrument_ids)
+        self.calls.append(("read_ids", ids, parallel))
+        if self.fail:
+            raise RuntimeError("read failed")
+        selected = set(ids)
+        return tuple(info for info in self.infos if info.id in selected)
+
 
 def _reader(
     calls: list[object],
@@ -108,11 +128,11 @@ def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
     calls: list[object] = []
     specification = _specification()
     configuration = InstrumentConfiguration(instruments=(specification,))
-    manager = _ConfigurationManager(calls)
+    actual = _info("unit-a:Q00", "unit-a:new", specification.port_id)
+    manager = _ConfigurationManager(calls, deployed=(actual,))
     if source == "yaml":
         path = configuration.save_yaml(tmp_path / "instruments.yaml")
         configuration = manager.load_instrument_configuration(path)
-    actual = _info("unit-a:Q00", "unit-a:new", specification.port_id)
     other = _info("Q01", "unit-b:other", "unit-b:tx_p01")
     cache = InstrumentCache()
     cache.replace_all(
@@ -131,7 +151,7 @@ def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
 
     assert calls == [
         ("deploy", (specification,), False),
-        ("read", (), (specification.port_id,), False),
+        ("read_ids", (actual.id,), False),
     ]
     assert result == {"Q00": actual}
     assert cache.get("Q00") is actual
@@ -139,7 +159,7 @@ def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
 
 
 @pytest.mark.parametrize(
-    "failure", ["deploy", "read", "missing", "duplicate", "wrong-port", "conflict"]
+    "failure", ["deploy", "read", "missing", "duplicate-id", "wrong-port"]
 )
 def test_failed_deploy_does_not_retain_stale_resource_ids(failure: str) -> None:
     """Write or readback failures should leave touched ports absent and others intact."""
@@ -149,11 +169,10 @@ def test_failed_deploy_does_not_retain_stale_resource_ids(failure: str) -> None:
     actual = _info("Q00", "unit-a:new", specification.port_id)
     infos = {
         "missing": (),
-        "duplicate": (actual, _info("Q00", "unit-a:duplicate", specification.port_id)),
         "wrong-port": (_info("Q00", "unit-a:new", "unit-a:tx_p02"),),
-        "conflict": (actual, _info("Q01", "unit-a:conflict", specification.port_id)),
     }.get(failure, (actual,))
-    manager = _ConfigurationManager(calls, fail=failure == "deploy")
+    deployed = (actual, actual) if failure == "duplicate-id" else (actual,)
+    manager = _ConfigurationManager(calls, deployed=deployed, fail=failure == "deploy")
     cache = InstrumentCache()
     cache.replace_all(
         instrument_infos=(_info("Q00", "unit-a:old", specification.port_id), other)
@@ -167,6 +186,35 @@ def test_failed_deploy_does_not_retain_stale_resource_ids(failure: str) -> None:
         )
 
     assert cache.snapshot() == {"Q01": other}
+
+
+def test_replacement_readback_ignores_unrequested_instruments() -> None:
+    """Replacement should ignore unrelated resources available beside deployed IDs."""
+    calls: list[object] = []
+    specification = _specification()
+    actual = _info("Q00", "unit-a:new", specification.port_id)
+    unrelated = _info("Q99", "unit-a:unrelated", "unit-a:tx_p99")
+    retained = _info("Q01", "unit-b:other", "unit-b:tx_p01")
+    cache = InstrumentCache()
+    cache.replace_all(
+        instrument_infos=(
+            _info("obsolete", "unit-a:old", specification.port_id),
+            retained,
+        )
+    )
+
+    result = _ConfigurationManager(calls, deployed=(actual,)).deploy_instruments(
+        configuration=InstrumentConfiguration(instruments=(specification,)),
+        instrument_cache=cache,
+        resource_reader=_reader(calls, (actual, unrelated)),
+    )
+
+    assert calls == [
+        ("deploy", (specification,), True),
+        ("read_ids", (actual.id,), True),
+    ]
+    assert result == {"Q00": actual}
+    assert cache.snapshot() == {"Q00": actual, "Q01": retained}
 
 
 def test_empty_deploy_does_not_clear_cache_or_contact_hardware() -> None:

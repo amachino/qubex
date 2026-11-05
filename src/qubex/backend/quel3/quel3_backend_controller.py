@@ -458,9 +458,10 @@ class Quel3BackendController(BackendController):
         Notes
         -----
         Alias replacement is handled by quelware without a pre-deployment read.
-        Append does not retry the deployment request. Both modes refresh the
-        entire touched port. Write or readback failure leaves that port absent
-        from the execution cache.
+        Append does not retry the deployment request. Append refreshes the
+        entire touched port; replacement reads only the resources whose IDs
+        were returned by the deployment. Write or readback failure leaves that
+        port absent from the execution cache.
         """
         return self._configuration_manager.deploy_instrument(
             instrument=instrument,
@@ -552,8 +553,9 @@ class Quel3BackendController(BackendController):
         Deploy instruments and read their complete information back from hardware.
 
         Only the requested ports are replaced. Their old cached identities are
-        discarded before writing and remain absent if deployment or readback fails.
-        An empty configuration leaves hardware and cache unchanged.
+        discarded before writing. Readback requests only the instrument IDs
+        returned by deployment. Failed ports remain absent from the cache; an
+        empty configuration leaves hardware and cache unchanged.
         """
         return self._configuration_manager.deploy_instruments(
             configuration=configuration,
