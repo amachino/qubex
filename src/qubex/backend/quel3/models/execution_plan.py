@@ -16,6 +16,8 @@ class Quel3ExecutionOptions(BaseModel):
     duration, not to the complete logical job. Compatible adjacent jobs are
     packed only when all requested shots fit in one run. Shots are split only
     for individual jobs that cannot execute all requested shots in one run.
+    Split runs repeat a fixed shot count, including a padded final run.
+    Nonaveraged results discard padding; averaged results include padding.
     Waveforms from different jobs are counted separately, even for equal IQ.
     Passing options to an execution replaces the controller's complete options.
     """
@@ -49,13 +51,18 @@ class Quel3PayloadPlacement:
 
 @dataclass(frozen=True)
 class Quel3PlannedExecution:
-    """One physical trigger described by placements, shot range, and resource usage."""
+    """
+    Describe one trigger with logical shot bounds and physical resource usage.
+
+    `n_iterations` includes padding; `shot_start` and `shot_stop` exclude it.
+    """
 
     placements: tuple[Quel3PayloadPlacement, ...]
     shot_start: int
     shot_stop: int
     timeline_length_ns: float
     resources: Quel3ResourceUsage
+    n_iterations: int
 
 
 @dataclass(frozen=True)
