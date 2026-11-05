@@ -37,6 +37,7 @@ class _PayloadResultAccumulator:
         fragment: PayloadResultFragment,
         result: Quel3BackendExecutionResult,
         sampling_period_ns: float,
+        n_iterations: int,
     ) -> None:
         """Validate and copy the next shot chunk for this payload."""
         if self.shots_received != fragment.shot_start:
@@ -51,17 +52,25 @@ class _PayloadResultAccumulator:
                 result.data[capture.alias][capture.execution_index], dtype=np.complex128
             )
             expected = self._capture_shape(
-                capture.alias, capture.original_index, shots, sampling_period_ns
+                capture.alias, capture.original_index, n_iterations, sampling_period_ns
             )
             if data.shape != expected:
                 raise ValueError(
                     f"Invalid capture shape or shot count for job {self.job_index}, {capture.alias}: expected {expected}, got {data.shape}."
                 )
             self.capture_chunks[capture.alias, capture.original_index].append(
-                data.copy()
+                (
+                    data[:shots]
+                    if self.payload.capture_mode
+                    in (
+                        Quel3CaptureMode.RAW_WAVEFORMS,
+                        Quel3CaptureMode.VALUES_PER_ITER,
+                    )
+                    else data
+                ).copy()
             )
         self.shots_received = fragment.shot_stop
-        self.shot_counts.append(shots)
+        self.shot_counts.append(n_iterations)
         self.config = dict(result.config)
         self.status.update(result.status)
 
@@ -117,7 +126,12 @@ class Quel3ResultAssembler:
             if count != expected_count:
                 raise ValueError(f"Missing or unexpected captures for {alias!r}.")
         for fragment in mapping.fragments:
-            self._accumulators[fragment.job_index].add(fragment, result, period)
+            self._accumulators[fragment.job_index].add(
+                fragment,
+                result,
+                period,
+                mapping.n_iterations,
+            )
 
     def finish(self) -> list[Quel3BackendExecutionResult]:
         """Return complete logical results in the original payload order."""

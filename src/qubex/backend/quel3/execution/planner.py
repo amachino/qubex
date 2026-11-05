@@ -257,9 +257,10 @@ class Quel3ExecutionPlanner:
         executions = []
         for start in range(0, group.conditions.n_iterations, shot_limit):
             stop = min(start + shot_limit, group.conditions.n_iterations)
-            shots = stop - start
+            shots = shot_limit
             executions.append(
                 Quel3PlannedExecution(
+                    n_iterations=shots,
                     placements=group.placements,
                     shot_start=start,
                     shot_stop=stop,
