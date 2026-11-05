@@ -25,7 +25,7 @@ class Quel3ExecutionOptions(BaseModel):
     )
 
     merge_jobs: bool = True
-    max_waveform_samples: int = Field(default=65_536, gt=0)
+    max_waveform_samples: int = Field(default=60_000, gt=0)
     max_capture_samples: int = Field(default=15_000_000, gt=0)
     max_execution_duration_ns: float = Field(default=15_000_000_000, gt=0)
 

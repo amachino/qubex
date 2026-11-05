@@ -990,3 +990,11 @@ def test_duration_limit_includes_final_shot_interval() -> None:
     assert [run.resources.duration_ns for run in plan.executions] == pytest.approx(
         [12.8, 12.8, 6.4], rel=0, abs=1e-9
     )
+
+
+def test_default_waveform_budget_reserves_hardware_headroom() -> None:
+    """The default waveform capacity should accept 60,000 samples and reject one more."""
+    assert Quel3ExecutionOptions().max_waveform_samples == 60_000
+    assert len(plan_jobs(make_payload(samples=60_000, shots=1)).executions) == 1
+    with pytest.raises(ValueError, match="waveform R0: required=60001 limit=60000"):
+        plan_jobs(make_payload(samples=60_001, shots=1))
