@@ -115,6 +115,16 @@ def plan_jobs(
     )
 
 
+def test_split_chunks_execute_uniform_physical_shots():
+    """The tail should execute a full chunk while mapping only requested shots."""
+    prepared = plan_jobs(make_payload(), max_capture_samples=8)
+    assert [r.payload.n_iterations for r in prepared.executions] == [2, 2, 2]
+    assert prepared.estimated_duration_ns == pytest.approx(19.2)
+    assert [r.resources.capture_samples for r in prepared.executions] == [
+        {"unit:rx_p00": 8}
+    ] * 3
+
+
 def test_analysis_extracts_planning_metadata_and_normalizes_timelines() -> None:
     """Analysis should expose counts and conditions without requiring IQ in planning."""
     payload = make_payload()
@@ -596,8 +606,8 @@ def test_time_limit_splits_even_when_merging_is_disabled() -> None:
 @pytest.mark.parametrize(
     "mode", [mode for mode in Quel3CaptureMode if mode != Quel3CaptureMode.UNSPECIFIED]
 )
-def test_result_assembly_preserves_shots_and_weights_unequal_chunks(mode) -> None:
-    """Reconstruction should concatenate shots or weight chunk averages by shots."""
+def test_result_assembly_preserves_requested_shots_and_padded_averages(mode) -> None:
+    """Reconstruction should trim excess shots or average all physical shots."""
     plan = plan_jobs(make_payload(mode=mode), max_capture_samples=8)
     assembler = Quel3ResultAssembler(plan.jobs)
     is_waveform = mode in (
@@ -1079,13 +1089,3 @@ def test_return_budget_rejects_unsplittable_average(mode):
     )
     with pytest.raises(ValueError, match="return capture: required="):
         plan_jobs(payload, max_return_capture_samples=1)
-
-
-def test_split_chunks_execute_uniform_physical_shots():
-    """The tail should execute a full chunk while mapping only requested shots."""
-    prepared = plan_jobs(make_payload(), max_capture_samples=8)
-    assert [r.payload.n_iterations for r in prepared.executions] == [2, 2, 2]
-    assert prepared.estimated_duration_ns == pytest.approx(19.2)
-    assert [r.resources.capture_samples for r in prepared.executions] == [
-        {"unit:rx_p00": 8}
-    ] * 3
