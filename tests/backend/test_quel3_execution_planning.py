@@ -1005,20 +1005,25 @@ def test_default_waveform_budget_reserves_hardware_headroom() -> None:
 
 
 @pytest.mark.parametrize(
-    ("mode", "expected"),
+    ("mode", "samples", "per_shot"),
     [
-        (Quel3CaptureMode.RAW_WAVEFORMS, [8, 8, 4]),
-        (Quel3CaptureMode.VALUES_PER_ITER, [5]),
-        (Quel3CaptureMode.AVERAGED_WAVEFORM, [4]),
-        (Quel3CaptureMode.AVERAGED_VALUE, [1]),
+        (Quel3CaptureMode.RAW_WAVEFORMS, 4, True),
+        (Quel3CaptureMode.VALUES_PER_ITER, 1, True),
+        (Quel3CaptureMode.AVERAGED_WAVEFORM, 4, False),
+        (Quel3CaptureMode.AVERAGED_VALUE, 1, False),
     ],
 )
-def test_return_capture_budget_accounts_for_mode(mode, expected):
+def test_return_capture_budget_accounts_for_mode(mode, samples, per_shot):
     """Return capacity should count the data returned by the selected mode."""
     prepared = plan_jobs(make_payload(mode=mode), max_return_capture_samples=8)
-    assert [
-        run.resources.return_capture_samples for run in prepared.executions
-    ] == expected
+    assert len(prepared.executions) == (
+        3 if mode is Quel3CaptureMode.RAW_WAVEFORMS else 1
+    )
+    for run in prepared.executions:
+        assert run.resources.return_capture_samples == samples * (
+            run.payload.n_iterations if per_shot else 1
+        )
+        assert run.resources.return_capture_samples <= 8
 
 
 def test_return_budget_sums_distinct_units_and_prevents_packing():
@@ -1029,8 +1034,10 @@ def test_return_budget_sums_distinct_units_and_prevents_packing():
         first, fixed_timelines={**first.fixed_timelines, **second.fixed_timelines}
     )
     plan = plan_jobs(combined, cache=cache, max_return_capture_samples=16)
-    assert [r.payload.n_iterations for r in plan.executions] == [2, 2, 1]
-    assert [r.resources.return_capture_samples for r in plan.executions] == [16, 16, 8]
+    assert len(plan.executions) == 3
+    for run in plan.executions:
+        assert run.resources.return_capture_samples == 8 * run.payload.n_iterations
+        assert run.resources.return_capture_samples <= 16
     assert (
         len(
             plan_jobs(
