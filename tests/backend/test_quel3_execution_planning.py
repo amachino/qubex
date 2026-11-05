@@ -998,3 +998,63 @@ def test_default_waveform_budget_reserves_hardware_headroom() -> None:
     assert len(plan_jobs(make_payload(samples=60_000, shots=1)).executions) == 1
     with pytest.raises(ValueError, match="waveform R0: required=60001 limit=60000"):
         plan_jobs(make_payload(samples=60_001, shots=1))
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        (Quel3CaptureMode.RAW_WAVEFORMS, [8, 8, 4]),
+        (Quel3CaptureMode.VALUES_PER_ITER, [5]),
+        (Quel3CaptureMode.AVERAGED_WAVEFORM, [4]),
+        (Quel3CaptureMode.AVERAGED_VALUE, [1]),
+    ],
+)
+def test_return_capture_budget_accounts_for_mode(mode, expected):
+    """Return capacity should count the data returned by the selected mode."""
+    prepared = plan_jobs(make_payload(mode=mode), max_return_capture_samples=8)
+    assert [
+        run.resources.return_capture_samples for run in prepared.executions
+    ] == expected
+
+
+def test_return_budget_sums_distinct_units_and_prevents_packing():
+    """Independent receivers should share the trigger's return budget."""
+    first, second = make_payload(), make_payload(alias="R1")
+    cache = make_cache({"R0": "unit:trx_p00p01", "R1": "other:trx_p00p01"})
+    combined = replace(
+        first, fixed_timelines={**first.fixed_timelines, **second.fixed_timelines}
+    )
+    plan = plan_jobs(combined, cache=cache, max_return_capture_samples=16)
+    assert [r.payload.n_iterations for r in plan.executions] == [2, 2, 1]
+    assert [r.resources.return_capture_samples for r in plan.executions] == [16, 16, 8]
+    assert (
+        len(
+            plan_jobs(
+                first, second, cache=cache, max_return_capture_samples=20
+            ).executions
+        )
+        == 2
+    )
+
+
+@pytest.mark.parametrize(
+    "mode", [Quel3CaptureMode.AVERAGED_VALUE, Quel3CaptureMode.AVERAGED_WAVEFORM]
+)
+def test_return_budget_rejects_unsplittable_average(mode):
+    """Averaged windows exceeding capacity should fail before execution."""
+    payload = make_payload(mode=mode)
+    timeline = payload.fixed_timelines["R0"]
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "R0": replace(
+                timeline,
+                capture_windows=(
+                    *timeline.capture_windows,
+                    replace(timeline.capture_windows[0], name="second"),
+                ),
+            )
+        },
+    )
+    with pytest.raises(ValueError, match="return capture: required="):
+        plan_jobs(payload, max_return_capture_samples=1)

@@ -13,6 +13,7 @@ from qubex.backend.quel3.models.execution_plan import (
     Quel3PlannedExecution,
     Quel3ResourceUsage,
 )
+from qubex.backend.quel3.models.payload import Quel3CaptureMode
 
 from .resources import ExecutionConditions, PayloadPlanningInfo, ResourceRequirements
 from .timing import ceil_to_grid
@@ -157,8 +158,31 @@ class Quel3ExecutionPlanner:
                 captures[receiver] = captures.get(receiver, 0) + count
         return _PayloadGroup(
             tuple(placements),
-            ResourceRequirements(waveform_samples, captures, end_ns, grid_fs),
+            ResourceRequirements(
+                waveform_samples,
+                captures,
+                end_ns,
+                grid_fs,
+                sum(payloads[i].requirements.capture_window_count for i in indices),
+            ),
             conditions,
+        )
+
+    @staticmethod
+    def _return_capture_samples(group: _PayloadGroup, shots: int) -> int:
+        requirements = group.requirements
+        mode = group.conditions.capture_mode
+        count = (
+            sum(requirements.capture_samples_per_shot.values())
+            if mode
+            in (Quel3CaptureMode.RAW_WAVEFORMS, Quel3CaptureMode.AVERAGED_WAVEFORM)
+            else requirements.capture_window_count
+        )
+        return (
+            count * shots
+            if mode
+            in (Quel3CaptureMode.RAW_WAVEFORMS, Quel3CaptureMode.VALUES_PER_ITER)
+            else count
         )
 
     @staticmethod
@@ -176,6 +200,11 @@ class Quel3ExecutionPlanner:
             for receiver, count in requirements.capture_samples_per_shot.items()
             if count * shots > options.max_capture_samples
         )
+        returned = Quel3ExecutionPlanner._return_capture_samples(group, shots)
+        if returned > options.max_return_capture_samples:
+            violations.append(
+                f"return capture: required={returned} limit={options.max_return_capture_samples}"
+            )
         duration_ns = group.shot_duration_ns * shots
         if duration_ns > options.max_execution_duration_ns:
             violations.append(
@@ -192,6 +221,12 @@ class Quel3ExecutionPlanner:
             options.max_capture_samples // count
             for count in requirements.capture_samples_per_shot.values()
         ]
+        returned = Quel3ExecutionPlanner._return_capture_samples(group, 1)
+        if returned and group.conditions.capture_mode in (
+            Quel3CaptureMode.RAW_WAVEFORMS,
+            Quel3CaptureMode.VALUES_PER_ITER,
+        ):
+            capture_limits.append(options.max_return_capture_samples // returned)
         duration_limit = options.max_execution_duration_ns / group.shot_duration_ns
         rounded_limit = round(duration_limit)
         # Keep exact inclusive boundaries despite floating-point division.
@@ -236,6 +271,7 @@ class Quel3ExecutionPlanner:
                             for receiver, count in requirements.capture_samples_per_shot.items()
                         },
                         group.shot_duration_ns * shots,
+                        self._return_capture_samples(group, shots),
                     ),
                 )
             )

@@ -11,7 +11,10 @@ class Quel3ExecutionOptions(BaseModel):
     """
     Configure resource limits for packing adjacent jobs in input order.
 
-    Sample limits count complex IQ samples, before averaging or decimation.
+    Hardware sample limits count complex IQ samples before averaging or decimation.
+    The return limit counts all returned IQ samples across instruments and units,
+    after capture-mode reduction. Its default is 50 MB of complex128 data,
+    excluding serialization overhead.
     Duration limits apply to each physical execution, using repeated timeline
     duration, not to the complete logical job. Compatible adjacent jobs are
     packed only when all requested shots fit in one run. Shots are split only
@@ -27,6 +30,7 @@ class Quel3ExecutionOptions(BaseModel):
     merge_jobs: bool = True
     max_waveform_samples: int = Field(default=60_000, gt=0)
     max_capture_samples: int = Field(default=15_000_000, gt=0)
+    max_return_capture_samples: int = Field(default=3_125_000, gt=0)
     max_execution_duration_ns: float = Field(default=15_000_000_000, gt=0)
 
 
@@ -37,6 +41,7 @@ class Quel3ResourceUsage:
     waveform_samples: dict[str, int]
     capture_samples: dict[str, int]
     duration_ns: float
+    return_capture_samples: int = 0
 
 
 @dataclass(frozen=True)
