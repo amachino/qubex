@@ -3040,7 +3040,8 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
             execution_options=Quel3ExecutionOptions(max_capture_samples=4),
         )
     )
-    assert applied_frequencies == [6e9, 6e9, 6e9, 6.1e9, 6e9]
+    assert applied_frequencies == [6e9, 6e9, 6.1e9, 6e9]
+    assert len(session.initialize_calls) == 4
     assert len(session.trigger_calls) == 5
     for result, expected, shots in zip(
         results, (6, 7, 6, 6.1, 6), (2, 2, 5, 2, 2), strict=True
@@ -3154,3 +3155,52 @@ def test_execution_phase_timings_measure_hardware_operations(
         rel=0,
         abs=1e-9,
     )
+
+
+def test_split_retry_preserves_completed_chunks(monkeypatch):
+    """A failed split chunk should rebuild its session and retain earlier results."""
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00p01", _FakeInstrumentDefinition("TRANSCEIVER")
+            ),
+        }
+    )
+    sessions = []
+
+    def client_factory(endpoint, port):
+        session = _FakeSession(session_id=str(len(sessions)))
+        sessions.append(session)
+        return _FakeClient(session)
+
+    api = _make_fake_execution_api(
+        client_factory=client_factory,
+        fixed_timeline_driver_factory=lambda session, info: _FakeInstrumentDriver(),
+    )
+    monkeypatch.setattr(manager, "_load_quelware_api", lambda: api)
+    original = manager._execute_payload
+    calls = []
+    seen_sessions = []
+
+    async def execute(**kwargs):
+        session = kwargs["session_state"].session
+        calls.append(session not in seen_sessions)
+        seen_sessions.append(session)
+        if len(calls) == 2:
+            raise RuntimeError("temporary failure in second chunk")
+        return await original(**kwargs)
+
+    monkeypatch.setattr(manager, "_execute_payload", execute)
+    result = asyncio.run(
+        manager.execute_async(
+            request=BackendExecutionRequest(payload=_make_payload(n_iterations=5)),
+            instrument_cache=cache,
+            execution_options=Quel3ExecutionOptions(max_capture_samples=2),
+        )
+    )
+    assert calls == [True, False, True, False]
+    assert [len(s.initialize_calls) for s in sessions] == [1, 1]
+    assert [len(s.trigger_calls) for s in sessions] == [1, 2]
+    assert result.data["alias-rq00"][0].shape == (1,)
+
