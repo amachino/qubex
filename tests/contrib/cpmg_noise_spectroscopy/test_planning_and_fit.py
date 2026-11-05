@@ -322,6 +322,22 @@ class _FakeExperiment(_Experiment):
         )
 
 
+@pytest.mark.parametrize("shot_interval", [-1.0, np.nan, np.inf])
+def test_experiment_rejects_invalid_shot_interval(shot_interval: float) -> None:
+    """The measurement interval should be finite and nonnegative."""
+    with pytest.raises(ValueError, match="shot_interval"):
+        cpmg_noise_spectroscopy(
+            _FakeExperiment(),  # type: ignore[arg-type]
+            targets=["Q00"],
+            frequency_range=[0.001],
+            time_range=_TEST_TIME_RANGE_NS,
+            shot_interval=shot_interval,
+            plot=False,
+            save_data=False,
+            enable_tqdm=False,
+        )
+
+
 def test_experiment_randomizes_acquisition_but_stores_fixed_frequency_indices() -> None:
     """Seeded acquisition should be reproducible while matrices retain requested order."""
     kwargs = {
@@ -545,6 +561,7 @@ def test_plotting_experiment_returns_prefit_heatmap(monkeypatch) -> None:
     trace_data = cast(dict[str, Any], trace.to_plotly_json())
     assert trace_data["marker"]["cmin"] == 0
     assert trace_data["marker"]["cmax"] == 1
+    assert trace_data["marker"]["colorbar"]["title"]["text"] == "Normalized signal"
     assert heatmap.layout.xaxis.rangemode is None
     assert heatmap.layout.xaxis.title.text == "Effective CPMG Frequency (MHz)"
     assert heatmap.layout.yaxis.title.text == "Effective decay time (us)"

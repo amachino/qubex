@@ -24,6 +24,7 @@ from qubex.contrib.experiment.spin_lock_relaxation import (
     _make_figure,
     _measure_target,
     _MeasurementData,
+    _normalize_targets as _normalize_spin_lock_targets,
     _predict_expectations,
     _print_fit_summary,
     _resolve_drive,
@@ -105,6 +106,15 @@ def test_spin_lock_relaxation_is_exported_from_contrib() -> None:
 def test_spin_lock_relaxation_spectroscopy_is_exported_from_contrib() -> None:
     """The spectroscopy experiment should be available from both namespaces."""
     assert experiment_spectroscopy_api is spin_lock_relaxation_spectroscopy
+
+
+def test_spin_lock_targets_reject_duplicate_labels() -> None:
+    """Duplicate targets should fail before result mappings can overwrite data."""
+    with pytest.raises(ValueError, match="duplicate"):
+        _normalize_spin_lock_targets(
+            SimpleNamespace(),  # type: ignore[arg-type]
+            ["Q00", "Q00"],
+        )
 
 
 def test_default_spin_lock_frequency_range_is_positive() -> None:
@@ -841,11 +851,9 @@ def test_relaxation_figure_uses_a_wide_three_panel_layout() -> None:
     annotations = layout["annotations"]
     assert layout["width"] == 1200
     assert layout["height"] == 360
-    assert annotations[0]["text"] == ("a(t)<br><sup>Longitudinal retention (T1ρ)</sup>")
-    assert annotations[1]["text"] == ("b(t)<br><sup>Transverse coherence (T2ρ)</sup>")
-    assert annotations[2]["text"] == (
-        "p(t)<br><sup>Longitudinal polarization offset</sup>"
-    )
+    assert annotations[0]["text"] == "Longitudinal retention (T1ρ)"
+    assert annotations[1]["text"] == "Transverse coherence (T2ρ)"
+    assert annotations[2]["text"] == "Longitudinal polarization offset"
     assert layout["yaxis"]["title"]["text"] == "Longitudinal retention a(t)"
     assert layout["yaxis2"]["title"]["text"] == "Transverse coherence b(t)"
     assert layout["yaxis3"]["title"]["text"] == (
@@ -910,12 +918,13 @@ def test_spectroscopy_analysis_recovers_each_frequency_independently() -> None:
     assert heatmap_layout["yaxis"]["type"] == "log"
     assert heatmap_layout["yaxis2"]["type"] == "log"
     assert heatmap_layout["yaxis3"]["type"] == "log"
-    assert "Longitudinal retention" in heatmap_annotations[0]["text"]
-    assert "Transverse coherence" in heatmap_annotations[1]["text"]
-    assert "Longitudinal polarization offset" in heatmap_annotations[2]["text"]
+    assert heatmap_annotations[0]["text"] == "Longitudinal retention (T1ρ)"
+    assert heatmap_annotations[1]["text"] == "Transverse coherence (T2ρ)"
+    assert heatmap_annotations[2]["text"] == "Longitudinal polarization offset"
     summary = figures["Q00_relaxation_spectroscopy"]
     assert len(_figure_data(summary)) == 3
     summary_layout = _figure_layout(summary)
+    assert summary_layout["title"]["text"] == "Spin-lock spectroscopy: Q00"
     assert summary_layout["yaxis"]["rangemode"] == "tozero"
     assert summary_layout["yaxis"]["minallowed"] == 0
     assert summary_layout["yaxis2"]["rangemode"] == "tozero"
