@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import MethodType, SimpleNamespace
 from typing import Any, ClassVar, cast
 
@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from qxpulse import PulseSchedule
 
-from qubex.backend import BackendExecutionRequest, BackendKind
+from qubex.backend import BackendExecutionRequest
 from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
@@ -101,7 +101,6 @@ def _bind_runtime(
     backend_controller: object,
     experiment_system: object,
     rawdata_dir: object = None,
-    backend_kind: BackendKind | None = None,
 ) -> None:
     context = type(
         "_CTX",
@@ -110,11 +109,7 @@ def _bind_runtime(
             "backend_controller": backend_controller,
             "experiment_system": experiment_system,
             "mux_dict": {},
-            "system_manager": type(
-                "_SM",
-                (),
-                {"rawdata_dir": rawdata_dir, "backend_kind": backend_kind},
-            )(),
+            "system_manager": type("_SM", (), {"rawdata_dir": rawdata_dir})(),
         },
     )()
     session_service = type(
@@ -1328,69 +1323,52 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
-def test_measure_rejects_dsp_classification_before_execute() -> None:
-    """Legacy measure should direct DSP users to canonical run_measurement."""
+@pytest.mark.parametrize("entrypoint", ["measure", "execute"])
+@pytest.mark.parametrize(
+    "option_name", ["state_classification", "enable_dsp_classification"]
+)
+def test_legacy_dsp_request_is_rejected_before_backend_execution(
+    entrypoint: str,
+    option_name: str,
+) -> None:
+    """Legacy DSP requests should fail before backend I/O with valid API guidance."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
         load_configs=False,
         connect_devices=False,
     )
-    multiple = _make_multiple_result()
-    called: dict[str, Any] = {}
+    backend_calls: list[dict[str, object]] = []
 
-    def fake_execute(
-        self: MeasurementExecutionService, **kwargs: object
-    ) -> MultipleMeasureResult:
-        called["kwargs"] = kwargs
-        return multiple
+    def unexpected_execute(**kwargs: object) -> None:
+        backend_calls.append(kwargs)
+        raise AssertionError("A rejected request must not execute the backend")
 
-    measurement.execution_service.execute = MethodType(
-        fake_execute,
-        measurement.execution_service,
-    )
     _bind_runtime(
         measurement,
-        backend_controller=object(),
+        backend_controller=SimpleNamespace(execute_sync=unexpected_execute),
         experiment_system=object(),
-        backend_kind="quel1",
     )
-
-    with pytest.raises(ValueError, match="run_measurement"):
-        measurement.measure(
-            waveforms={"Q00": np.array([0.0 + 0.0j])},
-            state_classification=True,
-        )
-    with pytest.raises(ValueError, match="run_measurement"):
-        measurement.measure(
-            waveforms={"Q00": np.array([0.0 + 0.0j])},
-            enable_dsp_classification=True,
-        )
-
-    assert "kwargs" not in called
-
-
-def test_execute_rejects_dsp_classification_for_legacy_result() -> None:
-    """Legacy execute should reject DSP output regardless of capture options."""
-    measurement = Measurement(
-        chip_id="TEST",
-        qubits=["Q00"],
-        load_configs=False,
-        connect_devices=False,
+    method = measurement.measure if entrypoint == "measure" else measurement.execute
+    options: dict[str, Any] = {option_name: True}
+    warning = (
+        pytest.warns(DeprecationWarning, match="enable_dsp_classification")
+        if option_name == "enable_dsp_classification"
+        else nullcontext()
     )
-    _bind_runtime(
-        measurement,
-        backend_controller=object(),
-        experiment_system=object(),
-        backend_kind="quel1",
-    )
-
-    with pytest.raises(ValueError, match="run_measurement"):
-        measurement.execute(
-            schedule={"Q00": np.array([0.0 + 0.0j])},
+    with (
+        warning,
+        pytest.raises(
+            ValueError, match=r"MeasurementConfig.*state_classification=True"
+        ),
+    ):
+        method(
+            {"Q00": np.array([0.0 + 0.0j])},
             time_integration=False,
-            state_classification=True,
+            **options,
         )
+
+    assert backend_calls == []
 
 
 def test_measure_accepts_deprecated_alias_options() -> None:
@@ -1546,7 +1524,7 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
 def test_execute_initializes_optional_flags_with_execute_defaults(
     monkeypatch,
 ) -> None:
-    """Given None optional flags, execute should apply regular defaults."""
+    """Given None optional flags, when execute is called, then it applies execute defaults."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1609,7 +1587,6 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
         backend_controller=backend_controller,
         experiment_system=experiment_system,
         rawdata_dir=None,
-        backend_kind="quel1",
     )
 
     measurement.execute(

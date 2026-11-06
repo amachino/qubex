@@ -215,33 +215,36 @@ def test_execute_does_not_reset_awg_by_default() -> None:
     assert captured["reset_calls"] == []
 
 
+@pytest.mark.parametrize("entrypoint", ["execute", "measure"])
 @pytest.mark.parametrize(
-    ("option_name", "option_value"),
-    [
-        ("state_classification", True),
-        ("enable_dsp_classification", True),
-    ],
+    "option_name", ["state_classification", "enable_dsp_classification"]
 )
-def test_execute_rejects_legacy_dsp_before_reset_or_measurement(
+def test_legacy_dsp_validation_is_delegated_to_measurement(
+    entrypoint: str,
     option_name: str,
-    option_value: bool,
 ) -> None:
-    """Legacy execute should reject DSP state output before device operations."""
+    """Experiment should delegate DSP options and preserve explicit reset ordering."""
     service, captured = _make_service()
-    options: dict[str, Any] = {option_name: option_value}
-    with PulseSchedule(["custom-target"]) as schedule:
-        pass
-
-    with pytest.raises(ValueError, match="run_measurement"):
+    options: dict[str, Any] = {option_name: True}
+    if entrypoint == "execute":
+        schedule = PulseSchedule(["custom-target"])
         service.execute(
             schedule,
             reset_awg_and_capunits=True,
             plot=False,
             **options,
         )
+    else:
+        service.measure(
+            sequence={"custom-target": np.array([0.0 + 0.0j])},
+            reset_awg_and_capunits=True,
+            plot=False,
+            **options,
+        )
 
-    assert captured["reset_calls"] == []
-    assert captured["execute_calls"] == []
+    calls = cast(list[dict[str, object]], captured[f"{entrypoint}_calls"])
+    assert calls[0][option_name] is True
+    assert captured["reset_calls"] == [{"Q17"}]
 
 
 def test_execute_uses_experiment_readout_timing_defaults() -> None:

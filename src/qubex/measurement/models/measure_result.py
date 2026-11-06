@@ -112,7 +112,8 @@ class MeasureData:
         """Return the number of classifier states."""
         if self.classifier is None:
             raise ValueError("Classifier is not set")
-        return self.classifier.n_states
+        else:
+            return self.classifier.n_states
 
     @cached_property
     def kerneled(

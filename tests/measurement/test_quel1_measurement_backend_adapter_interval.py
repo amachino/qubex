@@ -259,6 +259,7 @@ def test_build_execution_request_keeps_classification_off_without_options(
     assert payload.classification_lines is None
 
 
+@pytest.mark.usefixtures("stub_classification_lines")
 def test_build_execution_request_converts_linear_classifier_for_lower_sideband(
     monkeypatch,
 ) -> None:
@@ -287,6 +288,7 @@ def test_build_execution_request_converts_linear_classifier_for_lower_sideband(
     )
 
 
+@pytest.mark.usefixtures("stub_classification_lines")
 def test_build_execution_request_scales_linear_classifier_without_demodulation(
     monkeypatch,
 ) -> None:
@@ -317,6 +319,7 @@ def test_build_execution_request_scales_linear_classifier_without_demodulation(
     )
 
 
+@pytest.mark.usefixtures("stub_classification_lines")
 def test_build_execution_request_applies_classifier_scale_and_phase(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -342,6 +345,7 @@ def test_build_execution_request_applies_classifier_scale_and_phase(
     assert line_set.line1 == pytest.approx((0.0, 1.0, -(1 << 17)), abs=1e-15)
 
 
+@pytest.mark.usefixtures("stub_classification_lines")
 @pytest.mark.parametrize(
     ("classifiers", "error_type", "match"),
     [

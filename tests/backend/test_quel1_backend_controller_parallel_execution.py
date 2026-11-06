@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -23,6 +24,7 @@ from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 pytestmark = pytest.mark.usefixtures("stub_quel1_driver")
 
 
+@pytest.mark.usefixtures("stub_classification_lines")
 def test_measurement_options_restore_default_classification_lines() -> None:
     """Classification without explicit lines should use defaults for every target."""
 
@@ -145,22 +147,24 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
     )
     classification_lines = {"RQ00": object()}
 
-    result = execution_manager.execute_sync(
-        request=BackendExecutionRequest(
-            payload=Quel1ExecutionPayload(
-                gen_sampled_sequence={"Q00": object()},
-                cap_sampled_sequence={"RQ00": object()},
-                resource_map={"Q00": [{}]},
-                interval_ns=128,
-                repeats=16,
-                integral_mode="integral",
-                dsp_demodulation=True,
-                enable_sum=False,
-                enable_classification=False,
-                classification_lines=classification_lines,
+    result = asyncio.run(
+        execution_manager.execute_async(
+            request=BackendExecutionRequest(
+                payload=Quel1ExecutionPayload(
+                    gen_sampled_sequence={"Q00": object()},
+                    cap_sampled_sequence={"RQ00": object()},
+                    resource_map={"Q00": [{}]},
+                    interval_ns=128,
+                    repeats=16,
+                    integral_mode="integral",
+                    dsp_demodulation=True,
+                    enable_sum=False,
+                    enable_classification=False,
+                    classification_lines=classification_lines,
+                ),
             ),
+            execution_mode="parallel",
         ),
-        execution_mode="parallel",
     )
 
     assert isinstance(result, Quel1BackendExecutionResult)

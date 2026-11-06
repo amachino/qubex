@@ -1229,7 +1229,7 @@ def test_quel3_adapter_build_measurement_result_squeezes_avg_mode_waveform() -> 
 
 
 def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> None:
-    """Given integrated single-shot data, conversion should expose one IQ per shot."""
+    """Given integrated single-shot data, adapter conversion should expose one IQ value per shot."""
     target = "RQ00"
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(

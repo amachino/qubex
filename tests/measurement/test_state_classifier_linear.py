@@ -124,6 +124,36 @@ def test_linear_classification_figure_contains_shots_and_boundaries() -> None:
     assert len(line_traces) == 2
 
 
+@pytest.mark.parametrize("scale", [1e-12, 1.0, 1e12])
+@pytest.mark.parametrize(
+    "line", [(1.0, 0.0, -1.0), (0.0, 1.0, -1.0), (1.0, -0.2, -1.0)]
+)
+def test_classify_plot_is_independent_of_line_coefficient_scale(
+    monkeypatch: pytest.MonkeyPatch,
+    scale: float,
+    line: tuple[float, float, float],
+) -> None:
+    """Equivalent line coefficients should plot the same boundary at every scale."""
+    a, b, c = line
+    classifier = StateClassifierLinear(
+        lines=((a * scale, b * scale, c * scale),),
+        state_map={(False,): 0, (True,): 1},
+    )
+    shown: list[Any] = []
+    monkeypatch.setattr(viz, "show_figure", lambda figure, **_: shown.append(figure))
+
+    counts = classifier.classify("Q00", np.array([0.0 + 0.0j, 2.0 + 2.0j]))
+
+    assert counts == {0: 1, 1: 1}
+    assert len(shown) == 1
+    boundary = shown[0].data[-1]
+    np.testing.assert_allclose(
+        a * np.asarray(boundary.x) + b * np.asarray(boundary.y) + c,
+        0.0,
+        atol=1e-12,
+    )
+
+
 @pytest.mark.parametrize(
     ("kwargs", "error_type", "match"),
     [

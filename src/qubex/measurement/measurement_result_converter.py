@@ -127,6 +127,9 @@ class MeasurementResultConverter:
         else:
             resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
+        resolved_classifiers: dict[str, StateClassifier | None] = {
+            target: classifier_map.get(target) for target in result.data
+        }
         legacy_data: dict[str, list[MeasureData]] = {}
         for target, captures in result.data.items():
             legacy_captures = [
@@ -134,7 +137,7 @@ class MeasurementResultConverter:
                     target=target,
                     mode=mode,
                     raw=np.asarray(capture.data),
-                    classifier=classifier_map.get(target),
+                    classifier=resolved_classifiers.get(target),
                     sampling_period=(
                         sampling_period
                         if sampling_period is not None
@@ -193,6 +196,9 @@ class MeasurementResultConverter:
         """
         MeasurementResultConverter._reject_classified_state_payload(result)
         classifier_map = {} if classifiers is None else classifiers
+        resolved_classifiers: dict[str, StateClassifier | None] = {
+            target: classifier_map.get(target) for target in result.data
+        }
         single_data: dict[str, MeasureData] = {}
         resolved_mode: MeasureMode | None = None
         for target, captures in result.data.items():
@@ -215,7 +221,7 @@ class MeasurementResultConverter:
                 target=target,
                 mode=selected_mode,
                 raw=np.asarray(selected_capture.data),
-                classifier=classifier_map.get(target),
+                classifier=resolved_classifiers.get(target),
                 sampling_period=(
                     sampling_period
                     if sampling_period is not None

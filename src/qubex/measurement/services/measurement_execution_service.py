@@ -24,18 +24,13 @@ from qubex.backend.quel1 import (
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 from qubex.measurement.classifiers.state_classifier import StateClassifier
-from qubex.measurement.legacy_request_validation import (
-    reject_legacy_state_classification_request,
-)
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
-from qubex.measurement.measurement_result_converter import (
-    MeasurementResultConverter,
-)
+from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_schedule_builder import (
     CapturePlacement,
     MeasurementScheduleBuilder,
@@ -883,8 +878,8 @@ class MeasurementExecutionService:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Unsupported by this legacy result API. Use
-            ``await run_measurement(..., state_classification=True)`` instead.
+            Unsupported by this legacy result API. Use `run_measurement()`
+            with a `MeasurementConfig` enabling `state_classification` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -917,12 +912,6 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
-        reject_legacy_state_classification_request(
-            state_classification=state_classification,
-            enable_dsp_classification=deprecated_options.get(
-                "enable_dsp_classification"
-            ),
-        )
         if (
             time_integration is None
             and deprecated_options.get("enable_dsp_sum") is None
@@ -995,8 +984,8 @@ class MeasurementExecutionService:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Unsupported by this legacy result API. Use
-            ``await run_measurement(..., state_classification=True)`` instead.
+            Unsupported by this legacy result API. Use `run_measurement()`
+            with a `MeasurementConfig` enabling `state_classification` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -1033,12 +1022,6 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
-        reject_legacy_state_classification_request(
-            state_classification=state_classification,
-            enable_dsp_classification=deprecated_options.get(
-                "enable_dsp_classification"
-            ),
-        )
         legacy_options: dict[str, Any] = dict(deprecated_options)
         legacy_keys = {
             "mode",
@@ -1070,6 +1053,9 @@ class MeasurementExecutionService:
                 )
             if shot_averaging is None:
                 shot_averaging = legacy_shot_averaging
+        if shot_averaging is None:
+            shot_averaging = True
+
         n_shots = self._resolve_deprecated_alias(
             new_value=n_shots,
             old_value=legacy_options.pop("shots", None),
@@ -1140,11 +1126,15 @@ class MeasurementExecutionService:
         )
         if state_classification is None:
             state_classification = False
+        if state_classification:
+            raise ValueError(
+                "Legacy `measure()` and `execute()` results cannot represent "
+                "preclassified state data. Use "
+                "`Measurement.run_measurement(schedule, config=...)` with "
+                "`MeasurementConfig(..., state_classification=True)` instead."
+            )
         if plot is None:
             plot = False
-
-        if shot_averaging is None:
-            shot_averaging = True
 
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)

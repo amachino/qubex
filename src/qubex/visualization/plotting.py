@@ -185,9 +185,9 @@ def make_linear_classification_figure(
     line_min, line_max = -1.1 * max_val, 1.1 * max_val
 
     for index, (a, b, c) in enumerate(lines):
-        if np.isclose(b, 0.0):
-            x = [-c / a, -c / a]
+        if abs(a) >= abs(b):
             y = [line_min, line_max]
+            x = [(-b * value - c) / a for value in y]
         else:
             x = [line_min, line_max]
             y = [(-a * value - c) / b for value in x]

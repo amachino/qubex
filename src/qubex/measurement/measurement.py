@@ -859,8 +859,8 @@ class Measurement:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Unsupported by this legacy result API. Use
-            ``await run_measurement(..., state_classification=True)`` instead.
+            Unsupported by this legacy result API. Use `run_measurement()`
+            with a `MeasurementConfig` enabling `state_classification` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float] | None, optional
@@ -961,8 +961,8 @@ class Measurement:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Unsupported by this legacy result API. Use
-            ``await run_measurement(..., state_classification=True)`` instead.
+            Unsupported by this legacy result API. Use `run_measurement()`
+            with a `MeasurementConfig` enabling `state_classification` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float] | None, optional
