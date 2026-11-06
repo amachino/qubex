@@ -30,6 +30,20 @@ class MeasurementResultConverter:
     """Convert `MeasurementResult` to and from legacy result classes."""
 
     @staticmethod
+    def _reject_classified_state_payload(result: MeasurementResult) -> None:
+        """Reject state payloads that legacy IQ-only results cannot represent."""
+        if any(
+            capture.state_series is not None
+            for captures in result.data.values()
+            for capture in captures
+        ):
+            raise ValueError(
+                "Legacy MeasureResult types cannot represent preclassified state "
+                "data. Use the MeasurementResult returned by `run_measurement()` "
+                "instead."
+            )
+
+    @staticmethod
     def _resolve_measure_mode(config: MeasurementConfig) -> MeasureMode:
         """Resolve legacy measure mode from canonical measurement config."""
         return MeasureMode.AVG if config.shot_averaging else MeasureMode.SINGLE
@@ -102,6 +116,7 @@ class MeasurementResultConverter:
         MultipleMeasureResult
             Legacy multi-capture result.
         """
+        MeasurementResultConverter._reject_classified_state_payload(result)
         mode = MeasurementResultConverter._resolve_measure_mode(
             result.measurement_config
         )
@@ -179,6 +194,7 @@ class MeasurementResultConverter:
         IndexError
             If `index` is out of range for any target.
         """
+        MeasurementResultConverter._reject_classified_state_payload(result)
         classifier_map = {} if classifiers is None else classifiers
         resolved_classifiers: dict[str, StateClassifier | None] = {
             target: classifier_map.get(target) for target in result.data

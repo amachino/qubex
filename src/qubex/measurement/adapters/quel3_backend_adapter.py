@@ -87,6 +87,10 @@ class Quel3MeasurementBackendAdapter:
     ) -> BackendExecutionRequest:
         """Build backend execution request as Quel3 fixed-timeline payload."""
         _ = quel1_options
+        if config.state_classification:
+            raise NotImplementedError(
+                "The QuEL-3 backend does not support state classification."
+            )
         pulse_schedule = schedule.pulse_schedule
         channel_captures = schedule.capture_schedule.channels
         waveform_library: dict[str, Quel3Waveform] = {}
