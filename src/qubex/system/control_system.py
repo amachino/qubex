@@ -733,7 +733,7 @@ class Box(MutableModel):
         """Return ports used for pumping."""
         return [port for port in self.ports if port.is_pump_port]
 
-    def get_port(self, port_number: int) -> GenPort | CapPort:
+    def get_port(self, port_number: int | tuple[int, int]) -> GenPort | CapPort:
         """Return a port by number."""
         try:
             return next(port for port in self.ports if port.number == port_number)
@@ -994,7 +994,9 @@ class ControlSystem:
         except KeyError:
             raise KeyError(f"Box `{box_id}` not found.") from None
 
-    def get_port(self, box_id: str, port_number: int) -> GenPort | CapPort:
+    def get_port(
+        self, box_id: str, port_number: int | tuple[int, int]
+    ) -> GenPort | CapPort:
         """Return a port by box ID and port number."""
         box = self.get_box(box_id)
         try:
