@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection, Mapping, Sequence
+from contextlib import AbstractContextManager
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from numpy.typing import ArrayLike
 
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
+from qubex.backend.frequency_sweep import SweepSegment
 
 from .managers import (
     Quel1ClockManager,
@@ -28,11 +32,13 @@ from .managers import (
     Quel1ExecutionManager,
     Quel1SkewManager,
 )
+from .managers.frequency_configuration_manager import Quel1FrequencyConfigurationManager
 from .quel1_backend_constants import (
     CAPTURE_DECIMATION_FACTOR,
     ExecutionMode,
 )
 from .quel1_runtime_context import Quel1RuntimeContext
+from .sweep_configuration import Quel1SweepConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -591,6 +597,18 @@ class Quel1BackendController(BackendController):
             target=target,
             frequency_ghz=frequency_ghz,
         )
+
+    def plan_frequency_sweep(
+        self, frequencies: ArrayLike, **options
+    ) -> tuple[SweepSegment[float, Quel1SweepConfiguration], ...]:
+        """Plan native settings for a carrier sweep without hardware writes."""
+        return Quel1FrequencyConfigurationManager(self).plan(frequencies, **options)
+
+    def modified_sweep_configuration(
+        self, configuration: Quel1SweepConfiguration
+    ) -> AbstractContextManager[None]:
+        """Apply native sweep settings and restore the entry state."""
+        return Quel1FrequencyConfigurationManager(self).modified(configuration)
 
     def modify_target_frequencies(
         self, target_frequencies_ghz: dict[str, float]

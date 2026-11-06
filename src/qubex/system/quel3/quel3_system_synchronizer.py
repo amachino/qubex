@@ -6,8 +6,13 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+from numpy.typing import ArrayLike
+
+from qubex.backend.frequency_sweep import SweepConfiguration, SweepSegment
 from qubex.backend.quel3.capture_delay import normalize_capture_delay_ns
+from qubex.backend.quel3.sweep_configuration import Quel3SweepConfiguration
 from qubex.system.control_system import GenPort
+from qubex.system.experiment_system import ExperimentSystem
 from qubex.system.target_type import TargetType
 
 from .quel3_target_deploy_planner import Quel3TargetDeployPlanner
@@ -277,6 +282,36 @@ class Quel3SystemSynchronizer:
     def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
         """Ignore cache replacement because QuEL-3 cache mutation is unsupported."""
         del box_configs
+
+    def frequency_sweep_reference(
+        self, experiment_system: ExperimentSystem, target: str
+    ) -> float:
+        """Return the logical carrier in GHz."""
+        return experiment_system.get_target(target).frequency
+
+    def plan_frequency_sweep(
+        self,
+        experiment_system: ExperimentSystem,
+        target: str,
+        frequencies: ArrayLike,
+        **options,
+    ) -> tuple[SweepSegment[float, Quel3SweepConfiguration], ...]:
+        """Delegate instrument range planning to the backend."""
+        return self.backend_controller.plan_frequency_sweep(
+            frequencies, target=target, **options
+        )
+
+    @contextmanager
+    def modified_sweep_configuration(
+        self,
+        experiment_system: ExperimentSystem,
+        configuration: SweepConfiguration,
+    ) -> Iterator[None]:
+        """Apply instrument definitions while leaving logical carriers unchanged."""
+        if not isinstance(configuration, Quel3SweepConfiguration):
+            raise TypeError("Configuration belongs to a different backend.")
+        with self.backend_controller.modified_sweep_configuration(configuration):
+            yield
 
 
 def create_system_synchronizer(

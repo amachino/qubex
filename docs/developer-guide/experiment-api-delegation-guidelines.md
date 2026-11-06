@@ -85,3 +85,48 @@ This structure should remain the default unless an explicit migration design say
 
 - [Measurement backend responsibility policy](../developer-notes/measurement-backend-responsibility-policy.md)
 - [v1.5.0 contract test scope](../developer-notes/v1-5-0-contract-test-scope.md)
+
+## Sweep plans and temporary settings
+
+Backend planners decide which sweep values can execute under one configuration.
+The shared `SweepSegment` holds original indices, values, native configuration,
+an optional reference value and whether reconfiguration is required. A plan is
+a tuple of segments. Other sweep parameters can reuse this representation;
+backend-specific settings retain their native format.
+
+`SystemManager` delegates target resolution and model synchronization to its
+existing backend-specific `SystemSynchronizer`. Backend code owns frequency
+limits, oscillator quantization, configuration application and restoration.
+Experiment owns acquisition order, pulses, amplitudes and analysis. Measurement
+executes schedules; it does not monitor configuration scopes.
+
+```python
+segments = system.plan_frequency_sweep(readout_target, frequencies)
+for segment in segments:
+    with system.modified_sweep_configuration(segment.configuration):
+        for frequency in segment.values:
+            schedule = make_schedule(frequency)
+            schedule.set_frequency(readout_target, frequency)
+            # Execute this schedule, or sweep its amplitudes with schedule APIs.
+```
+
+Frequencies are in GHz. Backend constraints determine segmentation;
+`subrange_width` adds a maximum span for measurement points. Input order and
+duplicate points are retained. With `overlap=True`, subsequent segments carry
+the preceding segment's last value as `reference_value`. Planning verifies that
+this reference also fits; the caller decides how to acquire it.
+
+During a scope, the planned values and references are realizable under the
+applied settings. Schedule carrier overrides leave QuEL-1 LO/CNCO/FNCO settings
+and QuEL-3 instrument definitions unchanged. Explicit settings changes and
+resets remain the caller's responsibility. Existing `modified_frequencies`,
+`modified_backend_settings`, reset and `sweep_parameter` behavior is unchanged;
+passing frequencies to the legacy Experiment overrides still changes settings.
+Use schedule frequency metadata for fixed-configuration sweeps.
+
+Normal exit, acquisition errors and partial application failures restore touched
+entry settings and corresponding model/cache state. Restoration errors propagate;
+failed QuEL-1 restoration invalidates the affected box cache. Scopes do not
+restore waveform memory or results and do not guarantee phase continuity or
+arbitrary waveform spectral fidelity. Resonator spectroscopy retains its existing power-first orchestration and
+`[power, frequency]` results. Replan after changing wiring or other planning assumptions.
