@@ -11,11 +11,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 import warnings
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from itertools import pairwise
+from itertools import combinations, pairwise
 from numbers import Real
 from typing import Any, Literal, cast
 
@@ -42,17 +43,20 @@ from qubex.typing import TargetMap
 
 _Protocol = Literal["reference", "interleaved"]
 _ErrorBar = Literal["sem", "std"] | None
+_FixedRangeStopReason = Literal["explicit_range", "auto_range_disabled"]
 _InterleavedOverride = (
     Waveform | PulseSchedule | TargetMap[Waveform | PulseSchedule] | None
 )
 _X90Override = Waveform | TargetMap[Waveform] | None
 _ZX90Override = PulseSchedule | TargetMap[PulseSchedule] | None
 _ResolvedInterleavedWaveform = Waveform | PulseSchedule | None
+_InterleavedWaveforms = Mapping[str, _InterleavedOverride]
+_ResolvedInterleavedWaveforms = Mapping[str, _ResolvedInterleavedWaveform]
 
 _DEFAULT_BOOTSTRAP_SAMPLES = 2_000
 _DEFAULT_BOOTSTRAP_SEED = 0
 _DEFAULT_ACQUISITION_SEED: int | None = None
-_DEFAULT_PAIRS_PER_SWEEP: int | None = None
+_DEFAULT_BLOCKS_PER_SWEEP: int | None = None
 _DEFAULT_FIXED_N_CLIFFORDS_2Q = (0, 1, 2, 4, 8, 16, 32, 64, 128)
 _DEFAULT_FIXED_N_CLIFFORDS_1Q = (0, 16, 32, 64, 128, 256, 512, 1024, 2048)
 _DEFAULT_SWEEP_TIMEOUT_SECONDS = 1800.0
@@ -72,6 +76,7 @@ _MIN_BOOTSTRAP_SAMPLES_PER_STRATUM = 2
 _MAX_BOOTSTRAP_ANY_BOUND_FRACTION = 0.10
 _MAX_BOOTSTRAP_P_BOUND_FRACTION = 0.05
 _RAW_SCHEMA_VERSION = 1
+_MULTI_RAW_SCHEMA_VERSION = 2
 _EMPIRICAL_SEM_FLOOR_FRACTION = 0.25
 _ALL_ZERO_SEM_FLOOR = 1e-3
 _PROTOCOL_REFERENCE: _Protocol = "reference"
@@ -433,6 +438,159 @@ class _RawIRBData:
 
 
 @dataclass(frozen=True)
+class _RawMultiIRBData:
+    """Store validated raw multi-arm data and its metadata."""
+
+    n_cliffords: NDArray[np.int64]
+    trials_by_arm: Mapping[str, NDArray[np.float64]]
+    order_keys: NDArray[np.object_]
+    dimension: int
+    acquisition: Mapping[str, object]
+    metadata: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class _MultiTrialStatistics:
+    """Store all arm statistics regularized with one common SEM floor."""
+
+    by_arm: Mapping[str, _TrialStatistics]
+    sem_floor: float
+    fit_covariance_scale_empirical: bool
+
+
+@dataclass(frozen=True)
+class _MultiBootstrapResult:
+    """Store one joint multi-arm bootstrap result."""
+
+    seed: int | None
+    n_requested: int
+    fidelities: Mapping[str, NDArray[np.float64]]
+    stratum_counts: tuple[tuple[dict[str, object], ...], ...]
+    resampling_valid: bool
+    any_bound_counts: Mapping[str, int]
+    p_bound_counts: Mapping[str, int]
+
+    @property
+    def n_success(self) -> int:
+        """Return successful joint replicate count."""
+        return min((len(samples) for samples in self.fidelities.values()), default=0)
+
+    @property
+    def execution_skipped(self) -> bool:
+        """Return whether invalid strata prevented bootstrap fitting."""
+        return self.n_requested > 0 and not self.resampling_valid
+
+    @property
+    def n_attempted(self) -> int:
+        """Return the number of joint replicates actually attempted."""
+        return 0 if self.execution_skipped else self.n_requested
+
+    @property
+    def n_failed(self) -> int:
+        """Return the number of attempted joint replicates that failed."""
+        return self.n_attempted - self.n_success
+
+    @property
+    def success_rate(self) -> float | None:
+        """Return successful fraction among attempted joint replicates."""
+        if self.n_attempted == 0:
+            return None
+        return self.n_success / self.n_attempted
+
+    @property
+    def optimizer_valid(self) -> bool:
+        """Return whether enough joint replicates converged."""
+        success_rate = self.success_rate
+        return (
+            self.n_success >= 2
+            and success_rate is not None
+            and success_rate >= _MIN_BOOTSTRAP_SUCCESS_RATE
+        )
+
+    @property
+    def valid(self) -> bool:
+        """Return whether joint resampling and optimization are reliable."""
+        return self.resampling_valid and self.optimizer_valid
+
+    def _bound_fraction(self, count: int) -> float | None:
+        """Return a bound-hit fraction among successful joint replicates."""
+        if self.n_success == 0:
+            return None
+        return count / self.n_success
+
+    @property
+    def parameter_bounds(self) -> dict[str, dict[str, object]]:
+        """Return per-arm bootstrap parameter-bound diagnostics."""
+        diagnostics: dict[str, dict[str, object]] = {}
+        for arm in self.any_bound_counts:
+            any_fraction = self._bound_fraction(self.any_bound_counts[arm])
+            p_fraction = self._bound_fraction(self.p_bound_counts[arm])
+            quality_valid = (
+                None
+                if any_fraction is None or p_fraction is None
+                else (
+                    any_fraction <= _MAX_BOOTSTRAP_ANY_BOUND_FRACTION
+                    and p_fraction <= _MAX_BOOTSTRAP_P_BOUND_FRACTION
+                )
+            )
+            diagnostics[arm] = {
+                "any_bound_count": self.any_bound_counts[arm],
+                "any_bound_fraction": any_fraction,
+                "p_bound_count": self.p_bound_counts[arm],
+                "p_bound_fraction": p_fraction,
+                "quality_valid": quality_valid,
+            }
+        return diagnostics
+
+    @property
+    def parameter_bound_quality_valid(self) -> bool | None:
+        """Return whether every arm avoids excessive bootstrap bound hits."""
+        if self.n_requested == 0 or self.n_success == 0:
+            return None
+        return all(
+            diagnostic["quality_valid"] is True
+            for diagnostic in self.parameter_bounds.values()
+        )
+
+    @property
+    def invalid_reasons(self) -> tuple[str, ...]:
+        """Return why primary joint-bootstrap uncertainty is unavailable."""
+        if self.n_requested == 0:
+            return ("bootstrap_disabled",)
+        if not self.resampling_valid:
+            return ("insufficient_samples_per_stratum",)
+        if not self.optimizer_valid:
+            return ("insufficient_optimizer_success",)
+        return ()
+
+    def to_payload(self) -> dict[str, object]:
+        """Return the public joint-bootstrap payload."""
+        return {
+            "seed": self.seed,
+            "n_requested": self.n_requested,
+            "n_attempted": self.n_attempted,
+            "n_success": self.n_success,
+            "n_failed": self.n_failed,
+            "success_rate": self.success_rate,
+            "resampling_valid": self.resampling_valid,
+            "optimizer_valid": self.optimizer_valid,
+            "execution_skipped": self.execution_skipped,
+            "valid": self.valid,
+            "invalid_reasons": self.invalid_reasons,
+            "minimum_samples_per_stratum": _MIN_BOOTSTRAP_SAMPLES_PER_STRATUM,
+            "parameter_bound_quality_valid": self.parameter_bound_quality_valid,
+            "parameter_bound_quality_thresholds": {
+                "any_bound_fraction_max": _MAX_BOOTSTRAP_ANY_BOUND_FRACTION,
+                "p_bound_fraction_max": _MAX_BOOTSTRAP_P_BOUND_FRACTION,
+            },
+            "parameter_bounds": self.parameter_bounds,
+            "resampling_method": "block_order_stratified_joint",
+            "stratum_counts": self.stratum_counts,
+            "fidelities": dict(self.fidelities),
+        }
+
+
+@dataclass(frozen=True)
 class _AnalysisOptions:
     """Store validated options shared by analysis entry points."""
 
@@ -463,6 +621,17 @@ class _PairPlan:
 
 
 @dataclass(frozen=True)
+class _BlockPlan:
+    """Describe one randomized multi-arm acquisition block."""
+
+    length_index: int
+    trial_index: int
+    n_cliffords: int
+    seed: int
+    arm_order: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class _SingleAcquisitionContext:
     """Store validated settings reused across single-target acquisitions."""
 
@@ -470,7 +639,7 @@ class _SingleAcquisitionContext:
     interleaved_clifford: Clifford
     interleaved_clifford_name: str
     interleaved_waveform: _ResolvedInterleavedWaveform
-    pairs_per_sweep: int | None
+    blocks_per_sweep: int | None
     x90: _X90Override
     zx90: PulseSchedule | None
     mitigate_readout: bool
@@ -478,6 +647,14 @@ class _SingleAcquisitionContext:
     shot_interval: float
     time_integration: bool
     sweep_timeout: float
+
+
+@dataclass(frozen=True)
+class _MultiAcquisitionSetup:
+    """Store resolved contexts and named waveforms for multi-arm workflows."""
+
+    contexts: Mapping[str, _SingleAcquisitionContext]
+    candidates_by_target: Mapping[str, _ResolvedInterleavedWaveforms]
 
 
 @dataclass(frozen=True)
@@ -692,6 +869,56 @@ def _explicit_seeds_by_target(
 def _type_names(expected_types: tuple[type, ...]) -> str:
     """Return a readable union of runtime types for validation errors."""
     return " or ".join(expected_type.__name__ for expected_type in expected_types)
+
+
+def _validate_candidate_names(values: Sequence[object]) -> tuple[str, ...]:
+    """Validate ordered multi-arm candidate names."""
+    if not values:
+        raise ValueError("`interleaved_waveforms` must contain at least one candidate.")
+    resolved: list[str] = []
+    normalized_names: set[str] = set()
+    for raw_name in values:
+        if not isinstance(raw_name, str):
+            raise TypeError(
+                "Every interleaved-waveform candidate name must be a string."
+            )
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", raw_name) is None:
+            raise ValueError(
+                "Each interleaved-waveform candidate name must start with an ASCII "
+                "letter or digit and contain only ASCII letters, digits, `_`, or `-`."
+            )
+        normalized_name = raw_name.casefold()
+        if normalized_name == _PROTOCOL_REFERENCE:
+            raise ValueError("The candidate name `reference` is reserved.")
+        if normalized_name in normalized_names:
+            raise ValueError(
+                "Each interleaved-waveform candidate name must be unique ignoring case."
+            )
+        normalized_names.add(normalized_name)
+        resolved.append(raw_name)
+    return tuple(resolved)
+
+
+def _validate_interleaved_waveforms(
+    value: object,
+) -> dict[str, _InterleavedOverride]:
+    """Validate and copy the ordered candidate-to-waveform mapping."""
+    if not isinstance(value, Mapping):
+        raise TypeError("`interleaved_waveforms` must be a mapping.")
+    names = _validate_candidate_names(tuple(value))
+    return {name: value[name] for name in names}
+
+
+def _resolve_interleaved_waveform_candidates(
+    target: str,
+    target_spec: _TargetSpec,
+    values: _InterleavedWaveforms,
+) -> dict[str, _ResolvedInterleavedWaveform]:
+    """Resolve every candidate waveform for one target."""
+    return {
+        name: _resolve_interleaved_waveform_override(target, target_spec, waveform)
+        for name, waveform in values.items()
+    }
 
 
 def _require_target_mapping_entry(
@@ -1022,6 +1249,71 @@ def _build_pair_plan(
     return [unordered_plans[int(index)] for index in pair_order]
 
 
+def _balanced_block_orders(arms: Sequence[str]) -> tuple[tuple[str, ...], ...]:
+    """Return Williams orders balancing positions and first-order carryover."""
+    resolved = tuple(arms)
+    if len(resolved) < 2 or len(set(resolved)) != len(resolved):
+        raise ValueError("Block arms must contain at least two distinct names.")
+    n_arms = len(resolved)
+    first_indices = [0]
+    for offset in range(1, n_arms):
+        if offset % 2:
+            first_indices.append((offset + 1) // 2)
+        else:
+            first_indices.append(n_arms - offset // 2)
+    orders = tuple(
+        tuple(resolved[(index + shift) % n_arms] for index in first_indices)
+        for shift in range(n_arms)
+    )
+    if n_arms % 2:
+        orders += tuple(tuple(reversed(order)) for order in orders)
+    return orders
+
+
+def _minimum_multi_bootstrap_trials(n_candidates: int) -> int:
+    """Return trials needed to sample every Williams-order stratum twice."""
+    n_arms = n_candidates + 1
+    n_orders = n_arms if n_arms % 2 == 0 else 2 * n_arms
+    return _MIN_BOOTSTRAP_SAMPLES_PER_STRATUM * n_orders
+
+
+def _build_block_plan(
+    n_cliffords: NDArray[np.int64],
+    seeds: NDArray[np.int64],
+    *,
+    arms: Sequence[str],
+    acquisition_seed: int | None,
+) -> list[_BlockPlan]:
+    """Assign balanced Williams orders and randomize complete blocks globally."""
+    rng = np.random.default_rng(acquisition_seed)
+    design = _balanced_block_orders(arms)
+    n_arms = len(arms)
+    design_cycles = [design[:n_arms], design[n_arms:]] if n_arms % 2 else [design]
+    rng.shuffle(design_cycles)
+    unordered_plans: list[_BlockPlan] = []
+    for length_index, n_clifford in enumerate(n_cliffords):
+        assigned_orders: list[tuple[str, ...]] = []
+        while len(assigned_orders) < seeds.shape[1]:
+            for design_cycle in design_cycles:
+                cycle = list(design_cycle)
+                rng.shuffle(cycle)
+                assigned_orders.extend(cycle)
+                if len(assigned_orders) >= seeds.shape[1]:
+                    break
+        for trial_index, arm_order in enumerate(assigned_orders[: seeds.shape[1]]):
+            unordered_plans.append(
+                _BlockPlan(
+                    length_index=length_index,
+                    trial_index=trial_index,
+                    n_cliffords=int(n_clifford),
+                    seed=int(seeds[length_index, trial_index]),
+                    arm_order=arm_order,
+                )
+            )
+    block_order = rng.permutation(len(unordered_plans))
+    return [unordered_plans[int(index)] for index in block_order]
+
+
 def _resolve_interleaved_clifford(
     exp: Experiment,
     interleaved_clifford: str | Clifford,
@@ -1128,16 +1420,16 @@ def _resolve_fixed_n_cliffords(
     return _resolve_n_cliffords(n_cliffords_range, maximum=maximum)
 
 
-def _resolve_pairs_per_sweep(value: object) -> int | None:
-    """Return a positive pair chunk size, or None to submit every pair at once."""
+def _resolve_blocks_per_sweep(value: object) -> int | None:
+    """Return a positive block chunk size, or `None` to submit every block."""
     if value is None:
         return None
-    return _validate_positive_integer(value, name="pairs_per_sweep")
+    return _validate_positive_integer(value, name="blocks_per_sweep")
 
 
-def _pair_chunk_size(context: _SingleAcquisitionContext, n_pairs: int) -> int:
-    """Return the number of adjacent pairs submitted in one sweep call."""
-    return n_pairs if context.pairs_per_sweep is None else context.pairs_per_sweep
+def _block_chunk_size(context: _SingleAcquisitionContext, n_blocks: int) -> int:
+    """Return the number of complete blocks submitted in one sweep call."""
+    return n_blocks if context.blocks_per_sweep is None else context.blocks_per_sweep
 
 
 def _resolve_target_acquisition(
@@ -1146,7 +1438,7 @@ def _resolve_target_acquisition(
     *,
     interleaved_clifford: str | Clifford,
     interleaved_waveform: _InterleavedOverride,
-    pairs_per_sweep: object,
+    blocks_per_sweep: object,
     x90: _X90Override,
     zx90: _ZX90Override,
     mitigate_readout: object,
@@ -1165,7 +1457,7 @@ def _resolve_target_acquisition(
         interleaved_clifford,
     )
     _validate_clifford_arity(resolved_clifford, target_spec=resolved_target_spec)
-    context = _SingleAcquisitionContext(
+    return _SingleAcquisitionContext(
         target_spec=resolved_target_spec,
         interleaved_clifford=resolved_clifford,
         interleaved_clifford_name=clifford_name,
@@ -1174,7 +1466,7 @@ def _resolve_target_acquisition(
             resolved_target_spec,
             interleaved_waveform,
         ),
-        pairs_per_sweep=_resolve_pairs_per_sweep(pairs_per_sweep),
+        blocks_per_sweep=_resolve_blocks_per_sweep(blocks_per_sweep),
         x90=_resolve_x90_override(target, resolved_target_spec, x90),
         zx90=_resolve_zx90_override(target, resolved_target_spec, zx90),
         mitigate_readout=_validate_boolean(
@@ -1195,7 +1487,6 @@ def _resolve_target_acquisition(
             name="sweep_timeout",
         ),
     )
-    return context
 
 
 def _resolve_target_acquisitions(
@@ -1205,7 +1496,7 @@ def _resolve_target_acquisitions(
     *,
     interleaved_clifford: str | Clifford,
     interleaved_waveform: _InterleavedOverride,
-    pairs_per_sweep: object,
+    blocks_per_sweep: object,
     x90: _X90Override,
     zx90: _ZX90Override,
     mitigate_readout: object,
@@ -1221,7 +1512,7 @@ def _resolve_target_acquisitions(
             target,
             interleaved_clifford=interleaved_clifford,
             interleaved_waveform=interleaved_waveform,
-            pairs_per_sweep=pairs_per_sweep,
+            blocks_per_sweep=blocks_per_sweep,
             x90=x90,
             zx90=zx90,
             mitigate_readout=mitigate_readout,
@@ -1233,6 +1524,62 @@ def _resolve_target_acquisitions(
         )
         for target in targets
     }
+
+
+def _resolve_multi_acquisition_setup(
+    exp: Experiment,
+    targets: tuple[str, ...],
+    *,
+    interleaved_clifford: str | Clifford,
+    interleaved_waveforms: _InterleavedWaveforms,
+    blocks_per_sweep: int | None,
+    x90: _X90Override,
+    zx90: _ZX90Override,
+    mitigate_readout: bool,
+    n_shots: int | None,
+    shot_interval: float | None,
+    time_integration: bool,
+    sweep_timeout: float,
+    in_parallel: bool,
+) -> _MultiAcquisitionSetup:
+    """Resolve settings shared by serial and parallel multi-arm workflows."""
+    target_specs = {target: _resolve_target(exp, target) for target in targets}
+    if in_parallel:
+        _validate_parallel_target_specs(target_specs)
+    for waveform in interleaved_waveforms.values():
+        _validate_multi_target_schedule_overrides(
+            targets,
+            target_specs,
+            interleaved_waveform=waveform,
+            zx90=zx90,
+        )
+    contexts = _resolve_target_acquisitions(
+        exp,
+        targets,
+        target_specs,
+        interleaved_clifford=interleaved_clifford,
+        interleaved_waveform=None,
+        blocks_per_sweep=blocks_per_sweep,
+        x90=x90,
+        zx90=zx90,
+        mitigate_readout=mitigate_readout,
+        n_shots=DEFAULT_SHOTS if n_shots is None else n_shots,
+        shot_interval=DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        time_integration=time_integration,
+        sweep_timeout=sweep_timeout,
+    )
+    candidates_by_target = {
+        target: _resolve_interleaved_waveform_candidates(
+            target,
+            target_specs[target],
+            interleaved_waveforms,
+        )
+        for target in targets
+    }
+    return _MultiAcquisitionSetup(
+        contexts=contexts,
+        candidates_by_target=candidates_by_target,
+    )
 
 
 def _rb_schedule_for_protocol(
@@ -1301,7 +1648,9 @@ def _raw_target_payload(
         "acquisition_seed": acquisition_seed,
         "planned_order": planned_order,
         "pair_chunks": pair_chunks,
-        "pairs_per_sweep": context.pairs_per_sweep,
+        # Schema v1 retains its original key even though the public option was
+        # renamed before release. Schema v2 uses `blocks_per_sweep`.
+        "pairs_per_sweep": context.blocks_per_sweep,
         "n_sweep_calls": len(pair_chunks),
         "n_measurement_points": 2 * seeds.size,
         "timestamp_granularity": "sweep_chunk",
@@ -1425,7 +1774,7 @@ async def _measure_paired_irb_async(
     chunk_records: list[dict[str, object]] = []
     exp.ctx.reset_awg_and_capunits(qubits=set(context.target_spec.qubits))
 
-    chunk_size = _pair_chunk_size(context, len(pair_plan))
+    chunk_size = _block_chunk_size(context, len(pair_plan))
     for chunk_start in range(0, len(pair_plan), chunk_size):
         chunk = pair_plan[chunk_start : chunk_start + chunk_size]
         points = _pair_chunk_points(chunk)
@@ -1527,7 +1876,7 @@ def _run_single_target_acquisition(
     acquisition_seed: int | None,
 ) -> Result:
     """Run one resolved single-target acquisition through the async bridge."""
-    chunk_size = _pair_chunk_size(context, seeds.size)
+    chunk_size = _block_chunk_size(context, seeds.size)
     n_pair_chunks = math.ceil(seeds.size / chunk_size)
     bridge_timeout = context.sweep_timeout * n_pair_chunks + 30.0
     bridge = get_shared_async_bridge(key="experiment")
@@ -1542,6 +1891,228 @@ def _run_single_target_acquisition(
             acquisition_seed=acquisition_seed,
         ),
         timeout=bridge_timeout,
+    )
+
+
+def _raw_multi_target_payload(
+    *,
+    context: _SingleAcquisitionContext,
+    candidate_waveforms: _ResolvedInterleavedWaveforms,
+    n_cliffords: NDArray[np.int64],
+    seeds: NDArray[np.int64],
+    sequence_seed: int | None,
+    acquisition_seed: int | None,
+    block_plan: Sequence[_BlockPlan],
+    block_chunks: tuple[dict[str, object], ...],
+    trials_by_arm: Mapping[str, NDArray[np.float64]],
+    acquisition_extras: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Build the version-two raw result for one multi-arm target."""
+    planned_order = tuple(
+        {
+            "block_order_index": block_order_index,
+            "length_index": block.length_index,
+            "trial_index": block.trial_index,
+            "n_cliffords": block.n_cliffords,
+            "seed": block.seed,
+            "arm_order": block.arm_order,
+        }
+        for block_order_index, block in enumerate(block_plan)
+    )
+    acquisition: dict[str, object] = {
+        "n_cliffords": n_cliffords.copy(),
+        "n_trials": seeds.shape[1],
+        "n_shots": context.n_shots,
+        "shot_interval": context.shot_interval,
+        "time_integration": context.time_integration,
+        "seeds": seeds.copy(),
+        "sequence_seed": sequence_seed,
+        "acquisition_seed": acquisition_seed,
+        "planned_order": planned_order,
+        "block_chunks": block_chunks,
+        "blocks_per_sweep": context.blocks_per_sweep,
+        "n_sweep_calls": len(block_chunks),
+        "n_measurement_points": len(trials_by_arm) * seeds.size,
+        "timestamp_granularity": "sweep_chunk",
+        "batching_semantics": "complete_multi_arm_blocks",
+        "candidate_duration_padding": "none",
+    }
+    if acquisition_extras is not None:
+        acquisition.update(acquisition_extras)
+    return {
+        "reference": {"trials": trials_by_arm[_PROTOCOL_REFERENCE]},
+        "interleaved": {
+            name: {"trials": trials_by_arm[name]} for name in candidate_waveforms
+        },
+        "acquisition": acquisition,
+        "metadata": {
+            "schema_version": _MULTI_RAW_SCHEMA_VERSION,
+            "dimension": context.target_spec.dimension,
+            "is_two_qubit": context.target_spec.is_two_qubit,
+            "qubits": context.target_spec.qubits,
+            "interleaved_clifford": context.interleaved_clifford_name,
+            "candidates": tuple(candidate_waveforms),
+            "mitigate_readout": (
+                context.mitigate_readout if context.target_spec.is_two_qubit else False
+            ),
+        },
+    }
+
+
+def _rb_schedule_for_arm(
+    exp: Experiment,
+    target: str,
+    context: _SingleAcquisitionContext,
+    candidate_waveforms: _ResolvedInterleavedWaveforms,
+    *,
+    n_cliffords: int,
+    seed: int,
+    arm: str,
+) -> PulseSchedule:
+    """Build one reference or named interleaved schedule without padding."""
+    is_reference = arm == _PROTOCOL_REFERENCE
+    return exp.rb_sequence(
+        target,
+        n=n_cliffords,
+        x90=context.x90,
+        zx90=context.zx90,
+        interleaved_waveform=(None if is_reference else candidate_waveforms[arm]),
+        interleaved_clifford=(None if is_reference else context.interleaved_clifford),
+        seed=seed,
+    )
+
+
+async def _measure_multi_irb_async(
+    exp: Experiment,
+    target: str,
+    *,
+    context: _SingleAcquisitionContext,
+    candidate_waveforms: _ResolvedInterleavedWaveforms,
+    n_cliffords: NDArray[np.int64],
+    seeds: NDArray[np.int64],
+    sequence_seed: int | None,
+    acquisition_seed: int | None,
+) -> Result:
+    """Measure randomized complete multi-arm blocks for one target."""
+    arms = (_PROTOCOL_REFERENCE, *candidate_waveforms)
+    block_plan = _build_block_plan(
+        n_cliffords,
+        seeds,
+        arms=arms,
+        acquisition_seed=acquisition_seed,
+    )
+    trials_by_arm = {
+        arm: np.full(seeds.shape, np.nan, dtype=np.float64) for arm in arms
+    }
+    chunk_records: list[dict[str, object]] = []
+    exp.ctx.reset_awg_and_capunits(qubits=set(context.target_spec.qubits))
+    chunk_size = _block_chunk_size(context, len(block_plan))
+    for chunk_start in range(0, len(block_plan), chunk_size):
+        chunk = block_plan[chunk_start : chunk_start + chunk_size]
+        points = [(block, arm) for block in chunk for arm in block.arm_order]
+
+        def schedule(
+            point_index: int,
+            *,
+            _points: list[tuple[_BlockPlan, str]] = points,
+        ) -> PulseSchedule:
+            block, arm = _points[int(point_index)]
+            return _rb_schedule_for_arm(
+                exp,
+                target,
+                context,
+                candidate_waveforms,
+                n_cliffords=block.n_cliffords,
+                seed=block.seed,
+                arm=arm,
+            )
+
+        started_at = _iso_now()
+        sweep = await asyncio.wait_for(
+            exp.measurement_service.run_sweep_measurement(
+                schedule,
+                sweep_values=np.arange(len(points), dtype=np.int64),
+                n_shots=context.n_shots,
+                shot_interval=context.shot_interval,
+                shot_averaging=not context.target_spec.is_two_qubit,
+                time_integration=context.time_integration,
+                state_classification=False,
+                final_measurement=True,
+                plot=False,
+                enable_tqdm=False,
+            ),
+            timeout=context.sweep_timeout,
+        )
+        completed_at = _iso_now()
+        if len(sweep.results) != len(points):
+            raise RuntimeError(
+                "Multi-arm sweep result count does not match the requested "
+                f"points: expected {len(points)}, got {len(sweep.results)}."
+            )
+        for point_result, (block, arm) in zip(sweep.results, points, strict=True):
+            trials_by_arm[arm][block.length_index, block.trial_index] = (
+                _extract_survival_probability(
+                    exp,
+                    target,
+                    point_result,
+                    is_two_qubit=context.target_spec.is_two_qubit,
+                    qubits=context.target_spec.qubits,
+                    mitigate_readout=context.mitigate_readout,
+                )
+            )
+        chunk_records.append(
+            {
+                "block_order_indices": tuple(
+                    range(chunk_start, chunk_start + len(chunk))
+                ),
+                "n_points": len(points),
+                "started_at": started_at,
+                "completed_at": completed_at,
+            }
+        )
+    if any(not np.all(np.isfinite(trials)) for trials in trials_by_arm.values()):
+        raise RuntimeError("Multi-arm paired IRB produced non-finite trial data.")
+    payload = _raw_multi_target_payload(
+        context=context,
+        candidate_waveforms=candidate_waveforms,
+        n_cliffords=n_cliffords,
+        seeds=seeds,
+        sequence_seed=sequence_seed,
+        acquisition_seed=acquisition_seed,
+        block_plan=block_plan,
+        block_chunks=tuple(chunk_records),
+        trials_by_arm=trials_by_arm,
+    )
+    return Result(data={target: payload})
+
+
+def _run_multi_single_target_acquisition(
+    exp: Experiment,
+    target: str,
+    *,
+    context: _SingleAcquisitionContext,
+    candidate_waveforms: _ResolvedInterleavedWaveforms,
+    n_cliffords: NDArray[np.int64],
+    seeds: NDArray[np.int64],
+    sequence_seed: int | None,
+    acquisition_seed: int | None,
+) -> Result:
+    """Run one multi-arm acquisition through the shared async bridge."""
+    chunk_size = _block_chunk_size(context, seeds.size)
+    n_chunks = math.ceil(seeds.size / chunk_size)
+    bridge = get_shared_async_bridge(key="experiment")
+    return bridge.run(
+        lambda: _measure_multi_irb_async(
+            exp,
+            target,
+            context=context,
+            candidate_waveforms=candidate_waveforms,
+            n_cliffords=n_cliffords,
+            seeds=seeds,
+            sequence_seed=sequence_seed,
+            acquisition_seed=acquisition_seed,
+        ),
+        timeout=context.sweep_timeout * n_chunks + 30.0,
     )
 
 
@@ -1595,7 +2166,7 @@ async def _measure_paired_irb_parallel_async(
     }
     exp.ctx.reset_awg_and_capunits(qubits=reset_qubits)
 
-    chunk_size = _pair_chunk_size(first_context, len(pair_plan))
+    chunk_size = _block_chunk_size(first_context, len(pair_plan))
     for chunk_start in range(0, len(pair_plan), chunk_size):
         chunk = pair_plan[chunk_start : chunk_start + chunk_size]
         points = _pair_chunk_points(chunk)
@@ -1733,7 +2304,7 @@ def _run_parallel_acquisition(
     """Run one resolved parallel acquisition through the async bridge."""
     first_context = contexts[targets[0]]
     n_pairs = seeds_by_target[targets[0]].size
-    chunk_size = _pair_chunk_size(first_context, n_pairs)
+    chunk_size = _block_chunk_size(first_context, n_pairs)
     n_pair_chunks = math.ceil(n_pairs / chunk_size)
     bridge_timeout = first_context.sweep_timeout * n_pair_chunks + 30.0
     bridge = get_shared_async_bridge(key="experiment")
@@ -1751,18 +2322,197 @@ def _run_parallel_acquisition(
     )
 
 
+async def _measure_multi_irb_parallel_async(
+    exp: Experiment,
+    targets: tuple[str, ...],
+    *,
+    contexts: Mapping[str, _SingleAcquisitionContext],
+    candidates_by_target: Mapping[str, _ResolvedInterleavedWaveforms],
+    n_cliffords: NDArray[np.int64],
+    seeds_by_target: Mapping[str, NDArray[np.int64]],
+    sequence_seeds: Mapping[str, int | None],
+    acquisition_seed: int | None,
+) -> Result:
+    """Acquire shared multi-arm blocks for physically parallel targets."""
+    first_context = contexts[targets[0]]
+    candidate_names = tuple(candidates_by_target[targets[0]])
+    arms = (_PROTOCOL_REFERENCE, *candidate_names)
+    block_plan = _build_block_plan(
+        n_cliffords,
+        seeds_by_target[targets[0]],
+        arms=arms,
+        acquisition_seed=acquisition_seed,
+    )
+    trials_by_target = {
+        target: {
+            arm: np.full(seeds_by_target[target].shape, np.nan, dtype=np.float64)
+            for arm in arms
+        }
+        for target in targets
+    }
+    chunk_records: list[dict[str, object]] = []
+    reset_qubits = {
+        qubit for context in contexts.values() for qubit in context.target_spec.qubits
+    }
+    exp.ctx.reset_awg_and_capunits(qubits=reset_qubits)
+    chunk_size = _block_chunk_size(first_context, len(block_plan))
+    for chunk_start in range(0, len(block_plan), chunk_size):
+        chunk = block_plan[chunk_start : chunk_start + chunk_size]
+        points = [(block, arm) for block in chunk for arm in block.arm_order]
+
+        def schedule(
+            point_index: int,
+            *,
+            _points: list[tuple[_BlockPlan, str]] = points,
+        ) -> PulseSchedule:
+            block, arm = _points[int(point_index)]
+            target_schedules = [
+                _rb_schedule_for_arm(
+                    exp,
+                    target,
+                    contexts[target],
+                    candidates_by_target[target],
+                    n_cliffords=block.n_cliffords,
+                    seed=int(
+                        seeds_by_target[target][
+                            block.length_index,
+                            block.trial_index,
+                        ]
+                    ),
+                    arm=arm,
+                )
+                for target in targets
+            ]
+            maximum_duration = max(
+                target_schedule.duration for target_schedule in target_schedules
+            )
+            with PulseSchedule() as combined:
+                for target_schedule in target_schedules:
+                    combined.call(
+                        target_schedule.padded(
+                            total_duration=maximum_duration,
+                            pad_side="left",
+                            deepcopy=False,
+                        )
+                    )
+            return combined
+
+        started_at = _iso_now()
+        sweep = await asyncio.wait_for(
+            exp.measurement_service.run_sweep_measurement(
+                schedule,
+                sweep_values=np.arange(len(points), dtype=np.int64),
+                n_shots=first_context.n_shots,
+                shot_interval=first_context.shot_interval,
+                shot_averaging=not first_context.target_spec.is_two_qubit,
+                time_integration=first_context.time_integration,
+                state_classification=False,
+                final_measurement=True,
+                plot=False,
+                enable_tqdm=False,
+            ),
+            timeout=first_context.sweep_timeout,
+        )
+        completed_at = _iso_now()
+        if len(sweep.results) != len(points):
+            raise RuntimeError(
+                "Parallel multi-arm sweep result count does not match the "
+                f"requested points: expected {len(points)}, got {len(sweep.results)}."
+            )
+        for point_result, (block, arm) in zip(sweep.results, points, strict=True):
+            for target in targets:
+                context = contexts[target]
+                trials_by_target[target][arm][block.length_index, block.trial_index] = (
+                    _extract_survival_probability(
+                        exp,
+                        target,
+                        point_result,
+                        is_two_qubit=context.target_spec.is_two_qubit,
+                        qubits=context.target_spec.qubits,
+                        mitigate_readout=context.mitigate_readout,
+                    )
+                )
+        chunk_records.append(
+            {
+                "block_order_indices": tuple(
+                    range(chunk_start, chunk_start + len(chunk))
+                ),
+                "n_points": len(points),
+                "started_at": started_at,
+                "completed_at": completed_at,
+            }
+        )
+    result_data: dict[str, object] = {}
+    for target in targets:
+        target_trials = trials_by_target[target]
+        if any(not np.all(np.isfinite(trials)) for trials in target_trials.values()):
+            raise RuntimeError(
+                f"Parallel multi-arm paired IRB produced invalid data for `{target}`."
+            )
+        result_data[target] = _raw_multi_target_payload(
+            context=contexts[target],
+            candidate_waveforms=candidates_by_target[target],
+            n_cliffords=n_cliffords,
+            seeds=seeds_by_target[target],
+            sequence_seed=sequence_seeds[target],
+            acquisition_seed=acquisition_seed,
+            block_plan=block_plan,
+            block_chunks=tuple(dict(record) for record in chunk_records),
+            trials_by_arm=target_trials,
+            acquisition_extras={
+                "in_parallel": True,
+                "parallel_targets": targets,
+                "target_schedule_alignment": "left_padded_to_group_max_duration",
+            },
+        )
+    return Result(data=result_data)
+
+
+def _run_multi_parallel_acquisition(
+    exp: Experiment,
+    targets: tuple[str, ...],
+    *,
+    contexts: Mapping[str, _SingleAcquisitionContext],
+    candidates_by_target: Mapping[str, _ResolvedInterleavedWaveforms],
+    n_cliffords: NDArray[np.int64],
+    seeds_by_target: Mapping[str, NDArray[np.int64]],
+    sequence_seeds: Mapping[str, int | None],
+    acquisition_seed: int | None,
+) -> Result:
+    """Run one parallel multi-arm acquisition through the async bridge."""
+    first_context = contexts[targets[0]]
+    n_blocks = seeds_by_target[targets[0]].size
+    chunk_size = _block_chunk_size(first_context, n_blocks)
+    n_chunks = math.ceil(n_blocks / chunk_size)
+    bridge = get_shared_async_bridge(key="experiment")
+    return bridge.run(
+        lambda: _measure_multi_irb_parallel_async(
+            exp,
+            targets,
+            contexts=contexts,
+            candidates_by_target=candidates_by_target,
+            n_cliffords=n_cliffords,
+            seeds_by_target=seeds_by_target,
+            sequence_seeds=sequence_seeds,
+            acquisition_seed=acquisition_seed,
+        ),
+        timeout=first_context.sweep_timeout * n_chunks + 30.0,
+    )
+
+
 def measure_paired_irb(
     exp: Experiment,
     target: str,
     *,
     interleaved_clifford: str | Clifford,
     interleaved_waveform: Waveform | PulseSchedule | None = None,
+    interleaved_waveforms: Mapping[str, Waveform | PulseSchedule | None] | None = None,
     n_cliffords_range: ArrayLike | None = None,
     n_trials: int | None = None,
     seeds: ArrayLike | None = None,
     sequence_seed: int | None = None,
     acquisition_seed: int | None = _DEFAULT_ACQUISITION_SEED,
-    pairs_per_sweep: int | None = _DEFAULT_PAIRS_PER_SWEEP,
+    blocks_per_sweep: int | None = _DEFAULT_BLOCKS_PER_SWEEP,
     max_n_cliffords: int | None = None,
     x90: Waveform | TargetMap[Waveform] | None = None,
     zx90: PulseSchedule | None = None,
@@ -1773,7 +2523,7 @@ def measure_paired_irb(
     sweep_timeout: float = _DEFAULT_SWEEP_TIMEOUT_SECONDS,
 ) -> Result:
     """
-    Acquire raw reference/interleaved trials in randomized adjacent pairs.
+    Acquire raw reference/interleaved trials in randomized complete blocks.
 
     Parameters
     ----------
@@ -1788,6 +2538,12 @@ def measure_paired_irb(
         `Waveform` or a target-containing `PulseSchedule`; a 2Q target requires
         a `PulseSchedule`. Required when the existing RB sequence builder
         cannot infer it from `interleaved_clifford`.
+    interleaved_waveforms : Mapping[str, Waveform | PulseSchedule | None] | None, optional
+        Ordered named physical implementations measured against one shared
+        reference in each randomized block. Candidate names must start with an
+        ASCII letter or digit, contain only ASCII letters, digits, `_`, or `-`,
+        be unique ignoring case, and must not equal `reference`. Mutually
+        exclusive with `interleaved_waveform`.
     n_cliffords_range : ArrayLike | None, optional
         Fixed, strictly increasing Clifford lengths. At least four are required.
         Four or five points produce an analysis warning because the decay fit
@@ -1805,12 +2561,13 @@ def measure_paired_irb(
         Master seed used to generate the seed matrix. Mutually exclusive with
         `seeds`. Defaults to `None`, which generates a fresh matrix.
     acquisition_seed : int | None, optional
-        Seed for global pair order and balanced AB/BA order. Defaults to `None`,
-        which draws a fresh randomized order for each acquisition.
-    pairs_per_sweep : int | None, optional
-        Number of complete adjacent pairs submitted in each measurement call.
-        `None` submits all pairs in one measurement call and is the default.
-        Pass a positive integer to split the acquisition into smaller sweep calls.
+        Seed for global block order and balanced within-block arm order. The
+        singular mode uses balanced AB/BA order. Defaults to `None`, which
+        draws a fresh randomized order for each acquisition.
+    blocks_per_sweep : int | None, optional
+        Complete randomized blocks submitted in each measurement call. A block
+        contains reference and every requested interleaved arm for one seed;
+        the singular mode has two arms. `None` submits all blocks in one call.
     max_n_cliffords : int | None, optional
         Upper bound for power-of-two lengths in the default grid. Mutually
         exclusive with `n_cliffords_range`. Defaults to the target-specific
@@ -1830,14 +2587,16 @@ def measure_paired_irb(
     time_integration : bool, optional
         Integrate readout data over time. Defaults to `True`.
     sweep_timeout : float, optional
-        Timeout in seconds for each pair-preserving sweep chunk. Defaults to
+        Timeout in seconds for each block-preserving sweep chunk. Defaults to
         1800 seconds.
 
     Returns
     -------
     Result
         Raw paired trials, seed matrix, planned acquisition order, and chunk
-        timestamps. Call `analyze_paired_irb` to fit without remeasurement.
+        timestamps. Named candidates use schema version 2 with nested
+        `interleaved` data. Call `analyze_paired_irb` to fit without
+        remeasurement.
 
     Raises
     ------
@@ -1847,7 +2606,7 @@ def measure_paired_irb(
         Raised when the target, Clifford, length grid, seeds, or measurement
         options are invalid.
     TimeoutError
-        Raised when a pair-preserving sweep chunk exceeds `sweep_timeout`.
+        Raised when a block-preserving sweep chunk exceeds `sweep_timeout`.
     RuntimeError
         Raised when the measurement backend returns incomplete or invalid data.
 
@@ -1858,25 +2617,38 @@ def measure_paired_irb(
 
     The backend may batch or schedule-pack points according to its capabilities.
     Qubex therefore records honest chunk timestamps, not unavailable per-point
-    hardware timestamps. Increasing `pairs_per_sweep` reduces service-call
-    overhead while preserving adjacent reference/interleaved points inside
-    every pair.
+    hardware timestamps. Increasing `blocks_per_sweep` reduces service-call
+    overhead while preserving every complete randomized block.
 
-    The default `pairs_per_sweep=None` submits every randomized adjacent pair in
-    one measurement call. Pass a positive integer to limit the number of pairs
-    per call while preserving reference/interleaved adjacency inside each pair.
+    The default `blocks_per_sweep=None` submits every randomized block in one
+    measurement call. Pass a positive integer to limit the complete blocks per
+    call. Multi-arm mode uses Williams orders to balance positions and
+    first-order carryover, and does not pad candidate schedules to equalize
+    their durations.
 
-    The returned target payload contains `reference["trials"]` and
-    `interleaved["trials"]` matrices with shape `(n_lengths, n_trials)`, plus
-    `acquisition` and schema-versioned `metadata` mappings needed for later
-    analysis.
+    The singular payload contains `reference["trials"]` and
+    `interleaved["trials"]`. The multi-arm payload contains
+    `interleaved[candidate]["trials"]`. Every trial matrix has shape
+    `(n_lengths, n_trials)` and is accompanied by `acquisition` and
+    schema-versioned `metadata` mappings needed for later analysis.
     """
+    if interleaved_waveform is not None and interleaved_waveforms is not None:
+        raise ValueError(
+            "Specify only one of `interleaved_waveform` and `interleaved_waveforms`."
+        )
+    resolved_candidates = (
+        None
+        if interleaved_waveforms is None
+        else _validate_interleaved_waveforms(interleaved_waveforms)
+    )
     context = _resolve_target_acquisition(
         exp,
         target,
         interleaved_clifford=interleaved_clifford,
-        interleaved_waveform=interleaved_waveform,
-        pairs_per_sweep=pairs_per_sweep,
+        interleaved_waveform=(
+            None if resolved_candidates is not None else interleaved_waveform
+        ),
+        blocks_per_sweep=blocks_per_sweep,
         x90=x90,
         zx90=zx90,
         mitigate_readout=mitigate_readout,
@@ -1905,6 +2677,22 @@ def measure_paired_irb(
         acquisition_seed,
         name="acquisition_seed",
     )
+    if resolved_candidates is not None:
+        candidate_waveforms = _resolve_interleaved_waveform_candidates(
+            target,
+            context.target_spec,
+            resolved_candidates,
+        )
+        return _run_multi_single_target_acquisition(
+            exp,
+            target,
+            context=context,
+            candidate_waveforms=candidate_waveforms,
+            n_cliffords=n_cliffords,
+            seeds=seed_matrix,
+            sequence_seed=resolved_sequence_seed,
+            acquisition_seed=resolved_acquisition_seed,
+        )
     return _run_single_target_acquisition(
         exp,
         target,
@@ -2475,6 +3263,19 @@ def _validated_dimension(metadata: Mapping[str, object]) -> int:
     return dimension
 
 
+def _validated_schema_version(metadata: Mapping[str, object]) -> int:
+    """Return a nonboolean integer raw-result schema version."""
+    schema_version = metadata.get("schema_version")
+    if isinstance(schema_version, (bool, np.bool_)) or not isinstance(
+        schema_version,
+        (int, np.integer),
+    ):
+        raise TypeError(
+            "Raw paired IRB metadata must contain an integer schema_version."
+        )
+    return int(schema_version)
+
+
 def _validated_trial_matrices(
     reference: Mapping[str, object],
     interleaved: Mapping[str, object],
@@ -2573,12 +3374,8 @@ def _validated_raw_data(
     interleaved = _mapping(target_payload.get("interleaved"), name="interleaved")
     acquisition = _mapping(target_payload.get("acquisition"), name="acquisition")
     metadata = _mapping(target_payload.get("metadata"), name="metadata")
-    schema_version = metadata.get("schema_version")
-    if (
-        isinstance(schema_version, (bool, np.bool_))
-        or not isinstance(schema_version, (int, np.integer))
-        or int(schema_version) != _RAW_SCHEMA_VERSION
-    ):
+    schema_version = _validated_schema_version(metadata)
+    if schema_version != _RAW_SCHEMA_VERSION:
         raise ValueError(
             "Unsupported paired IRB schema_version "
             f"{schema_version!r}; expected {_RAW_SCHEMA_VERSION}."
@@ -2788,13 +3585,19 @@ def _make_figure(
     gate_fidelity_ci95: tuple[float, float] | None,
     error_bar: _ErrorBar,
     interleaved_clifford_name: str | None,
+    candidate_name: str | None = None,
 ) -> go.Figure:
     """Build a paired IRB figure in the established Qubex IRB style."""
     figure = viz.make_figure()
     dense_x = np.linspace(float(n_cliffords[0]), float(n_cliffords[-1]), 1_000)
     for name, color, statistics, fit in (
         ("Reference", viz.COLORS[0], reference_statistics, reference_fit),
-        ("Interleaved", viz.COLORS[1], interleaved_statistics, interleaved_fit),
+        (
+            "Interleaved" if candidate_name is None else candidate_name,
+            viz.COLORS[1],
+            interleaved_statistics,
+            interleaved_fit,
+        ),
     ):
         if error_bar == "sem":
             error_values = statistics.sem
@@ -2868,14 +3671,558 @@ def _make_figure(
         align="right",
     )
     gate_name = f" of {interleaved_clifford_name}" if interleaved_clifford_name else ""
+    candidate_suffix = "" if candidate_name is None else f" [{candidate_name}]"
     figure.update_layout(
-        title=f"Paired interleaved randomized benchmarking{gate_name} : {target}",
+        title=(
+            f"Paired interleaved randomized benchmarking{gate_name} : "
+            f"{target}{candidate_suffix}"
+        ),
         xaxis_title="Number of Cliffords",
         xaxis_type="linear",
         yaxis_title="Normalized signal",
         yaxis_type="linear",
     )
     return figure
+
+
+def _multi_trial_statistics(
+    trials_by_arm: Mapping[str, NDArray[np.float64]],
+    *,
+    sem_floor: float | None,
+) -> _MultiTrialStatistics:
+    """Calculate all arm statistics with one common SEM floor."""
+    moments = {arm: _trial_moments(trials) for arm, trials in trials_by_arm.items()}
+    combined_sem = np.concatenate([arm_moments.sem for arm_moments in moments.values()])
+    if sem_floor is None:
+        positive = combined_sem[combined_sem > 0.0]
+        resolved_floor = (
+            _ALL_ZERO_SEM_FLOOR
+            if len(positive) == 0
+            else float(_EMPIRICAL_SEM_FLOOR_FRACTION * np.median(positive))
+        )
+    else:
+        resolved_floor = sem_floor
+    empirical = bool(
+        np.any(combined_sem > 0.0)
+        and (sem_floor is None or np.any(combined_sem >= resolved_floor))
+    )
+    return _MultiTrialStatistics(
+        by_arm={
+            arm: _regularize_trial_moments(arm_moments, sem_floor=resolved_floor)
+            for arm, arm_moments in moments.items()
+        },
+        sem_floor=resolved_floor,
+        fit_covariance_scale_empirical=empirical,
+    )
+
+
+def _validated_multi_raw_data(
+    target_payload: Mapping[str, object],
+) -> _RawMultiIRBData:
+    """Validate schema-v2 multi-arm matrices and block-order strata."""
+    reference = _mapping(target_payload.get("reference"), name="reference")
+    interleaved = _mapping(target_payload.get("interleaved"), name="interleaved")
+    acquisition = _mapping(target_payload.get("acquisition"), name="acquisition")
+    metadata = _mapping(target_payload.get("metadata"), name="metadata")
+    if _validated_schema_version(metadata) != _MULTI_RAW_SCHEMA_VERSION:
+        raise ValueError("Unsupported multi-arm paired IRB schema version.")
+    candidates = _validate_candidate_names(tuple(interleaved))
+    raw_candidates = metadata.get("candidates")
+    if (
+        isinstance(raw_candidates, (str, bytes))
+        or not isinstance(raw_candidates, Sequence)
+        or not all(isinstance(candidate, str) for candidate in raw_candidates)
+        or tuple(raw_candidates) != candidates
+    ):
+        raise ValueError(
+            "`metadata.candidates` must exactly match the ordered interleaved "
+            "candidate names."
+        )
+    reference_trials = np.asarray(reference.get("trials"), dtype=np.float64)
+    if reference_trials.ndim != 2 or reference_trials.shape[1] < 2:
+        raise ValueError("Multi-arm reference trials must be a two-dimensional matrix.")
+    trials_by_arm = {_PROTOCOL_REFERENCE: reference_trials}
+    for candidate in candidates:
+        candidate_payload = _mapping(
+            interleaved[candidate],
+            name=f"interleaved[{candidate!r}]",
+        )
+        trials = np.asarray(candidate_payload.get("trials"), dtype=np.float64)
+        if trials.shape != reference_trials.shape:
+            raise ValueError("Every multi-arm trial matrix must have the same shape.")
+        trials_by_arm[candidate] = trials
+    if any(not np.all(np.isfinite(trials)) for trials in trials_by_arm.values()):
+        raise ValueError("Raw multi-arm paired trials must be finite.")
+    raw_n_cliffords = acquisition.get("n_cliffords")
+    if raw_n_cliffords is None:
+        raise ValueError("Acquisition metadata must contain `n_cliffords`.")
+    n_cliffords = _resolve_n_cliffords(
+        cast(ArrayLike, raw_n_cliffords),
+        maximum=DEFAULT_MAX_N_CLIFFORDS_1Q,
+    )
+    shape = cast(tuple[int, int], reference_trials.shape)
+    if len(n_cliffords) != shape[0]:
+        raise ValueError("The Clifford grid must match the trial-matrix rows.")
+    raw_n_trials = acquisition.get("n_trials")
+    if (
+        _validate_positive_integer(
+            raw_n_trials,
+            name="acquisition.n_trials",
+        )
+        != shape[1]
+    ):
+        raise ValueError("`acquisition.n_trials` must match the trial-matrix columns.")
+    raw_seeds = acquisition.get("seeds")
+    if raw_seeds is None:
+        raise ValueError("Acquisition metadata must contain `seeds`.")
+    _resolve_seed_matrix(cast(ArrayLike, raw_seeds), shape=shape, sequence_seed=None)
+    raw_plan = acquisition.get("planned_order")
+    if isinstance(raw_plan, (str, bytes)) or not isinstance(raw_plan, Sequence):
+        raise TypeError("Acquisition `planned_order` must be a sequence.")
+    if len(raw_plan) != int(np.prod(shape)):
+        raise ValueError("Acquisition plan must contain one block per trial cell.")
+    order_keys = np.full(shape, None, dtype=object)
+    expected_arms = set(trials_by_arm)
+    for block_index, raw_block in enumerate(raw_plan):
+        block = _mapping(raw_block, name=f"planned_order[{block_index}]")
+        length_index = _validate_nonnegative_integer(
+            block.get("length_index"),
+            name=f"planned_order[{block_index}].length_index",
+        )
+        trial_index = _validate_nonnegative_integer(
+            block.get("trial_index"),
+            name=f"planned_order[{block_index}].trial_index",
+        )
+        if length_index >= shape[0] or trial_index >= shape[1]:
+            raise ValueError("Acquisition plan contains an invalid trial cell.")
+        raw_order = block.get("arm_order")
+        if isinstance(raw_order, (str, bytes)) or not isinstance(raw_order, Sequence):
+            raise TypeError("Every acquisition block must contain an `arm_order`.")
+        arm_order = tuple(raw_order)
+        if not all(isinstance(arm, str) for arm in arm_order):
+            raise TypeError("Every block arm name must be a string.")
+        if len(arm_order) != len(expected_arms) or set(arm_order) != expected_arms:
+            raise ValueError(
+                "Every acquisition block must contain each arm exactly once."
+            )
+        if order_keys[length_index, trial_index] is not None:
+            raise ValueError("Acquisition plan contains a duplicate trial cell.")
+        order_keys[length_index, trial_index] = "\x1f".join(
+            cast(tuple[str, ...], arm_order)
+        )
+    if any(order_key is None for order_key in order_keys.flat):
+        raise ValueError("Acquisition plan is missing a trial cell.")
+    n_arms = len(expected_arms)
+    for order_row in order_keys:
+        decoded_orders = [
+            tuple(cast(str, order_key).split("\x1f")) for order_key in order_row
+        ]
+        for position in range(n_arms):
+            position_counts = [
+                sum(order[position] == arm for order in decoded_orders)
+                for arm in trials_by_arm
+            ]
+            if max(position_counts) - min(position_counts) > 1:
+                raise ValueError(
+                    "Acquisition block orders must balance every arm position "
+                    "within each Clifford length."
+                )
+    return _RawMultiIRBData(
+        n_cliffords=n_cliffords,
+        trials_by_arm=trials_by_arm,
+        order_keys=order_keys,
+        dimension=_validated_dimension(metadata),
+        acquisition=acquisition,
+        metadata=metadata,
+    )
+
+
+def _multi_stratified_resample_indices(
+    order_keys: NDArray[np.object_],
+    *,
+    rng: np.random.Generator,
+) -> NDArray[np.int64]:
+    """Resample complete trial blocks within block-order strata."""
+    indices = np.empty(order_keys.shape, dtype=np.int64)
+    for length_index, order_row in enumerate(order_keys):
+        for order_key in dict.fromkeys(order_row.tolist()):
+            stratum = np.flatnonzero(order_row == order_key)
+            indices[length_index, stratum] = rng.choice(
+                stratum,
+                size=len(stratum),
+                replace=True,
+            )
+    return indices
+
+
+def _block_order_count_payload(key: object, count: int) -> dict[str, object]:
+    """Build one readable bootstrap block-order count."""
+    return {
+        "arm_order": tuple(cast(str, key).split("\x1f")),
+        "count": count,
+    }
+
+
+def _joint_multi_bootstrap(
+    n_cliffords: NDArray[np.int64],
+    trials_by_arm: Mapping[str, NDArray[np.float64]],
+    order_keys: NDArray[np.object_],
+    *,
+    dimension: int,
+    options: _AnalysisOptions,
+) -> _MultiBootstrapResult:
+    """Bootstrap all arms jointly so fidelity differences retain covariance."""
+    encoded_stratum_counts = tuple(
+        {key: row.tolist().count(key) for key in dict.fromkeys(row.tolist())}
+        for row in order_keys
+    )
+    resampling_valid = all(
+        count >= _MIN_BOOTSTRAP_SAMPLES_PER_STRATUM
+        for counts in encoded_stratum_counts
+        for count in counts.values()
+    )
+    stratum_counts = tuple(
+        tuple(_block_order_count_payload(key, count) for key, count in counts.items())
+        for counts in encoded_stratum_counts
+    )
+    fidelity_samples = {
+        candidate: [] for candidate in trials_by_arm if candidate != _PROTOCOL_REFERENCE
+    }
+    any_bound_counts = dict.fromkeys(trials_by_arm, 0)
+    p_bound_counts = dict.fromkeys(trials_by_arm, 0)
+    if options.n_bootstrap > 0 and resampling_valid:
+        rng = np.random.default_rng(options.bootstrap_seed)
+        row_indices = np.arange(len(n_cliffords))[:, None]
+        for _ in range(options.n_bootstrap):
+            indices = _multi_stratified_resample_indices(order_keys, rng=rng)
+            sampled = {
+                arm: trials[row_indices, indices]
+                for arm, trials in trials_by_arm.items()
+            }
+            try:
+                statistics = _multi_trial_statistics(
+                    sampled,
+                    sem_floor=options.sem_floor,
+                )
+                fits = {
+                    arm: _fit_rb_decay(
+                        n_cliffords,
+                        arm_statistics.mean,
+                        arm_statistics.sem_used,
+                    )
+                    for arm, arm_statistics in statistics.by_arm.items()
+                }
+                replicate = {
+                    candidate: _gate_fidelity(
+                        fits[_PROTOCOL_REFERENCE].decay_parameter,
+                        fits[candidate].decay_parameter,
+                        dimension=dimension,
+                    )
+                    for candidate in fidelity_samples
+                }
+            except (
+                FloatingPointError,
+                RuntimeError,
+                ValueError,
+                np.linalg.LinAlgError,
+            ):
+                continue
+            if not all(np.isfinite(value) for value in replicate.values()):
+                continue
+            for arm, fit in fits.items():
+                if fit.parameters_at_bound:
+                    any_bound_counts[arm] += 1
+                if "p" in fit.parameters_at_bound:
+                    p_bound_counts[arm] += 1
+            for candidate, fidelity in replicate.items():
+                fidelity_samples[candidate].append(fidelity)
+    arrays = {
+        candidate: np.asarray(samples, dtype=np.float64)
+        for candidate, samples in fidelity_samples.items()
+    }
+    return _MultiBootstrapResult(
+        seed=options.bootstrap_seed,
+        n_requested=options.n_bootstrap,
+        fidelities=arrays,
+        stratum_counts=stratum_counts,
+        resampling_valid=resampling_valid,
+        any_bound_counts=any_bound_counts,
+        p_bound_counts=p_bound_counts,
+    )
+
+
+def _sample_summary(
+    samples: NDArray[np.float64],
+    *,
+    valid: bool,
+) -> tuple[float | None, tuple[float, float] | None, tuple[float, float] | None]:
+    """Return standard deviation and central bootstrap intervals."""
+    if not valid:
+        return None, None, None
+    return (
+        float(np.std(samples, ddof=1)),
+        cast(tuple[float, float], tuple(np.quantile(samples, (0.16, 0.84)))),
+        cast(tuple[float, float], tuple(np.quantile(samples, (0.025, 0.975)))),
+    )
+
+
+def _multi_analysis_warnings(
+    *,
+    n_trials: int,
+    n_clifford_points: int,
+    statistics: Mapping[str, _TrialStatistics],
+    fits: Mapping[str, _DecayFitResult],
+    fidelities: Mapping[str, float],
+    covariance_empirical: bool,
+    bootstrap: _MultiBootstrapResult,
+) -> tuple[str, ...]:
+    """Collect and emit multi-arm fit and bootstrap diagnostics."""
+    messages: list[str] = []
+    if n_trials < _MIN_RECOMMENDED_TRIALS:
+        messages.append(
+            f"n_trials={n_trials} is below the recommended minimum of "
+            f"{_MIN_RECOMMENDED_TRIALS}."
+        )
+    if n_clifford_points < _MIN_RECOMMENDED_CLIFFORD_POINTS:
+        messages.append(
+            f"Only {n_clifford_points} Clifford-length points were provided; "
+            f"at least {_MIN_RECOMMENDED_CLIFFORD_POINTS} are recommended for "
+            "the three-parameter decay fit."
+        )
+    floor_count = sum(item.sem_floor_count for item in statistics.values())
+    if floor_count:
+        messages.append(f"The SEM floor was applied at {floor_count} points.")
+    if not covariance_empirical:
+        messages.append(
+            "No empirical SEM values contribute to the effective fit weights; "
+            "the fit-covariance scale is non-empirical."
+        )
+    for arm, fit in fits.items():
+        if fit.parameters_at_bound:
+            messages.append(
+                f"The {arm} fit reached parameter bounds: "
+                f"{', '.join(fit.parameters_at_bound)}."
+            )
+        if not fit.covariance_valid:
+            messages.append(f"The {arm} fit covariance is unavailable.")
+    for candidate, fidelity in fidelities.items():
+        if not 0.0 <= fidelity <= 1.0:
+            messages.append(
+                f"The finite-sample gate-fidelity estimate for {candidate} lies "
+                "outside [0, 1] and was intentionally not clipped."
+            )
+    if bootstrap.n_requested > 0 and not bootstrap.resampling_valid:
+        messages.append(
+            "Primary joint-bootstrap uncertainty is unavailable because at least "
+            "two samples per block-order stratum are required at every Clifford "
+            "length. Bootstrap fitting was skipped."
+        )
+    elif bootstrap.n_requested > 0 and not bootstrap.optimizer_valid:
+        messages.append(
+            "Primary joint-bootstrap uncertainty is unavailable because fewer "
+            f"than {_MIN_BOOTSTRAP_SUCCESS_RATE:.0%} of replicates produced "
+            "valid fits."
+        )
+    for arm, diagnostic in bootstrap.parameter_bounds.items():
+        any_fraction = diagnostic["any_bound_fraction"]
+        p_fraction = diagnostic["p_bound_fraction"]
+        if diagnostic["quality_valid"] is False:
+            messages.append(
+                f"The {arm} joint-bootstrap fit has excessive parameter-bound "
+                f"hits (any={cast(float, any_fraction):.1%}, "
+                f"p={cast(float, p_fraction):.1%}); bootstrap fit quality is "
+                "unreliable."
+            )
+    for message in messages:
+        warnings.warn(message, RuntimeWarning, stacklevel=4)
+    return tuple(messages)
+
+
+def _analyze_multi_paired_irb(
+    raw_result: Result | Mapping[str, object],
+    *,
+    options: _AnalysisOptions,
+) -> Result:
+    """Analyze schema-v2 multi-arm paired IRB with a joint bootstrap."""
+    target, target_payload = _extract_raw_payload(raw_result)
+    raw_data = _validated_multi_raw_data(target_payload)
+    statistics = _multi_trial_statistics(
+        raw_data.trials_by_arm,
+        sem_floor=options.sem_floor,
+    )
+    fits = {
+        arm: _fit_rb_decay(
+            raw_data.n_cliffords,
+            arm_statistics.mean,
+            arm_statistics.sem_used,
+        )
+        for arm, arm_statistics in statistics.by_arm.items()
+    }
+    bootstrap = _joint_multi_bootstrap(
+        raw_data.n_cliffords,
+        raw_data.trials_by_arm,
+        raw_data.order_keys,
+        dimension=raw_data.dimension,
+        options=options,
+    )
+    fidelity_samples = bootstrap.fidelities
+    reference_fit = fits[_PROTOCOL_REFERENCE]
+    reference_payload = _curve_payload(
+        raw_data.trials_by_arm[_PROTOCOL_REFERENCE],
+        statistics.by_arm[_PROTOCOL_REFERENCE],
+        reference_fit,
+    )
+    point_fidelities = {
+        candidate: _gate_fidelity(
+            reference_fit.decay_parameter,
+            fits[candidate].decay_parameter,
+            dimension=raw_data.dimension,
+        )
+        for candidate in fidelity_samples
+    }
+    warning_messages = _multi_analysis_warnings(
+        n_trials=raw_data.trials_by_arm[_PROTOCOL_REFERENCE].shape[1],
+        n_clifford_points=len(raw_data.n_cliffords),
+        statistics=statistics.by_arm,
+        fits=fits,
+        fidelities=point_fidelities,
+        covariance_empirical=statistics.fit_covariance_scale_empirical,
+        bootstrap=bootstrap,
+    )
+    if bootstrap.valid:
+        uncertainty_method = "joint_block_stratified_bootstrap"
+    elif options.n_bootstrap > 0 and not bootstrap.resampling_valid:
+        uncertainty_method = "joint_bootstrap_resampling_invalid"
+    elif options.n_bootstrap > 0:
+        uncertainty_method = "joint_bootstrap_unreliable"
+    else:
+        uncertainty_method = "unavailable"
+    candidate_payloads: dict[str, object] = {}
+    figures: dict[str, go.Figure] = {}
+    for candidate in fidelity_samples:
+        candidate_fit = fits[candidate]
+        fidelity = point_fidelities[candidate]
+        fidelity_error, fidelity_ci68, fidelity_ci95 = _sample_summary(
+            fidelity_samples[candidate],
+            valid=bootstrap.valid,
+        )
+        candidate_payload = _curve_payload(
+            raw_data.trials_by_arm[candidate],
+            statistics.by_arm[candidate],
+            candidate_fit,
+        )
+        candidate_payload.update(
+            {
+                "gate_fidelity": fidelity,
+                "gate_error": 1.0 - fidelity,
+                "gate_fidelity_err": fidelity_error,
+                "gate_fidelity_ci68": fidelity_ci68,
+                "gate_fidelity_ci95": fidelity_ci95,
+                "uncertainty_method": uncertainty_method,
+                "bootstrap": {
+                    "fidelities": fidelity_samples[candidate],
+                    "valid": bootstrap.valid,
+                },
+            }
+        )
+        candidate_payloads[candidate] = candidate_payload
+        figure = _make_figure(
+            target,
+            raw_data.n_cliffords,
+            statistics.by_arm[_PROTOCOL_REFERENCE],
+            statistics.by_arm[candidate],
+            reference_fit,
+            candidate_fit,
+            gate_fidelity=fidelity,
+            gate_fidelity_error=fidelity_error,
+            gate_fidelity_ci95=fidelity_ci95,
+            error_bar=options.error_bar,
+            interleaved_clifford_name=cast(
+                str | None,
+                raw_data.metadata.get("interleaved_clifford"),
+            ),
+            candidate_name=candidate,
+        )
+        figure_key = f"{target}::{candidate}"
+        figures[figure_key] = figure
+        if options.save_image:
+            viz.save_figure(
+                figure,
+                name=f"paired_interleaved_randomized_benchmarking_{target}_{candidate}",
+            )
+        if options.plot:
+            figure.show()
+    comparisons: list[dict[str, object]] = []
+    for left, right in combinations(fidelity_samples, 2):
+        differences = fidelity_samples[left] - fidelity_samples[right]
+        difference_error, difference_ci68, difference_ci95 = _sample_summary(
+            differences,
+            valid=bootstrap.valid,
+        )
+        comparisons.append(
+            {
+                "left": left,
+                "right": right,
+                "gate_fidelity_difference": (
+                    point_fidelities[left] - point_fidelities[right]
+                ),
+                "gate_fidelity_difference_err": difference_error,
+                "gate_fidelity_difference_ci68": difference_ci68,
+                "gate_fidelity_difference_ci95": difference_ci95,
+                "uncertainty_method": uncertainty_method,
+            }
+        )
+    analyzed_payload = {
+        "reference": reference_payload,
+        "interleaved": candidate_payloads,
+        "comparisons": comparisons,
+        "acquisition": dict(raw_data.acquisition),
+        "metadata": dict(raw_data.metadata),
+        "bootstrap": bootstrap.to_payload(),
+        "diagnostics": {
+            "warnings": warning_messages,
+            "parameter_bound_quality_valid": not any(
+                fit.parameters_at_bound for fit in fits.values()
+            ),
+            "bootstrap_resampling_valid": bootstrap.resampling_valid,
+            "bootstrap_optimizer_valid": bootstrap.optimizer_valid,
+            "bootstrap_parameter_bound_quality_valid": (
+                bootstrap.parameter_bound_quality_valid
+            ),
+            "sem_floor": statistics.sem_floor,
+            "sem_floor_mode": "automatic" if options.sem_floor is None else "fixed",
+            "sem_floor_applied": {
+                arm: arm_statistics.sem_floor_count
+                for arm, arm_statistics in statistics.by_arm.items()
+            },
+            "parameters_at_bound": {
+                arm: fit.parameters_at_bound for arm, fit in fits.items()
+            },
+            "reduced_chi_square": {
+                arm: fit.reduced_chi_square for arm, fit in fits.items()
+            },
+            "r_squared": {arm: fit.r_squared for arm, fit in fits.items()},
+            "gate_fidelity_err_fit_covariance": {
+                candidate: (
+                    _fit_covariance_fidelity_error(
+                        reference_fit,
+                        fits[candidate],
+                        dimension=raw_data.dimension,
+                    )
+                    if statistics.fit_covariance_scale_empirical
+                    else None
+                )
+                for candidate in fidelity_samples
+            },
+            "fit_covariance_scale_empirical": (
+                statistics.fit_covariance_scale_empirical
+            ),
+            "uncertainty_scope": "joint block-stratified statistical bootstrap only",
+            "irb_model_uncertainty_included": False,
+            "readout_calibration_uncertainty_included": False,
+        },
+    }
+    return Result(data={target: analyzed_payload}, figures=figures)
 
 
 def _analyze_paired_irb(
@@ -3031,35 +4378,33 @@ def _analyze_paired_irb(
             "readout_calibration_uncertainty_included": False,
         },
     }
-    figure: go.Figure | None = None
-    if options.plot or options.save_image:
-        raw_interleaved_name = raw_data.metadata.get("interleaved_clifford")
-        figure = _make_figure(
-            target,
-            raw_data.n_cliffords,
-            reference_statistics,
-            interleaved_statistics,
-            reference_fit,
-            interleaved_fit,
-            gate_fidelity=gate_fidelity,
-            gate_fidelity_error=gate_fidelity_error,
-            gate_fidelity_ci95=gate_fidelity_ci95,
-            error_bar=options.error_bar,
-            interleaved_clifford_name=(
-                raw_interleaved_name if isinstance(raw_interleaved_name, str) else None
-            ),
+    raw_interleaved_name = raw_data.metadata.get("interleaved_clifford")
+    figure = _make_figure(
+        target,
+        raw_data.n_cliffords,
+        reference_statistics,
+        interleaved_statistics,
+        reference_fit,
+        interleaved_fit,
+        gate_fidelity=gate_fidelity,
+        gate_fidelity_error=gate_fidelity_error,
+        gate_fidelity_ci95=gate_fidelity_ci95,
+        error_bar=options.error_bar,
+        interleaved_clifford_name=(
+            raw_interleaved_name if isinstance(raw_interleaved_name, str) else None
+        ),
+    )
+    if options.save_image:
+        viz.save_figure(
+            figure,
+            name=f"paired_interleaved_randomized_benchmarking_{target}",
         )
-        if options.save_image:
-            viz.save_figure(
-                figure,
-                name=f"paired_interleaved_randomized_benchmarking_{target}",
-            )
-        if options.plot:
-            figure.show()
+    if options.plot:
+        figure.show()
     return Result(
         data={target: analyzed_payload},
         figure=figure,
-        figures={target: figure} if figure is not None else None,
+        figures={target: figure},
     )
 
 
@@ -3083,24 +4428,27 @@ def analyze_paired_irb(
     n_bootstrap : int, optional
         Number of paired bootstrap replicates. Defaults to 2000. Zero disables
         bootstrap uncertainty while retaining the weighted point estimate. At
-        least two samples in every AB/BA stratum, two successful replicates,
-        and an 80% success rate are required to report primary uncertainty.
+        least two samples in every acquisition-order stratum, two successful
+        replicates, and an 80% success rate are required to report primary
+        uncertainty.
     bootstrap_seed : int | None, optional
         Reproducible bootstrap RNG seed. Defaults to 0.
     sem_floor : float | None, optional
-        Common positive SEM floor for both weighted fits. With the default
-        `None`, it is 25% of the median positive SEM across both arms. If every
-        SEM is zero, a probability-scale fallback of 0.001 is used. Pass a
-        positive value to override this automatic floor. If that fixed value
+        Common positive SEM floor for all weighted fits. With the default
+        `None`, it is 25% of the median positive SEM across measured arms. If
+        every SEM is zero, a probability-scale fallback of 0.001 is used. Pass
+        a positive value to override this automatic floor. If that fixed value
         replaces every empirical SEM, covariance-derived fidelity uncertainty
         is unavailable.
     error_bar : {"sem", "std"} | None, optional
-        Error bars used in the optional figure. Use `None` to disable them.
+        Error bars used in the returned figure. Use `None` to disable them.
         Defaults to `"sem"`.
     plot : bool, optional
-        Display the analysis figure. Defaults to `False`.
+        Display the generated analysis figure. Figure generation and inclusion
+        in the result are unconditional. Defaults to `False`.
     save_image : bool, optional
-        Save the analysis figure through Qubex visualization. Defaults to
+        Save the generated analysis figure through Qubex visualization. Figure
+        generation and inclusion in the result are unconditional. Defaults to
         `False`.
 
     Returns
@@ -3120,21 +4468,23 @@ def analyze_paired_irb(
 
     Notes
     -----
-    Raw input must use paired IRB schema version 1, including one
-    `acquisition.planned_order` entry per trial cell. When
-    `metadata.is_two_qubit` is present, it must agree with `metadata.dimension`.
-    Setting `save_image=True` writes the generated figure through Qubex
-    visualization.
+    Raw input may use singular paired IRB schema version 1 or named multi-arm
+    schema version 2. Both require one `acquisition.planned_order` entry per
+    trial cell. Multi-arm analysis resamples complete blocks jointly within
+    block-order strata, reports every candidate fidelity and all pairwise
+    fidelity differences, and creates one reference/candidate figure per
+    candidate. When `metadata.is_two_qubit` is present, it must agree with
+    `metadata.dimension`. Setting `save_image=True` writes generated figures
+    through Qubex visualization.
 
-    Bootstrap resampling is independent at each length and stratified by the
-    actual reference-first/interleaved-first counts in `acquisition.planned_order`.
-    It uses the same sampled trial indices for the reference and interleaved
-    matrices. Each stratum must contain at least two samples; bootstrap fitting
-    is skipped entirely when that condition is not met. Data with two or three
-    total trials still produce a point estimate, but cannot produce primary
-    stratified-bootstrap uncertainty. Readout calibration and IRB model/systematic
-    uncertainty are treated as fixed and are not included in the reported
-    statistical interval.
+    Bootstrap resampling is independent at each length. Schema version 1 uses
+    reference-first/interleaved-first strata; schema version 2 uses complete
+    block-order strata. The same sampled trial indices are applied to every arm.
+    Each stratum must contain at least two samples; bootstrap fitting is skipped
+    entirely when that condition is not met. Small trial counts still produce a
+    point estimate but may not produce primary stratified-bootstrap uncertainty.
+    Readout calibration and IRB model/systematic uncertainty are treated as
+    fixed and are not included in the reported statistical interval.
 
     The returned target payload keeps the raw trials and adds `mean`, `std`,
     `sem`, and `fit` under each arm. Primary uncertainty fields are derived from
@@ -3148,11 +4498,12 @@ def analyze_paired_irb(
 
     `bootstrap["parameter_bound_quality_valid"]` uses a 5% decay-parameter
     bound-hit limit and a 10% any-parameter bound-hit limit among successful
-    replicates. It is independent of `bootstrap["optimizer_valid"]`; exceeding
-    a bound-hit limit emits a warning but does not suppress primary uncertainty.
-    Full-data `diagnostics["parameter_bound_quality_valid"]` is `False` when
-    either fit has any parameter at a bound, while the point fidelity remains
-    available.
+    replicates. Multi-arm results additionally report counts, fractions, and
+    quality for every arm under `bootstrap["parameter_bounds"]`. These flags
+    are independent of `bootstrap["optimizer_valid"]`; exceeding a bound-hit
+    limit emits a warning but does not suppress primary uncertainty. Full-data
+    `diagnostics["parameter_bound_quality_valid"]` is `False` when any fit has
+    a parameter at a bound, while the point fidelity remains available.
 
     With automatic SEM regularization, `diagnostics["sem_floor"]` is the
     full-data floor and `diagnostics["sem_floor_mode"]` is `"automatic"`.
@@ -3171,7 +4522,18 @@ def analyze_paired_irb(
         plot=plot,
         save_image=save_image,
     )
-    return _analyze_paired_irb(raw_result, options=options)
+    _, target_payload = _extract_raw_payload(raw_result)
+    metadata = _mapping(target_payload.get("metadata"), name="metadata")
+    schema_version = _validated_schema_version(metadata)
+    if schema_version == _MULTI_RAW_SCHEMA_VERSION:
+        return _analyze_multi_paired_irb(raw_result, options=options)
+    if schema_version == _RAW_SCHEMA_VERSION:
+        return _analyze_paired_irb(raw_result, options=options)
+    raise ValueError(
+        "Unsupported paired IRB schema_version "
+        f"{schema_version}; expected {_RAW_SCHEMA_VERSION} or "
+        f"{_MULTI_RAW_SCHEMA_VERSION}."
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -4037,7 +5399,7 @@ def _run_parallel_auto_range(
 def _fixed_range_metadata(
     n_cliffords: NDArray[np.int64],
     *,
-    stop_reason: Literal["explicit_range", "auto_range_disabled"],
+    stop_reason: _FixedRangeStopReason,
 ) -> dict[str, object]:
     """Return high-level range metadata when no pilot was required."""
     return {
@@ -4068,6 +5430,13 @@ def _fixed_range_metadata(
         "pilot_interleaved_fit": None,
         "pilot_raw_result": None,
     }
+
+
+def _fixed_range_stop_reason(
+    n_cliffords_range: ArrayLike | None,
+) -> _FixedRangeStopReason:
+    """Describe whether the fixed grid was explicit or defaulted."""
+    return "explicit_range" if n_cliffords_range is not None else "auto_range_disabled"
 
 
 def _validate_serial_explicit_seed_matrices(
@@ -4140,7 +5509,7 @@ def _analyze_workflow_target(
     *,
     grid_selection: Mapping[str, object],
     options: _AnalysisOptions,
-) -> tuple[dict[str, object], go.Figure | None]:
+) -> tuple[dict[str, object], go.Figure]:
     """Analyze one target and attach workflow-level grid metadata."""
     analyzed = _analyze_paired_irb(
         Result(data={target: raw_result.data[target]}),
@@ -4149,7 +5518,28 @@ def _analyze_workflow_target(
     payload = cast(dict[str, object], analyzed.data[target])
     payload["grid_selection"] = grid_selection
     _log_paired_irb_summary(target, payload)
-    return payload, analyzed.figure
+    return payload, cast(go.Figure, analyzed.figure)
+
+
+def _analyze_multi_workflow_target(
+    raw_result: Result,
+    target: str,
+    *,
+    selected_n_cliffords: NDArray[np.int64],
+    stop_reason: _FixedRangeStopReason,
+    options: _AnalysisOptions,
+) -> tuple[dict[str, object], Mapping[str, go.Figure]]:
+    """Analyze one multi-arm target and attach fixed-grid metadata."""
+    analyzed = _analyze_multi_paired_irb(
+        Result(data={target: raw_result.data[target]}),
+        options=options,
+    )
+    payload = cast(dict[str, object], analyzed.data[target])
+    payload["grid_selection"] = _fixed_range_metadata(
+        selected_n_cliffords,
+        stop_reason=stop_reason,
+    )
+    return payload, cast(Mapping[str, go.Figure], analyzed.figures)
 
 
 def _run_parallel_workflow(
@@ -4167,7 +5557,7 @@ def _run_parallel_workflow(
     seeds: ArrayLike | Mapping[str, ArrayLike] | None,
     sequence_seed: int | None,
     acquisition_seed: int | None,
-    pairs_per_sweep: int | None,
+    blocks_per_sweep: int | None,
     max_n_cliffords: int | None,
     x90: _X90Override,
     zx90: _ZX90Override,
@@ -4193,7 +5583,7 @@ def _run_parallel_workflow(
         target_specs,
         interleaved_clifford=interleaved_clifford,
         interleaved_waveform=interleaved_waveform,
-        pairs_per_sweep=pairs_per_sweep,
+        blocks_per_sweep=blocks_per_sweep,
         x90=x90,
         zx90=zx90,
         mitigate_readout=mitigate_readout,
@@ -4259,9 +5649,7 @@ def _run_parallel_workflow(
             acquisition_seed,
             name="acquisition_seed",
         )
-        stop_reason = (
-            "explicit_range" if n_cliffords_range is not None else "auto_range_disabled"
-        )
+        stop_reason = _fixed_range_stop_reason(n_cliffords_range)
         range_metadata = {
             target: _fixed_range_metadata(
                 selected_n_cliffords,
@@ -4298,10 +5686,9 @@ def _run_parallel_workflow(
             options=analysis_options,
         )
         data[target] = target_payload
-        if figure is not None:
-            figures[target] = figure
+        figures[target] = figure
     primary_figure = figures.get(targets[0]) if len(targets) == 1 else None
-    return Result(data=data, figure=primary_figure, figures=figures or None)
+    return Result(data=data, figure=primary_figure, figures=figures)
 
 
 def _run_serial_workflow(
@@ -4319,7 +5706,7 @@ def _run_serial_workflow(
     seeds: ArrayLike | Mapping[str, ArrayLike] | None,
     sequence_seed: int | None,
     acquisition_seed: int | None,
-    pairs_per_sweep: int | None,
+    blocks_per_sweep: int | None,
     max_n_cliffords: int | None,
     x90: _X90Override,
     zx90: _ZX90Override,
@@ -4344,7 +5731,7 @@ def _run_serial_workflow(
         target_specs,
         interleaved_clifford=interleaved_clifford,
         interleaved_waveform=interleaved_waveform,
-        pairs_per_sweep=pairs_per_sweep,
+        blocks_per_sweep=blocks_per_sweep,
         x90=x90,
         zx90=zx90,
         mitigate_readout=mitigate_readout,
@@ -4415,11 +5802,7 @@ def _run_serial_workflow(
             )
             range_metadata = _fixed_range_metadata(
                 selected_n_cliffords,
-                stop_reason=(
-                    "explicit_range"
-                    if n_cliffords_range is not None
-                    else "auto_range_disabled"
-                ),
+                stop_reason=_fixed_range_stop_reason(n_cliffords_range),
             )
 
         main_seeds = _resolve_seed_matrix(
@@ -4443,11 +5826,194 @@ def _run_serial_workflow(
             options=analysis_options,
         )
         data[target] = target_payload
-        if figure is not None:
-            figures[target] = figure
+        figures[target] = figure
 
     primary_figure = figures.get(targets[0]) if len(targets) == 1 else None
-    return Result(data=data, figure=primary_figure, figures=figures or None)
+    return Result(data=data, figure=primary_figure, figures=figures)
+
+
+def _run_multi_serial_workflow(
+    exp: Experiment,
+    targets: tuple[str, ...],
+    *,
+    interleaved_clifford: str | Clifford,
+    interleaved_waveforms: _InterleavedWaveforms,
+    n_cliffords_range: ArrayLike | None,
+    n_trials: int,
+    seeds: ArrayLike | Mapping[str, ArrayLike] | None,
+    sequence_seed: int | None,
+    acquisition_seed: int | None,
+    blocks_per_sweep: int | None,
+    max_n_cliffords: int | None,
+    x90: _X90Override,
+    zx90: _ZX90Override,
+    mitigate_readout: bool,
+    n_shots: int | None,
+    shot_interval: float | None,
+    time_integration: bool,
+    sweep_timeout: float,
+    analysis_options: _AnalysisOptions,
+) -> Result:
+    """Run fixed-grid multi-arm paired IRB independently by target."""
+    setup = _resolve_multi_acquisition_setup(
+        exp,
+        targets,
+        interleaved_clifford=interleaved_clifford,
+        interleaved_waveforms=interleaved_waveforms,
+        blocks_per_sweep=blocks_per_sweep,
+        x90=x90,
+        zx90=zx90,
+        mitigate_readout=mitigate_readout,
+        n_shots=DEFAULT_SHOTS if n_shots is None else n_shots,
+        shot_interval=DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        time_integration=time_integration,
+        sweep_timeout=sweep_timeout,
+        in_parallel=False,
+    )
+    seeds_by_target = _explicit_seeds_by_target(seeds, targets=targets)
+    sequence_streams = _split_optional_seed(
+        sequence_seed,
+        count=len(targets),
+        name="sequence_seed",
+    )
+    acquisition_streams = _split_optional_seed(
+        acquisition_seed,
+        count=len(targets),
+        name="acquisition_seed",
+    )
+    _validate_serial_explicit_seed_matrices(
+        targets,
+        contexts=setup.contexts,
+        seeds_by_target=seeds_by_target,
+        n_cliffords_range=n_cliffords_range,
+        n_trials=n_trials,
+        max_n_cliffords=max_n_cliffords,
+    )
+    data: dict[str, object] = {}
+    figures: dict[str, go.Figure] = {}
+    stop_reason = _fixed_range_stop_reason(n_cliffords_range)
+    for target_index, target in enumerate(targets):
+        context = setup.contexts[target]
+        selected_n_cliffords = _resolve_fixed_n_cliffords(
+            context.target_spec,
+            n_cliffords_range,
+            max_n_cliffords,
+        )
+        target_sequence_seed = sequence_streams[target_index]
+        target_acquisition_seed = acquisition_streams[target_index]
+        target_seeds = _resolve_seed_matrix(
+            seeds_by_target[target],
+            shape=(len(selected_n_cliffords), n_trials),
+            sequence_seed=target_sequence_seed,
+        )
+        raw_result = _run_multi_single_target_acquisition(
+            exp,
+            target,
+            context=context,
+            candidate_waveforms=setup.candidates_by_target[target],
+            n_cliffords=selected_n_cliffords,
+            seeds=target_seeds,
+            sequence_seed=target_sequence_seed,
+            acquisition_seed=target_acquisition_seed,
+        )
+        payload, target_figures = _analyze_multi_workflow_target(
+            raw_result,
+            target,
+            selected_n_cliffords=selected_n_cliffords,
+            stop_reason=stop_reason,
+            options=analysis_options,
+        )
+        data[target] = payload
+        figures.update(target_figures)
+    return Result(data=data, figures=figures)
+
+
+def _run_multi_parallel_workflow(
+    exp: Experiment,
+    targets: tuple[str, ...],
+    *,
+    interleaved_clifford: str | Clifford,
+    interleaved_waveforms: _InterleavedWaveforms,
+    n_cliffords_range: ArrayLike | None,
+    n_trials: int,
+    seeds: ArrayLike | Mapping[str, ArrayLike] | None,
+    sequence_seed: int | None,
+    acquisition_seed: int | None,
+    blocks_per_sweep: int | None,
+    max_n_cliffords: int | None,
+    x90: _X90Override,
+    zx90: _ZX90Override,
+    mitigate_readout: bool,
+    n_shots: int | None,
+    shot_interval: float | None,
+    time_integration: bool,
+    sweep_timeout: float,
+    analysis_options: _AnalysisOptions,
+) -> Result:
+    """Run fixed-grid multi-arm paired IRB for parallel targets."""
+    setup = _resolve_multi_acquisition_setup(
+        exp,
+        targets,
+        interleaved_clifford=interleaved_clifford,
+        interleaved_waveforms=interleaved_waveforms,
+        blocks_per_sweep=blocks_per_sweep,
+        x90=x90,
+        zx90=zx90,
+        mitigate_readout=mitigate_readout,
+        n_shots=DEFAULT_SHOTS if n_shots is None else n_shots,
+        shot_interval=DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        time_integration=time_integration,
+        sweep_timeout=sweep_timeout,
+        in_parallel=True,
+    )
+    selected_n_cliffords = _resolve_fixed_n_cliffords(
+        setup.contexts[targets[0]].target_spec,
+        n_cliffords_range,
+        max_n_cliffords,
+    )
+    sequence_values = _split_optional_seed(
+        sequence_seed,
+        count=len(targets),
+        name="sequence_seed",
+    )
+    sequence_seeds = dict(zip(targets, sequence_values, strict=True))
+    resolved_acquisition_seed = _validate_optional_rng_seed(
+        acquisition_seed,
+        name="acquisition_seed",
+    )
+    explicit_seeds = _explicit_seeds_by_target(seeds, targets=targets)
+    seeds_by_target = {
+        target: _resolve_seed_matrix(
+            explicit_seeds[target],
+            shape=(len(selected_n_cliffords), n_trials),
+            sequence_seed=sequence_seeds[target],
+        )
+        for target in targets
+    }
+    raw_result = _run_multi_parallel_acquisition(
+        exp,
+        targets,
+        contexts=setup.contexts,
+        candidates_by_target=setup.candidates_by_target,
+        n_cliffords=selected_n_cliffords,
+        seeds_by_target=seeds_by_target,
+        sequence_seeds=sequence_seeds,
+        acquisition_seed=resolved_acquisition_seed,
+    )
+    data: dict[str, object] = {}
+    figures: dict[str, go.Figure] = {}
+    stop_reason = _fixed_range_stop_reason(n_cliffords_range)
+    for target in targets:
+        payload, target_figures = _analyze_multi_workflow_target(
+            raw_result,
+            target,
+            selected_n_cliffords=selected_n_cliffords,
+            stop_reason=stop_reason,
+            options=analysis_options,
+        )
+        data[target] = payload
+        figures.update(target_figures)
+    return Result(data=data, figures=figures)
 
 
 def paired_interleaved_randomized_benchmarking(
@@ -4457,6 +6023,13 @@ def paired_interleaved_randomized_benchmarking(
     interleaved_clifford: str | Clifford,
     interleaved_waveform: (
         Waveform | PulseSchedule | TargetMap[Waveform | PulseSchedule] | None
+    ) = None,
+    interleaved_waveforms: (
+        Mapping[
+            str,
+            Waveform | PulseSchedule | TargetMap[Waveform | PulseSchedule] | None,
+        ]
+        | None
     ) = None,
     n_cliffords_range: ArrayLike | None = None,
     auto_range: bool = False,
@@ -4469,7 +6042,7 @@ def paired_interleaved_randomized_benchmarking(
     acquisition_seed: int | None = _DEFAULT_ACQUISITION_SEED,
     bootstrap_seed: int | None = _DEFAULT_BOOTSTRAP_SEED,
     n_bootstrap: int = _DEFAULT_BOOTSTRAP_SAMPLES,
-    pairs_per_sweep: int | None = _DEFAULT_PAIRS_PER_SWEEP,
+    blocks_per_sweep: int | None = _DEFAULT_BLOCKS_PER_SWEEP,
     max_n_cliffords: int | None = None,
     x90: Waveform | TargetMap[Waveform] | None = None,
     zx90: PulseSchedule | TargetMap[PulseSchedule] | None = None,
@@ -4509,8 +6082,15 @@ def paired_interleaved_randomized_benchmarking(
         `PulseSchedule` is rejected for multi-target calls because schedules are
         target-specific. Required when the RB sequence builder cannot infer the
         implementation from `interleaved_clifford`.
+    interleaved_waveforms : Mapping[str, Waveform | PulseSchedule | TargetMap | None] | None, optional
+        Ordered named implementations compared with one common reference.
+        Candidate names must start with an ASCII letter or digit, contain only
+        ASCII letters, digits, `_`, or `-`, be unique ignoring case, and must
+        not equal `reference`. Each candidate may contain a strict target map.
+        Mutually exclusive with `interleaved_waveform` and unsupported with
+        `auto_range=True`.
     n_cliffords_range : ArrayLike | None, optional
-        Explicit, strictly increasing Clifford-length grid shared by both arms.
+        Explicit, strictly increasing Clifford-length grid shared by every arm.
         At least four lengths are required. When supplied, it takes precedence
         over `auto_range` and is mutually exclusive with `max_n_cliffords`. With
         the default `auto_range=False` and no explicit maximum, use
@@ -4548,7 +6128,10 @@ def paired_interleaved_randomized_benchmarking(
     n_trials : int | None, optional
         Paired trials per main-measurement length. Must be at least 2 and
         defaults to 30. Two or three trials permit the point estimate but not
-        primary AB/BA-stratified bootstrap uncertainty.
+        primary AB/BA-stratified uncertainty in singular mode. Multi-arm
+        uncertainty additionally requires at least two trials in every
+        block-order stratum. When `n_bootstrap` is positive, an undersized
+        multi-arm design emits a warning before hardware acquisition.
     seeds : ArrayLike | Mapping[str, ArrayLike] | None, optional
         Explicit uint32 main seed matrix with shape `(n_lengths, n_trials)`. A
         multi-target call requires one matrix per target. Explicit matrices are
@@ -4559,19 +6142,19 @@ def paired_interleaved_randomized_benchmarking(
         splits it into independent pilot and main streams. Mutually exclusive
         with `seeds`. `None` generates fresh matrices.
     acquisition_seed : int | None, optional
-        Master seed for global pair order and balanced AB/BA order. Auto-range
-        splits it into independent pilot and main streams. `None` draws fresh
-        randomized orders.
+        Master seed for global block order and balanced within-block arm order.
+        Singular mode uses AB/BA order. Auto-range splits it into independent
+        pilot and main streams. `None` draws fresh randomized orders.
     bootstrap_seed : int | None, optional
         Paired-bootstrap RNG seed. Defaults to 0.
     n_bootstrap : int, optional
         Bootstrap replicate count. Defaults to 2000. At least two successful
-        replicates, an 80% success rate, and two samples in every AB/BA stratum
-        are required to report primary uncertainty.
-    pairs_per_sweep : int | None, optional
-        Complete adjacent pairs submitted per measurement call. `None` submits
-        all pairs in one measurement call and is the default. Pass a positive
-        integer to split the acquisition into smaller sweep calls.
+        replicates, an 80% success rate, and two samples in every acquisition-
+        order stratum are required to report primary uncertainty.
+    blocks_per_sweep : int | None, optional
+        Complete randomized blocks submitted per measurement call. A multi-arm
+        block contains one common reference and every named candidate for one
+        seed. `None` submits all blocks in one measurement call.
     max_n_cliffords : int | None, optional
         Exact final pilot candidate for auto-range, or an upper bound for the
         fixed power-of-two grid when auto-range is disabled. Mutually exclusive
@@ -4593,10 +6176,11 @@ def paired_interleaved_randomized_benchmarking(
         observed pilot asymptote away from its fixed approximation `C=0.25`.
     in_parallel : bool, optional
         Execute every target in each shared measurement point. Parallel groups
-        must contain only 1Q targets or only disjoint 2Q targets. Their AB/BA
-        order is shared and shorter schedules are left-padded. The shared grid
-        is the unthinned union of every target's proposed grid. Defaults to
-        `False` for serial target execution.
+        must contain only 1Q targets or only disjoint 2Q targets. Their block
+        order is shared and shorter target schedules are left-padded within a
+        measurement point. Candidate durations are not equalized across
+        points. The shared grid is the unthinned union of every target's
+        proposed grid. Defaults to `False` for serial target execution.
     n_shots : int | None, optional
         Shots per sweep point. Defaults to the experiment constant.
     shot_interval : float | None, optional
@@ -4606,27 +6190,33 @@ def paired_interleaved_randomized_benchmarking(
     sweep_timeout : float, optional
         Timeout in seconds for each sweep chunk. Defaults to 1800 seconds.
     sem_floor : float | None, optional
-        Common positive SEM floor for both weighted main fits. It does not
-        affect the unweighted pilot fit. With the default `None`, use 25% of the
-        paired median positive SEM, or 0.001 if every SEM is zero. Pass a
-        positive value to override the automatic floor. If it replaces every
-        empirical SEM, covariance-derived fidelity uncertainty is unavailable.
+        Common positive SEM floor for all weighted main fits. It does not
+        affect the unweighted pilot fit. With the default `None`, use 25% of
+        the median positive SEM across measured arms, or 0.001 if every SEM is
+        zero. Pass a positive value to override the automatic floor. If it
+        replaces every empirical SEM, covariance-derived fidelity uncertainty
+        is unavailable.
     error_bar : {"sem", "std"} | None, optional
         Optional figure error bars. Use `None` to disable them. Defaults to
         `"sem"`.
     plot : bool | None, optional
-        Display each result figure. `None` preserves the legacy-facing default
-        of `True`; explicit `False` disables display.
+        Display each generated result figure. Figures are always included in
+        the result. `None` preserves the legacy-facing default of `True`;
+        explicit `False` disables display only.
     save_image : bool | None, optional
-        Save each result figure through Qubex visualization. `None` preserves
-        the legacy-facing default of `True`; explicit `False` disables saving.
+        Save each generated result figure through Qubex visualization. Figures
+        are always included in the result. `None` preserves the legacy-facing
+        default of `True`; explicit `False` disables saving only.
 
     Returns
     -------
     Result
         Target-keyed paired raw data, fits, fidelities, uncertainty, range
-        metadata, and diagnostics. `figures` contains target-keyed figures when
-        plotting or saving is enabled.
+        metadata, and diagnostics. The singular API retains its existing
+        result shape. Named candidates are nested under `interleaved`, include
+        all pairwise fidelity differences and joint-bootstrap intervals, and
+        produce one figure per target and candidate under keys such as
+        `target::candidate`.
 
     Raises
     ------
@@ -4662,14 +6252,33 @@ def paired_interleaved_randomized_benchmarking(
     best-effort continuation across targets is required. Use `measure_paired_irb`
     and `analyze_paired_irb` separately for side-effect-free reanalysis.
 
-    The default `pairs_per_sweep=None` submits all randomized adjacent pairs in
-    one measurement-service call. Pass a positive integer to split the
-    acquisition into smaller calls while preserving within-pair adjacency.
+    The default `blocks_per_sweep=None` submits all randomized complete blocks
+    in one measurement-service call. Multi-arm block order uses a Williams
+    design to balance positions and first-order carryover. Candidate schedules
+    retain their natural durations without comparison padding.
+
+    Multi-arm candidate insertion order is preserved. Pairwise comparisons use
+    that order and define `gate_fidelity_difference` as `left - right`.
+    `Result.figure` is `None` in multi-arm mode because every candidate figure
+    is stored as a peer in `Result.figures`.
     """
     resolved_targets = _normalize_targets(targets)
     _validate_range_choice(n_cliffords_range, max_n_cliffords)
     resolved_auto_range = _validate_boolean(auto_range, name="auto_range")
     resolved_in_parallel = _validate_boolean(in_parallel, name="in_parallel")
+    if interleaved_waveform is not None and interleaved_waveforms is not None:
+        raise ValueError(
+            "Specify only one of `interleaved_waveform` and `interleaved_waveforms`."
+        )
+    resolved_candidates = (
+        None
+        if interleaved_waveforms is None
+        else _validate_interleaved_waveforms(interleaved_waveforms)
+    )
+    if resolved_candidates is not None and resolved_auto_range:
+        raise ValueError(
+            "`interleaved_waveforms` cannot be combined with `auto_range=True`."
+        )
     resolved_n_trials = _resolve_paired_n_trials(n_trials)
     use_auto_range = n_cliffords_range is None and resolved_auto_range
     if use_auto_range:
@@ -4693,6 +6302,8 @@ def paired_interleaved_randomized_benchmarking(
         resolved_main_remaining_fractions = _DEFAULT_MAIN_REMAINING_FRACTIONS
     if use_auto_range and seeds is not None:
         raise ValueError("`auto_range=True` cannot be combined with explicit `seeds`.")
+    if seeds is not None and sequence_seed is not None:
+        raise ValueError("Specify only one of `seeds` and `sequence_seed`.")
     resolved_plot = True if plot is None else _validate_boolean(plot, name="plot")
     resolved_save_image = (
         True if save_image is None else _validate_boolean(save_image, name="save_image")
@@ -4705,8 +6316,47 @@ def paired_interleaved_randomized_benchmarking(
         plot=resolved_plot,
         save_image=resolved_save_image,
     )
-    if seeds is not None and sequence_seed is not None:
-        raise ValueError("Specify only one of `seeds` and `sequence_seed`.")
+    if resolved_candidates is not None and analysis_options.n_bootstrap > 0:
+        minimum_bootstrap_trials = _minimum_multi_bootstrap_trials(
+            len(resolved_candidates)
+        )
+        if resolved_n_trials < minimum_bootstrap_trials:
+            warnings.warn(
+                "Joint block-stratified bootstrap requires at least "
+                f"{minimum_bootstrap_trials} trials per Clifford length for "
+                f"{len(resolved_candidates)} candidates; n_trials="
+                f"{resolved_n_trials} will provide point estimates without "
+                "primary bootstrap confidence intervals.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+    if resolved_candidates is not None:
+        multi_workflow = (
+            _run_multi_parallel_workflow
+            if resolved_in_parallel
+            else _run_multi_serial_workflow
+        )
+        return multi_workflow(
+            exp,
+            resolved_targets,
+            interleaved_clifford=interleaved_clifford,
+            interleaved_waveforms=resolved_candidates,
+            n_cliffords_range=n_cliffords_range,
+            n_trials=resolved_n_trials,
+            seeds=seeds,
+            sequence_seed=sequence_seed,
+            acquisition_seed=acquisition_seed,
+            blocks_per_sweep=blocks_per_sweep,
+            max_n_cliffords=max_n_cliffords,
+            x90=x90,
+            zx90=zx90,
+            mitigate_readout=mitigate_readout,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            time_integration=time_integration,
+            sweep_timeout=sweep_timeout,
+            analysis_options=analysis_options,
+        )
     if resolved_in_parallel:
         return _run_parallel_workflow(
             exp,
@@ -4722,7 +6372,7 @@ def paired_interleaved_randomized_benchmarking(
             seeds=seeds,
             sequence_seed=sequence_seed,
             acquisition_seed=acquisition_seed,
-            pairs_per_sweep=pairs_per_sweep,
+            blocks_per_sweep=blocks_per_sweep,
             max_n_cliffords=max_n_cliffords,
             x90=x90,
             zx90=zx90,
@@ -4747,7 +6397,7 @@ def paired_interleaved_randomized_benchmarking(
         seeds=seeds,
         sequence_seed=sequence_seed,
         acquisition_seed=acquisition_seed,
-        pairs_per_sweep=pairs_per_sweep,
+        blocks_per_sweep=blocks_per_sweep,
         max_n_cliffords=max_n_cliffords,
         x90=x90,
         zx90=zx90,
