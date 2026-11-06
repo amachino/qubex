@@ -11,6 +11,9 @@ from qxpulse import FlatTop
 
 from qubex.experiment.models.result import Result
 from qubex.experiment.services.characterization_service import CharacterizationService
+from tests.experiment.test_characterization_service_electrical_delay import (
+    _FakeSystemManager,
+)
 
 
 def test_calibrate_ef_control_frequency_filters_targets_via_registry() -> None:
@@ -37,7 +40,9 @@ def test_calibrate_ef_control_frequency_filters_targets_via_registry() -> None:
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
     def _obtain_freq_rabi_relation(
         self: CharacterizationService,
@@ -95,14 +100,16 @@ def test_measure_electrical_delay_resolves_labels_via_target_registry() -> None:
         sequence: dict[str, np.ndarray],
         **kwargs: object,
     ) -> SimpleNamespace:
+        assert "frequencies" not in kwargs
         measure_calls.append(
             {
                 "sequence_labels": list(sequence.keys()),
                 "readout_amplitudes": kwargs["readout_amplitudes"],
+                "frequencies": modified_calls[-1],
             }
         )
         return SimpleNamespace(
-            data={"custom-target": SimpleNamespace(kerneled=np.complex128(1.0 + 0.0j))}
+            data={"Q17": SimpleNamespace(kerneled=np.complex128(1.0 + 0.0j))}
         )
 
     service = cast(Any, object.__new__(CharacterizationService))
@@ -128,10 +135,13 @@ def test_measure_electrical_delay_resolves_labels_via_target_registry() -> None:
         },
         reset_awg_and_capunits=lambda box_ids=None: reset_calls.append(box_ids),
         modified_frequencies=_modified_frequencies,
+        system_manager=_FakeSystemManager(),
     )
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_measure)
+    service.ctx.measurement = SimpleNamespace(measure=_measure)
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
     tau = service.measure_electrical_delay(
         "custom-target",
@@ -143,9 +153,13 @@ def test_measure_electrical_delay_resolves_labels_via_target_registry() -> None:
     )
 
     assert np.isfinite(tau)
-    assert reset_calls == [["BOX0"]]
-    assert len(modified_calls) >= 3
-    assert all(list(call.keys()) == ["RQ17"] for call in modified_calls)
+    assert reset_calls == []
+    assert modified_calls == [call["frequencies"] for call in measure_calls]
+    assert len(measure_calls) >= 3
+    assert all(
+        list(cast(dict[str, float], call["frequencies"])) == ["RQ17"]
+        for call in measure_calls
+    )
     assert measure_calls[0]["sequence_labels"] == ["Q17"]
     assert measure_calls[0]["readout_amplitudes"] == {"Q17": 1.0}
 
@@ -178,7 +192,9 @@ def test_ckp_experiment_resolves_qubit_for_default_readout_amplitude() -> None:
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
     def _ckp_measurement(
         self: CharacterizationService,
