@@ -9,17 +9,20 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
+from numpy.typing import ArrayLike
 
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
+from qubex.backend.frequency_sweep import SweepSegment
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
@@ -31,6 +34,7 @@ from .managers import (
     Quel3ExecutionManager,
     Quel3SessionManager,
 )
+from .managers.frequency_configuration_manager import Quel3FrequencyConfigurationManager
 from .models import (
     InstrumentConfiguration,
     InstrumentSpec,
@@ -40,6 +44,7 @@ from .models import (
     Quel3ResourceSnapshot,
 )
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
+from .sweep_configuration import Quel3SweepConfiguration
 from .tools import Quel3MonitorTool
 
 if TYPE_CHECKING:
@@ -469,6 +474,18 @@ class Quel3BackendController(BackendController):
             append=append,
             parallel=parallel,
         )
+
+    def plan_frequency_sweep(
+        self, frequencies: ArrayLike, **options
+    ) -> tuple[SweepSegment[float, Quel3SweepConfiguration], ...]:
+        """Plan native settings for a carrier sweep without hardware writes."""
+        return Quel3FrequencyConfigurationManager(self).plan(frequencies, **options)
+
+    def modified_sweep_configuration(
+        self, configuration: Quel3SweepConfiguration
+    ) -> AbstractContextManager[None]:
+        """Apply native sweep settings and restore the entry state."""
+        return Quel3FrequencyConfigurationManager(self).modified(configuration)
 
     def modify_target_frequencies(
         self,
