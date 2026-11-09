@@ -344,24 +344,16 @@ def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
     service.__dict__["_experiment_context"] = ctx
 
     def _fake_measure(*_args, **_kwargs):
+        assert "frequencies" not in _kwargs
         signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
         return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
 
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    ctx.measurement = SimpleNamespace(measure=_fake_measure)
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.ExperimentUtil.split_frequency_range",
-        lambda **_kwargs: [
-            np.array([9.8, 9.9]),
-            np.array([10.1, 10.2]),
-        ],
-    )
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.MixingUtil.calc_lo_cnco",
-        lambda *_args, **_kwargs: (10_000_000_000, 1_500_000_000, 0),
-    )
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.viz.make_figure",
         lambda **_kwargs: _FakeFigure(),
@@ -371,14 +363,25 @@ def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
         lambda values, **_kwargs: (np.array([], dtype=int), {}),
     )
 
+    progress = []
+
+    def record_progress(values, *, desc, leave=True):
+        progress.append((desc, len(values), leave))
+        return values
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.tqdm",
+        record_progress,
+    )
+
     result = service.scan_resonator_frequencies(
         target="Q00",
-        frequency_range=np.array([9.8, 9.9, 10.1, 10.2]),
+        frequency_range=np.array([9.75, 9.875, 10.0, 10.125]),
         electrical_delay=0.0,
         readout_amplitude=0.1,
         plot=False,
         save_image=False,
-        subrange_width=0.2,
+        subrange_width=0.25,
         shots=1,
         interval=0,
     )
@@ -386,6 +389,13 @@ def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
     assert "peaks" in result.data
     assert ctx.system_manager.modified_backend_settings_calls == 2
     assert ctx.reset_calls == []
+    assert ctx.current_frequency == 1.0
+
+    assert progress == [
+        ("resonator freq. scan subranges for Q00", 2, True),
+        ("resonator frequency within subrange", 3, False),
+        ("resonator frequency within subrange", 1, False),
+    ]
 
 
 def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
@@ -408,6 +418,7 @@ def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
         return 0.0
 
     def _fake_measure(*_args, **_kwargs):
+        assert "frequencies" not in _kwargs
         signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
         return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
 
@@ -415,20 +426,12 @@ def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
         _fake_measure_electrical_delay,
         service,
     )
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    ctx.measurement = SimpleNamespace(measure=_fake_measure)
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.ExperimentUtil.split_frequency_range",
-        lambda **_kwargs: [
-            np.array([9.8, 9.9]),
-        ],
-    )
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.MixingUtil.calc_lo_cnco",
-        lambda *_args, **_kwargs: (10_000_000_000, 1_500_000_000, 0),
-    )
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.viz.make_figure",
         lambda **_kwargs: _FakeFigure(),
@@ -471,12 +474,15 @@ def test_scan_resonator_frequencies_quel3_uses_direct_frequency_sweep(
     service.__dict__["_experiment_context"] = ctx
 
     def _fake_measure(*_args, **_kwargs):
+        assert "frequencies" not in _kwargs
         signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
         return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
 
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    ctx.measurement = SimpleNamespace(measure=_fake_measure)
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.viz.make_figure",
@@ -542,6 +548,64 @@ def test_scan_qubit_frequencies_quel3_uses_direct_frequency_sweep(
 
     assert result.data["peaks"].size == 0
     assert result.data["frequency_guess"]["f_ge"] is None
+
+
+def test_resonator_scan_corrects_phase_jump_at_configuration_boundary(monkeypatch):
+    """A reference acquired in the new configuration removes its phase jump."""
+    ctx = _FakeContext()
+    calls = []
+
+    def measure(*args, **kwargs):
+        frequency = ctx.current_frequency
+        assert "frequencies" not in kwargs
+        window = ctx.system_manager.modified_backend_settings_calls
+        calls.append((window, frequency, kwargs["readout_amplitudes"]["Q00"]))
+        return SimpleNamespace(
+            data={
+                "Q00": SimpleNamespace(kerneled=np.exp(1j * (frequency + 0.7 * window)))
+            }
+        )
+
+    ctx.measurement = SimpleNamespace(measure=measure)
+    service = CharacterizationService(
+        experiment_context=cast(Any, ctx),
+        measurement_service=cast(Any, None),
+        calibration_service=cast(Any, None),
+        pulse_service=cast(
+            Any,
+            SimpleNamespace(
+                readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.viz.make_figure",
+        lambda **kwargs: _FakeFigure(),
+    )
+    monkeypatch.setattr(
+        "scipy.signal.find_peaks",
+        lambda values, **kwargs: (np.array([], dtype=int), {}),
+    )
+    result = service.scan_resonator_frequencies(
+        "Q00",
+        frequency_range=[5.0, 5.125, 5.375, 5.5],
+        readout_amplitude=0.2,
+        electrical_delay=0,
+        subrange_width=0.25,
+        plot=False,
+        save_image=False,
+    )
+    np.testing.assert_allclose(
+        result.data["phases_diff"], [0.125, 0.25, 0.125], atol=1e-12, rtol=1e-12
+    )
+    assert calls == [
+        (1, 5.0, 0.2),
+        (1, 5.125, 0.2),
+        (2, 5.125, 0.2),
+        (2, 5.375, 0.2),
+        (3, 5.375, 0.2),
+        (3, 5.5, 0.2),
+    ]
 
 
 @pytest.mark.parametrize("fail_acquisition", [False, True])

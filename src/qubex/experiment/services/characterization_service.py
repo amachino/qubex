@@ -2542,7 +2542,6 @@ class CharacterizationService:
         if target is None:
             target = self.ctx.qubit_labels[0]
 
-        read_label = self.ctx.resolve_read_label(target)
         qubit_label = self.ctx.resolve_qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
         read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
@@ -2581,89 +2580,79 @@ class CharacterizationService:
         if readout_ramp_type is None:
             readout_ramp_type = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMP_TYPE
 
-        # split frequency range to avoid the frequency sweep range limit
-        frequency_range = np.array(frequency_range)
-        subranges = ExperimentUtil.split_frequency_range(
-            frequency_range=frequency_range,
+        frequencies = np.asarray(frequency_range)
+        if frequencies.ndim != 1 or len(frequencies) < 2:
+            raise ValueError("Resonator scans require at least two frequencies.")
+        read_label = self.ctx.resolve_read_label(target)
+        plan = self.ctx.system_manager.plan_frequency_sweep(
+            read_label,
+            frequencies,
             subrange_width=subrange_width,
+            overlap=True,
         )
-
-        bounds = [
-            subranges[0][0],
-        ] + [subrange[-1] for subrange in subranges]
-
-        signals = []
-
-        idx = 0
+        signals = np.empty(len(frequencies), dtype=complex)
         phase_offset = 0.0
 
-        use_quel3_frequency_directives = self._uses_quel3_frequency_directives()
-        if not use_quel3_frequency_directives:
-            ssb = read_box.traits.readout_ssb
-            cnco_center = read_box.traits.readout_cnco_center
+        def acquire(
+            frequency: float,
+            *,
+            duration: float | None = None,
+            ramptime: float | None = None,
+            drag_coeff: float | None = None,
+            ramp_type: RampType | None = None,
+        ) -> complex:
+            with self.ctx.modified_frequencies({read_label: frequency}):
+                result = self.ctx.measurement.measure(
+                    {qubit_label: np.zeros(0)},
+                    mode="avg",
+                    readout_pre_margin=self.pulse.readout_pre_margin,
+                    readout_post_margin=self.pulse.readout_post_margin,
+                    readout_amplitudes={qubit_label: readout_amplitude},
+                    readout_duration=self.pulse.readout_duration
+                    if duration is None
+                    else duration,
+                    readout_ramptime=ramptime,
+                    readout_drag_coeff=drag_coeff,
+                    readout_ramp_type=ramp_type,
+                    shots=shots,
+                    interval=interval,
+                )
+            return complex(np.asarray(result.data[qubit_label].kerneled).item())
 
-        for subrange in tqdm(
-            subranges, desc=f"resonator freq. scan subranges for {target}"
-        ):
-            if use_quel3_frequency_directives:
-                backend_settings = nullcontext()
-            else:
-                f_center = (subrange[0] + subrange[-1]) / 2
-                lo, cnco, _ = MixingUtil.calc_lo_cnco(
-                    f_center * 1e9,
-                    ssb=ssb,
-                    cnco_center=cnco_center,
-                )
-                backend_settings = self.ctx.system_manager.modified_backend_settings(
-                    label=read_label,
-                    lo_freq=lo,
-                    cnco_freq=cnco,
-                    fnco_freq=0,
-                )
-            with backend_settings:
-                for sub_idx, freq in enumerate(
+        for segment in tqdm(plan, desc=f"resonator freq. scan subranges for {target}"):
+            with self.ctx.system_manager.modified_sweep_configuration(
+                segment.configuration
+            ):
+                reference = segment.reference_value
+                if reference is not None:
+                    raw = acquire(reference)
+                    corrected = raw * np.exp(
+                        1j * (2 * np.pi * reference * tau - phase_offset)
+                    )
+                    phase_offset += np.angle(corrected) - np.angle(
+                        signals[segment.indices[0] - 1]
+                    )
+                for index, frequency in zip(
+                    segment.indices,
                     tqdm(
-                        subrange,
+                        segment.values,
                         desc="resonator frequency within subrange",
                         leave=False,
-                    )
+                    ),
+                    strict=True,
                 ):
-                    if idx > 0 and sub_idx == 0:
-                        prev_freq = frequency_range[idx - 1]
-                        with self.ctx.modified_frequencies({read_label: prev_freq}):
-                            result = self._measurement_service.measure(
-                                {qubit_label: np.zeros(0)},
-                                mode="avg",
-                                readout_amplitudes={qubit_label: readout_amplitude},
-                                shots=shots,
-                                interval=interval,
-                                reset_awg_and_capunits=False,
-                            )
-                            raw = result.data[target].kerneled
-                            phase_adjust = 2 * np.pi * prev_freq * tau - phase_offset
-                            signal = raw * np.exp(1j * phase_adjust)
-                            phase_offset += np.angle(signal) - np.angle(signals[-1])
-
-                    with self.ctx.modified_frequencies({read_label: freq}):
-                        result = self._measurement_service.measure(
-                            {qubit_label: np.zeros(0)},
-                            mode="avg",
-                            readout_amplitudes={qubit_label: readout_amplitude},
-                            readout_duration=readout_duration,
-                            readout_ramptime=readout_ramptime,
-                            readout_drag_coeff=readout_drag_coeff,
-                            readout_ramp_type=readout_ramp_type,
-                            shots=shots,
-                            interval=interval,
-                            reset_awg_and_capunits=False,
-                        )
-                        raw = result.data[target].kerneled
-                        phase_adjust = 2 * np.pi * freq * tau - phase_offset
-                        signal = raw * np.exp(1j * phase_adjust)
-                        signals.append(signal)
-                        idx += 1
-
-        signals = np.array(signals)
+                    raw = acquire(
+                        frequency,
+                        duration=readout_duration,
+                        ramptime=readout_ramptime,
+                        drag_coeff=readout_drag_coeff,
+                        ramp_type=readout_ramp_type,
+                    )
+                    signals[index] = raw * np.exp(
+                        1j * (2 * np.pi * frequency * tau - phase_offset)
+                    )
+        subranges = [np.asarray(segment.values) for segment in plan]
+        bounds = [subranges[0][0]] + [subrange[-1] for subrange in subranges]
         amplitudes = np.abs(signals)
         phases = np.angle(signals)
         phases -= phases[0] - np.pi
