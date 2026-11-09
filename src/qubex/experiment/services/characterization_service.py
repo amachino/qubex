@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection
-from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -29,7 +28,6 @@ from typing_extensions import deprecated
 
 import qubex.visualization as viz
 from qubex.analysis import FitResult, FitStatus, fitting
-from qubex.backend.backend_controller import BACKEND_KIND_QUEL3
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_INTERVAL,
@@ -38,7 +36,6 @@ from qubex.experiment.experiment_constants import (
     DEFAULT_SHOTS,
 )
 from qubex.experiment.experiment_context import ExperimentContext
-from qubex.experiment.experiment_util import ExperimentUtil
 from qubex.experiment.models.experiment_result import (
     AmplRabiData,
     ExperimentResult,
@@ -50,8 +47,6 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
-from qubex.system import MixingUtil
-from qubex.system.quel1.quel1_system_constants import CNCO_CENTER_CTRL_HZ
 from qubex.typing import TargetMap
 from qubex.visualization import COLORS
 
@@ -632,11 +627,6 @@ class CharacterizationService:
     def calibration_service(self) -> CalibrationService:
         """Return the calibration service."""
         return self._calibration_service
-
-    def _uses_quel3_frequency_directives(self) -> bool:
-        """Return whether spectroscopy should use QuEL-3 frequency directives."""
-        system_manager = getattr(self.ctx, "system_manager", None)
-        return getattr(system_manager, "backend_kind", None) == BACKEND_KIND_QUEL3
 
     @staticmethod
     def _is_valid_chevron_rabi_param(param: Any) -> bool:
@@ -3193,10 +3183,12 @@ class CharacterizationService:
 
         if subrange_width is None:
             subrange_width = DEFAULT_QUBIT_FREQUENCY_SCAN_SUBRANGE_WIDTH_GHZ
-        subranges = ExperimentUtil.split_frequency_range(
-            frequency_range=frequency_range,
+        plan = self.ctx.system_manager.plan_frequency_sweep(
+            qubit,
+            frequency_range,
             subrange_width=subrange_width,
         )
+        subranges = [np.asarray(segment.values) for segment in plan]
 
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -3213,71 +3205,47 @@ class CharacterizationService:
         # result buffer
         signals = []
 
-        use_quel3_frequency_directives = self._uses_quel3_frequency_directives()
-        if not use_quel3_frequency_directives:
-            ssb = ctrl_box.traits.ctrl_ssb
-            cnco_center = CNCO_CENTER_CTRL_HZ
-
-        # measure the phase and amplitude
-        idx = 0
-        for subrange in tqdm(
-            subranges, desc=f"qubit freq. scan subranges for {target}"
-        ):
-            if use_quel3_frequency_directives:
-                backend_settings = nullcontext()
-            else:
-                f_center = (subrange[0] + subrange[-1]) / 2
-                lo, cnco, _ = MixingUtil.calc_lo_cnco(
-                    f_center * 1e9,
-                    ssb=ssb,
-                    cnco_center=cnco_center,
-                )
-                backend_settings = self.ctx.system_manager.modified_backend_settings(
-                    label=qubit,
-                    lo_freq=lo,
-                    cnco_freq=cnco,
-                    fnco_freq=0,
-                )
-            with backend_settings:
-                self.ctx.reset_awg_and_capunits(qubits=[qubit])
+        for segment in tqdm(plan, desc=f"qubit freq. scan subranges for {target}"):
+            subrange = segment.values
+            with self.ctx.system_manager.modified_sweep_configuration(
+                segment.configuration
+            ):
                 for control_frequency in tqdm(
                     subrange, desc="qubit frequency within subrange", leave=False
                 ):
+                    with PulseSchedule([qubit, resonator]) as ps:
+                        ps.add(
+                            qubit,
+                            Gaussian(
+                                duration=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_DURATION,
+                                amplitude=control_amplitude,
+                                sigma=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_SIGMA,
+                            ),
+                        )
+                        if not simultaneous_drive:
+                            ps.barrier()
+                        ps.add(
+                            resonator,
+                            FlatTop(
+                                duration=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_DURATION,
+                                amplitude=readout_amplitude,
+                                tau=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_RAMPTIME,
+                            ),
+                        )
                     with self.ctx.modified_frequencies(
-                        {
-                            qubit: control_frequency,
-                            resonator: readout_frequency,
-                        }
+                        {qubit: control_frequency, resonator: readout_frequency}
                     ):
-                        with PulseSchedule([qubit, resonator]) as ps:
-                            ps.add(
-                                qubit,
-                                Gaussian(
-                                    duration=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_DURATION,
-                                    amplitude=control_amplitude,
-                                    sigma=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_SIGMA,
-                                ),
-                            )
-                            if not simultaneous_drive:
-                                ps.barrier()
-                            ps.add(
-                                resonator,
-                                FlatTop(
-                                    duration=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_DURATION,
-                                    amplitude=readout_amplitude,
-                                    tau=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_RAMPTIME,
-                                ),
-                            )
-                        result = self.measurement_service.execute(
+                        result = self.ctx.measurement.execute(
                             schedule=ps,
                             mode="avg",
+                            readout_duration=self.pulse.readout_duration,
+                            readout_pre_margin=self.pulse.readout_pre_margin,
+                            readout_post_margin=self.pulse.readout_post_margin,
                             shots=shots,
                             interval=interval,
-                            reset_awg_and_capunits=False,
                         )
-                        signal = result.data[qubit][-1].kerneled
-                        signals.append(signal)
-                        idx += 1
+                    signal = result.data[qubit][-1].kerneled
+                    signals.append(signal)
 
         signals = np.array(signals)
         amplitudes = np.abs(signals)

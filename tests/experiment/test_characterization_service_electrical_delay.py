@@ -517,12 +517,15 @@ def test_scan_qubit_frequencies_quel3_uses_direct_frequency_sweep(
     service.__dict__["_experiment_context"] = ctx
 
     def _fake_execute(*_args, **_kwargs):
+        assert "frequencies" not in _kwargs
         signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
         return SimpleNamespace(data={"Q00": [SimpleNamespace(kerneled=signal)]})
 
-    service.__dict__["_measurement_service"] = SimpleNamespace(execute=_fake_execute)
+    ctx.measurement = SimpleNamespace(execute=_fake_execute)
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.viz.make_figure",
@@ -531,6 +534,17 @@ def test_scan_qubit_frequencies_quel3_uses_direct_frequency_sweep(
     monkeypatch.setattr(
         "scipy.signal.find_peaks",
         lambda values, **_kwargs: (np.array([], dtype=int), {}),
+    )
+
+    progress = []
+
+    def record_progress(values, *, desc, leave=True):
+        progress.append((desc, len(values), leave))
+        return values
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.tqdm",
+        record_progress,
     )
 
     result = service.scan_qubit_frequencies(
@@ -548,6 +562,13 @@ def test_scan_qubit_frequencies_quel3_uses_direct_frequency_sweep(
 
     assert result.data["peaks"].size == 0
     assert result.data["frequency_guess"]["f_ge"] is None
+
+    assert progress[0][0] == "qubit freq. scan subranges for Q00"
+    assert sum(count for _, count, _ in progress[1:]) == 3
+    assert all(
+        label == "qubit frequency within subrange" and leave is False
+        for label, _, leave in progress[1:]
+    )
 
 
 def test_resonator_scan_corrects_phase_jump_at_configuration_boundary(monkeypatch):

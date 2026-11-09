@@ -10,6 +10,9 @@ from qxpulse import PulseSchedule
 
 from qubex.experiment.experiment import Experiment
 from qubex.experiment.services.characterization_service import CharacterizationService
+from tests.experiment.test_characterization_service_electrical_delay import (
+    _FakeSystemManager,
+)
 
 
 @pytest.mark.parametrize(
@@ -43,17 +46,21 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
                 traits=SimpleNamespace(ctrl_ssb="L")
             )
         ),
-        system_manager=SimpleNamespace(
-            modified_backend_settings=lambda **kwargs: nullcontext()
-        ),
+        system_manager=_FakeSystemManager(),
         modified_frequencies=lambda frequencies: nullcontext(),
         reset_awg_and_capunits=lambda **kwargs: None,
     )
+    ctx.measurement = SimpleNamespace(execute=execute)
     service = CharacterizationService(
         experiment_context=cast(Any, ctx),
         measurement_service=cast(Any, SimpleNamespace(execute=execute)),
         calibration_service=cast(Any, None),
-        pulse_service=cast(Any, None),
+        pulse_service=cast(
+            Any,
+            SimpleNamespace(
+                readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+            ),
+        ),
     )
     exp = object.__new__(Experiment)
     exp.__dict__["_characterization_service"] = service
