@@ -135,8 +135,10 @@ def test_public_defaults_and_fixed_grids_match_the_fast_default_workflow() -> No
     low_signature = inspect.signature(measure_paired_irb)
 
     assert high_signature.parameters["auto_range"].default is False
-    assert high_signature.parameters["pairs_per_sweep"].default is None
-    assert low_signature.parameters["pairs_per_sweep"].default is None
+    assert high_signature.parameters["blocks_per_sweep"].default is None
+    assert low_signature.parameters["blocks_per_sweep"].default is None
+    assert "pairs_per_sweep" not in high_signature.parameters
+    assert "pairs_per_sweep" not in low_signature.parameters
     assert high_signature.parameters["sweep_timeout"].default == 1800.0
     assert low_signature.parameters["sweep_timeout"].default == 1800.0
 
@@ -187,6 +189,302 @@ def test_default_high_level_call_uses_full_fixed_grid_without_pilot() -> None:
     )
     assert len(exp.measurement_service.calls) == 1
     assert len(exp.measurement_service.calls[0]["sweep_values"]) == 36
+
+
+def test_multi_waveform_call_uses_one_shared_reference_per_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-arm IRB should measure one reference plus every candidate per block."""
+    module = importlib.import_module(
+        "qubex.contrib.experiment.paired_interleaved_randomized_benchmarking"
+    )
+    monkeypatch.setattr(module.go.Figure, "show", lambda self: None)
+    exp: Any = _Experiment(targets=("Q0",))
+    waveforms = {
+        "rotary": PulseSchedule(),
+        "no_rotary": PulseSchedule(),
+        "ppr": PulseSchedule(),
+    }
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = paired_interleaved_randomized_benchmarking(
+            exp,
+            "Q0",
+            interleaved_clifford="X90",
+            interleaved_waveforms=waveforms,
+            n_cliffords_range=[0, 1, 2, 4, 8, 16],
+            n_trials=8,
+            sequence_seed=21,
+            acquisition_seed=22,
+            n_bootstrap=8,
+            bootstrap_seed=23,
+            plot=True,
+            save_image=False,
+        )
+
+    target = result["Q0"]
+    assert list(target["interleaved"]) == list(waveforms)
+    assert len(exp.measurement_service.calls) == 1
+    assert len(exp.measurement_service.calls[0]["sweep_values"]) == 192
+    assert target["acquisition"]["n_measurement_points"] == 192
+    assert target["metadata"]["schema_version"] == 2
+    assert len(target["comparisons"]) == 3
+    assert result.figure is None
+    assert set(result.figures or {}) == {
+        "Q0::rotary",
+        "Q0::no_rotary",
+        "Q0::ppr",
+    }
+    for comparison in target["comparisons"]:
+        assert comparison["gate_fidelity_difference"] == pytest.approx(0.0)
+        assert comparison["gate_fidelity_difference_ci95"] is not None
+
+    reference_trials = target["reference"]["trials"]
+    for candidate in waveforms:
+        assert target["interleaved"][candidate]["trials"].shape == (6, 8)
+        assert target["interleaved"][candidate]["gate_fidelity"] == pytest.approx(
+            target["interleaved"]["rotary"]["gate_fidelity"]
+        )
+    assert reference_trials.shape == (6, 8)
+
+
+def test_multi_waveform_supports_parallel_targets() -> None:
+    """Parallel targets should share block points while keeping independent seeds."""
+    exp: Any = _Experiment(targets=("Q0", "Q1"))
+    waveforms = {
+        "rotary": {"Q0": PulseSchedule(), "Q1": PulseSchedule()},
+        "ppr": {"Q0": PulseSchedule(), "Q1": PulseSchedule()},
+    }
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = paired_interleaved_randomized_benchmarking(
+            exp,
+            ("Q0", "Q1"),
+            interleaved_clifford="X90",
+            interleaved_waveforms=waveforms,
+            n_cliffords_range=[0, 1, 2, 4],
+            n_trials=2,
+            sequence_seed=31,
+            acquisition_seed=32,
+            in_parallel=True,
+            n_bootstrap=0,
+            plot=False,
+            save_image=False,
+        )
+
+    assert list(result.data) == ["Q0", "Q1"]
+    assert len(exp.measurement_service.calls) == 1
+    assert len(exp.measurement_service.calls[0]["sweep_values"]) == 24
+    assert result["Q0"]["acquisition"]["in_parallel"] is True
+    assert result["Q0"]["acquisition"]["schedule_alignment"] == (
+        "left_padded_to_group_max_duration"
+    )
+    assert result["Q0"]["acquisition"]["batching_semantics"] == (
+        "parallel_targets_in_complete_multi_arm_blocks"
+    )
+    assert "target_schedule_alignment" not in result["Q0"]["acquisition"]
+    assert not np.array_equal(
+        result["Q0"]["acquisition"]["seeds"],
+        result["Q1"]["acquisition"]["seeds"],
+    )
+    for target in ("Q0", "Q1"):
+        acquisition = result[target]["acquisition"]
+        seeds = acquisition["seeds"]
+        for block in acquisition["planned_order"]:
+            assert (
+                block["seed"]
+                == seeds[
+                    block["length_index"],
+                    block["trial_index"],
+                ]
+            )
+
+
+@pytest.mark.parametrize(
+    "candidate_name",
+    ["", "reference", "REFERENCE", "has space", "slash/name", "-leading"],
+)
+def test_multi_waveform_candidate_names_are_validated(candidate_name: str) -> None:
+    """Candidate names should be safe, nonreserved identifiers."""
+    exp: Any = _Experiment(targets=("Q0",))
+
+    with pytest.raises(ValueError, match="candidate name"):
+        paired_interleaved_randomized_benchmarking(
+            exp,
+            "Q0",
+            interleaved_clifford="X90",
+            interleaved_waveforms={candidate_name: PulseSchedule()},
+            n_cliffords_range=[0, 1, 2, 4],
+            n_trials=2,
+            n_bootstrap=0,
+            plot=False,
+            save_image=False,
+        )
+    assert exp.measurement_service.calls == []
+
+
+def test_multi_waveform_rejects_conflicting_or_adaptive_configuration() -> None:
+    """Plural waveforms should reject singular overrides and auto-range."""
+    exp: Any = _Experiment(targets=("Q0",))
+    waveform = PulseSchedule()
+
+    with pytest.raises(ValueError, match="only one"):
+        paired_interleaved_randomized_benchmarking(
+            exp,
+            "Q0",
+            interleaved_clifford="X90",
+            interleaved_waveform=waveform,
+            interleaved_waveforms={"candidate": waveform},
+            n_trials=2,
+            n_bootstrap=0,
+            plot=False,
+            save_image=False,
+        )
+    with pytest.raises(ValueError, match="auto_range"):
+        paired_interleaved_randomized_benchmarking(
+            exp,
+            "Q0",
+            interleaved_clifford="X90",
+            interleaved_waveforms={"candidate": waveform},
+            auto_range=True,
+            n_trials=2,
+            n_bootstrap=0,
+            plot=False,
+            save_image=False,
+        )
+    assert exp.measurement_service.calls == []
+
+
+def test_multi_waveform_warns_before_measurement_when_bootstrap_trials_are_low(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The workflow should warn before acquiring undersized Williams strata."""
+    module = importlib.import_module(
+        "qubex.contrib.experiment.paired_interleaved_randomized_benchmarking"
+    )
+    exp: Any = _Experiment(targets=("Q0",))
+    warning_emitted = False
+    original_warning = module._warn_if_multi_bootstrap_design_is_undersized  # noqa: SLF001
+    original_acquisition = module._run_multi_single_target_acquisition  # noqa: SLF001
+
+    def record_warning(**kwargs: Any) -> None:
+        nonlocal warning_emitted
+        original_warning(**kwargs)
+        warning_emitted = True
+
+    def assert_warning_precedes_measurement(*args: Any, **kwargs: Any) -> Any:
+        assert warning_emitted
+        return original_acquisition(*args, **kwargs)
+
+    monkeypatch.setattr(
+        module,
+        "_warn_if_multi_bootstrap_design_is_undersized",
+        record_warning,
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_multi_single_target_acquisition",
+        assert_warning_precedes_measurement,
+    )
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        result = paired_interleaved_randomized_benchmarking(
+            exp,
+            "Q0",
+            interleaved_clifford="X90",
+            interleaved_waveforms={
+                "rotary": PulseSchedule(),
+                "ppr": PulseSchedule(),
+            },
+            n_cliffords_range=[0, 1, 2, 4],
+            n_trials=11,
+            n_bootstrap=8,
+            plot=False,
+            save_image=False,
+        )
+
+    assert warning_emitted
+    assert any("at least 12 trials" in str(record.message) for record in records)
+    assert result["Q0"]["bootstrap"]["resampling_valid"] is False
+
+
+def test_invalid_seed_configuration_fails_without_bootstrap_trial_warning() -> None:
+    """Input errors should be reported before advisory bootstrap warnings."""
+    exp: Any = _Experiment(targets=("Q0",))
+    explicit_seeds = np.arange(8, dtype=np.int64).reshape(4, 2)
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        with pytest.raises(ValueError, match="only one of `seeds` and `sequence_seed`"):
+            paired_interleaved_randomized_benchmarking(
+                exp,
+                "Q0",
+                interleaved_clifford="X90",
+                interleaved_waveforms={
+                    "rotary": PulseSchedule(),
+                    "ppr": PulseSchedule(),
+                },
+                n_cliffords_range=[0, 1, 2, 4],
+                n_trials=2,
+                seeds=explicit_seeds,
+                sequence_seed=1,
+                n_bootstrap=8,
+                plot=False,
+                save_image=False,
+            )
+
+    assert records == []
+    assert exp.measurement_service.calls == []
+
+
+def test_invalid_acquisition_seed_fails_without_bootstrap_trial_warning() -> None:
+    """Preflight acquisition errors should precede advisory bootstrap warnings."""
+    exp: Any = _Experiment(targets=("Q0",))
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        with pytest.raises(ValueError, match="acquisition_seed"):
+            paired_interleaved_randomized_benchmarking(
+                exp,
+                "Q0",
+                interleaved_clifford="X90",
+                interleaved_waveforms={
+                    "rotary": PulseSchedule(),
+                    "ppr": PulseSchedule(),
+                },
+                n_cliffords_range=[0, 1, 2, 4],
+                n_trials=2,
+                acquisition_seed=-1,
+                n_bootstrap=8,
+                plot=False,
+                save_image=False,
+            )
+
+    assert records == []
+    assert exp.measurement_service.calls == []
+
+
+def test_multi_waveform_candidate_names_are_unique_ignoring_case() -> None:
+    """Candidate names differing only by case should be rejected."""
+    exp: Any = _Experiment(targets=("Q0",))
+
+    with pytest.raises(ValueError, match="unique ignoring case"):
+        paired_interleaved_randomized_benchmarking(
+            exp,
+            "Q0",
+            interleaved_clifford="X90",
+            interleaved_waveforms={
+                "Rotary": PulseSchedule(),
+                "rotary": PulseSchedule(),
+            },
+            n_trials=2,
+            n_bootstrap=0,
+            plot=False,
+            save_image=False,
+        )
 
 
 def test_explicit_auto_range_still_runs_a_fresh_pilot_and_main_acquisition() -> None:
