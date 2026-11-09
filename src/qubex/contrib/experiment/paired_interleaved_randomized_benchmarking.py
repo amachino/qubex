@@ -337,25 +337,18 @@ class _BootstrapResult:
     @property
     def parameter_bound_quality_valid(self) -> bool | None:
         """Return whether successful fits avoid excessive parameter-bound hits."""
-        if self.n_requested == 0 or self.n_success == 0:
+        n_success = self.n_success
+        if n_success == 0:
             return None
-        fractions = (
-            self.reference_any_bound_fraction,
-            self.interleaved_any_bound_fraction,
-            self.reference_p_bound_fraction,
-            self.interleaved_p_bound_fraction,
-        )
-        if any(value is None for value in fractions):
-            return None
-        reference_any, interleaved_any, reference_p, interleaved_p = cast(
-            tuple[float, float, float, float],
-            fractions,
-        )
         return (
-            reference_any <= _MAX_BOOTSTRAP_ANY_BOUND_FRACTION
-            and interleaved_any <= _MAX_BOOTSTRAP_ANY_BOUND_FRACTION
-            and reference_p <= _MAX_BOOTSTRAP_P_BOUND_FRACTION
-            and interleaved_p <= _MAX_BOOTSTRAP_P_BOUND_FRACTION
+            self.reference_any_bound_count / n_success
+            <= _MAX_BOOTSTRAP_ANY_BOUND_FRACTION
+            and self.interleaved_any_bound_count / n_success
+            <= _MAX_BOOTSTRAP_ANY_BOUND_FRACTION
+            and self.reference_p_bound_count / n_success
+            <= _MAX_BOOTSTRAP_P_BOUND_FRACTION
+            and self.interleaved_p_bound_count / n_success
+            <= _MAX_BOOTSTRAP_P_BOUND_FRACTION
         )
 
     @property
@@ -473,7 +466,7 @@ class _MultiBootstrapResult:
     @property
     def n_success(self) -> int:
         """Return successful joint replicate count."""
-        return min((len(samples) for samples in self.fidelities.values()), default=0)
+        return len(next(iter(self.fidelities.values())))
 
     @property
     def execution_skipped(self) -> bool:
@@ -522,15 +515,18 @@ class _MultiBootstrapResult:
     def parameter_bounds(self) -> dict[str, dict[str, object]]:
         """Return per-arm bootstrap parameter-bound diagnostics."""
         diagnostics: dict[str, dict[str, object]] = {}
+        n_success = self.n_success
         for arm in self.any_bound_counts:
             any_fraction = self._bound_fraction(self.any_bound_counts[arm])
             p_fraction = self._bound_fraction(self.p_bound_counts[arm])
             quality_valid = (
                 None
-                if any_fraction is None or p_fraction is None
+                if n_success == 0
                 else (
-                    any_fraction <= _MAX_BOOTSTRAP_ANY_BOUND_FRACTION
-                    and p_fraction <= _MAX_BOOTSTRAP_P_BOUND_FRACTION
+                    self.any_bound_counts[arm] / n_success
+                    <= _MAX_BOOTSTRAP_ANY_BOUND_FRACTION
+                    and self.p_bound_counts[arm] / n_success
+                    <= _MAX_BOOTSTRAP_P_BOUND_FRACTION
                 )
             )
             diagnostics[arm] = {
@@ -545,7 +541,7 @@ class _MultiBootstrapResult:
     @property
     def parameter_bound_quality_valid(self) -> bool | None:
         """Return whether every arm avoids excessive bootstrap bound hits."""
-        if self.n_requested == 0 or self.n_success == 0:
+        if self.n_success == 0:
             return None
         return all(
             diagnostic["quality_valid"] is True
@@ -1277,6 +1273,28 @@ def _minimum_multi_bootstrap_trials(n_candidates: int) -> int:
     return _MIN_BOOTSTRAP_SAMPLES_PER_STRATUM * n_orders
 
 
+def _warn_if_multi_bootstrap_design_is_undersized(
+    *,
+    n_candidates: int,
+    n_trials: int,
+    n_bootstrap: int,
+) -> None:
+    """Warn after preflight when the block-order strata are too small."""
+    if n_bootstrap == 0:
+        return
+    minimum_trials = _minimum_multi_bootstrap_trials(n_candidates)
+    if n_trials >= minimum_trials:
+        return
+    warnings.warn(
+        "Joint block-stratified bootstrap requires at least "
+        f"{minimum_trials} trials per Clifford length for {n_candidates} "
+        f"candidates; n_trials={n_trials} will provide point estimates without "
+        "primary bootstrap confidence intervals.",
+        RuntimeWarning,
+        stacklevel=4,
+    )
+
+
 def _build_block_plan(
     n_cliffords: NDArray[np.int64],
     seeds: NDArray[np.int64],
@@ -1914,7 +1932,7 @@ def _raw_multi_target_payload(
             "length_index": block.length_index,
             "trial_index": block.trial_index,
             "n_cliffords": block.n_cliffords,
-            "seed": block.seed,
+            "seed": int(seeds[block.length_index, block.trial_index]),
             "arm_order": block.arm_order,
         }
         for block_order_index, block in enumerate(block_plan)
@@ -2118,7 +2136,7 @@ def _run_multi_single_target_acquisition(
 
 def _validate_parallel_target_specs(
     target_specs: Mapping[str, _TargetSpec],
-) -> bool:
+) -> None:
     """Validate homogeneous, physically disjoint parallel targets."""
     target_kinds = {target_spec.is_two_qubit for target_spec in target_specs.values()}
     if len(target_kinds) != 1:
@@ -2132,7 +2150,6 @@ def _validate_parallel_target_specs(
                 f"`{target}` overlaps on {', '.join(sorted(overlap))}."
             )
         occupied_qubits.update(target_spec.qubits)
-    return next(iter(target_kinds))
 
 
 async def _measure_paired_irb_parallel_async(
@@ -2462,7 +2479,8 @@ async def _measure_multi_irb_parallel_async(
             acquisition_extras={
                 "in_parallel": True,
                 "parallel_targets": targets,
-                "target_schedule_alignment": "left_padded_to_group_max_duration",
+                "schedule_alignment": "left_padded_to_group_max_duration",
+                "batching_semantics": "parallel_targets_in_complete_multi_arm_blocks",
             },
         )
     return Result(data=result_data)
@@ -3775,7 +3793,11 @@ def _validated_multi_raw_data(
     raw_seeds = acquisition.get("seeds")
     if raw_seeds is None:
         raise ValueError("Acquisition metadata must contain `seeds`.")
-    _resolve_seed_matrix(cast(ArrayLike, raw_seeds), shape=shape, sequence_seed=None)
+    _resolve_seed_matrix(
+        cast(ArrayLike, raw_seeds),
+        shape=shape,
+        sequence_seed=None,
+    )
     raw_plan = acquisition.get("planned_order")
     if isinstance(raw_plan, (str, bytes)) or not isinstance(raw_plan, Sequence):
         raise TypeError("Acquisition `planned_order` must be a sequence.")
@@ -3810,8 +3832,6 @@ def _validated_multi_raw_data(
         order_keys[length_index, trial_index] = "\x1f".join(
             cast(tuple[str, ...], arm_order)
         )
-    if any(order_key is None for order_key in order_keys.flat):
-        raise ValueError("Acquisition plan is missing a trial cell.")
     n_arms = len(expected_arms)
     for order_row in order_keys:
         decoded_orders = [
@@ -4099,6 +4119,10 @@ def _analyze_multi_paired_irb(
         uncertainty_method = "unavailable"
     candidate_payloads: dict[str, object] = {}
     figures: dict[str, go.Figure] = {}
+    raw_interleaved_name = raw_data.metadata.get("interleaved_clifford")
+    interleaved_clifford_name = (
+        raw_interleaved_name if isinstance(raw_interleaved_name, str) else None
+    )
     for candidate in fidelity_samples:
         candidate_fit = fits[candidate]
         fidelity = point_fidelities[candidate]
@@ -4137,10 +4161,7 @@ def _analyze_multi_paired_irb(
             gate_fidelity_error=fidelity_error,
             gate_fidelity_ci95=fidelity_ci95,
             error_bar=options.error_bar,
-            interleaved_clifford_name=cast(
-                str | None,
-                raw_data.metadata.get("interleaved_clifford"),
-            ),
+            interleaved_clifford_name=interleaved_clifford_name,
             candidate_name=candidate,
         )
         figure_key = f"{target}::{candidate}"
@@ -5864,8 +5885,8 @@ def _run_multi_serial_workflow(
         x90=x90,
         zx90=zx90,
         mitigate_readout=mitigate_readout,
-        n_shots=DEFAULT_SHOTS if n_shots is None else n_shots,
-        shot_interval=DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
         time_integration=time_integration,
         sweep_timeout=sweep_timeout,
         in_parallel=False,
@@ -5881,38 +5902,42 @@ def _run_multi_serial_workflow(
         count=len(targets),
         name="acquisition_seed",
     )
-    _validate_serial_explicit_seed_matrices(
-        targets,
-        contexts=setup.contexts,
-        seeds_by_target=seeds_by_target,
-        n_cliffords_range=n_cliffords_range,
+    n_cliffords_by_target = {
+        target: _resolve_fixed_n_cliffords(
+            setup.contexts[target].target_spec,
+            n_cliffords_range,
+            max_n_cliffords,
+        )
+        for target in targets
+    }
+    seed_matrices = {
+        target: _resolve_seed_matrix(
+            seeds_by_target[target],
+            shape=(len(n_cliffords_by_target[target]), n_trials),
+            sequence_seed=sequence_streams[target_index],
+        )
+        for target_index, target in enumerate(targets)
+    }
+    _warn_if_multi_bootstrap_design_is_undersized(
+        n_candidates=len(interleaved_waveforms),
         n_trials=n_trials,
-        max_n_cliffords=max_n_cliffords,
+        n_bootstrap=analysis_options.n_bootstrap,
     )
     data: dict[str, object] = {}
     figures: dict[str, go.Figure] = {}
     stop_reason = _fixed_range_stop_reason(n_cliffords_range)
     for target_index, target in enumerate(targets):
         context = setup.contexts[target]
-        selected_n_cliffords = _resolve_fixed_n_cliffords(
-            context.target_spec,
-            n_cliffords_range,
-            max_n_cliffords,
-        )
+        selected_n_cliffords = n_cliffords_by_target[target]
         target_sequence_seed = sequence_streams[target_index]
         target_acquisition_seed = acquisition_streams[target_index]
-        target_seeds = _resolve_seed_matrix(
-            seeds_by_target[target],
-            shape=(len(selected_n_cliffords), n_trials),
-            sequence_seed=target_sequence_seed,
-        )
         raw_result = _run_multi_single_target_acquisition(
             exp,
             target,
             context=context,
             candidate_waveforms=setup.candidates_by_target[target],
             n_cliffords=selected_n_cliffords,
-            seeds=target_seeds,
+            seeds=seed_matrices[target],
             sequence_seed=target_sequence_seed,
             acquisition_seed=target_acquisition_seed,
         )
@@ -5960,8 +5985,8 @@ def _run_multi_parallel_workflow(
         x90=x90,
         zx90=zx90,
         mitigate_readout=mitigate_readout,
-        n_shots=DEFAULT_SHOTS if n_shots is None else n_shots,
-        shot_interval=DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
         time_integration=time_integration,
         sweep_timeout=sweep_timeout,
         in_parallel=True,
@@ -5990,6 +6015,11 @@ def _run_multi_parallel_workflow(
         )
         for target in targets
     }
+    _warn_if_multi_bootstrap_design_is_undersized(
+        n_candidates=len(interleaved_waveforms),
+        n_trials=n_trials,
+        n_bootstrap=analysis_options.n_bootstrap,
+    )
     raw_result = _run_multi_parallel_acquisition(
         exp,
         targets,
@@ -6316,20 +6346,6 @@ def paired_interleaved_randomized_benchmarking(
         plot=resolved_plot,
         save_image=resolved_save_image,
     )
-    if resolved_candidates is not None and analysis_options.n_bootstrap > 0:
-        minimum_bootstrap_trials = _minimum_multi_bootstrap_trials(
-            len(resolved_candidates)
-        )
-        if resolved_n_trials < minimum_bootstrap_trials:
-            warnings.warn(
-                "Joint block-stratified bootstrap requires at least "
-                f"{minimum_bootstrap_trials} trials per Clifford length for "
-                f"{len(resolved_candidates)} candidates; n_trials="
-                f"{resolved_n_trials} will provide point estimates without "
-                "primary bootstrap confidence intervals.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
     if resolved_candidates is not None:
         multi_workflow = (
             _run_multi_parallel_workflow

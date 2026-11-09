@@ -93,10 +93,15 @@ def _multi_raw_result(
     arms = ("reference", *candidates)
     orders = module._balanced_block_orders(arms)  # noqa: SLF001
     n_trials = reference.shape[1]
+    seeds = np.arange(
+        len(n_cliffords) * n_trials,
+        dtype=np.int64,
+    ).reshape(len(n_cliffords), n_trials)
     planned_order = tuple(
         {
             "length_index": length_index,
             "trial_index": trial_index,
+            "seed": int(seeds[length_index, trial_index]),
             "arm_order": orders[trial_index % len(orders)],
         }
         for length_index in range(len(n_cliffords))
@@ -112,10 +117,7 @@ def _multi_raw_result(
                 "acquisition": {
                     "n_cliffords": n_cliffords,
                     "n_trials": n_trials,
-                    "seeds": np.arange(
-                        len(n_cliffords) * n_trials,
-                        dtype=np.int64,
-                    ).reshape(len(n_cliffords), n_trials),
+                    "seeds": seeds,
                     "planned_order": planned_order,
                 },
                 "metadata": {
@@ -307,6 +309,26 @@ def test_multi_arm_analysis_rejects_inconsistent_schema_metadata() -> None:
     raw["Q0"]["acquisition"]["n_trials"] = 7
     with pytest.raises(ValueError, match=r"acquisition\.n_trials"):
         analyze_paired_irb(raw, n_bootstrap=0)
+
+
+def test_multi_arm_figure_ignores_nonstring_optional_clifford_name() -> None:
+    """Optional multi-arm figure metadata should match singular type handling."""
+    grid, reference, rotary = _synthetic_trials(n_trials=4, seed=93)
+    raw = _multi_raw_result(
+        reference,
+        {"rotary": rotary},
+        n_cliffords=grid,
+    )
+    raw["Q0"]["metadata"]["interleaved_clifford"] = 123
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = analyze_paired_irb(raw, n_bootstrap=0)
+
+    figure = (result.figures or {})["Q0::rotary"]
+    title = figure.to_plotly_json()["layout"]["title"]["text"]
+    assert isinstance(title, str)
+    assert " of 123" not in title
 
 
 @pytest.mark.parametrize("schema_version", [2.0, np.float64(2.0), True, None])

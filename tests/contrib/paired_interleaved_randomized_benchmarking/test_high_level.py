@@ -278,10 +278,28 @@ def test_multi_waveform_supports_parallel_targets() -> None:
     assert len(exp.measurement_service.calls) == 1
     assert len(exp.measurement_service.calls[0]["sweep_values"]) == 24
     assert result["Q0"]["acquisition"]["in_parallel"] is True
+    assert result["Q0"]["acquisition"]["schedule_alignment"] == (
+        "left_padded_to_group_max_duration"
+    )
+    assert result["Q0"]["acquisition"]["batching_semantics"] == (
+        "parallel_targets_in_complete_multi_arm_blocks"
+    )
+    assert "target_schedule_alignment" not in result["Q0"]["acquisition"]
     assert not np.array_equal(
         result["Q0"]["acquisition"]["seeds"],
         result["Q1"]["acquisition"]["seeds"],
     )
+    for target in ("Q0", "Q1"):
+        acquisition = result[target]["acquisition"]
+        seeds = acquisition["seeds"]
+        for block in acquisition["planned_order"]:
+            assert (
+                block["seed"]
+                == seeds[
+                    block["length_index"],
+                    block["trial_index"],
+                ]
+            )
 
 
 @pytest.mark.parametrize(
@@ -347,15 +365,32 @@ def test_multi_waveform_warns_before_measurement_when_bootstrap_trials_are_low(
         "qubex.contrib.experiment.paired_interleaved_randomized_benchmarking"
     )
     exp: Any = _Experiment(targets=("Q0",))
-    expected = module.Result(data={})
+    warning_emitted = False
+    original_warning = module._warn_if_multi_bootstrap_design_is_undersized  # noqa: SLF001
+    original_acquisition = module._run_multi_single_target_acquisition  # noqa: SLF001
 
-    def run_without_measurement(*args: Any, **kwargs: Any) -> Any:
-        assert exp.measurement_service.calls == []
-        return expected
+    def record_warning(**kwargs: Any) -> None:
+        nonlocal warning_emitted
+        original_warning(**kwargs)
+        warning_emitted = True
 
-    monkeypatch.setattr(module, "_run_multi_serial_workflow", run_without_measurement)
+    def assert_warning_precedes_measurement(*args: Any, **kwargs: Any) -> Any:
+        assert warning_emitted
+        return original_acquisition(*args, **kwargs)
 
-    with pytest.warns(RuntimeWarning, match="at least 12 trials"):
+    monkeypatch.setattr(
+        module,
+        "_warn_if_multi_bootstrap_design_is_undersized",
+        record_warning,
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_multi_single_target_acquisition",
+        assert_warning_precedes_measurement,
+    )
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
         result = paired_interleaved_randomized_benchmarking(
             exp,
             "Q0",
@@ -364,13 +399,16 @@ def test_multi_waveform_warns_before_measurement_when_bootstrap_trials_are_low(
                 "rotary": PulseSchedule(),
                 "ppr": PulseSchedule(),
             },
+            n_cliffords_range=[0, 1, 2, 4],
             n_trials=11,
             n_bootstrap=8,
             plot=False,
             save_image=False,
         )
 
-    assert result is expected
+    assert warning_emitted
+    assert any("at least 12 trials" in str(record.message) for record in records)
+    assert result["Q0"]["bootstrap"]["resampling_valid"] is False
 
 
 def test_invalid_seed_configuration_fails_without_bootstrap_trial_warning() -> None:
@@ -393,6 +431,33 @@ def test_invalid_seed_configuration_fails_without_bootstrap_trial_warning() -> N
                 n_trials=2,
                 seeds=explicit_seeds,
                 sequence_seed=1,
+                n_bootstrap=8,
+                plot=False,
+                save_image=False,
+            )
+
+    assert records == []
+    assert exp.measurement_service.calls == []
+
+
+def test_invalid_acquisition_seed_fails_without_bootstrap_trial_warning() -> None:
+    """Preflight acquisition errors should precede advisory bootstrap warnings."""
+    exp: Any = _Experiment(targets=("Q0",))
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        with pytest.raises(ValueError, match="acquisition_seed"):
+            paired_interleaved_randomized_benchmarking(
+                exp,
+                "Q0",
+                interleaved_clifford="X90",
+                interleaved_waveforms={
+                    "rotary": PulseSchedule(),
+                    "ppr": PulseSchedule(),
+                },
+                n_cliffords_range=[0, 1, 2, 4],
+                n_trials=2,
+                acquisition_seed=-1,
                 n_bootstrap=8,
                 plot=False,
                 save_image=False,
