@@ -6,7 +6,11 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+from numpy.typing import ArrayLike
+
+from qubex.backend.frequency_sweep import SweepConfiguration, SweepSegment
 from qubex.backend.quel3.capture_delay import normalize_capture_delay_ns
+from qubex.backend.quel3.sweep_configuration import Quel3SweepConfiguration
 from qubex.system.control_system import GenPort
 from qubex.system.target_type import TargetType
 
@@ -298,6 +302,35 @@ class Quel3SystemSynchronizer:
     def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
         """Ignore cache replacement because QuEL-3 cache mutation is unsupported."""
         del box_configs
+
+    def plan_frequency_sweep(
+        self,
+        experiment_system: ExperimentSystem,
+        target: str,
+        frequencies: ArrayLike,
+        *,
+        subrange_width: float | None = None,
+        overlap: bool = False,
+    ) -> tuple[SweepSegment[Quel3SweepConfiguration], ...]:
+        """Plan port-specific instrument spans with margins around all sweep carriers."""
+        return self.backend_controller.plan_frequency_sweep(
+            frequencies,
+            target=target,
+            subrange_width=subrange_width,
+            overlap=overlap,
+        )
+
+    @contextmanager
+    def modified_sweep_configuration(
+        self,
+        experiment_system: ExperimentSystem,
+        configuration: SweepConfiguration,
+    ) -> Iterator[None]:
+        """Apply instrument definitions while leaving logical carriers unchanged."""
+        if not isinstance(configuration, Quel3SweepConfiguration):
+            raise TypeError("Configuration belongs to a different backend.")
+        with self.backend_controller.modified_sweep_configuration(configuration):
+            yield
 
 
 def create_system_synchronizer(

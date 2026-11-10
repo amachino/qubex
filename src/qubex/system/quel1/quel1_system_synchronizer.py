@@ -7,7 +7,15 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
+from numpy.typing import ArrayLike
+
+from qubex.backend.frequency_sweep import SweepConfiguration, SweepSegment
 from qubex.backend.quel1.capture_delay import split_capture_delay_ns
+from qubex.backend.quel1.quel1_backend_constants import CNCO_CENTER_CTRL_HZ
+from qubex.backend.quel1.sweep_configuration import (
+    Quel1BoxFrequencySettings,
+    Quel1SweepConfiguration,
+)
 from qubex.core.parallel_executor import run_parallel, run_parallel_map
 from qubex.system.control_system import GenPort, PortType
 from qubex.system.quel1.quel1_control_parameter_defaults import DEFAULT_CAPTURE_DELAY
@@ -17,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
-    from qubex.system.control_system import Box, CapPort, GenChannel
+    from qubex.system.control_system import Box, CapChannel, CapPort, GenChannel
     from qubex.system.experiment_system import ExperimentSystem
     from qubex.system.target import Target
 
@@ -537,6 +545,82 @@ class Quel1SystemSynchronizer:
     def _is_capture_port(port: GenPort | CapPort) -> TypeGuard[CapPort]:
         """Return whether one port should be configured through capture path."""
         return port.type.value in ("READ_IN", "MNTR_IN")
+
+    def plan_frequency_sweep(
+        self,
+        experiment_system: ExperimentSystem,
+        target: str,
+        frequencies: ArrayLike,
+        *,
+        subrange_width: float | None = None,
+        overlap: bool = False,
+    ) -> tuple[SweepSegment[Quel1SweepConfiguration], ...]:
+        """Translate target wiring into native frequency settings for planning."""
+        logical = experiment_system.get_target(target)
+        channels: list[
+            tuple[GenChannel | CapChannel, Literal["channels", "runits"]]
+        ] = [(logical.channel, "channels")]
+        if logical.is_read:
+            channels.append(
+                (experiment_system.get_cap_target(target).channel, "runits")
+            )
+        configuration: dict[str, Quel1BoxFrequencySettings] = {}
+        for channel, key in channels:
+            port = channel.port
+            settings = configuration.setdefault(port.box_id, {"ports": {}})[
+                "ports"
+            ].setdefault(
+                port.number, {"lo_freq": port.lo_freq, "cnco_freq": port.cnco_freq}
+            )
+            settings.setdefault(key, {})[channel.number] = {
+                "fnco_freq": channel.fnco_freq
+            }
+        traits = experiment_system.control_system.get_box(
+            logical.channel.port.box_id
+        ).traits
+        return self.backend_controller.plan_frequency_sweep(
+            frequencies,
+            configuration=configuration,
+            sideband=logical.sideband,
+            cnco_center=traits.readout_cnco_center
+            if logical.is_read
+            else CNCO_CENTER_CTRL_HZ,
+            subrange_width=subrange_width,
+            overlap=overlap,
+        )
+
+    @contextmanager
+    def modified_sweep_configuration(
+        self,
+        experiment_system: ExperimentSystem,
+        configuration: SweepConfiguration,
+    ) -> Iterator[None]:
+        """Keep LO/CNCO/FNCO models consistent with the temporary backend settings."""
+        if not isinstance(configuration, Quel1SweepConfiguration):
+            raise TypeError("Configuration belongs to a different backend.")
+        originals = []
+        with self.backend_controller.modified_sweep_configuration(configuration):
+            try:
+                for box, settings in configuration.settings.items():
+                    for number, port_settings in settings["ports"].items():
+                        port = experiment_system.control_system.get_port(box, number)
+                        originals.append((port, "lo_freq", port.lo_freq))
+                        originals.append((port, "cnco_freq", port.cnco_freq))
+                        port.lo_freq = port_settings["lo_freq"]
+                        port.cnco_freq = port_settings["cnco_freq"]
+                        for key in ("channels", "runits"):
+                            for number, values in port_settings.get(key, {}).items():
+                                channel = next(
+                                    c for c in port.channels if c.number == number
+                                )
+                                originals.append(
+                                    (channel, "fnco_freq", channel.fnco_freq)
+                                )
+                                channel.fnco_freq = values["fnco_freq"]
+                yield
+            finally:
+                for model, attribute, value in reversed(originals):
+                    setattr(model, attribute, value)
 
 
 def create_system_synchronizer(
