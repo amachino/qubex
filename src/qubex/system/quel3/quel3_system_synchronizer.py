@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING
 
 from numpy.typing import ArrayLike
@@ -65,19 +65,37 @@ class Quel3SystemSynchronizer:
         experiment_system: ExperimentSystem,
         target_frequencies: dict[str, float],
     ) -> Iterator[None]:
-        """Temporarily update and restore logical and registered target frequencies."""
+        """Restore only instruments changed by temporary carrier selection."""
         original_frequencies = {
             target.label: target.frequency
             for target in experiment_system.targets
             if target.label in target_frequencies
         }
-        experiment_system.modify_target_frequencies(target_frequencies)
-        self.backend_controller.modify_target_frequencies(target_frequencies)
+        controller = self.backend_controller
+        original_instruments = controller.get_instrument_configuration().instruments
+        restore_instruments = ()
         try:
+            experiment_system.modify_target_frequencies(target_frequencies)
+            try:
+                controller.modify_target_frequencies(target_frequencies)
+            finally:
+                current_instruments = (
+                    controller.get_instrument_configuration().instruments
+                )
+                restore_instruments = tuple(
+                    instrument
+                    for instrument in original_instruments
+                    if instrument.alias in target_frequencies
+                    and instrument not in current_instruments
+                )
             yield
         finally:
-            experiment_system.modify_target_frequencies(original_frequencies)
-            self.backend_controller.modify_target_frequencies(original_frequencies)
+            with ExitStack() as restore:
+                for instrument in restore_instruments:
+                    restore.callback(
+                        controller.deploy_instrument, instrument=instrument, append=True
+                    )
+                experiment_system.modify_target_frequencies(original_frequencies)
 
     @contextmanager
     def modified_capture_delay(
