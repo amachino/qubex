@@ -105,9 +105,9 @@ segments = system.plan_frequency_sweep(readout_target, frequencies)
 for segment in segments:
     with system.modified_sweep_configuration(segment.configuration):
         for frequency in segment.values:
-            schedule = make_schedule(frequency)
-            schedule.set_frequency(readout_target, frequency)
-            # Execute this schedule, or sweep its amplitudes with schedule APIs.
+            with system.modified_frequencies({readout_target: frequency}):
+                schedule = make_schedule(frequency)
+                measurement.execute(schedule=schedule, shot_averaging=True)
 ```
 
 Frequencies are in GHz. Backend constraints determine segmentation;
@@ -122,13 +122,40 @@ caller decides how to acquire it. References remain separate from measurement
 values and indices. If a reference cannot be grouped with at least one new
 point, planning raises `ValueError` instead of repeating the same position.
 
+QuEL-3 selects the deployment span from the instrument's port, independently of
+its role. It reserves the default 0.1 GHz margin on each side of every carrier,
+including overlap references:
+
+| Port | Deployment span | Usable sweep span |
+| --- | --- | --- |
+| `tx_*` | 1.8 GHz | 1.6 GHz |
+| `trx_*` | 0.8 GHz | 0.6 GHz |
+
+`subrange_width` adds an upper bound on the usable span. For example, a 0.9 GHz
+limit on a TRX port still produces segments spanning at most 0.6 GHz. Both
+`resonator_spectroscopy()` and `qubit_spectroscopy()` accept this optional
+keyword and pass it to each power's frequency scan. Omitting it, or passing
+None, retains the corresponding scan's existing default width limit.
+
 During a scope, the planned values and references are realizable under the
-applied settings. Schedule carrier overrides leave QuEL-1 LO/CNCO/FNCO settings
-and QuEL-3 instrument definitions unchanged. Explicit settings changes and
-resets remain the caller's responsibility. Existing `modified_frequencies`,
-`modified_backend_settings`, reset and `sweep_parameter` behavior is unchanged;
-passing frequencies to the legacy Experiment overrides still changes settings.
-Use schedule frequency metadata for fixed-configuration sweeps.
+applied settings. `modified_frequencies()` retains its calling convention.
+QuEL-1 still updates and restores logical and registered target frequencies
+without retuning LO/CNCO/FNCO.
+
+QuEL-3 changes its restoration behavior: the scope saves the entry instrument
+definitions, permits automatic deployment when a requested carrier requires it,
+and restores only definitions changed during entry. It restores logical target
+frequencies separately, without using those values to recalculate instrument
+ranges. Planned carriers fit the prepared range with their margins, so nested
+frequency scopes perform no deployment on entry or exit, even when the original
+logical carrier lies outside the sweep window.
+
+Explicit settings changes and resets remain the caller's responsibility.
+`modified_backend_settings`, reset and `sweep_parameter` retain their behavior.
+Automatic electrical-delay calibration inside resonator spectroscopy does not
+prompt; direct `measure_electrical_delay()` calls retain confirmation by default.
+When its start frequency is omitted, electrical delay uses `target.fine_frequency`
+and falls back to `target.frequency` if that lookup raises `ValueError`.
 
 Normal exit, acquisition errors and partial application failures restore touched
 entry settings and corresponding model/cache state. Restoration errors propagate;
