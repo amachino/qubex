@@ -872,31 +872,15 @@ This operation will overwrite the existing backend settings. Do you want to cont
     def modified_frequencies(
         self, target_frequencies: dict[str, float]
     ) -> Iterator[None]:
-        """
-        Temporarily override target frequencies on software and controller.
-
-        Parameters
-        ----------
-        target_frequencies : dict[str, float]
-            Mapping from target label to temporary frequency.
-        """
-        original_frequencies = {
-            target.label: target.frequency
-            for target in self.experiment_system.targets
-            if target.label in target_frequencies
-        }
-        self.experiment_system.modify_target_frequencies(target_frequencies)
-        modify_target_frequencies = getattr(
-            self.backend_controller, "modify_target_frequencies", None
-        )
-        if callable(modify_target_frequencies):
-            modify_target_frequencies(target_frequencies)
-        try:
+        """Temporarily override carriers through the backend system synchronizer."""
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError("Backend is not configured.")
+        with synchronizer.modified_frequencies(
+            experiment_system=self.experiment_system,
+            target_frequencies=target_frequencies,
+        ):
             yield
-        finally:
-            self.experiment_system.modify_target_frequencies(original_frequencies)
-            if callable(modify_target_frequencies):
-                modify_target_frequencies(original_frequencies)
 
     @contextmanager
     def modified_capture_delay(

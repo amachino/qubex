@@ -31,6 +31,15 @@ class SystemSynchronizer(Protocol):
         """Return whether mutable backend-settings cache writes are supported."""
         ...
 
+    def modified_frequencies(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        target_frequencies: dict[str, float],
+    ) -> AbstractContextManager[None]:
+        """Temporarily update carriers and restore the backend's changed state."""
+        ...
+
     def modified_capture_delay(
         self,
         *,

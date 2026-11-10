@@ -21,6 +21,7 @@ from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
+from qubex.system.quel3.quel3_system_synchronizer import Quel3SystemSynchronizer
 from qubex.system.system_manager import SystemManager
 
 
@@ -511,6 +512,9 @@ def test_modified_frequencies_restores_software_without_redeployment(
     manager = object.__new__(SystemManager)
     manager._experiment_system = cast(Any, experiment_system)  # noqa: SLF001
     manager._backend_controller = controller  # noqa: SLF001
+    manager._system_synchronizer = Quel3SystemSynchronizer(  # noqa: SLF001
+        backend_controller=controller
+    )
 
     def run_context() -> None:
         with manager.modified_frequencies({"Q00": 5.5}):

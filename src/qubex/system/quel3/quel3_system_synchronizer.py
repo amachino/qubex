@@ -55,6 +55,27 @@ class Quel3SystemSynchronizer:
         return False
 
     @contextmanager
+    def modified_frequencies(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        target_frequencies: dict[str, float],
+    ) -> Iterator[None]:
+        """Temporarily update and restore logical and registered target frequencies."""
+        original_frequencies = {
+            target.label: target.frequency
+            for target in experiment_system.targets
+            if target.label in target_frequencies
+        }
+        experiment_system.modify_target_frequencies(target_frequencies)
+        self.backend_controller.modify_target_frequencies(target_frequencies)
+        try:
+            yield
+        finally:
+            experiment_system.modify_target_frequencies(original_frequencies)
+            self.backend_controller.modify_target_frequencies(original_frequencies)
+
+    @contextmanager
     def modified_capture_delay(
         self,
         *,
