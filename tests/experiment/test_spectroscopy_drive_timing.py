@@ -33,7 +33,23 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
         "qubex.experiment.services.characterization_service.Confirm.ask", confirm
     )
 
-    def execute(*, schedule: PulseSchedule, **kwargs):
+    def execute(
+        *,
+        schedule: PulseSchedule,
+        shot_averaging,
+        n_shots,
+        shot_interval,
+        readout_duration,
+        readout_pre_margin,
+        readout_post_margin,
+    ):
+        assert shot_averaging is True
+        assert (n_shots, shot_interval) == (13, 2048)
+        assert (readout_duration, readout_pre_margin, readout_post_margin) == (
+            2000,
+            0,
+            0,
+        )
         schedules.append(schedule)
         return SimpleNamespace(data={"Q00": [SimpleNamespace(kerneled=1 + 1j)]})
 
@@ -72,8 +88,21 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
         "qubex.experiment.services.characterization_service.fitting.fit_sqrt_lorentzian",
         Mock(return_value={}),
     )
+    progress = []
+
+    def record_progress(values, *, desc, leave=True):
+        progress.append((desc, len(values), leave))
+        return values
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.tqdm", record_progress
+    )
     kwargs: dict[str, Any] = dict(
-        frequency_range=[5.0, 5.01, 5.02], plot=False, save_image=False
+        frequency_range=[5.0, 5.01, 5.02],
+        n_shots=13,
+        shot_interval=2048,
+        plot=False,
+        save_image=False,
     )
     if drive_mode != "omitted":
         kwargs["simultaneous_drive"] = drive_mode
@@ -88,6 +117,14 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
 
     assert len(schedules) == (6 if method == "qubit_spectroscopy" else 3)
     confirm.assert_not_called()
+    assert ("qubit freq. scan subranges for Q00", 1, True) in progress
+    inner_progress = [
+        (count, leave)
+        for label, count, leave in progress
+        if label == "qubit frequency within subrange"
+    ]
+    assert sum(count for count, _ in inner_progress) == len(schedules)
+    assert all(leave is False for _, leave in inner_progress)
     for schedule in schedules:
         control = schedule.get_pulse_ranges()["Q00"][0]
         readout = schedule.get_pulse_ranges()["R00"][0]

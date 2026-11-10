@@ -2450,13 +2450,13 @@ class CharacterizationService:
                 with self.ctx.modified_frequencies({read_label: freq}):
                     result = self.ctx.measurement.measure(
                         {qubit_label: np.zeros(0)},
-                        mode="avg",
+                        shot_averaging=True,
                         readout_duration=self.pulse.readout_duration,
                         readout_pre_margin=self.pulse.readout_pre_margin,
                         readout_post_margin=self.pulse.readout_post_margin,
                         readout_amplitudes={qubit_label: readout_amplitude},
-                        shots=shots,
-                        interval=interval,
+                        n_shots=shots,
+                        shot_interval=interval,
                         plot=False,
                     )
                 phases.append(-np.angle(result.data[qubit_label].kerneled))
@@ -2594,18 +2594,18 @@ class CharacterizationService:
             with self.ctx.modified_frequencies({read_label: frequency}):
                 result = self.ctx.measurement.measure(
                     {qubit_label: np.zeros(0)},
-                    mode="avg",
+                    shot_averaging=True,
                     readout_pre_margin=self.pulse.readout_pre_margin,
                     readout_post_margin=self.pulse.readout_post_margin,
                     readout_amplitudes={qubit_label: readout_amplitude},
                     readout_duration=self.pulse.readout_duration
                     if duration is None
                     else duration,
-                    readout_ramptime=ramptime,
+                    readout_ramp_time=ramptime,
                     readout_drag_coeff=drag_coeff,
                     readout_ramp_type=ramp_type,
-                    shots=shots,
-                    interval=interval,
+                    n_shots=shots,
+                    shot_interval=interval,
                 )
             return complex(np.asarray(result.data[qubit_label].kerneled).item())
 
@@ -3244,12 +3244,12 @@ class CharacterizationService:
                     ):
                         result = self.ctx.measurement.execute(
                             schedule=ps,
-                            mode="avg",
+                            shot_averaging=True,
                             readout_duration=self.pulse.readout_duration,
                             readout_pre_margin=self.pulse.readout_pre_margin,
                             readout_post_margin=self.pulse.readout_post_margin,
-                            shots=shots,
-                            interval=interval,
+                            n_shots=shots,
+                            shot_interval=interval,
                         )
                     signal = result.data[qubit][-1].kerneled
                     signals.append(signal)
