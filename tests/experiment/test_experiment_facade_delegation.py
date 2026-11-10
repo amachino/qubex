@@ -1387,6 +1387,25 @@ def test_spectroscopy_delegates_drive_timing(method, simultaneous_drive) -> None
     assert delegate.call_args.kwargs["interval"] == 100.0
 
 
+@pytest.mark.parametrize("method", ["resonator_spectroscopy", "qubit_spectroscopy"])
+@pytest.mark.parametrize("subrange_width", ["omitted", None, 0.9])
+def test_spectroscopy_delegates_subrange_width(method, subrange_width) -> None:
+    """Spectroscopy forwards optional frequency widths to its characterization service."""
+    exp = object.__new__(Experiment)
+    service = Mock()
+    exp.__dict__["_characterization_service"] = service
+    delegate = getattr(service, method)
+    kwargs = {} if subrange_width == "omitted" else {"subrange_width": subrange_width}
+
+    result = getattr(exp, method)("Q00", **kwargs)
+
+    assert result is delegate.return_value
+    delegate.assert_called_once()
+    assert delegate.call_args.kwargs["subrange_width"] == (
+        None if subrange_width == "omitted" else subrange_width
+    )
+
+
 @pytest.mark.parametrize("delay", [None, {}, {0: 0}, {0: 24, 1: 26}, {0: 24.0}])
 def test_check_waveform_delegates_capture_delay(
     delay: dict[int, int | float] | None,

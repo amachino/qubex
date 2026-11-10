@@ -21,6 +21,7 @@ from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
+from qubex.system.quel3.quel3_system_synchronizer import Quel3SystemSynchronizer
 from qubex.system.system_manager import SystemManager
 
 
@@ -492,14 +493,18 @@ def test_controller_expands_narrow_instrument_to_default_frequency_margin(
     assert specification.frequency_range_max_hz == 5.1e9
 
 
+@pytest.mark.parametrize(("original_frequency", "frequency"), [(5.0, 5.5), (7.0, 5.5)])
 @pytest.mark.parametrize("fail_in_context", [False, True])
 def test_modified_frequencies_restores_software_without_redeployment(
     frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
     fail_in_context: bool,
+    original_frequency: float,
+    frequency: float,
 ) -> None:
-    """In-range temporary frequencies should update and restore software without hardware IO."""
+    """Temporary carrier changes restore software without changing deployed instruments."""
     controller, hardware, requested = frequency_controller
-    target = SimpleNamespace(label="Q00", frequency=5.0)
+    original = controller.get_instrument_configuration()
+    target = SimpleNamespace(label="Q00", frequency=original_frequency)
 
     def modify(frequencies: dict[str, float]) -> None:
         target.frequency = frequencies[target.label]
@@ -511,10 +516,13 @@ def test_modified_frequencies_restores_software_without_redeployment(
     manager = object.__new__(SystemManager)
     manager._experiment_system = cast(Any, experiment_system)  # noqa: SLF001
     manager._backend_controller = controller  # noqa: SLF001
+    manager._system_synchronizer = Quel3SystemSynchronizer(  # noqa: SLF001
+        backend_controller=controller
+    )
 
     def run_context() -> None:
-        with manager.modified_frequencies({"Q00": 5.5}):
-            assert target.frequency == 5.5
+        with manager.modified_frequencies({"Q00": frequency}):
+            assert target.frequency == frequency
             if fail_in_context:
                 raise RuntimeError("measurement failed")
 
@@ -524,10 +532,206 @@ def test_modified_frequencies_restores_software_without_redeployment(
     else:
         run_context()
 
-    assert target.frequency == 5.0
+    assert target.frequency == original_frequency
+    assert controller.get_instrument_configuration() == original
     assert hardware.deploy_calls == []
     assert hardware.read_calls == []
     assert requested == []
+
+
+def _frequency_system(
+    controller: Quel3BackendController, frequencies: dict[str, float]
+) -> SystemManager:
+    """Provide an isolated system sharing the controller's instrument cache."""
+    targets = {
+        label: SimpleNamespace(label=label, frequency=frequency)
+        for label, frequency in frequencies.items()
+    }
+
+    def modify(values: dict[str, float]) -> None:
+        for label, frequency in values.items():
+            targets[label].frequency = frequency
+
+    system = object.__new__(SystemManager)
+    system._experiment_system = cast(  # noqa: SLF001
+        Any,
+        SimpleNamespace(
+            targets=list(targets.values()),
+            get_target=targets.__getitem__,
+            modify_target_frequencies=modify,
+        ),
+    )
+    system._backend_controller = controller  # noqa: SLF001
+    system._system_synchronizer = Quel3SystemSynchronizer(backend_controller=controller)  # noqa: SLF001
+    return system
+
+
+@pytest.mark.parametrize("fail_acquisition", [False, True])
+def test_frequency_override_restores_exact_definition_and_keeps_siblings(
+    frequency_controller, fail_acquisition
+):
+    """Out-of-range overrides redeploy and restore only their changed instruments."""
+    controller, hardware, _ = frequency_controller
+    sibling = _info("Q03")
+    hardware.infos.append(sibling)
+    controller.refresh_instrument_cache()
+    hardware.read_calls.clear()
+    original = controller.get_instrument_configuration()
+    system = _frequency_system(controller, {"Q00": 5.8, "Q01": 5.0})
+
+    def acquire():
+        with system.modified_frequencies({"Q00": 7.0, "Q01": 5.5}):
+            assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
+            if fail_acquisition:
+                raise RuntimeError("acquisition failed")
+
+    if fail_acquisition:
+        with pytest.raises(RuntimeError, match="acquisition failed"):
+            acquire()
+    else:
+        acquire()
+
+    assert controller.get_instrument_configuration() == original
+    assert system.experiment_system.get_target("Q00").frequency == 5.8
+    assert system.experiment_system.get_target("Q01").frequency == 5.0
+    assert hardware.deploy_calls == [("unit-a:tx_p01", True)] * 2
+    assert (
+        next(
+            info for info in hardware.infos if InstrumentCache.alias_for(info) == "Q03"
+        )
+        is sibling
+    )
+
+
+@pytest.mark.parametrize("inner_frequency", [7.5, 10.0])
+def test_frequency_override_restores_nested_entry_definitions(
+    frequency_controller, inner_frequency
+):
+    """Nested overrides restore their own definitions without redeploying unchanged ranges."""
+    controller, hardware, _ = frequency_controller
+    original = controller.get_instrument_configuration()
+    system = _frequency_system(controller, {"Q00": 5.8})
+    with system.modified_frequencies({"Q00": 7.0}):
+        outer = controller.get_instrument_configuration()
+        with system.modified_frequencies({"Q00": inner_frequency}):
+            assert (
+                system.experiment_system.get_target("Q00").frequency == inner_frequency
+            )
+        assert controller.get_instrument_configuration() == outer
+        assert system.experiment_system.get_target("Q00").frequency == 7.0
+    assert controller.get_instrument_configuration() == original
+    assert system.experiment_system.get_target("Q00").frequency == 5.8
+    assert len(hardware.deploy_calls) == (2 if inner_frequency == 7.5 else 4)
+
+
+@pytest.mark.parametrize("failed_deployment", [1, 2])
+def test_frequency_override_restores_after_partial_entry_failure(
+    frequency_controller, monkeypatch, failed_deployment
+):
+    """Failed readback restores attempted instruments before propagating the entry error."""
+    controller, hardware, _ = frequency_controller
+    original = controller.get_instrument_configuration()
+    system = _frequency_system(controller, {"Q00": 5.8, "Q01": 5.0})
+    get_info = hardware.get_instrument_info
+
+    async def fail_readback(resource_id):
+        if len(hardware.deploy_calls) == failed_deployment:
+            raise RuntimeError("readback failed")
+        return await get_info(resource_id)
+
+    monkeypatch.setattr(hardware, "get_instrument_info", fail_readback)
+    with (
+        pytest.raises(RuntimeError, match="readback failed"),
+        system.modified_frequencies({"Q00": 7.0, "Q01": 7.0}),
+    ):
+        pytest.fail("Entry must fail")
+    assert controller.get_instrument_configuration() == original
+    assert system.experiment_system.get_target("Q00").frequency == 5.8
+    assert len(hardware.deploy_calls) == failed_deployment * 2
+
+
+def test_frequency_override_invalidates_failed_restoration(frequency_controller):
+    """Failed restoration propagates while restoring model frequencies and invalidating the cache."""
+    controller, hardware, _ = frequency_controller
+    system = _frequency_system(controller, {"Q00": 5.8})
+    hardware.fail_read_number = 1
+    with (
+        pytest.raises(RuntimeError, match="read failed"),
+        system.modified_frequencies({"Q00": 7.0}),
+    ):
+        assert system.experiment_system.get_target("Q00").frequency == 7.0
+    assert system.experiment_system.get_target("Q00").frequency == 5.8
+    assert {s.alias for s in controller.get_instrument_configuration().instruments} == {
+        "Q01"
+    }
+
+
+def test_frequency_override_attempts_remaining_restorations_after_failure(
+    frequency_controller,
+):
+    """One failed restoration does not prevent restoring the other changed instruments."""
+    controller, hardware, _ = frequency_controller
+    original = controller.get_instrument_configuration().instruments[0]
+    system = _frequency_system(controller, {"Q00": 5.8, "Q01": 5.0})
+    hardware.fail_read_number = 1
+    with (
+        pytest.raises(RuntimeError, match="read failed"),
+        system.modified_frequencies({"Q00": 7.0, "Q01": 7.0}),
+    ):
+        assert system.experiment_system.get_target("Q00").frequency == 7.0
+    assert controller.get_instrument_configuration().instruments == (original,)
+    assert system.experiment_system.get_target("Q00").frequency == 5.8
+    assert system.experiment_system.get_target("Q01").frequency == 5.0
+    assert len(hardware.deploy_calls) == 4
+
+
+@pytest.mark.parametrize("fail_acquisition", [False, True])
+def test_sweep_frequency_overrides_do_not_redeploy_or_read_back(
+    frequency_controller, fail_acquisition
+):
+    """Planned points and references preserve instruments even when restoring an outside carrier."""
+    controller, hardware, requested = frequency_controller
+    system = _frequency_system(controller, {"Q00": 5.0})
+    original = controller.get_instrument_configuration()
+    plan = controller.plan_frequency_sweep(
+        [6.2, 7.8, 8.0, 9.4], target="Q00", overlap=True
+    )
+    assert [segment.indices for segment in plan] == [(0, 1), (2, 3)]
+
+    def acquire(segment):
+        with controller.modified_sweep_configuration(segment.configuration):
+            entry = controller.get_instrument_configuration()
+            entry_hash = controller.hash
+            counts = (
+                len(hardware.deploy_calls),
+                len(hardware.read_calls),
+                len(requested),
+            )
+            points = segment.values
+            if segment.reference_value is not None:
+                points = (segment.reference_value, *points)
+            for frequency in points:
+                with system.modified_frequencies({"Q00": frequency}):
+                    assert controller.get_instrument_configuration() == entry
+                    if fail_acquisition:
+                        raise RuntimeError("acquisition failed")
+                assert system.experiment_system.get_target("Q00").frequency == 5.0
+                assert controller.hash == entry_hash
+                assert counts == (
+                    len(hardware.deploy_calls),
+                    len(hardware.read_calls),
+                    len(requested),
+                )
+
+    for number, segment in enumerate(plan, start=1):
+        if fail_acquisition:
+            with pytest.raises(RuntimeError, match="acquisition failed"):
+                acquire(segment)
+        else:
+            acquire(segment)
+        assert controller.get_instrument_configuration() == original
+        assert system.experiment_system.get_target("Q00").frequency == 5.0
+        assert len(hardware.deploy_calls) == number * 2
 
 
 @pytest.mark.parametrize("append", [True, False])

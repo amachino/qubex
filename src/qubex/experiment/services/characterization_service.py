@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection
-from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -29,7 +28,6 @@ from typing_extensions import deprecated
 
 import qubex.visualization as viz
 from qubex.analysis import FitResult, FitStatus, fitting
-from qubex.backend.backend_controller import BACKEND_KIND_QUEL3
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_INTERVAL,
@@ -38,7 +36,6 @@ from qubex.experiment.experiment_constants import (
     DEFAULT_SHOTS,
 )
 from qubex.experiment.experiment_context import ExperimentContext
-from qubex.experiment.experiment_util import ExperimentUtil
 from qubex.experiment.models.experiment_result import (
     AmplRabiData,
     ExperimentResult,
@@ -50,8 +47,6 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
-from qubex.system import MixingUtil
-from qubex.system.quel1.quel1_system_constants import CNCO_CENTER_CTRL_HZ
 from qubex.typing import TargetMap
 from qubex.visualization import COLORS
 
@@ -632,11 +627,6 @@ class CharacterizationService:
     def calibration_service(self) -> CalibrationService:
         """Return the calibration service."""
         return self._calibration_service
-
-    def _uses_quel3_frequency_directives(self) -> bool:
-        """Return whether spectroscopy should use QuEL-3 frequency directives."""
-        system_manager = getattr(self.ctx, "system_manager", None)
-        return getattr(system_manager, "backend_kind", None) == BACKEND_KIND_QUEL3
 
     @staticmethod
     def _is_valid_chevron_rabi_param(param: Any) -> bool:
@@ -2400,7 +2390,9 @@ class CharacterizationService:
         target : str
             Target qubit label.
         f_start : float | None, optional
-            Start frequency for the sweep in GHz.
+            Start frequency for the sweep in GHz. If omitted, use the target's
+            fine frequency, or its target frequency if the fine frequency raises
+            `ValueError`.
         df : float | None, optional
             Frequency sweep step size in GHz.
         n_samples : int | None, optional
@@ -2422,14 +2414,6 @@ class CharacterizationService:
         read_label = self.ctx.resolve_read_label(target)
         qubit_label = self.ctx.resolve_qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
-        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
-        use_quel3_frequency_directives = self._uses_quel3_frequency_directives()
-        if use_quel3_frequency_directives:
-            current_frequency = self.ctx.targets[read_label].frequency
-        else:
-            ssb = self.ctx.targets[read_label].sideband
-            f_nco = self.ctx.targets[read_label].fine_frequency
-
         if df is None:
             df = DEFAULT_ELECTRICAL_DELAY_STEP_GHZ
         if n_samples is None:
@@ -2437,61 +2421,45 @@ class CharacterizationService:
         if readout_amplitude is None:
             readout_amplitude = DEFAULT_ELECTRICAL_DELAY_READOUT_AMPLITUDE
         if f_start is None:
-            if use_quel3_frequency_directives:
-                f_start = current_frequency
-            else:
-                f_start = f_nco
+            read_target = self.ctx.targets[read_label]
+            try:
+                f_start = read_target.fine_frequency
+            except ValueError:
+                f_start = read_target.frequency
         frequency_range = np.arange(f_start, f_start + df * n_samples, df)
-
-        def _execute(*, reset_awg_and_capunits: bool = True):
-            if reset_awg_and_capunits:
-                self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
-            phases = []
+        if len(frequency_range) < 2:
+            raise ValueError("Electrical delay requires at least two frequencies.")
+        plan = self.ctx.system_manager.plan_frequency_sweep(
+            read_label,
+            frequency_range,
+        )
+        if len(plan) != 1:
+            raise ValueError(
+                "Electrical delay frequencies must fit one fixed configuration."
+            )
+        configuration = plan[0].configuration
+        if confirm and plan[0].requires_reconfiguration:
+            if not Confirm.ask(
+                "You are about to change the backend configuration. Do you want to proceed?"
+            ):
+                print("Operation cancelled.")
+                return  # type: ignore
+        phases = []
+        with self.ctx.system_manager.modified_sweep_configuration(configuration):
             for freq in tqdm(frequency_range, desc=f"electrical delay for {target}"):
                 with self.ctx.modified_frequencies({read_label: freq}):
-                    result = self._measurement_service.measure(
+                    result = self.ctx.measurement.measure(
                         {qubit_label: np.zeros(0)},
-                        mode="avg",
+                        shot_averaging=True,
+                        readout_duration=self.pulse.readout_duration,
+                        readout_pre_margin=self.pulse.readout_pre_margin,
+                        readout_post_margin=self.pulse.readout_post_margin,
                         readout_amplitudes={qubit_label: readout_amplitude},
-                        shots=shots,
-                        interval=interval,
+                        n_shots=shots,
+                        shot_interval=interval,
                         plot=False,
-                        reset_awg_and_capunits=False,
                     )
-                    signal = result.data[target].kerneled
-                    phase = -np.angle(signal)
-                    phases.append(phase)
-            return phases
-
-        if use_quel3_frequency_directives:
-            phases = _execute(reset_awg_and_capunits=False)
-        elif abs(f_start - f_nco) > 0.2:
-            # if the frequency is far from the NCO frequency, we need to change the LO/NCO frequency
-            if confirm:
-                confirmed = Confirm.ask(
-                    "You are about to change the NCO frequencies. Do you want to proceed?"
-                )
-                if not confirmed:
-                    print("Operation cancelled.")
-                    return  # type: ignore
-
-            cnco_center = read_box.traits.readout_cnco_center
-            lo, cnco, _ = MixingUtil.calc_lo_cnco(
-                f_start * 1e9,
-                ssb=ssb,
-                cnco_center=cnco_center,
-            )
-            with self.ctx.system_manager.modified_backend_settings(
-                label=read_label,
-                lo_freq=lo,
-                cnco_freq=cnco,
-                fnco_freq=0,
-            ):
-                logger.debug(f"LO: {lo}, CNCO: {cnco}")
-                phases = _execute(reset_awg_and_capunits=False)
-        else:
-            # if the frequency is close to the NCO frequency, we can use the current settings
-            phases = _execute()
+                phases.append(-np.angle(result.data[qubit_label].kerneled))
 
         unwrapped = np.unwrap(phases)
 
@@ -2564,7 +2532,6 @@ class CharacterizationService:
         if target is None:
             target = self.ctx.qubit_labels[0]
 
-        read_label = self.ctx.resolve_read_label(target)
         qubit_label = self.ctx.resolve_qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
         read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
@@ -2603,89 +2570,79 @@ class CharacterizationService:
         if readout_ramp_type is None:
             readout_ramp_type = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMP_TYPE
 
-        # split frequency range to avoid the frequency sweep range limit
-        frequency_range = np.array(frequency_range)
-        subranges = ExperimentUtil.split_frequency_range(
-            frequency_range=frequency_range,
+        frequencies = np.asarray(frequency_range)
+        if frequencies.ndim != 1 or len(frequencies) < 2:
+            raise ValueError("Resonator scans require at least two frequencies.")
+        read_label = self.ctx.resolve_read_label(target)
+        plan = self.ctx.system_manager.plan_frequency_sweep(
+            read_label,
+            frequencies,
             subrange_width=subrange_width,
+            overlap=True,
         )
-
-        bounds = [
-            subranges[0][0],
-        ] + [subrange[-1] for subrange in subranges]
-
-        signals = []
-
-        idx = 0
+        signals = np.empty(len(frequencies), dtype=complex)
         phase_offset = 0.0
 
-        use_quel3_frequency_directives = self._uses_quel3_frequency_directives()
-        if not use_quel3_frequency_directives:
-            ssb = read_box.traits.readout_ssb
-            cnco_center = read_box.traits.readout_cnco_center
+        def acquire(
+            frequency: float,
+            *,
+            duration: float | None = None,
+            ramptime: float | None = None,
+            drag_coeff: float | None = None,
+            ramp_type: RampType | None = None,
+        ) -> complex:
+            with self.ctx.modified_frequencies({read_label: frequency}):
+                result = self.ctx.measurement.measure(
+                    {qubit_label: np.zeros(0)},
+                    shot_averaging=True,
+                    readout_pre_margin=self.pulse.readout_pre_margin,
+                    readout_post_margin=self.pulse.readout_post_margin,
+                    readout_amplitudes={qubit_label: readout_amplitude},
+                    readout_duration=self.pulse.readout_duration
+                    if duration is None
+                    else duration,
+                    readout_ramp_time=ramptime,
+                    readout_drag_coeff=drag_coeff,
+                    readout_ramp_type=ramp_type,
+                    n_shots=shots,
+                    shot_interval=interval,
+                )
+            return complex(np.asarray(result.data[qubit_label].kerneled).item())
 
-        for subrange in tqdm(
-            subranges, desc=f"resonator freq. scan subranges for {target}"
-        ):
-            if use_quel3_frequency_directives:
-                backend_settings = nullcontext()
-            else:
-                f_center = (subrange[0] + subrange[-1]) / 2
-                lo, cnco, _ = MixingUtil.calc_lo_cnco(
-                    f_center * 1e9,
-                    ssb=ssb,
-                    cnco_center=cnco_center,
-                )
-                backend_settings = self.ctx.system_manager.modified_backend_settings(
-                    label=read_label,
-                    lo_freq=lo,
-                    cnco_freq=cnco,
-                    fnco_freq=0,
-                )
-            with backend_settings:
-                for sub_idx, freq in enumerate(
+        for segment in tqdm(plan, desc=f"resonator freq. scan subranges for {target}"):
+            with self.ctx.system_manager.modified_sweep_configuration(
+                segment.configuration
+            ):
+                reference = segment.reference_value
+                if reference is not None:
+                    raw = acquire(reference)
+                    corrected = raw * np.exp(
+                        1j * (2 * np.pi * reference * tau - phase_offset)
+                    )
+                    phase_offset += np.angle(corrected) - np.angle(
+                        signals[segment.indices[0] - 1]
+                    )
+                for index, frequency in zip(
+                    segment.indices,
                     tqdm(
-                        subrange,
+                        segment.values,
                         desc="resonator frequency within subrange",
                         leave=False,
-                    )
+                    ),
+                    strict=True,
                 ):
-                    if idx > 0 and sub_idx == 0:
-                        prev_freq = frequency_range[idx - 1]
-                        with self.ctx.modified_frequencies({read_label: prev_freq}):
-                            result = self._measurement_service.measure(
-                                {qubit_label: np.zeros(0)},
-                                mode="avg",
-                                readout_amplitudes={qubit_label: readout_amplitude},
-                                shots=shots,
-                                interval=interval,
-                                reset_awg_and_capunits=False,
-                            )
-                            raw = result.data[target].kerneled
-                            phase_adjust = 2 * np.pi * prev_freq * tau - phase_offset
-                            signal = raw * np.exp(1j * phase_adjust)
-                            phase_offset += np.angle(signal) - np.angle(signals[-1])
-
-                    with self.ctx.modified_frequencies({read_label: freq}):
-                        result = self._measurement_service.measure(
-                            {qubit_label: np.zeros(0)},
-                            mode="avg",
-                            readout_amplitudes={qubit_label: readout_amplitude},
-                            readout_duration=readout_duration,
-                            readout_ramptime=readout_ramptime,
-                            readout_drag_coeff=readout_drag_coeff,
-                            readout_ramp_type=readout_ramp_type,
-                            shots=shots,
-                            interval=interval,
-                            reset_awg_and_capunits=False,
-                        )
-                        raw = result.data[target].kerneled
-                        phase_adjust = 2 * np.pi * freq * tau - phase_offset
-                        signal = raw * np.exp(1j * phase_adjust)
-                        signals.append(signal)
-                        idx += 1
-
-        signals = np.array(signals)
+                    raw = acquire(
+                        frequency,
+                        duration=readout_duration,
+                        ramptime=readout_ramptime,
+                        drag_coeff=readout_drag_coeff,
+                        ramp_type=readout_ramp_type,
+                    )
+                    signals[index] = raw * np.exp(
+                        1j * (2 * np.pi * frequency * tau - phase_offset)
+                    )
+        subranges = [np.asarray(segment.values) for segment in plan]
+        bounds = [subranges[0][0]] + [subrange[-1] for subrange in subranges]
         amplitudes = np.abs(signals)
         phases = np.angle(signals)
         phases -= phases[0] - np.pi
@@ -2920,6 +2877,7 @@ class CharacterizationService:
         frequency_range: ArrayLike | None = None,
         power_range: ArrayLike | None = None,
         electrical_delay: float | None = None,
+        subrange_width: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -2936,6 +2894,10 @@ class CharacterizationService:
             Frequency sweep range in GHz.
         power_range
             Readout power sweep range in dB.
+        subrange_width : float | None, optional
+            Maximum span in GHz per frequency segment, including overlap
+            references. Backend limits may shorten segments. None uses the
+            frequency scan's default.
         """
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -2973,6 +2935,7 @@ class CharacterizationService:
                 shots=shots,
                 interval=interval,
                 plot=False,
+                confirm=False,
             )
 
         result = []
@@ -2983,6 +2946,7 @@ class CharacterizationService:
                 target,
                 frequency_range=frequency_range,
                 electrical_delay=electrical_delay,
+                subrange_width=subrange_width,
                 readout_amplitude=amplitude,
                 shots=shots,
                 interval=interval,
@@ -3226,10 +3190,12 @@ class CharacterizationService:
 
         if subrange_width is None:
             subrange_width = DEFAULT_QUBIT_FREQUENCY_SCAN_SUBRANGE_WIDTH_GHZ
-        subranges = ExperimentUtil.split_frequency_range(
-            frequency_range=frequency_range,
+        plan = self.ctx.system_manager.plan_frequency_sweep(
+            qubit,
+            frequency_range,
             subrange_width=subrange_width,
         )
+        subranges = [np.asarray(segment.values) for segment in plan]
 
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -3246,71 +3212,47 @@ class CharacterizationService:
         # result buffer
         signals = []
 
-        use_quel3_frequency_directives = self._uses_quel3_frequency_directives()
-        if not use_quel3_frequency_directives:
-            ssb = ctrl_box.traits.ctrl_ssb
-            cnco_center = CNCO_CENTER_CTRL_HZ
-
-        # measure the phase and amplitude
-        idx = 0
-        for subrange in tqdm(
-            subranges, desc=f"qubit freq. scan subranges for {target}"
-        ):
-            if use_quel3_frequency_directives:
-                backend_settings = nullcontext()
-            else:
-                f_center = (subrange[0] + subrange[-1]) / 2
-                lo, cnco, _ = MixingUtil.calc_lo_cnco(
-                    f_center * 1e9,
-                    ssb=ssb,
-                    cnco_center=cnco_center,
-                )
-                backend_settings = self.ctx.system_manager.modified_backend_settings(
-                    label=qubit,
-                    lo_freq=lo,
-                    cnco_freq=cnco,
-                    fnco_freq=0,
-                )
-            with backend_settings:
-                self.ctx.reset_awg_and_capunits(qubits=[qubit])
+        for segment in tqdm(plan, desc=f"qubit freq. scan subranges for {target}"):
+            subrange = segment.values
+            with self.ctx.system_manager.modified_sweep_configuration(
+                segment.configuration
+            ):
                 for control_frequency in tqdm(
                     subrange, desc="qubit frequency within subrange", leave=False
                 ):
-                    with self.ctx.modified_frequencies(
-                        {
-                            qubit: control_frequency,
-                            resonator: readout_frequency,
-                        }
-                    ):
-                        with PulseSchedule([qubit, resonator]) as ps:
-                            ps.add(
-                                qubit,
-                                Gaussian(
-                                    duration=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_DURATION,
-                                    amplitude=control_amplitude,
-                                    sigma=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_SIGMA,
-                                ),
-                            )
-                            if not simultaneous_drive:
-                                ps.barrier()
-                            ps.add(
-                                resonator,
-                                FlatTop(
-                                    duration=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_DURATION,
-                                    amplitude=readout_amplitude,
-                                    tau=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_RAMPTIME,
-                                ),
-                            )
-                        result = self.measurement_service.execute(
-                            schedule=ps,
-                            mode="avg",
-                            shots=shots,
-                            interval=interval,
-                            reset_awg_and_capunits=False,
+                    with PulseSchedule([qubit, resonator]) as ps:
+                        ps.add(
+                            qubit,
+                            Gaussian(
+                                duration=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_DURATION,
+                                amplitude=control_amplitude,
+                                sigma=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_SIGMA,
+                            ),
                         )
-                        signal = result.data[qubit][-1].kerneled
-                        signals.append(signal)
-                        idx += 1
+                        if not simultaneous_drive:
+                            ps.barrier()
+                        ps.add(
+                            resonator,
+                            FlatTop(
+                                duration=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_DURATION,
+                                amplitude=readout_amplitude,
+                                tau=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_RAMPTIME,
+                            ),
+                        )
+                    with self.ctx.modified_frequencies(
+                        {qubit: control_frequency, resonator: readout_frequency}
+                    ):
+                        result = self.ctx.measurement.execute(
+                            schedule=ps,
+                            shot_averaging=True,
+                            readout_duration=self.pulse.readout_duration,
+                            readout_pre_margin=self.pulse.readout_pre_margin,
+                            readout_post_margin=self.pulse.readout_post_margin,
+                            n_shots=shots,
+                            shot_interval=interval,
+                        )
+                    signal = result.data[qubit][-1].kerneled
+                    signals.append(signal)
 
         signals = np.array(signals)
         amplitudes = np.abs(signals)
@@ -3730,6 +3672,7 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
         *,
+        subrange_width: float | None = None,
         simultaneous_drive: bool | None = None,
     ) -> Result:
         """
@@ -3743,6 +3686,9 @@ class CharacterizationService:
             Control frequency sweep range in GHz.
         power_range
             Drive power sweep range in dB.
+        subrange_width : float | None, optional
+            Maximum span in GHz per frequency segment. Backend limits may
+            shorten segments. None uses the frequency scan's default.
         simultaneous_drive : bool | None, optional
             Whether control and readout pulses start together. False starts
             readout after the control pulse ends. None defaults to True.
@@ -3768,6 +3714,7 @@ class CharacterizationService:
             result1d = self.scan_qubit_frequencies(
                 target,
                 frequency_range=frequency_range,
+                subrange_width=subrange_width,
                 simultaneous_drive=simultaneous_drive,
                 control_amplitude=amplitude,
                 readout_amplitude=readout_amplitude,
