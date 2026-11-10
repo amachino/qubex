@@ -2877,6 +2877,7 @@ class CharacterizationService:
         frequency_range: ArrayLike | None = None,
         power_range: ArrayLike | None = None,
         electrical_delay: float | None = None,
+        subrange_width: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -2893,6 +2894,10 @@ class CharacterizationService:
             Frequency sweep range in GHz.
         power_range
             Readout power sweep range in dB.
+        subrange_width : float | None, optional
+            Maximum span in GHz per frequency segment, including overlap
+            references. Backend limits may shorten segments. None uses the
+            frequency scan's default.
         """
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -2941,6 +2946,7 @@ class CharacterizationService:
                 target,
                 frequency_range=frequency_range,
                 electrical_delay=electrical_delay,
+                subrange_width=subrange_width,
                 readout_amplitude=amplitude,
                 shots=shots,
                 interval=interval,
@@ -3666,6 +3672,7 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
         *,
+        subrange_width: float | None = None,
         simultaneous_drive: bool | None = None,
     ) -> Result:
         """
@@ -3679,6 +3686,9 @@ class CharacterizationService:
             Control frequency sweep range in GHz.
         power_range
             Drive power sweep range in dB.
+        subrange_width : float | None, optional
+            Maximum span in GHz per frequency segment. Backend limits may
+            shorten segments. None uses the frequency scan's default.
         simultaneous_drive : bool | None, optional
             Whether control and readout pulses start together. False starts
             readout after the control pulse ends. None defaults to True.
@@ -3704,6 +3714,7 @@ class CharacterizationService:
             result1d = self.scan_qubit_frequencies(
                 target,
                 frequency_range=frequency_range,
+                subrange_width=subrange_width,
                 simultaneous_drive=simultaneous_drive,
                 control_amplitude=amplitude,
                 readout_amplitude=readout_amplitude,

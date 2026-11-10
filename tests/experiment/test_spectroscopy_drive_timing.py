@@ -95,3 +95,48 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
             assert readout.start == control.stop
         else:
             assert readout.start == control.start
+
+
+@pytest.mark.parametrize("subrange_width", ["omitted", None, 0.9])
+def test_qubit_spectroscopy_forwards_subrange_width_per_power(subrange_width) -> None:
+    """Each qubit power scan receives the requested width and complete frequency range."""
+    calls = []
+    frequencies = [5.0, 5.1, 5.4]
+    powers = [-30.0, -20.0]
+    service = CharacterizationService(
+        experiment_context=cast(Any, None),
+        measurement_service=cast(Any, None),
+        calibration_service=cast(Any, None),
+        pulse_service=cast(Any, None),
+    )
+
+    def scan(target, **kwargs):
+        calls.append((target, kwargs))
+        return {
+            "phases": [len(calls)] * len(frequencies),
+            "frequency_range": frequencies,
+            "readout_amplitude": 0.2,
+        }
+
+    service.scan_qubit_frequencies = cast(Any, scan)
+    kwargs = {} if subrange_width == "omitted" else {"subrange_width": subrange_width}
+    result = service.qubit_spectroscopy(
+        "Q00",
+        frequency_range=frequencies,
+        power_range=powers,
+        plot=False,
+        save_image=False,
+        **kwargs,
+    )
+
+    assert len(calls) == len(powers)
+    for (target, kwargs), power in zip(calls, powers, strict=True):
+        assert target == "Q00"
+        assert kwargs["frequency_range"] == frequencies
+        assert kwargs["control_amplitude"] == pytest.approx(
+            (10 ** (power / 10)) ** 0.5, rel=0, abs=1e-12
+        )
+        assert kwargs["subrange_width"] == (
+            None if subrange_width == "omitted" else subrange_width
+        )
+    assert result.data["data"].tolist() == [[1, 1, 1], [2, 2, 2]]

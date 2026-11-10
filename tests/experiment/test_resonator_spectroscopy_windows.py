@@ -11,7 +11,10 @@ from qubex.experiment.services.characterization_service import CharacterizationS
 from tests.experiment.test_characterization_service_electrical_delay import _FakeContext
 
 
-def test_resonator_spectroscopy_scans_complete_frequency_range_per_power():
+@pytest.mark.parametrize("subrange_width", ["omitted", None, 0.9])
+def test_resonator_spectroscopy_scans_complete_frequency_range_per_power(
+    subrange_width,
+):
     """Each power runs the existing frequency scan and preserves its phase-difference row."""
     calls = []
     ctx = _FakeContext()
@@ -29,6 +32,7 @@ def test_resonator_spectroscopy_scans_complete_frequency_range_per_power():
         return {"phases_diff": np.array([-1.0, 2.0, -3.0]) * len(calls)}
 
     service.scan_resonator_frequencies = cast(Any, scan)
+    kwargs = {} if subrange_width == "omitted" else {"subrange_width": subrange_width}
     result = service.resonator_spectroscopy(
         "Q00",
         frequency_range=frequencies,
@@ -38,6 +42,7 @@ def test_resonator_spectroscopy_scans_complete_frequency_range_per_power():
         interval=2048,
         plot=False,
         save_image=False,
+        **kwargs,
     )
     assert len(calls) == 2
     for (target, kwargs), power in zip(calls, powers, strict=True):
@@ -45,6 +50,9 @@ def test_resonator_spectroscopy_scans_complete_frequency_range_per_power():
         np.testing.assert_array_equal(kwargs["frequency_range"], frequencies)
         assert kwargs["readout_amplitude"] == np.sqrt(10 ** (power / 10))
         assert kwargs["electrical_delay"] == 0.0
+        assert kwargs["subrange_width"] == (
+            None if subrange_width == "omitted" else subrange_width
+        )
         assert kwargs["shots"] == 13
         assert kwargs["interval"] == 2048
         assert kwargs["plot"] is False

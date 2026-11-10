@@ -4887,17 +4887,28 @@ class Experiment:
         frequency_range: ArrayLike | None = None,
         power_range: ArrayLike | None = None,
         electrical_delay: float | None = None,
+        subrange_width: float | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Run resonator spectroscopy for a target."""
+        """
+        Run resonator spectroscopy for a target.
+
+        Parameters
+        ----------
+        subrange_width : float | None, optional
+            Maximum span in GHz per frequency segment, including overlap
+            references. Backend limits may shorten segments. None uses the
+            frequency scan's default.
+        """
         return self.characterization_service.resonator_spectroscopy(
             target=target,
             frequency_range=frequency_range,
             power_range=power_range,
             electrical_delay=electrical_delay,
+            subrange_width=subrange_width,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,
@@ -5087,6 +5098,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
         *,
+        subrange_width: float | None = None,
         simultaneous_drive: bool | None = None,
     ) -> Result:
         """
@@ -5094,6 +5106,9 @@ class Experiment:
 
         Parameters
         ----------
+        subrange_width : float | None, optional
+            Maximum span in GHz per frequency segment. Backend limits may
+            shorten segments. None uses the frequency scan's default.
         simultaneous_drive : bool | None, optional
             Whether control and readout pulses start together. False starts
             readout after the control pulse ends. None defaults to True.
@@ -5101,6 +5116,7 @@ class Experiment:
         return self.characterization_service.qubit_spectroscopy(
             target=target,
             frequency_range=frequency_range,
+            subrange_width=subrange_width,
             simultaneous_drive=simultaneous_drive,
             power_range=power_range,
             readout_amplitude=readout_amplitude,
