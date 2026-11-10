@@ -2400,7 +2400,9 @@ class CharacterizationService:
         target : str
             Target qubit label.
         f_start : float | None, optional
-            Start frequency for the sweep in GHz.
+            Start frequency for the sweep in GHz. If omitted, use the target's
+            fine frequency, or its target frequency if the fine frequency raises
+            `ValueError`.
         df : float | None, optional
             Frequency sweep step size in GHz.
         n_samples : int | None, optional
@@ -2422,14 +2424,6 @@ class CharacterizationService:
         read_label = self.ctx.resolve_read_label(target)
         qubit_label = self.ctx.resolve_qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
-        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
-        use_quel3_frequency_directives = self._uses_quel3_frequency_directives()
-        if use_quel3_frequency_directives:
-            current_frequency = self.ctx.targets[read_label].frequency
-        else:
-            ssb = self.ctx.targets[read_label].sideband
-            f_nco = self.ctx.targets[read_label].fine_frequency
-
         if df is None:
             df = DEFAULT_ELECTRICAL_DELAY_STEP_GHZ
         if n_samples is None:
@@ -2437,61 +2431,45 @@ class CharacterizationService:
         if readout_amplitude is None:
             readout_amplitude = DEFAULT_ELECTRICAL_DELAY_READOUT_AMPLITUDE
         if f_start is None:
-            if use_quel3_frequency_directives:
-                f_start = current_frequency
-            else:
-                f_start = f_nco
+            read_target = self.ctx.targets[read_label]
+            try:
+                f_start = read_target.fine_frequency
+            except ValueError:
+                f_start = read_target.frequency
         frequency_range = np.arange(f_start, f_start + df * n_samples, df)
-
-        def _execute(*, reset_awg_and_capunits: bool = True):
-            if reset_awg_and_capunits:
-                self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
-            phases = []
+        if len(frequency_range) < 2:
+            raise ValueError("Electrical delay requires at least two frequencies.")
+        plan = self.ctx.system_manager.plan_frequency_sweep(
+            read_label,
+            frequency_range,
+        )
+        if len(plan) != 1:
+            raise ValueError(
+                "Electrical delay frequencies must fit one fixed configuration."
+            )
+        configuration = plan[0].configuration
+        if confirm and plan[0].requires_reconfiguration:
+            if not Confirm.ask(
+                "You are about to change the backend configuration. Do you want to proceed?"
+            ):
+                print("Operation cancelled.")
+                return  # type: ignore
+        phases = []
+        with self.ctx.system_manager.modified_sweep_configuration(configuration):
             for freq in tqdm(frequency_range, desc=f"electrical delay for {target}"):
                 with self.ctx.modified_frequencies({read_label: freq}):
-                    result = self._measurement_service.measure(
+                    result = self.ctx.measurement.measure(
                         {qubit_label: np.zeros(0)},
                         mode="avg",
+                        readout_duration=self.pulse.readout_duration,
+                        readout_pre_margin=self.pulse.readout_pre_margin,
+                        readout_post_margin=self.pulse.readout_post_margin,
                         readout_amplitudes={qubit_label: readout_amplitude},
                         shots=shots,
                         interval=interval,
                         plot=False,
-                        reset_awg_and_capunits=False,
                     )
-                    signal = result.data[target].kerneled
-                    phase = -np.angle(signal)
-                    phases.append(phase)
-            return phases
-
-        if use_quel3_frequency_directives:
-            phases = _execute(reset_awg_and_capunits=False)
-        elif abs(f_start - f_nco) > 0.2:
-            # if the frequency is far from the NCO frequency, we need to change the LO/NCO frequency
-            if confirm:
-                confirmed = Confirm.ask(
-                    "You are about to change the NCO frequencies. Do you want to proceed?"
-                )
-                if not confirmed:
-                    print("Operation cancelled.")
-                    return  # type: ignore
-
-            cnco_center = read_box.traits.readout_cnco_center
-            lo, cnco, _ = MixingUtil.calc_lo_cnco(
-                f_start * 1e9,
-                ssb=ssb,
-                cnco_center=cnco_center,
-            )
-            with self.ctx.system_manager.modified_backend_settings(
-                label=read_label,
-                lo_freq=lo,
-                cnco_freq=cnco,
-                fnco_freq=0,
-            ):
-                logger.debug(f"LO: {lo}, CNCO: {cnco}")
-                phases = _execute(reset_awg_and_capunits=False)
-        else:
-            # if the frequency is close to the NCO frequency, we can use the current settings
-            phases = _execute()
+                phases.append(-np.angle(result.data[qubit_label].kerneled))
 
         unwrapped = np.unwrap(phases)
 
