@@ -135,6 +135,50 @@ def test_quel3_restores_native_instrument_configuration():
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.parametrize("number", [1, 2])
+def test_quel1_sweep_without_lo_restores_oscillators_and_cache(number, fail):
+    """Ports without an LO restore frequencies and omitted cache keys after failures."""
+    backend = Quel1Stub()
+    port = backend.cache["box"]["ports"][number]
+    # Native dumps omit this key, unlike the normalized sweep settings type.
+    cast(Any, port).pop("lo_freq")
+    port["cnco_freq"] = 3_900_000_000
+    backend.cache["box"]["ports"] = {number: port}
+    backend.hardware = deepcopy(backend.cache)
+    original = deepcopy(backend.cache)
+    calls = []
+
+    def config_port(box, *, port, lo_freq_hz, cnco_freq_hz):
+        assert lo_freq_hz is None
+        calls.append(cnco_freq_hz)
+        backend.hardware[box]["ports"][port]["cnco_freq"] = cnco_freq_hz
+
+    backend.config_port = config_port
+    manager = Quel1FrequencyConfigurationManager(cast(Any, backend))
+    configuration = manager.plan(
+        [4.0, 4.1], configuration=original, sideband=None, cnco_center=None
+    )[0].configuration
+
+    def acquire():
+        with manager.modified(configuration):
+            actual = backend.hardware["box"]["ports"][number]
+            expected = configuration.settings["box"]["ports"][number]
+            assert actual["cnco_freq"] == expected["cnco_freq"]
+            channels = actual.get("channels", actual.get("runits", {}))
+            assert channels[0]["fnco_freq"] == 0
+            if fail:
+                raise RuntimeError("acquisition")
+
+    if fail:
+        with pytest.raises(RuntimeError, match="acquisition"):
+            acquire()
+    else:
+        acquire()
+    assert len(calls) == 2
+    assert backend.hardware == backend.cache == original
+
+
 @pytest.mark.parametrize("sideband", ["U", "L", None])
 def test_quantized_settings_cover_requested_carriers(sideband):
     """Each mixing path realizes requested carriers inside its baseband interval."""

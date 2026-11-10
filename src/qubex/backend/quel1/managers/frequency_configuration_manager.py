@@ -115,7 +115,7 @@ class Quel1FrequencyConfigurationManager:
                 for number, port in settings["ports"].items():
                     original = cache[box]["ports"][number]
                     saved: Quel1PortFrequencySettings = {
-                        "lo_freq": original["lo_freq"],
+                        "lo_freq": original.get("lo_freq"),
                         "cnco_freq": original["cnco_freq"],
                     }
                     for key in ("channels", "runits"):
@@ -126,20 +126,25 @@ class Quel1FrequencyConfigurationManager:
                             }
                     if saved == port:
                         continue
-                    touched.append((box, number, saved))
+                    touched.append((box, number, saved, "lo_freq" in original))
                     self._apply(box, number, port)
             self.controller.initialize_awg_and_capunits(list(configuration.settings))
             yield
         finally:
             errors = []
-            for box, number, saved in reversed(touched):
+            for box, number, saved, had_lo in reversed(touched):
                 try:
                     self._apply(box, number, saved)
+                    if not had_lo:
+                        # Preserve the native dump's omission of an absent LO.
+                        restored = self.controller.get_box_config_cache()
+                        restored[box]["ports"][number].pop("lo_freq", None)
+                        self.controller.update_box_config_cache({box: restored[box]})
                 except Exception as exc:  # noqa: PERF203
                     errors.append(exc)
             if errors:
                 cache = self.controller.get_box_config_cache()
-                for box, _, _ in touched:
+                for box, _, _, _ in touched:
                     cache.pop(box, None)
                 self.controller.replace_box_config_cache(cache)
                 raise RuntimeError(
