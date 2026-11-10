@@ -28,6 +28,10 @@ from tests.experiment.test_characterization_service_electrical_delay import (
 def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -> None:
     """Spectroscopy should separate control and readout only when explicitly requested."""
     schedules: list[PulseSchedule] = []
+    confirm = Mock(side_effect=AssertionError("Spectroscopy must not prompt"))
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.Confirm.ask", confirm
+    )
 
     def execute(*, schedule: PulseSchedule, **kwargs):
         schedules.append(schedule)
@@ -83,6 +87,7 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
         getattr(exp, method)("Q00", **kwargs)
 
     assert len(schedules) == (6 if method == "qubit_spectroscopy" else 3)
+    confirm.assert_not_called()
     for schedule in schedules:
         control = schedule.get_pulse_ranges()["Q00"][0]
         readout = schedule.get_pulse_ranges()["R00"][0]

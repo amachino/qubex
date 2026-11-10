@@ -2930,6 +2930,7 @@ class CharacterizationService:
                 shots=shots,
                 interval=interval,
                 plot=False,
+                confirm=False,
             )
 
         result = []
