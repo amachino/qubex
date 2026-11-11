@@ -53,7 +53,7 @@ def test_randomized_benchmarking_2q_checks_classifiers_before_measurement(
             targets="CR17-18",
             n_cliffords_range=[0],
             n_trials=1,
-            seeds=[0],
+            seeds=[[0]],
             plot=False,
             save_image=False,
         )
@@ -147,7 +147,7 @@ def test_rb_rejects_missing_prerequisites_before_hardware_access(
             in_parallel=in_parallel,
             n_cliffords_range=[0],
             n_trials=1,
-            seeds=[0],
+            seeds=[[0]],
             plot=False,
             save_image=False,
         )
