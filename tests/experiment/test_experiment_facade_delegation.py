@@ -296,6 +296,8 @@ def test_benchmark_1q_delegates_to_benchmarking_service() -> None:
             {
                 "targets": ["Q00", "Q01"],
                 "n_trials": 10,
+                "paired": True,
+                "acquisition_seed": None,
                 "in_parallel": True,
                 "shots": 512,
                 "interval": 200.0,
@@ -329,6 +331,8 @@ def test_benchmark_2q_delegates_to_benchmarking_service() -> None:
             {
                 "targets": ["Q00-Q01"],
                 "n_trials": 12,
+                "paired": True,
+                "acquisition_seed": None,
                 "in_parallel": False,
                 "shots": 1024,
                 "interval": 240.0,

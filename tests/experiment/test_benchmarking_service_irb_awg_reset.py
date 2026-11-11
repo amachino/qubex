@@ -101,6 +101,7 @@ def test_irb_experiment_resets_awg_once_for_1q(monkeypatch: Any) -> None:
     service.irb_experiment(
         targets=["custom-target"],
         interleaved_clifford="X90",
+        paired=False,
         plot=False,
         save_image=False,
     )
@@ -149,6 +150,7 @@ def test_irb_experiment_resets_awg_once_for_2q(monkeypatch: Any) -> None:
     service.irb_experiment(
         targets=["CR17-18"],
         interleaved_clifford="II",
+        paired=False,
         plot=False,
         save_image=False,
     )
@@ -200,6 +202,7 @@ def test_irb_experiment_reuses_auto_reference_sweep_for_1q(
     service.irb_experiment(
         targets=["Q17"],
         interleaved_clifford="X90",
+        paired=False,
         plot=False,
         save_image=False,
     )
@@ -251,6 +254,7 @@ def test_irb_experiment_reuses_auto_reference_sweep_for_2q(
     service.irb_experiment(
         targets=["CR17-18"],
         interleaved_clifford="II",
+        paired=False,
         plot=False,
         save_image=False,
     )
@@ -298,6 +302,7 @@ def test_irb_experiment_includes_reference_and_interleaved_trial_data(
     result = service.irb_experiment(
         targets=["Q17"],
         interleaved_clifford="X90",
+        paired=False,
         n_trials=2,
         plot=False,
         save_image=False,

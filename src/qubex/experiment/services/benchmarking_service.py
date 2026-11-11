@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection, Mapping
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -36,6 +36,18 @@ from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+
+
+def _paired_points(n_trials: int, rng: np.random.Generator) -> list[tuple[int, bool]]:
+    """Return adjacent points with balanced, randomized reference/interleaved order."""
+    n_first = n_trials // 2 + (int(rng.integers(2)) if n_trials % 2 else 0)
+    first = np.arange(n_trials) < n_first
+    rng.shuffle(first)
+    return [
+        (int(trial), protocol)
+        for trial in rng.permutation(n_trials)
+        for protocol in (bool(first[trial]), not bool(first[trial]))
+    ]
 
 
 def _rb_lengths(values: ArrayLike | None, maximum: int) -> np.ndarray:
@@ -941,6 +953,166 @@ class BenchmarkingService:
             figures={target: result["fig"] for target, result in return_data.items()},
         )
 
+    async def _acquire_paired_irb(
+        self,
+        targets: list[str],
+        *,
+        lengths: np.ndarray,
+        seeds: np.ndarray,
+        automatic: bool,
+        is_2q: bool,
+        clifford: Clifford,
+        interleaved_waveform: Any,
+        x90: Any,
+        zx90: Any,
+        in_parallel: bool,
+        shots: int,
+        interval: float,
+        time_integration: bool,
+        acquisition_seed: int | None,
+    ) -> tuple[Result, Result, dict[str, Any]]:
+        """Acquire each length as adjacent pairs and restore canonical trial order."""
+        if is_2q:
+            if self.ctx.state_centers is None:
+                raise ValueError("State classifiers are not built.")
+            for target in targets:
+                if target not in self.ctx.calib_note.cr_params:
+                    raise ValueError(f"CR parameters not found for {target}.")
+                for qubit in self.ctx.cr_pair(target):
+                    if self.ctx.classifiers.get(qubit) is None:
+                        raise ValueError(f"Classifier not found for {qubit}.")
+        rng = np.random.default_rng(acquisition_seed)
+        groups = [targets] if in_parallel else [[target] for target in targets]
+        curves: list[dict[str, Any]] = [{}, {}]
+        acquisition: dict[str, Any] = {}
+        for group in groups:
+            rows: dict[str, list[list[np.ndarray]]] = {
+                target: [[], []] for target in group
+            }
+            order: list[dict[str, Any]] = []
+            for length_index, length in enumerate(lengths):
+                points = _paired_points(seeds.shape[1], rng)
+                order.extend(
+                    {
+                        "length_index": length_index,
+                        "trial_index": trial,
+                        "first_protocol": "interleaved" if protocol else "reference",
+                    }
+                    for trial, protocol in points[::2]
+                )
+
+                def schedule(
+                    point_index: int,
+                    *,
+                    points: list[tuple[int, bool]] = points,
+                    group: list[str] = group,
+                    length: int = int(length),
+                    length_index: int = length_index,
+                ) -> PulseSchedule:
+                    trial, interleaved = points[point_index]
+                    schedules: dict[str, Any] = {}
+                    for target in group:
+                        waveform = (
+                            interleaved_waveform.get(target)
+                            if interleaved and interleaved_waveform
+                            else None
+                        )
+                        common: dict[str, Any] = dict(
+                            n=int(length),
+                            seed=int(seeds[length_index, trial]),
+                            interleaved_clifford=clifford if interleaved else None,
+                            interleaved_waveform=waveform,
+                        )
+                        if is_2q:
+                            schedules[target] = self.rb_sequence_2q(
+                                target,
+                                x90=x90,
+                                zx90=zx90.get(target) if zx90 else None,
+                                **common,
+                            )
+                        else:
+                            schedules[target] = self.rb_sequence_1q(
+                                target, x90=x90.get(target) if x90 else None, **common
+                            )
+                    with PulseSchedule() as ps:
+                        if is_2q:
+                            duration = max(item.duration for item in schedules.values())
+                            for item in schedules.values():
+                                ps.call(
+                                    item.padded(
+                                        total_duration=duration,
+                                        pad_side="left",
+                                        deepcopy=False,
+                                    )
+                                )
+                        else:
+                            for target, item in schedules.items():
+                                ps.add(target, item)
+                    return ps
+
+                sweep = await self._run_rb_trial_sweep(
+                    schedule,
+                    seeds=np.arange(len(points)),
+                    targets=group,
+                    shots=shots,
+                    interval=interval,
+                    shot_averaging=not is_2q,
+                    time_integration=time_integration,
+                    reset_awg_and_capunits=False,
+                )
+                if len(sweep.results) != len(points):
+                    raise RuntimeError(
+                        "Paired IRB sweep returned an incomplete set of points."
+                    )
+                values = {target: np.empty((2, seeds.shape[1])) for target in group}
+                for point, (trial, protocol) in zip(sweep.results, points, strict=True):
+                    for target in group:
+                        if is_2q:
+                            value = get_mitigated_probabilities(
+                                point,
+                                targets=list(self.ctx.cr_pair(target)),
+                                classifiers=self.ctx.classifiers,
+                            ).get("00", 0.0)
+                        else:
+                            iq = np.asarray(point.data[target][-1].kerneled).reshape(-1)
+                            value = float(
+                                np.mean(
+                                    (self.pulse.rabi_params[target].normalize(iq) + 1)
+                                    / 2
+                                )
+                            )
+                        values[target][int(protocol), trial] = value
+                for target in group:
+                    for protocol in range(2):
+                        rows[target][protocol].append(values[target][protocol].copy())
+                threshold = 0.25 if is_2q else 0.5
+                if (
+                    automatic
+                    and max(
+                        np.mean(values[target][0]) - 0.5 * np.std(values[target][0])
+                        for target in group
+                    )
+                    < threshold
+                ):
+                    break
+            for target in group:
+                count = len(rows[target][0])
+                for protocol in range(2):
+                    trials = np.vstack(rows[target][protocol])
+                    curves[protocol][target] = {
+                        "n_cliffords": lengths[:count].copy(),
+                        "seeds": seeds[:count].copy(),
+                        "trials": trials,
+                        "mean": np.mean(trials, axis=1),
+                        "std": np.std(trials, axis=1) if seeds.shape[1] > 1 else None,
+                    }
+                acquisition[target] = {
+                    "paired": True,
+                    "acquisition_seed": acquisition_seed,
+                    "planned_order": list(order),
+                }
+        return Result(data=curves[0]), Result(data=curves[1]), acquisition
+
     def irb_experiment(
         self,
         targets: Collection[str] | str,
@@ -956,6 +1128,8 @@ class BenchmarkingService:
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
+        paired: bool = True,
+        acquisition_seed: int | None = None,
         shots: int | None = None,
         interval: float | None = None,
         time_integration: bool | None = None,
@@ -972,6 +1146,14 @@ class BenchmarkingService:
             the supplied length grid, or the full candidate grid through
             `max_n_cliffords` for automatic acquisition. Legacy vectors are
             not accepted. Results retain only acquired rows.
+
+        paired : bool, optional
+            Acquire adjacent reference/interleaved pairs in shuffled order
+            within each length, with balanced AB/BA order. Defaults to True.
+            False retains grouped reference-then-interleaved acquisition.
+        acquisition_seed : int | None, optional
+            Seed for pair ordering, independent of sequence seeds. Defaults
+            to None for fresh order. Ignored when paired is False.
         """
         if isinstance(targets, str):
             targets = [targets]
@@ -1020,44 +1202,89 @@ class BenchmarkingService:
 
         is_2q = self.ctx.experiment_system.get_target(targets[0]).is_cr
 
-        if is_2q:
-            dimension = 4
-            rb_result = self.rb_experiment_2q(
-                targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                zx90=zx90,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                time_integration=time_integration,
-                plot=False,
-                save_image=False,
-                reset_awg_and_capunits=False,
+        acquisition = {target: {"paired": False} for target in targets}
+        dimension = 4 if is_2q else 2
+        if paired:
+            rb_result, irb_result, acquisition = get_shared_async_bridge(
+                key="experiment"
+            ).run_without_timeout(
+                lambda: self._acquire_paired_irb(
+                    targets,
+                    lengths=candidate_lengths,
+                    seeds=seeds,
+                    automatic=n_cliffords_range is None,
+                    is_2q=is_2q,
+                    clifford=clifford,
+                    interleaved_waveform=interleaved_waveform,
+                    x90=x90,
+                    zx90=zx90,
+                    in_parallel=in_parallel,
+                    shots=shots if shots is not None else DEFAULT_SHOTS,
+                    interval=interval if interval is not None else DEFAULT_INTERVAL,
+                    time_integration=time_integration,
+                    acquisition_seed=acquisition_seed,
+                )
             )
-            reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
-            irb_n_cliffords_range = (
-                n_cliffords_range
-                if n_cliffords_range is not None
-                else _shared_n_cliffords_range(reference_ranges)
-            )
-            if irb_n_cliffords_range is None:
-                irb_data = {}
-                for target in targets:
-                    target_irb_result = self.rb_experiment_2q(
-                        targets=target,
-                        n_cliffords_range=reference_ranges[target],
+        else:
+            if is_2q:
+                dimension = 4
+                rb_result = self.rb_experiment_2q(
+                    targets,
+                    n_cliffords_range=n_cliffords_range,
+                    n_trials=n_trials,
+                    seeds=seeds,
+                    max_n_cliffords=max_n_cliffords,
+                    x90=x90,
+                    zx90=zx90,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    time_integration=time_integration,
+                    plot=False,
+                    save_image=False,
+                    reset_awg_and_capunits=False,
+                )
+                reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
+                irb_n_cliffords_range = (
+                    n_cliffords_range
+                    if n_cliffords_range is not None
+                    else _shared_n_cliffords_range(reference_ranges)
+                )
+                if irb_n_cliffords_range is None:
+                    irb_data = {}
+                    for target in targets:
+                        target_irb_result = self.rb_experiment_2q(
+                            targets=target,
+                            n_cliffords_range=reference_ranges[target],
+                            n_trials=n_trials,
+                            seeds=rb_result[target]["seeds"],
+                            max_n_cliffords=max_n_cliffords,
+                            x90=x90,
+                            zx90=zx90,
+                            interleaved_waveform=interleaved_waveform,  # type: ignore
+                            interleaved_clifford=interleaved_clifford,
+                            in_parallel=False,
+                            shots=shots,
+                            interval=interval,
+                            time_integration=time_integration,
+                            plot=False,
+                            save_image=False,
+                            reset_awg_and_capunits=False,
+                        )
+                        irb_data[target] = target_irb_result[target]
+                    irb_result = Result(data=irb_data)
+                else:
+                    irb_result = self.rb_experiment_2q(
+                        targets=targets,
+                        n_cliffords_range=irb_n_cliffords_range,
                         n_trials=n_trials,
-                        seeds=rb_result[target]["seeds"],
+                        seeds=rb_result[targets[0]]["seeds"],
                         max_n_cliffords=max_n_cliffords,
                         x90=x90,
                         zx90=zx90,
                         interleaved_waveform=interleaved_waveform,  # type: ignore
                         interleaved_clifford=interleaved_clifford,
-                        in_parallel=False,
+                        in_parallel=in_parallel,
                         shots=shots,
                         interval=interval,
                         time_integration=time_integration,
@@ -1065,19 +1292,15 @@ class BenchmarkingService:
                         save_image=False,
                         reset_awg_and_capunits=False,
                     )
-                    irb_data[target] = target_irb_result[target]
-                irb_result = Result(data=irb_data)
             else:
-                irb_result = self.rb_experiment_2q(
-                    targets=targets,
-                    n_cliffords_range=irb_n_cliffords_range,
+                dimension = 2
+                rb_result = self.rb_experiment_1q(
+                    targets,
+                    n_cliffords_range=n_cliffords_range,
                     n_trials=n_trials,
-                    seeds=rb_result[targets[0]]["seeds"],
+                    seeds=seeds,
                     max_n_cliffords=max_n_cliffords,
                     x90=x90,
-                    zx90=zx90,
-                    interleaved_waveform=interleaved_waveform,  # type: ignore
-                    interleaved_clifford=interleaved_clifford,
                     in_parallel=in_parallel,
                     shots=shots,
                     interval=interval,
@@ -1086,42 +1309,45 @@ class BenchmarkingService:
                     save_image=False,
                     reset_awg_and_capunits=False,
                 )
-        else:
-            dimension = 2
-            rb_result = self.rb_experiment_1q(
-                targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                time_integration=time_integration,
-                plot=False,
-                save_image=False,
-                reset_awg_and_capunits=False,
-            )
-            reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
-            irb_n_cliffords_range = (
-                n_cliffords_range
-                if n_cliffords_range is not None
-                else _shared_n_cliffords_range(reference_ranges)
-            )
-            if irb_n_cliffords_range is None:
-                irb_data = {}
-                for target in targets:
-                    target_irb_result = self.rb_experiment_1q(
-                        targets=target,
-                        n_cliffords_range=reference_ranges[target],
+                reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
+                irb_n_cliffords_range = (
+                    n_cliffords_range
+                    if n_cliffords_range is not None
+                    else _shared_n_cliffords_range(reference_ranges)
+                )
+                if irb_n_cliffords_range is None:
+                    irb_data = {}
+                    for target in targets:
+                        target_irb_result = self.rb_experiment_1q(
+                            targets=target,
+                            n_cliffords_range=reference_ranges[target],
+                            n_trials=n_trials,
+                            seeds=rb_result[target]["seeds"],
+                            max_n_cliffords=max_n_cliffords,
+                            x90=x90,
+                            interleaved_waveform=interleaved_waveform,  # type: ignore
+                            interleaved_clifford=interleaved_clifford,
+                            in_parallel=False,
+                            shots=shots,
+                            interval=interval,
+                            time_integration=time_integration,
+                            plot=False,
+                            save_image=False,
+                            reset_awg_and_capunits=False,
+                        )
+                        irb_data[target] = target_irb_result[target]
+                    irb_result = Result(data=irb_data)
+                else:
+                    irb_result = self.rb_experiment_1q(
+                        targets=targets,
+                        n_cliffords_range=irb_n_cliffords_range,
                         n_trials=n_trials,
-                        seeds=rb_result[target]["seeds"],
+                        seeds=rb_result[targets[0]]["seeds"],
                         max_n_cliffords=max_n_cliffords,
                         x90=x90,
                         interleaved_waveform=interleaved_waveform,  # type: ignore
                         interleaved_clifford=interleaved_clifford,
-                        in_parallel=False,
+                        in_parallel=in_parallel,
                         shots=shots,
                         interval=interval,
                         time_integration=time_integration,
@@ -1129,27 +1355,30 @@ class BenchmarkingService:
                         save_image=False,
                         reset_awg_and_capunits=False,
                     )
-                    irb_data[target] = target_irb_result[target]
-                irb_result = Result(data=irb_data)
-            else:
-                irb_result = self.rb_experiment_1q(
-                    targets=targets,
-                    n_cliffords_range=irb_n_cliffords_range,
-                    n_trials=n_trials,
-                    seeds=rb_result[targets[0]]["seeds"],
-                    max_n_cliffords=max_n_cliffords,
-                    x90=x90,
-                    interleaved_waveform=interleaved_waveform,  # type: ignore
-                    interleaved_clifford=interleaved_clifford,
-                    in_parallel=in_parallel,
-                    shots=shots,
-                    interval=interval,
-                    time_integration=time_integration,
-                    plot=False,
-                    save_image=False,
-                    reset_awg_and_capunits=False,
-                )
+        return self._analyze_irb(
+            targets,
+            rb_result=rb_result,
+            irb_result=irb_result,
+            dimension=dimension,
+            clifford=clifford,
+            acquisition=acquisition,
+            plot=plot,
+            save_image=save_image,
+        )
 
+    def _analyze_irb(
+        self,
+        targets: list[str],
+        *,
+        rb_result: Result,
+        irb_result: Result,
+        dimension: int,
+        clifford: Clifford,
+        acquisition: Mapping[str, Any],
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Fit and plot acquired IRB curves without further hardware access."""
         results = {}
         for target in targets:
             rb_n_cliffords = rb_result[target]["n_cliffords"]
@@ -1249,6 +1478,7 @@ class BenchmarkingService:
                 )
 
             results[target] = {
+                "acquisition": acquisition[target],
                 "gate_error": gate_error,
                 "gate_fidelity": gate_fidelity,
                 "gate_fidelity_err": gate_fidelity_err,
@@ -1353,6 +1583,8 @@ class BenchmarkingService:
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
+        paired: bool = True,
+        acquisition_seed: int | None = None,
         shots: int | None = None,
         interval: float | None = None,
         time_integration: bool | None = None,
@@ -1369,6 +1601,14 @@ class BenchmarkingService:
             the supplied length grid, or the full candidate grid through
             `max_n_cliffords` for automatic acquisition. Legacy vectors are
             not accepted. Results retain only acquired rows.
+
+        paired : bool, optional
+            Acquire adjacent reference/interleaved pairs in shuffled order
+            within each length, with balanced AB/BA order. Defaults to True.
+            False retains grouped reference-then-interleaved acquisition.
+        acquisition_seed : int | None, optional
+            Seed for pair ordering, independent of sequence seeds. Defaults
+            to None for fresh order. Ignored when paired is False.
         """
         if isinstance(targets, str):
             targets = [targets]
@@ -1390,6 +1630,8 @@ class BenchmarkingService:
                 x90=x90,
                 zx90=zx90,
                 in_parallel=in_parallel,
+                paired=paired,
+                acquisition_seed=acquisition_seed,
                 shots=shots,
                 interval=interval,
                 time_integration=time_integration,
@@ -1410,6 +1652,8 @@ class BenchmarkingService:
                     x90=x90,
                     zx90=zx90,
                     in_parallel=in_parallel,
+                    paired=paired,
+                    acquisition_seed=acquisition_seed,
                     shots=shots,
                     interval=interval,
                     time_integration=time_integration,
@@ -1433,12 +1677,26 @@ class BenchmarkingService:
         *,
         n_trials: int | None = None,
         in_parallel: bool | None = None,
+        paired: bool = True,
+        acquisition_seed: int | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> None:
-        """Run standard 1Q benchmarking suite."""
+        """
+        Run standard 1Q benchmarking suite.
+
+        Parameters
+        ----------
+        paired : bool, optional
+            Acquire adjacent reference/interleaved pairs in shuffled order
+            within each length, with balanced AB/BA order. Defaults to True.
+            False retains grouped reference-then-interleaved acquisition.
+        acquisition_seed : int | None, optional
+            Seed for pair ordering, independent of sequence seeds. Defaults
+            to None for fresh order. Ignored when paired is False.
+        """
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1465,6 +1723,8 @@ class BenchmarkingService:
                     interleaved_clifford=interleaved_clifford,
                     n_trials=n_trials,
                     in_parallel=in_parallel,
+                    paired=paired,
+                    acquisition_seed=acquisition_seed,
                     shots=shots,
                     interval=interval,
                     plot=plot,
@@ -1495,12 +1755,26 @@ class BenchmarkingService:
         *,
         n_trials: int | None = None,
         in_parallel: bool | None = None,
+        paired: bool = True,
+        acquisition_seed: int | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> None:
-        """Run standard 2Q benchmarking suite."""
+        """
+        Run standard 2Q benchmarking suite.
+
+        Parameters
+        ----------
+        paired : bool, optional
+            Acquire adjacent reference/interleaved pairs in shuffled order
+            within each length, with balanced AB/BA order. Defaults to True.
+            False retains grouped reference-then-interleaved acquisition.
+        acquisition_seed : int | None, optional
+            Seed for pair ordering, independent of sequence seeds. Defaults
+            to None for fresh order. Ignored when paired is False.
+        """
         if targets is None:
             targets = self.ctx.cr_labels
         elif isinstance(targets, str):
@@ -1522,6 +1796,8 @@ class BenchmarkingService:
                     interleaved_clifford="ZX90",
                     n_trials=n_trials,
                     in_parallel=in_parallel,
+                    paired=paired,
+                    acquisition_seed=acquisition_seed,
                     shots=shots,
                     interval=interval,
                     plot=plot,
