@@ -5373,6 +5373,9 @@ class Experiment:
         Notes
         -----
         Calibrate the gate pulses and readout before running this experiment.
+        `seeds` must have shape `(n_lengths, n_trials)` and follow the supplied
+        length grid, or the full automatic candidate grid through the maximum.
+        Results retain only acquired seed rows.
         Two-qubit RB estimates the joint ground-state probability using state
         classifiers registered for both the control and target qubits.
         """
@@ -5414,7 +5417,17 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Run interleaved randomized benchmarking for the specified targets."""
+        """
+        Run interleaved randomized benchmarking for the specified targets.
+
+        Parameters
+        ----------
+        seeds : ArrayLike | None, optional
+            Uint32 seed matrix of shape `(n_lengths, n_trials)`. Rows follow
+            the supplied length grid, or the full candidate grid through
+            `max_n_cliffords` for automatic acquisition. Legacy vectors are
+            not accepted. Results retain only acquired rows.
+        """
         return self.benchmarking_service.interleaved_randomized_benchmarking(
             targets=targets,
             interleaved_clifford=interleaved_clifford,

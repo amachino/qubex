@@ -52,7 +52,7 @@ def _rb_payload_with_range(targets: list[str], n_cliffords: np.ndarray) -> Resul
                 "mean": mean,
                 "std": std,
                 "trials": np.column_stack((mean, mean - 0.01)),
-                "seeds": np.array([11, 22], dtype=int),
+                "seeds": np.tile(np.array([11, 22], dtype=int), (len(n_cliffords), 1)),
             }
             for target in targets
         }
@@ -63,6 +63,7 @@ def test_irb_experiment_resets_awg_once_for_1q(monkeypatch: Any) -> None:
     """Given 1Q IRB, when executed, then AWG reset runs once and inner RB calls skip reset."""
     _patch_fit_helpers(monkeypatch)
 
+    seed_calls: list[np.ndarray] = []
     reset_calls: list[set[str]] = []
     reset_flags: list[bool | None] = []
     time_integration_flags: list[bool | None] = []
@@ -89,7 +90,11 @@ def test_irb_experiment_resets_awg_once_for_1q(monkeypatch: Any) -> None:
         reset_flags.append(kwargs.get("reset_awg_and_capunits"))  # type: ignore[arg-type]
         time_integration_flags.append(kwargs.get("time_integration"))  # type: ignore[arg-type]
         labels = [targets] if isinstance(targets, str) else list(targets)
-        return _rb_payload(labels)
+        seed_calls.append(np.asarray(kwargs["seeds"]))
+        result = _rb_payload(labels)
+        for label in labels:
+            result[label]["seeds"] = seed_calls[-1][:2].copy()
+        return result
 
     service.__dict__["rb_experiment_1q"] = MethodType(_rb_experiment_1q, service)
 
@@ -100,6 +105,8 @@ def test_irb_experiment_resets_awg_once_for_1q(monkeypatch: Any) -> None:
         save_image=False,
     )
 
+    np.testing.assert_array_equal(seed_calls[0][:2], seed_calls[1])
+    assert seed_calls[0].ndim == 2
     assert reset_calls == [{"Q17"}]
     assert reset_flags == [False, False]
     assert time_integration_flags == [True, True]
@@ -300,7 +307,7 @@ def test_irb_experiment_includes_reference_and_interleaved_trial_data(
     irb_data = result["Q17"]["irb_data"]
     np.testing.assert_array_equal(rb_data["n_cliffords"], reference_range)
     np.testing.assert_array_equal(irb_data["n_cliffords"], interleaved_range)
-    np.testing.assert_array_equal(rb_data["seeds"], np.array([11, 22], dtype=int))
-    np.testing.assert_array_equal(irb_data["seeds"], np.array([11, 22], dtype=int))
+    np.testing.assert_array_equal(rb_data["seeds"], np.tile([11, 22], (3, 1)))
+    np.testing.assert_array_equal(irb_data["seeds"], np.tile([11, 22], (3, 1)))
     assert rb_data["trials"].shape == (3, 2)
     assert irb_data["trials"].shape == (3, 2)
