@@ -38,6 +38,20 @@ class Quel3TargetDeployPlanner:
         selected_target_labels = (
             set(target_labels) if target_labels is not None else None
         )
+        if selected_target_labels is not None:
+            unknown = selected_target_labels - experiment_system.gen_targets.keys()
+            if unknown:
+                raise ValueError(f"Unknown deployment target labels: {sorted(unknown)}")
+            outside_boxes = [
+                label
+                for label in sorted(selected_target_labels)
+                if experiment_system.gen_targets[label].channel.port.box_id
+                not in selected_box_ids
+            ]
+            if outside_boxes:
+                raise ValueError(
+                    f"Deployment targets outside selected boxes: {outside_boxes}"
+                )
 
         instruments: list[InstrumentSpec] = []
         for _label, target in sorted(experiment_system.gen_targets.items()):

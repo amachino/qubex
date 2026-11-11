@@ -354,10 +354,25 @@ class Quel3ConfigurationManager:
         configuration: InstrumentConfiguration,
         instrument_cache: InstrumentCache,
         resource_reader: Quel3ResourceReader,
+        append: bool = True,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         """
-        Replace configured ports and cache their complete hardware readback.
+        Deploy configured ports and cache their complete hardware readback.
+
+        Parameters
+        ----------
+        configuration : InstrumentConfiguration
+            Instrument definitions to deploy.
+        instrument_cache : InstrumentCache
+            Controller-owned cache to update after deployment.
+        resource_reader : Quel3ResourceReader
+            Reader for complete port readback after deployment.
+        append : bool, default=True
+            Preserve other aliases on each requested port. If false, replace
+            all instruments on each requested port.
+        parallel : bool, default=True
+            Whether port deployments and hardware reads may run concurrently.
 
         Notes
         -----
@@ -369,7 +384,7 @@ class Quel3ConfigurationManager:
             specifications=configuration.instruments,
             instrument_cache=instrument_cache,
             resource_reader=resource_reader,
-            append=False,
+            append=append,
             parallel=parallel,
         )
 
@@ -413,12 +428,6 @@ class Quel3ConfigurationManager:
         read the entire port into the cache. Write or readback failure leaves
         that port uncached.
         """
-        previous = instrument_cache.snapshot().get(instrument.alias)
-        if previous is not None and previous.port_id != instrument.port_id:
-            raise ValueError(
-                f"Instrument alias `{instrument.alias}` is already cached on port "
-                f"`{previous.port_id}`; cannot deploy it on `{instrument.port_id}`."
-            )
         instrument_infos = self._deploy_and_refresh(
             specifications=(instrument,),
             instrument_cache=instrument_cache,
@@ -493,6 +502,18 @@ class Quel3ConfigurationManager:
         if not specifications:
             return {}
         port_ids = tuple(dict.fromkeys(spec.port_id for spec in specifications))
+        cached = instrument_cache.snapshot()
+        for specification in specifications:
+            previous = cached.get(specification.alias)
+            if (
+                previous is not None
+                and previous.port_id != specification.port_id
+                and (append or previous.port_id not in port_ids)
+            ):
+                raise ValueError(
+                    f"Instrument alias `{specification.alias}` is already cached on port "
+                    f"`{previous.port_id}`; cannot deploy it on `{specification.port_id}`."
+                )
         instrument_cache.replace_ports(port_ids=port_ids, instrument_infos=())
         _run_async(
             lambda: self._deploy_instruments(
@@ -573,7 +594,7 @@ class Quel3ConfigurationManager:
         self,
         *,
         specifications: tuple[InstrumentSpec, ...],
-        append: bool = False,
+        append: bool = True,
         parallel: bool = True,
     ) -> tuple[InstrumentInfoProtocol, ...]:
         """Deploy instruments through quelware session APIs."""

@@ -142,15 +142,15 @@ class Quel3SystemSynchronizer:
         parallel: bool | None = None,
         target_labels: Sequence[str] | None = None,
     ) -> None:
-        """Deploy instruments for selected boxes from the current target registry."""
+        """Add or update selected instruments while preserving other aliases."""
         box_ids = [box.id for box in boxes]
-        if len(box_ids) == 0:
-            return
         configuration = self._deploy_planner.build_configuration(
             experiment_system=experiment_system,
             box_ids=box_ids,
             target_labels=target_labels,
         )
+        if not configuration.instruments:
+            return
         # Treat QuEL-3 instrument deploy as the push-time hardware sync
         # equivalent of QuEL-1 CNCO/FNCO updates. Execution paths should only
         # resolve and use the instruments that push configured.

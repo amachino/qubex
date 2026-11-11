@@ -119,8 +119,9 @@ def test_build_configuration_creates_one_instrument_per_target() -> None:
     assert bswap_spec.frequency_range_max_hz == pytest.approx(4.50e9)
 
 
-def test_build_configuration_filters_by_target_labels() -> None:
-    """Given selected targets, planner should include only requested labels."""
+@pytest.mark.parametrize("target_labels", [[], ["Q00"]])
+def test_build_configuration_filters_by_target_labels(target_labels: list[str]) -> None:
+    """Explicit selection should exclude other aliases and ports on the same box."""
     planner = Quel3TargetDeployPlanner()
     ctrl_port = SimpleNamespace(id="BOX1.CTRL0", box_id="BOX1", number=2)
     experiment_system = SimpleNamespace(
@@ -137,6 +138,12 @@ def test_build_configuration_filters_by_target_labels() -> None:
                 type=TargetType.CTRL_CR,
                 channel=SimpleNamespace(port=ctrl_port),
             ),
+            "Q01": SimpleNamespace(
+                label="Q01",
+                frequency=4.5,
+                type=TargetType.CTRL_GE,
+                channel=SimpleNamespace(port=SimpleNamespace(box_id="BOX1", number=4)),
+            ),
         },
         wiring_info=SimpleNamespace(read_in=[]),
         control_params=SimpleNamespace(
@@ -148,14 +155,38 @@ def test_build_configuration_filters_by_target_labels() -> None:
     configuration = planner.build_configuration(
         experiment_system=cast(Any, experiment_system),
         box_ids=["BOX1"],
-        target_labels=["Q00"],
+        target_labels=target_labels,
     )
 
-    assert len(configuration.instruments) == 1
-    spec = configuration.instruments[0]
-    assert spec.alias == "Q00"
-    assert spec.frequency_range_min_hz == pytest.approx(4.10e9)
-    assert spec.frequency_range_max_hz == pytest.approx(4.30e9)
+    assert [spec.alias for spec in configuration.instruments] == target_labels
+
+
+@pytest.mark.parametrize(
+    ("box_ids", "target_labels", "message"),
+    [
+        (["BOX1"], ["unknown"], "Unknown deployment target labels"),
+        (["BOX2"], ["Q00"], "outside selected boxes"),
+        ([], ["Q00"], "outside selected boxes"),
+    ],
+)
+def test_build_configuration_rejects_invalid_selection(
+    box_ids: list[str], target_labels: list[str], message: str
+) -> None:
+    """Invalid target selection should fail before constructing deployment specifications."""
+    system = SimpleNamespace(
+        gen_targets={
+            "Q00": SimpleNamespace(
+                channel=SimpleNamespace(port=SimpleNamespace(box_id="BOX1"))
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match=message):
+        Quel3TargetDeployPlanner().build_configuration(
+            experiment_system=cast(Any, system),
+            box_ids=box_ids,
+            target_labels=target_labels,
+        )
 
 
 def test_build_configuration_skips_targets_with_non_finite_frequency() -> None:
@@ -225,7 +256,10 @@ def test_build_configuration_raises_when_frequency_margin_reaches_nyquist() -> N
         )
 
 
-def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> None:
+@pytest.mark.parametrize("parallel", [None, False, True])
+def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input(
+    parallel: bool | None,
+) -> None:
     """Push should deploy the configuration planned from its selected targets and boxes."""
     planner_calls: list[tuple[object, tuple[str, ...], tuple[str, ...]]] = []
     deploy_calls: list[tuple[InstrumentConfiguration, bool]] = []
@@ -272,55 +306,18 @@ def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> Non
     synchronizer.sync_experiment_system_to_hardware(
         experiment_system=cast(Any, experiment_system),
         boxes=cast(Any, [SimpleNamespace(id="BOX1"), SimpleNamespace(id="BOX2")]),
-        parallel=True,
+        parallel=parallel,
         target_labels=["Q00", "RQ00"],
     )
 
     assert planner_calls == [(experiment_system, ("BOX1", "BOX2"), ("Q00", "RQ00"))]
-    assert deploy_calls == [(expected_configuration, True)]
+    assert deploy_calls == [
+        (expected_configuration, True if parallel is None else parallel)
+    ]
 
 
-def test_quel3_synchronizer_defaults_parallel_deploy_to_true() -> None:
-    """Push should default to parallel deployment when its parallel option is omitted."""
-    deploy_calls: list[bool] = []
-    expected_configuration = InstrumentConfiguration()
-
-    class _FakeDeployPlanner:
-        def build_configuration(
-            self,
-            *,
-            experiment_system: object,
-            box_ids: list[str],
-            target_labels: list[str] | None = None,
-        ) -> InstrumentConfiguration:
-            return expected_configuration
-
-    class _FakeBackendController:
-        def deploy_instruments(
-            self,
-            *,
-            configuration: InstrumentConfiguration,
-            parallel: bool = True,
-        ) -> None:
-            assert configuration == expected_configuration
-            deploy_calls.append(parallel)
-
-    synchronizer = Quel3SystemSynchronizer(
-        backend_controller=cast(Any, _FakeBackendController()),
-        deploy_planner=cast(Any, _FakeDeployPlanner()),
-    )
-
-    synchronizer.sync_experiment_system_to_hardware(
-        experiment_system=cast(Any, object()),
-        boxes=cast(Any, [SimpleNamespace(id="BOX1")]),
-        parallel=None,
-    )
-
-    assert deploy_calls == [True]
-
-
-def test_quel3_synchronizer_does_not_cache_experiment_system_for_push() -> None:
-    """Push should plan from its current experiment system without persisting a prior model."""
+def test_quel3_synchronizer_does_not_deploy_empty_configuration() -> None:
+    """An empty deployment plan should not reach the backend controller."""
     planner_calls: list[object] = []
 
     class _FakeDeployPlanner:
@@ -341,15 +338,13 @@ def test_quel3_synchronizer_does_not_cache_experiment_system_for_push() -> None:
             configuration: InstrumentConfiguration,
             parallel: bool = True,
         ) -> None:
-            assert configuration.instruments == ()
+            raise AssertionError("An empty configuration must not deploy instruments.")
 
     synchronizer = Quel3SystemSynchronizer(
         backend_controller=cast(Any, _FakeBackendController()),
         deploy_planner=cast(Any, _FakeDeployPlanner()),
     )
     pushed_experiment_system = object()
-    synchronizer.sync_experiment_system_to_backend_controller(cast(Any, object()))
-
     synchronizer.sync_experiment_system_to_hardware(
         experiment_system=cast(Any, pushed_experiment_system),
         boxes=cast(Any, [SimpleNamespace(id="BOX1")]),

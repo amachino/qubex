@@ -579,19 +579,41 @@ class Quel3BackendController(BackendController):
         self,
         *,
         configuration: InstrumentConfiguration,
+        append: bool = True,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         """
         Deploy instruments and read their complete information back from hardware.
 
-        Only the requested ports are replaced. Their old cached identities are
+        Parameters
+        ----------
+        configuration : InstrumentConfiguration
+            Instruments to deploy, grouped by their unit-qualified port IDs.
+        append : bool, default=True
+            Add or replace the specified aliases while preserving other
+            instruments. If false, replace all instruments on each requested port.
+        parallel : bool, default=True
+            Whether port deployments and hardware reads may run concurrently.
+
+        Raises
+        ------
+        ValueError
+            An alias conflicts with a cached instrument that would be retained,
+            or hardware readback is invalid.
+
+        Notes
+        -----
+        Only the requested ports are touched. Their old cached identities are
         discarded before writing and remain absent if deployment or readback fails.
-        An empty configuration leaves hardware and cache unchanged.
+        Successful deployment reads back every instrument on the touched ports.
+        Append requests are not retried. An empty configuration leaves hardware
+        and cache unchanged.
         """
         return self._configuration_manager.deploy_instruments(
             configuration=configuration,
             instrument_cache=self._instrument_cache,
             resource_reader=self._resource_reader,
+            append=append,
             parallel=parallel,
         )
 
