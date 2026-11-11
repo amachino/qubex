@@ -729,3 +729,7 @@ rounding would change capture timing. QuEL-3 retains its 0.8 ns resolution.
 ## RB seed matrices
 
 RB and IRB now accept and return `seeds` with shape `(n_lengths, n_trials)`. One-dimensional seed vectors are no longer accepted. For automatic acquisition, supply rows for the full candidate grid through the maximum length. Results retain only acquired rows. IRB shares the same seeds between reference and interleaved acquisitions.
+
+## Paired IRB acquisition
+
+IRB and `benchmark_1q/2q` now default to `paired=True`. Within each length, matching reference/interleaved sequences are acquired adjacently, with shuffled pair order and balanced AB/BA order. Set `acquisition_seed` to reproduce the order. Use `paired=False` for the previous grouped acquisition order. Result `acquisition.planned_order` records submitted pairs, not hardware timestamps. Fitting and uncertainty estimation are unchanged.
