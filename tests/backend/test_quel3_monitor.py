@@ -396,6 +396,7 @@ def monitor_schedule_runtime(
         append: bool = True,
         parallel: bool = True,
     ) -> InstrumentInfoProtocol:
+        assert append is True
         actions.append(
             (
                 "deploy",

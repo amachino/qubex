@@ -1,4 +1,4 @@
-"""Tests for single-instrument addition and replacement through QuEL-3 APIs."""
+"""Tests for instrument addition and replacement through QuEL-3 APIs."""
 
 from __future__ import annotations
 
@@ -202,6 +202,79 @@ def deployment(
     cache = InstrumentCache()
     cache.replace_all(instrument_infos=hardware.infos)
     return manager, hardware, cache
+
+
+@pytest.mark.parametrize("append", [None, False])
+def test_batch_deployment_preserves_siblings_unless_replacement_is_explicit(
+    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
+    append: bool | None,
+) -> None:
+    """Batch deployment should preserve siblings by default and replace only selected ports on request."""
+    manager, hardware, _ = deployment
+    sibling = _info("Q03")
+    hardware.infos.append(sibling)
+    untouched = hardware.infos[1]
+    controller = Quel3BackendController(
+        configuration_manager=manager,
+        resource_reader=cast(Quel3ResourceReader, hardware),
+    )
+    controller.refresh_instrument_cache()
+    original = controller.get_instrument_configuration()
+    configuration = InstrumentConfiguration(
+        instruments=(
+            _spec("Q00").model_copy(update={"frequency_range_min_hz": 4.2e9}),
+            _spec("Q02"),
+        )
+    )
+
+    if append is None:
+        result = controller.deploy_instruments(configuration=configuration)
+    else:
+        result = controller.deploy_instruments(
+            configuration=configuration, append=append
+        )
+
+    expected = {"Q00", "Q01", "Q02"}
+    if append is None:
+        expected.add("Q03")
+        assert result["Q03"] is sibling
+        assert sibling in hardware.infos
+    else:
+        assert sibling not in hardware.infos
+    assert set(result) == expected - {"Q01"}
+    assert result["Q00"].id.endswith("deployment-1")
+    profile = result["Q00"].definition.profile
+    assert profile is not None
+    assert profile.frequency_range_min == 4.2e9
+    assert untouched in hardware.infos
+    cached = controller.get_instrument_configuration()
+    assert {spec.alias for spec in cached.instruments} == expected
+    assert next(spec for spec in cached.instruments if spec.alias == "Q01") == next(
+        spec for spec in original.instruments if spec.alias == "Q01"
+    )
+    assert hardware.deploy_calls == [("unit-a:tx_p01", append is None)]
+
+
+@pytest.mark.parametrize("append", [True, False])
+def test_batch_alias_conflict_fails_before_writes_or_cache_invalidation(
+    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
+    append: bool,
+) -> None:
+    """A batch alias collision with an untouched port should preserve hardware and cache."""
+    manager, hardware, cache = deployment
+    before = cache.snapshot()
+
+    with pytest.raises(ValueError, match="already cached on port"):
+        manager.deploy_instruments(
+            configuration=InstrumentConfiguration(instruments=(_spec("Q01"),)),
+            instrument_cache=cache,
+            resource_reader=cast(Quel3ResourceReader, hardware),
+            append=append,
+        )
+
+    assert hardware.deploy_calls == []
+    assert hardware.read_calls == []
+    assert cache.snapshot() == before
 
 
 @pytest.mark.parametrize("parallel", [False, True])

@@ -228,7 +228,7 @@ class Quel3MonitorTool:
                     instrument=spec.model_copy(update={"role": "TRANSMITTER"}),
                     instrument_cache=self._instrument_cache,
                     resource_reader=self._resource_reader,
-                    append=False,
+                    append=True,
                     parallel=parallel,
                 )
                 self._configuration_manager.deploy_instrument(
@@ -241,7 +241,7 @@ class Quel3MonitorTool:
                         frequency_range_min_hz=spec.frequency_range_min_hz,
                         frequency_range_max_hz=spec.frequency_range_max_hz,
                     ),
-                    append=False,
+                    append=True,
                     parallel=parallel,
                 )
                 captured[label] = self._execute_target(

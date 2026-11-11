@@ -574,7 +574,9 @@ class SystemManager:
             defaults to `True`.
         target_labels : Sequence[str] | None, optional
             Logical target labels to apply for backends that support
-            target-scoped hardware configuration.
+            target-scoped hardware configuration. QuEL-3 adds or updates these
+            instruments while preserving other aliases, including those on the
+            same port. Excluded targets are not deleted from hardware.
         """
         supports_cache_sync = self._supports_box_settings_cache_sync()
         if not supports_cache_sync:
