@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
@@ -15,6 +15,7 @@ from qubex.backend.quel3.infra import (
     Quel3HttpTransportConfig,
     Quel3ResourceReader,
     Quel3RuntimeConfig,
+    QuelwareCredentials,
     runtime_config as runtime_config_module,
 )
 from qubex.backend.quel3.infra.quelware_imports import QuelwareInstrumentEntities
@@ -1451,11 +1452,11 @@ def test_load_client_factory_uses_configured_client_runtime(
     monkeypatch.setattr(
         runtime_config_module,
         "load_quelware_client_factory",
-        lambda *, client_mode, pat_path=None, transport, http_transport: (
+        lambda *, client_mode, pat_provider=None, transport, http_transport: (
             captured.update(
                 {
                     "client_mode": client_mode,
-                    "pat_path": pat_path,
+                    "pat_provider": pat_provider,
                     "transport": transport,
                     "http_transport": http_transport,
                 }
@@ -1472,7 +1473,7 @@ def test_load_client_factory_uses_configured_client_runtime(
     assert client_factory is fake_client_factory
     assert captured == {
         "client_mode": "server",
-        "pat_path": None,
+        "pat_provider": None,
         "transport": "grpc",
         "http_transport": None,
     }
@@ -1480,21 +1481,23 @@ def test_load_client_factory_uses_configured_client_runtime(
 
 def test_load_client_factory_uses_configured_pat_path(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     """Given PAT path runtime option, client factory loading should forward runtime settings."""
     captured: dict[str, object] = {}
     fake_client_factory = object()
-    pat_path = "/run/secrets/quelware-pat"
+    pat_path = str(tmp_path / "pat")
+    (tmp_path / "pat").write_text("file-secret\n")
 
     def _load_quelware_client_factory(
         *,
         client_mode: str,
-        pat_path: str,
+        pat_provider: Callable[[], str],
         transport: str,
         http_transport: Quel3HttpTransportConfig | None,
     ) -> object:
         captured["client_mode"] = client_mode
-        captured["pat_path"] = pat_path
+        captured["pat_provider"] = pat_provider
         captured["transport"] = transport
         captured["http_transport"] = http_transport
         return fake_client_factory
@@ -1508,16 +1511,18 @@ def test_load_client_factory_uses_configured_pat_path(
         runtime_config=Quel3RuntimeConfig(
             endpoint="worker-host",
             port=61000,
-            pat_path=pat_path,
+            credentials=QuelwareCredentials(pat_path=pat_path),
         ),
     )
 
     client_factory = manager._load_quelware_client_factory()  # noqa: SLF001
 
     assert client_factory is fake_client_factory
+    provider = captured.pop("pat_provider")
+    assert callable(provider)
+    assert provider() == "file-secret"
     assert captured == {
         "client_mode": "server",
-        "pat_path": pat_path,
         "transport": "grpc",
         "http_transport": None,
     }

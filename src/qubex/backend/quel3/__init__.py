@@ -6,6 +6,7 @@ from .infra import (
     Quel3HttpTransportConfig,
     Quel3ResourceReader,
     Quel3RuntimeConfig,
+    QuelwareCredentials,
 )
 from .managers import Quel3ConfigurationManager
 from .models import (
@@ -68,4 +69,5 @@ __all__ = [
     "Quel3UnitState",
     "Quel3Waveform",
     "Quel3WaveformEvent",
+    "QuelwareCredentials",
 ]

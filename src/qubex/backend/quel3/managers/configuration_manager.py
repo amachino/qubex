@@ -87,7 +87,7 @@ class Quel3ConfigurationManager:
     @property
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
-        return self._runtime_config.pat_path
+        return self._runtime_config.credentials.pat_path
 
     def configure_monitor_mode(
         self,

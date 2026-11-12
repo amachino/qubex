@@ -68,7 +68,7 @@ class Quel3ConnectionManager:
     @property
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
-        return self._runtime_config.pat_path
+        return self._runtime_config.credentials.pat_path
 
     def connect(
         self,
