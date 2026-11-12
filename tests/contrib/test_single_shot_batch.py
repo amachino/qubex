@@ -12,11 +12,8 @@ from qubex.pulse import Blank, PulseSchedule
 
 
 @pytest.mark.parametrize("in_event_loop", [False, True])
-def test_batch_preserves_shots_and_copies_input(in_event_loop, monkeypatch):
+def test_batch_preserves_shots_and_copies_input(in_event_loop):
     """A synchronous batch should preserve shot order inside and outside notebooks."""
-    monkeypatch.setattr(
-        "qubex.contrib.experiment._single_shot_batch.DEFAULT_TIMEOUT_SECONDS", 2.0
-    )
     calls = []
     iq = np.array([1 + 2j, 3 + 4j])
 

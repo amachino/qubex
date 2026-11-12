@@ -6,8 +6,11 @@ from numbers import Integral
 import numpy as np
 from numpy.typing import NDArray
 
-from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
+from qubex.backend.quel1 import Quel1BackendController
+from qubex.core.async_bridge import get_shared_async_bridge
 from qubex.experiment import Experiment
+from qubex.measurement.models import MeasurementSchedule
+from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.pulse import PulseSchedule
 
 
@@ -19,6 +22,7 @@ def measure_single_shot_batch(
     shot_interval: float,
     enable_tqdm: bool = False,
     capture_index: int | None = None,
+    final_capture_only: bool = False,
 ) -> list[dict[str, NDArray[np.complex128]]]:
     """
     Acquire a single-shot sweep and validate its ordered IQ payloads.
@@ -41,7 +45,10 @@ def measure_single_shot_batch(
     capture_index
         Capture selected independently for each target and sweep point. Negative
         indexing is supported. By default, require exactly one capture and
-        select it.
+        select it. Indices refer to the captures retained for acquisition.
+    final_capture_only
+        Whether to acquire only the final capture for each target while keeping
+        the complete pulse schedule. QuEL-1 always acquires all capture windows.
 
     Returns
     -------
@@ -62,8 +69,7 @@ def measure_single_shot_batch(
     -----
     One API call can produce multiple hardware executions depending on backend
     support and schedule packing. The shared async bridge supports synchronous
-    calls from notebooks; its wait budget includes estimated acquisition time
-    and an overhead allowance, not a strict hardware duration limit.
+    calls from notebooks without imposing a bridge wait timeout.
     """
     if capture_index is not None and (
         isinstance(capture_index, bool) or not isinstance(capture_index, Integral)
@@ -73,24 +79,31 @@ def measure_single_shot_batch(
     if not schedules:
         return []
     schedules = tuple(schedules)
-    readout_duration = (
-        exp.pulse.readout_duration
-        + exp.pulse.readout_pre_margin
-        + exp.pulse.readout_post_margin
-    )
-    # Allow the complete acquisition plus a bridge overhead budget in notebooks.
-    acquisition_seconds = (
-        n_shots
-        * sum(
-            schedule.duration + shot_interval + readout_duration
-            for schedule in schedules
+
+    def build_schedule(index: int) -> PulseSchedule | MeasurementSchedule:
+        pulse_schedule = schedules[index].copy()
+        if not final_capture_only or isinstance(
+            exp.backend_controller, Quel1BackendController
+        ):
+            return pulse_schedule
+        measurement = exp.build_measurement_schedule(
+            pulse_schedule, final_measurement=True
         )
-        * 1e-9
-    )
-    timeout = DEFAULT_TIMEOUT_SECONDS + 2 * acquisition_seconds
-    result = get_shared_async_bridge(key="experiment").run(
+        # Replace the model to avoid retaining the cached `channels` mapping.
+        return MeasurementSchedule(
+            pulse_schedule=measurement.pulse_schedule,
+            capture_schedule=CaptureSchedule(
+                captures=[
+                    windows[-1]
+                    for windows in measurement.capture_schedule.channels.values()
+                    if windows
+                ]
+            ),
+        )
+
+    result = get_shared_async_bridge(key="experiment").run_without_timeout(
         lambda: exp.measurement_service.run_sweep_measurement(
-            lambda index: schedules[int(index)].copy(),
+            lambda index: build_schedule(int(index)),
             sweep_values=np.arange(len(schedules)),
             n_shots=n_shots,
             shot_interval=shot_interval,
@@ -101,7 +114,6 @@ def measure_single_shot_batch(
             plot=False,
             enable_tqdm=enable_tqdm,
         ),
-        timeout=timeout,
     )
     if len(result.results) != len(schedules):
         raise ValueError("Single-shot batch returned an unexpected number of points.")
