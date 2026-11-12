@@ -3062,10 +3062,10 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
         for message in messages
     )
     assert any(
-        "execution=1 sources=(job=2 shots=[0,4))" in message for message in messages
+        "execution=1 sources=(job=2 shots=[0,3))" in message for message in messages
     )
     assert any(
-        "execution=2 sources=(job=2 shots=[4,5))" in message for message in messages
+        "execution=2 sources=(job=2 shots=[3,5))" in message for message in messages
     )
     assert (
         len(
