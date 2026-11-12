@@ -14,6 +14,11 @@ from qubex.system.quel1.quel1_system_constants import (
     EXTRA_SUM_SECTION_LENGTH,
 )
 
+# While decimation is enabled, a capture section emits one sample per word and
+# drops the remainder of a section that is not a multiple of four words, so
+# caller-supplied capture durations must then be a multiple of this many words.
+DECIMATION_CAPTURE_WORDS = 4
+
 
 @dataclass(frozen=True)
 class MeasurementConstraintProfile:
@@ -98,3 +103,10 @@ class MeasurementConstraintProfile:
         return (
             self.extra_sum_section_length_samples + self.extra_post_blank_length_samples
         ) * self.sampling_period_ns
+
+    @property
+    def decimation_capture_granularity_ns(self) -> float | None:
+        """Return the capture duration granularity that applies while decimation is on."""
+        if not self.enforce_word_alignment or self.word_duration_ns is None:
+            return None
+        return DECIMATION_CAPTURE_WORDS * self.word_duration_ns
