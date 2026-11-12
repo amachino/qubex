@@ -3158,7 +3158,18 @@ def test_execution_phase_timings_measure_hardware_operations(
     )
 
 
-def test_split_retry_preserves_completed_chunks(monkeypatch):
+@pytest.mark.parametrize(
+    ("failure_calls", "expected_calls", "expected_triggers"),
+    [
+        ((1,), [True, True, False, False], [0, 3]),
+        ((2,), [True, False, True, False], [1, 2]),
+        ((3,), [True, False, False, True], [2, 1]),
+        ((2, 3), [True, False, True, True, False], [1, 0, 2]),
+    ],
+)
+def test_split_retry_preserves_completed_chunks(
+    monkeypatch, failure_calls, expected_calls, expected_triggers
+):
     """A failed split chunk should rebuild its session and retain earlier results."""
     manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
     cache = _make_instrument_cache(
@@ -3188,8 +3199,8 @@ def test_split_retry_preserves_completed_chunks(monkeypatch):
         session = kwargs["session_state"].session
         calls.append(session not in seen_sessions)
         seen_sessions.append(session)
-        if len(calls) == 2:
-            raise RuntimeError("temporary failure in second chunk")
+        if len(calls) in failure_calls:
+            raise RuntimeError("temporary chunk failure")
         return await original(**kwargs)
 
     monkeypatch.setattr(manager, "_execute_payload", execute)
@@ -3200,9 +3211,9 @@ def test_split_retry_preserves_completed_chunks(monkeypatch):
             execution_options=Quel3ExecutionOptions(max_capture_samples=2),
         )
     )
-    assert calls == [True, False, True, False]
-    assert [len(s.initialize_calls) for s in sessions] == [1, 1]
-    assert [len(s.trigger_calls) for s in sessions] == [1, 2]
+    assert calls == expected_calls
+    assert [len(s.initialize_calls) for s in sessions] == [1] * len(sessions)
+    assert [len(s.trigger_calls) for s in sessions] == expected_triggers
     assert result.data["alias-rq00"][0].shape == (1,)
 
 
@@ -3215,10 +3226,10 @@ def test_split_retry_preserves_completed_chunks(monkeypatch):
         "fetch",
         "extend_before",
         "extend_after",
-        "cancel",
     ],
 )
-def test_split_session_failure_boundaries(monkeypatch, failure_stage):
+@pytest.mark.parametrize("cancel", [False, True])
+def test_split_session_failure_boundaries(monkeypatch, failure_stage, cancel):
     """Split execution should retain accepted results and propagate cancellation after cleanup."""
     monkeypatch.setattr(session_workarounds_module.asyncio, "sleep", AsyncMock())
     sessions = []
@@ -3226,10 +3237,9 @@ def test_split_session_failure_boundaries(monkeypatch, failure_stage):
 
     def checkpoint(stage):
         counts[stage] += 1
-        target = "fetch" if failure_stage == "cancel" else failure_stage
         occurrence = 1 if stage in ("initialize", "apply") else 2
-        if stage == target and counts[stage] == occurrence:
-            if failure_stage == "cancel":
+        if stage == failure_stage and counts[stage] == occurrence:
+            if cancel:
                 raise asyncio.CancelledError
             if stage.startswith("extend"):
                 return False
@@ -3303,11 +3313,19 @@ def test_split_session_failure_boundaries(monkeypatch, failure_stage):
         instrument_cache=cache,
         execution_options=Quel3ExecutionOptions(max_capture_samples=2),
     )
-    if failure_stage == "cancel":
+    if cancel:
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(execution)
         assert len(sessions) == 1
-        assert len(sessions[0].trigger_calls) == 2
+        expected_triggers = {
+            "initialize": 0,
+            "apply": 0,
+            "trigger": 1,
+            "fetch": 2,
+            "extend_before": 1,
+            "extend_after": 2,
+        }
+        assert len(sessions[0].trigger_calls) == expected_triggers[failure_stage]
     else:
         result = asyncio.run(execution)
         assert len(sessions) == 2

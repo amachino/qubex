@@ -10,6 +10,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import TypeVar
 
 import numpy as np
@@ -428,52 +429,31 @@ class Quel3ExecutionManager:
                     for alias in sorted(run.payload.fixed_timelines)
                 }
 
-                async def execute_run(
-                    session: SessionProtocol,
-                    run: BuiltExecution = run,
-                    alias_to_instrument_info: dict[
-                        str, InstrumentInfoProtocol
-                    ] = alias_to_instrument_info,
-                ) -> Quel3BackendExecutionResult:
-                    nonlocal prepared
-                    try:
-                        if prepared is None or prepared.session is not session:
-                            prepared = await self._prepare_payload_in_session(
-                                session,
-                                payload=run.payload,
-                                alias_to_instrument_info=alias_to_instrument_info,
-                                quelware_api=quelware_api,
-                                parallel=parallel,
-                            )
-                        return await self._execute_payload(
-                            payload=run.payload,
-                            session_state=prepared,
-                        )
-                    except BaseException:
-                        prepared = None
-                        raise
-
                 started = time.monotonic()
-                result = await run_with_session_request_retry(
+                result, prepared = await run_with_session_request_retry(
                     manager=self._session_manager,
                     client_factory=quelware_api.client_factory,
                     resource_ids=tuple(
                         info.id for info in alias_to_instrument_info.values()
                     ),
                     reuse_session=jobs == previous_jobs,
-                    operation=execute_run,
+                    operation=partial(
+                        self._execute_payload_in_session,
+                        payload=run.payload,
+                        alias_to_instrument_info=alias_to_instrument_info,
+                        quelware_api=quelware_api,
+                        parallel=parallel,
+                        prepared=prepared,
+                    ),
                 )
+                fragment = run.result_mapping.fragments[0]
+                requested_shots = fragment.shot_stop - fragment.shot_start
                 logger.debug(
                     "QuEL-3 execution=%d requested_shots=%d executed_shots=%d padding_shots=%d",
                     index,
-                    run.result_mapping.fragments[0].shot_stop
-                    - run.result_mapping.fragments[0].shot_start,
+                    requested_shots,
                     run.payload.n_iterations,
-                    run.payload.n_iterations
-                    - (
-                        run.result_mapping.fragments[0].shot_stop
-                        - run.result_mapping.fragments[0].shot_start
-                    ),
+                    run.payload.n_iterations - requested_shots,
                 )
                 previous_jobs = jobs
                 with _log_phase_duration("restore_results"):
@@ -488,6 +468,34 @@ class Quel3ExecutionManager:
         finally:
             with _log_phase_duration("cleanup"):
                 await self._session_manager.close_safely()
+
+    async def _execute_payload_in_session(
+        self,
+        session: SessionProtocol,
+        *,
+        payload: Quel3ExecutionPayload,
+        alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
+        quelware_api: QuelwareExecutionApi,
+        parallel: bool,
+        prepared: _PayloadExecutionSession | None,
+    ) -> tuple[Quel3BackendExecutionResult, _PayloadExecutionSession]:
+        """
+        Execute a payload and return its successfully prepared session state.
+
+        Request retries open a fresh session, so previous preparation is reused
+        only when it belongs to the supplied session. Failed attempts never
+        publish preparation back to the execution loop.
+        """
+        if prepared is None or prepared.session is not session:
+            prepared = await self._prepare_payload_in_session(
+                session,
+                payload=payload,
+                alias_to_instrument_info=alias_to_instrument_info,
+                quelware_api=quelware_api,
+                parallel=parallel,
+            )
+        result = await self._execute_payload(payload=payload, session_state=prepared)
+        return result, prepared
 
     async def _prepare_payload_in_session(
         self,
