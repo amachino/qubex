@@ -19,5 +19,4 @@ class Quel1ExecutionPayload:
     dsp_demodulation: bool
     enable_sum: bool
     enable_classification: bool
-    line_param0: tuple[float, float, float] | None
-    line_param1: tuple[float, float, float] | None
+    classification_lines: Any | None = None

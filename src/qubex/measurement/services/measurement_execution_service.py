@@ -199,6 +199,7 @@ class MeasurementExecutionService:
             experiment_system=self.experiment_system,
             execution_mode=self._execution_mode,
             clock_health_checks=self._clock_health_checks,
+            classifiers=self.classifiers,
         )
 
     @property
@@ -857,8 +858,6 @@ class MeasurementExecutionService:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
@@ -879,7 +878,8 @@ class MeasurementExecutionService:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use `run_measurement()`
+            with a `MeasurementConfig` enabling `state_classification` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -905,10 +905,6 @@ class MeasurementExecutionService:
 
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
-        classification_line_param0 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 1.
 
         Returns
         -------
@@ -939,8 +935,6 @@ class MeasurementExecutionService:
             readout_ramp_type=readout_ramp_type,
             readout_amplification=readout_amplification,
             final_measurement=True,
-            classification_line_param0=classification_line_param0,
-            classification_line_param1=classification_line_param1,
             plot=plot,
             **deprecated_options,
         )
@@ -970,8 +964,6 @@ class MeasurementExecutionService:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
@@ -992,7 +984,8 @@ class MeasurementExecutionService:
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use `run_measurement()`
+            with a `MeasurementConfig` enabling `state_classification` instead.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -1020,10 +1013,6 @@ class MeasurementExecutionService:
             Whether to apply readout amplification pulses.
         final_measurement : bool | None, optional
             Whether to append a final readout measurement.
-        classification_line_param0 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1 : tuple[float, float, float] | None, optional
-            Optional QuEL-1 classification line parameter 1.
         plot : bool | None, optional
             Whether to plot the results.
 
@@ -1044,8 +1033,6 @@ class MeasurementExecutionService:
             "enable_dsp_demodulation",
             "enable_dsp_sum",
             "enable_dsp_classification",
-            "line_param0",
-            "line_param1",
         }
         unknown_keys = sorted(set(legacy_options) - legacy_keys)
         if unknown_keys:
@@ -1139,21 +1126,15 @@ class MeasurementExecutionService:
         )
         if state_classification is None:
             state_classification = False
+        if state_classification:
+            raise ValueError(
+                "Legacy `measure()` and `execute()` results cannot represent "
+                "preclassified state data. Use "
+                "`Measurement.run_measurement(schedule, config=...)` with "
+                "`MeasurementConfig(..., state_classification=True)` instead."
+            )
         if plot is None:
             plot = False
-
-        classification_line_param0 = self._resolve_deprecated_alias(
-            new_value=classification_line_param0,
-            old_value=legacy_options.pop("line_param0", None),
-            old_name="line_param0",
-            new_name="classification_line_param0",
-        )
-        classification_line_param1 = self._resolve_deprecated_alias(
-            new_value=classification_line_param1,
-            old_value=legacy_options.pop("line_param1", None),
-            old_name="line_param1",
-            new_name="classification_line_param1",
-        )
 
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
@@ -1181,21 +1162,10 @@ class MeasurementExecutionService:
             plot=plot,
         )
 
-        if classification_line_param0 is None and classification_line_param1 is None:
-            result = self.measurement_schedule_runner.execute_sync(
-                schedule=measurement_schedule,
-                config=measurement_config,
-            )
-        else:
-            quel1_options = Quel1MeasurementOptions(
-                classification_line_param0=classification_line_param0,
-                classification_line_param1=classification_line_param1,
-            )
-            result = self.measurement_schedule_runner.execute_sync(
-                schedule=measurement_schedule,
-                config=measurement_config,
-                quel1_options=quel1_options,
-            )
+        result = self.measurement_schedule_runner.execute_sync(
+            schedule=measurement_schedule,
+            config=measurement_config,
+        )
 
         rawdata_dir = self.system_manager.rawdata_dir
         if rawdata_dir is not None:

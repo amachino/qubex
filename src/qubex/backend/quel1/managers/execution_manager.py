@@ -93,8 +93,7 @@ class Quel1ExecutionManager:
                 software_demodulation=False,
                 enable_sum=payload.enable_sum,
                 enable_classification=payload.enable_classification,
-                line_param0=payload.line_param0,
-                line_param1=payload.line_param1,
+                classification_lines=payload.classification_lines,
                 clock_health_checks=clock_health_checks,
             )
         return self._execute_sequencer(
@@ -105,8 +104,7 @@ class Quel1ExecutionManager:
             software_demodulation=False,
             enable_sum=payload.enable_sum,
             enable_classification=payload.enable_classification,
-            line_param0=payload.line_param0,
-            line_param1=payload.line_param1,
+            classification_lines=payload.classification_lines,
         )
 
     async def execute_async(
@@ -172,8 +170,7 @@ class Quel1ExecutionManager:
         software_demodulation: bool,
         enable_sum: bool,
         enable_classification: bool,
-        line_param0: tuple[float, float, float] | None,
-        line_param1: tuple[float, float, float] | None,
+        classification_lines: Any | None,
     ) -> Quel1BackendExecutionResult:
         """Execute a sequencer through serial qubecalib path."""
         SequencerExecutionEngine.set_measurement_options(
@@ -184,8 +181,7 @@ class Quel1ExecutionManager:
             software_demodulation=software_demodulation,
             enable_sum=enable_sum,
             enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            classification_lines=classification_lines,
         )
         status, data, config = sequencer.execute(self._runtime_context.boxpool)
         return Quel1BackendExecutionResult(
@@ -204,8 +200,7 @@ class Quel1ExecutionManager:
         software_demodulation: bool,
         enable_sum: bool,
         enable_classification: bool,
-        line_param0: tuple[float, float, float] | None,
-        line_param1: tuple[float, float, float] | None,
+        classification_lines: Any | None,
         clock_health_checks: bool,
     ) -> Quel1BackendExecutionResult:
         """Execute a sequencer through parallelized multi-box action path."""
@@ -217,8 +212,7 @@ class Quel1ExecutionManager:
             software_demodulation=software_demodulation,
             enable_sum=enable_sum,
             enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            classification_lines=classification_lines,
         )
         parsed_status, parsed_data, parsed_config = (
             SequencerExecutionEngine.execute_parallel(
