@@ -64,11 +64,6 @@ class Quel3SessionManager:
         return self._runtime_config.client_mode_value
 
     @property
-    def quelware_pat_path(self) -> str | None:
-        """Return configured quelware personal access token path."""
-        return self._runtime_config.credentials.pat_path
-
-    @property
     def is_open(self) -> bool:
         """Return whether a client context is currently open."""
         return self._client is not None

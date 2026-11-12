@@ -190,11 +190,6 @@ class Quel3ExecutionManager:
         """Return configured quelware client mode."""
         return self._runtime_config.client_mode_value
 
-    @property
-    def quelware_pat_path(self) -> str | None:
-        """Return configured quelware personal access token path."""
-        return self._runtime_config.credentials.pat_path
-
     def execute_sync(
         self,
         *,
