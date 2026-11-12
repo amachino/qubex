@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
+from qubex.backend.quel3.infra.quelware_credentials import QuelwareCredentials
 from qubex.backend.quel3.infra.quelware_imports import (
     Quel3ClientMode,
     load_quelware_client_factory,
@@ -21,14 +22,22 @@ from qubex.backend.quel3.interfaces import QuelwareClientFactory
 
 @dataclass(frozen=True)
 class Quel3RuntimeConfig:
-    """Hold quelware runtime settings shared by QuEL-3 backend components."""
+    """
+    Hold quelware runtime settings shared by QuEL-3 backend components.
+
+    Authentication sources and provider updates belong to `credentials`.
+    Credentials are shared across components and excluded from representation,
+    equality, and hashing.
+    """
 
     endpoint: str = "localhost"
     port: int | None = None
     client_mode: str = "server"
-    pat_path: str | None = None
     transport: str = "grpc"
     http_transport: Quel3HttpTransportConfig | None = None
+    credentials: QuelwareCredentials = field(
+        default_factory=QuelwareCredentials, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Normalize runtime settings after construction."""
@@ -68,7 +77,9 @@ class Quel3RuntimeConfig:
             endpoint="localhost" if endpoint is None else cast(str, endpoint),
             port=None if port is None else cast(int, port),
             client_mode=("server" if client_mode is None else cast(str, client_mode)),
-            pat_path=None if pat_path is None else cast(str, pat_path),
+            credentials=QuelwareCredentials(
+                pat_path=None if pat_path is None else cast(str, pat_path),
+            ),
             transport="grpc" if transport is None else cast(str, transport),
             http_transport=_parse_http_transport_config(config.get("http_transport")),
         )
@@ -77,7 +88,7 @@ class Quel3RuntimeConfig:
         """Load the quelware client factory for this runtime config."""
         return load_quelware_client_factory(
             client_mode=self.client_mode_value,
-            pat_path=self.pat_path,
+            pat_provider=self.credentials.resolve_pat_provider(),
             transport=self.transport_value,
             http_transport=self.http_transport,
         )
