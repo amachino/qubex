@@ -643,19 +643,20 @@ def test_constructor_rejects_standalone_runtime_mode() -> None:
 
 
 def test_constructor_accepts_quelware_pat_path_runtime_option() -> None:
-    """Given PAT path runtime option, controller should propagate only the path."""
+    """PAT path access should belong to the controller while components share credentials."""
     pat_path = "/run/secrets/quelware-pat"
     controller = Quel3BackendController(quelware_pat_path=pat_path)
 
     assert controller.quelware_pat_path == pat_path
-    assert controller.connection_manager.quelware_pat_path == pat_path
-    assert controller.session_manager.quelware_pat_path == pat_path
-    assert controller.configuration_manager.quelware_pat_path == pat_path
-    assert controller.execution_manager.quelware_pat_path == pat_path
-    assert controller.connection_manager.runtime_config is controller.runtime_config
-    assert controller.session_manager.runtime_config is controller.runtime_config
-    assert controller.configuration_manager.runtime_config is controller.runtime_config
-    assert controller.execution_manager.runtime_config is controller.runtime_config
+    for component in (
+        controller.connection_manager,
+        controller.session_manager,
+        controller.configuration_manager,
+        controller.execution_manager,
+        controller.resource_reader,
+    ):
+        assert component.runtime_config is controller.runtime_config
+        assert not hasattr(component, "quelware_pat_path")
 
 
 def test_constructor_exposes_resource_reader_with_shared_runtime() -> None:

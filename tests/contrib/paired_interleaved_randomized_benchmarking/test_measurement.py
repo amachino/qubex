@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import importlib
 import random
+from itertools import pairwise
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from qxpulse import PulseSchedule
 
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
@@ -157,7 +159,7 @@ def test_default_sweep_submits_all_pairs_and_reuses_each_pair_seed() -> None:
         }
 
 
-def test_explicit_pairs_per_sweep_still_chunks_complete_pairs() -> None:
+def test_explicit_blocks_per_sweep_still_chunks_complete_pairs() -> None:
     """A positive chunk size should remain available for smaller backend calls."""
     exp: Any = _Experiment()
 
@@ -169,7 +171,7 @@ def test_explicit_pairs_per_sweep_still_chunks_complete_pairs() -> None:
         n_trials=3,
         sequence_seed=11,
         acquisition_seed=22,
-        pairs_per_sweep=2,
+        blocks_per_sweep=2,
     )
 
     assert [len(call["sweep_values"]) for call in exp.measurement_service.calls] == [
@@ -181,6 +183,32 @@ def test_explicit_pairs_per_sweep_still_chunks_complete_pairs() -> None:
         4,
     ]
     assert result["Q0"]["acquisition"]["n_sweep_calls"] == 6
+
+
+def test_measurement_primitive_returns_schema_v2_for_named_candidates() -> None:
+    """The low-level primitive should preserve named multi-arm raw trials."""
+    exp: Any = _Experiment()
+
+    result = measure_paired_irb(
+        exp,
+        "Q0",
+        interleaved_clifford="X90",
+        interleaved_waveforms={
+            "rotary": PulseSchedule(),
+            "ppr": PulseSchedule(),
+        },
+        n_cliffords_range=[0, 1, 2, 4],
+        n_trials=2,
+        sequence_seed=11,
+        acquisition_seed=22,
+    )
+
+    target = result["Q0"]
+    assert target["metadata"]["schema_version"] == 2
+    assert list(target["interleaved"]) == ["rotary", "ppr"]
+    assert target["acquisition"]["n_measurement_points"] == 24
+    assert target["acquisition"]["candidate_duration_padding"] == "none"
+    assert "schedule_padding" not in target["acquisition"]
 
 
 def test_results_map_back_to_their_planned_pair_cells() -> None:
@@ -209,6 +237,54 @@ def test_results_map_back_to_their_planned_pair_cells() -> None:
         assert target["interleaved"]["trials"][length_index, trial_index] == (
             pytest.approx(base_probability + 0.1)
         )
+
+
+@pytest.mark.parametrize(
+    "arms", [("reference", "a", "b"), ("reference", "a", "b", "c")]
+)
+def test_multi_arm_orders_balance_positions_and_first_order_carryover(
+    arms: tuple[str, ...],
+) -> None:
+    """Williams block orders should balance positions and adjacent arm pairs."""
+    module = importlib.import_module(
+        "qubex.contrib.experiment.paired_interleaved_randomized_benchmarking"
+    )
+    orders = module._balanced_block_orders(arms)  # noqa: SLF001
+
+    repetitions = 2 if len(arms) % 2 else 1
+    assert len(orders) == repetitions * len(arms)
+    for arm in arms:
+        assert all(order.count(arm) == 1 for order in orders)
+        assert sorted(order.index(arm) for order in orders) == sorted(
+            repetitions * list(range(len(arms)))
+        )
+    directed_neighbors = [
+        (left, right) for order in orders for left, right in pairwise(order)
+    ]
+    neighbor_counts = {
+        neighbor: directed_neighbors.count(neighbor) for neighbor in directed_neighbors
+    }
+    assert set(neighbor_counts.values()) == {repetitions}
+
+
+@pytest.mark.parametrize("n_trials", [2, 4, 7, 11])
+def test_partial_odd_arm_design_balances_positions(n_trials: int) -> None:
+    """Partial odd-arm designs should keep position counts within one."""
+    module = importlib.import_module(
+        "qubex.contrib.experiment.paired_interleaved_randomized_benchmarking"
+    )
+    arms = ("reference", "rotary", "ppr")
+    plans = module._build_block_plan(  # noqa: SLF001
+        np.asarray([0], dtype=np.int64),
+        np.arange(n_trials, dtype=np.int64).reshape(1, n_trials),
+        arms=arms,
+        acquisition_seed=91,
+    )
+
+    orders = [plan.arm_order for plan in plans]
+    for position in range(len(arms)):
+        counts = [sum(order[position] == arm for order in orders) for arm in arms]
+        assert max(counts) - min(counts) <= 1
 
 
 def test_incomplete_sweep_result_is_rejected() -> None:

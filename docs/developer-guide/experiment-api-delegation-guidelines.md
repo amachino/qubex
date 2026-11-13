@@ -85,3 +85,81 @@ This structure should remain the default unless an explicit migration design say
 
 - [Measurement backend responsibility policy](../developer-notes/measurement-backend-responsibility-policy.md)
 - [v1.5.0 contract test scope](../developer-notes/v1-5-0-contract-test-scope.md)
+
+## Sweep plans and temporary settings
+
+Backend planners decide which sweep values can execute under one configuration.
+The shared `SweepSegment` holds original indices, values, native configuration,
+an optional reference value and whether reconfiguration is required. A plan is
+a tuple of segments with frequency values in GHz; backend-specific settings
+retain their native format.
+
+`SystemManager` delegates target resolution and model synchronization to its
+existing backend-specific `SystemSynchronizer`. Backend code owns frequency
+limits, oscillator quantization, configuration application and restoration.
+Experiment owns acquisition order, pulses, amplitudes and analysis. Measurement
+executes schedules; it does not monitor configuration scopes.
+
+```python
+segments = system.plan_frequency_sweep(readout_target, frequencies)
+for segment in segments:
+    with system.modified_sweep_configuration(segment.configuration):
+        for frequency in segment.values:
+            with system.modified_frequencies({readout_target: frequency}):
+                schedule = make_schedule(frequency)
+                measurement.execute(schedule=schedule, shot_averaging=True)
+```
+
+Frequencies are in GHz. Backend constraints determine segmentation;
+`subrange_width` limits the span of all points, including an overlap reference.
+The planner takes the longest input prefix within this width and shortens it
+until a backend configuration covers every point. Windows include both endpoints;
+points are not balanced into equally sized groups. Input order and
+duplicate points are retained. With `overlap=True`, subsequent segments carry
+the preceding segment's last value as `reference_value`. Planning verifies that
+this reference also fits both the requested width and the backend window; the
+caller decides how to acquire it. References remain separate from measurement
+values and indices. If a reference cannot be grouped with at least one new
+point, planning raises `ValueError` instead of repeating the same position.
+
+QuEL-3 selects the deployment span from the instrument's port, independently of
+its role. It reserves the default 0.1 GHz margin on each side of every carrier,
+including overlap references:
+
+| Port | Deployment span | Usable sweep span |
+| --- | --- | --- |
+| `tx_*` | 1.8 GHz | 1.6 GHz |
+| `trx_*` | 0.8 GHz | 0.6 GHz |
+
+`subrange_width` adds an upper bound on the usable span. For example, a 0.9 GHz
+limit on a TRX port still produces segments spanning at most 0.6 GHz. Both
+`resonator_spectroscopy()` and `qubit_spectroscopy()` accept this optional
+keyword and pass it to each power's frequency scan. Omitting it, or passing
+None, retains the corresponding scan's existing default width limit.
+
+During a scope, the planned values and references are realizable under the
+applied settings. `modified_frequencies()` retains its calling convention.
+QuEL-1 still updates and restores logical and registered target frequencies
+without retuning LO/CNCO/FNCO.
+
+QuEL-3 changes its restoration behavior: the scope saves the entry instrument
+definitions, permits automatic deployment when a requested carrier requires it,
+and restores only definitions changed during entry. It restores logical target
+frequencies separately, without using those values to recalculate instrument
+ranges. Planned carriers fit the prepared range with their margins, so nested
+frequency scopes perform no deployment on entry or exit, even when the original
+logical carrier lies outside the sweep window.
+
+Explicit settings changes and resets remain the caller's responsibility.
+`modified_backend_settings`, reset and `sweep_parameter` retain their behavior.
+Automatic electrical-delay calibration inside resonator spectroscopy does not
+prompt; direct `measure_electrical_delay()` calls retain confirmation by default.
+When its start frequency is omitted, electrical delay uses `target.fine_frequency`
+and falls back to `target.frequency` if that lookup raises `ValueError`.
+
+Normal exit, acquisition errors and partial application failures restore touched
+entry settings and corresponding model/cache state. Restoration errors propagate;
+failed QuEL-1 restoration invalidates the affected box cache. Scopes do not
+restore waveform memory or results and do not guarantee phase continuity or
+arbitrary waveform spectral fidelity. Resonator spectroscopy retains its existing power-first orchestration and
+`[power, frequency]` results. Replan after changing wiring or other planning assumptions.

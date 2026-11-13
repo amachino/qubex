@@ -268,7 +268,7 @@ class SessionProtocol(Protocol):
         self,
         port_id: ResourceIdProtocol,
         definitions: Collection[InstrumentDefinitionProtocol],
-        append: bool = False,
+        append: bool = True,
     ) -> list[InstrumentInfoProtocol]:
         """Deploy one or more instruments to one port."""
         ...

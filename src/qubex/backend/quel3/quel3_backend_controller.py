@@ -8,29 +8,38 @@ built on quelware-client managers and tools.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
+from numpy.typing import ArrayLike
 
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
+from qubex.backend.frequency_sweep import SweepSegment
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
 from .formatters import Quel3ResourceView, print_resource_snapshot
-from .infra import Quel3ClientMode, Quel3ResourceReader, Quel3RuntimeConfig
+from .infra import (
+    Quel3ClientMode,
+    Quel3ResourceReader,
+    Quel3RuntimeConfig,
+    QuelwareCredentials,
+)
 from .managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
     Quel3ExecutionManager,
     Quel3SessionManager,
 )
+from .managers.frequency_configuration_manager import Quel3FrequencyConfigurationManager
 from .models import (
     InstrumentConfiguration,
     InstrumentSpec,
@@ -39,7 +48,12 @@ from .models import (
     Quel3ResourceLevel,
     Quel3ResourceSnapshot,
 )
-from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
+from .quel3_backend_constants import (
+    CAPTURE_DECIMATION_FACTOR,
+    DEFAULT_MIN_FREQUENCY_MARGIN_GHZ,
+    SAMPLING_PERIOD_NS,
+)
+from .sweep_configuration import Quel3SweepConfiguration
 from .tools import Quel3MonitorTool
 
 if TYPE_CHECKING:
@@ -110,7 +124,8 @@ class Quel3BackendController(BackendController):
         quelware_pat_path : str | None, optional
             Path to a quelware personal access token file.
         runtime_config : Quel3RuntimeConfig | None, optional
-            Prebuilt runtime settings. Cannot be combined with quelware options.
+            Prebuilt runtime settings, including an optional PAT provider.
+            Cannot be combined with quelware options.
         cable_delay_ns : Mapping[str, Mapping[str, float]] | None, optional
             Cable delays in ns keyed by unit, then local quelware port ID. All
             configured ports determine the reference, including unused ports.
@@ -148,7 +163,7 @@ class Quel3BackendController(BackendController):
             endpoint=quelware_endpoint or "localhost",
             port=50051 if quelware_port is None else quelware_port,
             client_mode=client_mode or "server",
-            pat_path=quelware_pat_path,
+            credentials=QuelwareCredentials(pat_path=quelware_pat_path),
         )
         self._sampling_period_ns = (
             execution_manager.sampling_period_ns
@@ -276,10 +291,60 @@ class Quel3BackendController(BackendController):
         """Return configured quelware client mode."""
         return self._runtime_config.client_mode_value
 
+    def set_quelware_pat_provider(self, provider: Callable[[], str]) -> None:
+        """
+        Set the PAT provider after disconnecting the experiment.
+
+        The provider takes precedence over the configured PAT file. Disconnect
+        before setting it and reconnect afterward. An open execution session
+        must also be closed before changing credentials. Registration does not
+        evaluate the provider. The upstream client evaluates it once during
+        client creation; existing clients retain their original PAT.
+        Injected components must share this controller's credentials object.
+
+        Parameters
+        ----------
+        provider : Callable[[], str]
+            Zero-argument callable returning the current PAT.
+
+        Raises
+        ------
+        RuntimeError
+            The controller is connected or an execution client is open.
+        TypeError
+            The provider is not callable.
+        ValueError
+            An injected component does not share the controller's credentials.
+
+        Examples
+        --------
+        >>> exp.disconnect()
+        >>> exp.backend_controller.set_quelware_pat_provider(lambda: pat)
+        >>> exp.connect()
+        """
+        if self.is_connected or self.session_manager.is_open:
+            raise RuntimeError(
+                "Disconnect and close any open session before changing the quelware PAT."
+            )
+        credentials = self._runtime_config.credentials
+        for component in (
+            self._connection_manager,
+            self._session_manager,
+            self._configuration_manager,
+            self._execution_manager,
+            self._resource_reader,
+        ):
+            if component.runtime_config.credentials is not credentials:
+                raise ValueError(
+                    "All backend components must share the controller's credentials "
+                    "to update the quelware PAT provider."
+                )
+        credentials.set_pat_provider(provider)
+
     @property
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
-        return self._runtime_config.pat_path
+        return self._runtime_config.credentials.pat_path
 
     @property
     def runtime_config(self) -> Quel3RuntimeConfig:
@@ -470,6 +535,28 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
 
+    def plan_frequency_sweep(
+        self,
+        frequencies: ArrayLike,
+        *,
+        target: str,
+        subrange_width: float | None = None,
+        overlap: bool = False,
+    ) -> tuple[SweepSegment[Quel3SweepConfiguration], ...]:
+        """Plan native settings for a carrier sweep without hardware writes."""
+        return Quel3FrequencyConfigurationManager(self).plan(
+            frequencies,
+            target=target,
+            subrange_width=subrange_width,
+            overlap=overlap,
+        )
+
+    def modified_sweep_configuration(
+        self, configuration: Quel3SweepConfiguration
+    ) -> AbstractContextManager[None]:
+        """Apply native sweep settings and restore the entry state."""
+        return Quel3FrequencyConfigurationManager(self).modified(configuration)
+
     def modify_target_frequencies(
         self,
         target_frequencies_ghz: dict[str, float],
@@ -485,7 +572,7 @@ class Quel3BackendController(BackendController):
             Requested frequencies in GHz keyed by target alias.
         min_frequency_margin_ghz : float | None, optional
             Minimum half-width in GHz to guarantee around each frequency.
-            None uses 0.1 (plus or minus 100 MHz). Must be finite and non-negative.
+            None uses the backend default. Must be finite and non-negative.
             Zero requires only the requested frequency to be within the range.
 
         Raises
@@ -505,7 +592,9 @@ class Quel3BackendController(BackendController):
         if not target_frequencies_ghz:
             return
         min_margin_hz = (
-            0.1 if min_frequency_margin_ghz is None else min_frequency_margin_ghz
+            DEFAULT_MIN_FREQUENCY_MARGIN_GHZ
+            if min_frequency_margin_ghz is None
+            else min_frequency_margin_ghz
         ) * 1e9
         if not math.isfinite(min_margin_hz) or min_margin_hz < 0:
             raise ValueError(
@@ -546,19 +635,41 @@ class Quel3BackendController(BackendController):
         self,
         *,
         configuration: InstrumentConfiguration,
+        append: bool = True,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         """
         Deploy instruments and read their complete information back from hardware.
 
-        Only the requested ports are replaced. Their old cached identities are
+        Parameters
+        ----------
+        configuration : InstrumentConfiguration
+            Instruments to deploy, grouped by their unit-qualified port IDs.
+        append : bool, default=True
+            Add or replace the specified aliases while preserving other
+            instruments. If false, replace all instruments on each requested port.
+        parallel : bool, default=True
+            Whether port deployments and hardware reads may run concurrently.
+
+        Raises
+        ------
+        ValueError
+            An alias conflicts with a cached instrument that would be retained,
+            or hardware readback is invalid.
+
+        Notes
+        -----
+        Only the requested ports are touched. Their old cached identities are
         discarded before writing and remain absent if deployment or readback fails.
-        An empty configuration leaves hardware and cache unchanged.
+        Successful deployment reads back every instrument on the touched ports.
+        Append requests are not retried. An empty configuration leaves hardware
+        and cache unchanged.
         """
         return self._configuration_manager.deploy_instruments(
             configuration=configuration,
             instrument_cache=self._instrument_cache,
             resource_reader=self._resource_reader,
+            append=append,
             parallel=parallel,
         )
 

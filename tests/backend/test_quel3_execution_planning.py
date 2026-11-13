@@ -907,12 +907,16 @@ def test_controller_config_without_execution_options_uses_defaults(config) -> No
     assert controller.quelware_endpoint == ("worker-host" if config else "localhost")
 
 
+@pytest.mark.parametrize(
+    "limit_name", ["max_capture_samples", "max_return_capture_samples"]
+)
 def test_controller_planning_uses_configured_limits_and_per_call_options(
     monkeypatch,
+    limit_name,
 ) -> None:
     """Controller plans should honor backend defaults and complete call overrides."""
     controller = Quel3BackendController.from_config_mapping(
-        {"execution": {"max_capture_samples": 8}}
+        {"execution": {limit_name: 8}}
     )
     cached = list(make_cache().snapshot().values())
     monkeypatch.setattr(
@@ -1010,3 +1014,78 @@ def test_duration_limit_includes_final_shot_interval() -> None:
     assert [run.resources.duration_ns for run in plan.executions] == pytest.approx(
         [12.8, 12.8, 12.8], rel=0, abs=1e-9
     )
+
+
+def test_default_waveform_budget_reserves_hardware_headroom() -> None:
+    """The default waveform capacity should accept 60,000 samples and reject one more."""
+    assert Quel3ExecutionOptions().max_waveform_samples == 60_000
+    assert len(plan_jobs(make_payload(samples=60_000, shots=1)).executions) == 1
+    with pytest.raises(ValueError, match="waveform R0: required=60001 limit=60000"):
+        plan_jobs(make_payload(samples=60_001, shots=1))
+
+
+@pytest.mark.parametrize(
+    ("mode", "samples", "per_shot"),
+    [
+        (Quel3CaptureMode.RAW_WAVEFORMS, 4, True),
+        (Quel3CaptureMode.VALUES_PER_ITER, 1, True),
+        (Quel3CaptureMode.AVERAGED_WAVEFORM, 4, False),
+        (Quel3CaptureMode.AVERAGED_VALUE, 1, False),
+    ],
+)
+def test_return_capture_budget_accounts_for_mode(mode, samples, per_shot):
+    """Return capacity should count the data returned by the selected mode."""
+    prepared = plan_jobs(make_payload(mode=mode), max_return_capture_samples=8)
+    assert len(prepared.executions) == (
+        3 if mode is Quel3CaptureMode.RAW_WAVEFORMS else 1
+    )
+    for run in prepared.executions:
+        assert run.resources.return_capture_samples == samples * (
+            run.payload.n_iterations if per_shot else 1
+        )
+        assert run.resources.return_capture_samples <= 8
+
+
+def test_return_budget_sums_distinct_units_and_prevents_packing():
+    """Independent receivers should share the trigger's return budget."""
+    first, second = make_payload(), make_payload(alias="R1")
+    cache = make_cache({"R0": "unit:trx_p00p01", "R1": "other:trx_p00p01"})
+    combined = replace(
+        first, fixed_timelines={**first.fixed_timelines, **second.fixed_timelines}
+    )
+    plan = plan_jobs(combined, cache=cache, max_return_capture_samples=16)
+    assert len(plan.executions) == 3
+    for run in plan.executions:
+        assert run.resources.return_capture_samples == 8 * run.payload.n_iterations
+        assert run.resources.return_capture_samples <= 16
+    assert (
+        len(
+            plan_jobs(
+                first, second, cache=cache, max_return_capture_samples=20
+            ).executions
+        )
+        == 2
+    )
+
+
+@pytest.mark.parametrize(
+    "mode", [Quel3CaptureMode.AVERAGED_VALUE, Quel3CaptureMode.AVERAGED_WAVEFORM]
+)
+def test_return_budget_rejects_unsplittable_average(mode):
+    """Averaged windows exceeding capacity should fail before execution."""
+    payload = make_payload(mode=mode)
+    timeline = payload.fixed_timelines["R0"]
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "R0": replace(
+                timeline,
+                capture_windows=(
+                    *timeline.capture_windows,
+                    replace(timeline.capture_windows[0], name="second"),
+                ),
+            )
+        },
+    )
+    with pytest.raises(ValueError, match="return capture: required="):
+        plan_jobs(payload, max_return_capture_samples=1)

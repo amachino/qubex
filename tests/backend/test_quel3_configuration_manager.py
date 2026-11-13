@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
@@ -15,6 +15,7 @@ from qubex.backend.quel3.infra import (
     Quel3HttpTransportConfig,
     Quel3ResourceReader,
     Quel3RuntimeConfig,
+    QuelwareCredentials,
     runtime_config as runtime_config_module,
 )
 from qubex.backend.quel3.infra.quelware_imports import QuelwareInstrumentEntities
@@ -22,7 +23,6 @@ from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
-    configuration_manager as configuration_manager_module,
     session_workarounds as session_workarounds_module,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
@@ -37,6 +37,7 @@ def _deploy_configuration(
     manager: Quel3ConfigurationManager,
     *,
     specifications: Sequence[InstrumentSpec],
+    append: bool = True,
     parallel: bool = True,
 ) -> dict[str, InstrumentInfoProtocol]:
     """Deploy with complete readback objects and a fresh real instrument cache."""
@@ -79,6 +80,7 @@ def _deploy_configuration(
         configuration=configuration,
         instrument_cache=cache,
         resource_reader=reader,
+        append=append,
         parallel=parallel,
     )
 
@@ -174,9 +176,9 @@ def test_deploy_instruments_calls_session_api(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
-            assert append is False
+            assert append is True
             deploy_calls.append((port_id, definitions))
             return [
                 _InstrumentInfo(
@@ -241,7 +243,7 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given transient quelware specification failure, deploy should retry with a new session."""
+    """Explicit port replacement should retry transient failures with a new session."""
     caplog.set_level(
         logging.WARNING,
         logger="qubex.backend.quel3.managers.configuration_manager",
@@ -303,7 +305,7 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
             del append
             self.deploy_calls.append(port_id)
@@ -374,7 +376,9 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
         alias="Q00",
     )
 
-    deployed = _deploy_configuration(manager, specifications=(specification,))
+    deployed = _deploy_configuration(
+        manager, specifications=(specification,), append=False
+    )
 
     assert len(clients) == 2
     assert [client.exit_calls for client in clients] == [1, 1]
@@ -395,7 +399,7 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
 def test_deploy_instruments_finishes_parallel_ports_before_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given one port fails, deploy should finish other ports before cleanup and retry."""
+    """Explicit port replacement should finish parallel ports before retrying."""
     manager = Quel3ConfigurationManager()
     closed_active_counts: list[int] = []
     deploy_calls: list[tuple[int, str]] = []
@@ -461,6 +465,7 @@ def test_deploy_instruments_finishes_parallel_ports_before_retry(
 
     _deploy_configuration(
         manager,
+        append=False,
         specifications=tuple(
             InstrumentSpec(
                 port_id=port_id,
@@ -540,7 +545,7 @@ def test_deploy_instruments_ignores_session_close_failure_after_success(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
             del append
             return [
@@ -603,10 +608,10 @@ def test_deploy_instruments_ignores_session_close_failure_after_success(
     assert "Q00" in deployed
 
 
-def test_deploy_instruments_wraps_final_request_failure(
+def test_append_failure_is_not_retried(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given retry limit is reached, deploy should raise a token-annotated error."""
+    """Default append failures should report the session token without retrying writes."""
     failed_session_id = "failed-deploy-session"
     manager = Quel3ConfigurationManager()
 
@@ -651,7 +656,7 @@ def test_deploy_instruments_wraps_final_request_failure(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[object]:
             _ = (definitions, append)
             self.deploy_calls.append(port_id)
@@ -680,11 +685,6 @@ def test_deploy_instruments_wraps_final_request_failure(
 
     session = _FakeSession()
     client = _FakeClient(session)
-    monkeypatch.setattr(
-        configuration_manager_module,
-        "QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS",
-        1,
-    )
     monkeypatch.setattr(
         manager,
         "_load_quelware_client_factory",
@@ -790,7 +790,7 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
             del append
             return [
@@ -905,7 +905,7 @@ def test_deploy_instruments_ignores_returned_instrument_infos(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
             del append
             deploy_definitions.extend(definitions)
@@ -1016,7 +1016,7 @@ def test_deploy_instruments_groups_requests_by_port(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
             deploy_calls.append((port_id, definitions, append))
             return [
@@ -1078,7 +1078,7 @@ def test_deploy_instruments_groups_requests_by_port(
     assert create_session_calls == [("quel3-02-a01:tx_p04",)]
     assert len(deploy_calls) == 1
     assert deploy_calls[0][0] == "quel3-02-a01:tx_p04"
-    assert deploy_calls[0][2] is False
+    assert deploy_calls[0][2] is True
     assert [definition.alias for definition in deploy_calls[0][1]] == [
         "Q00",
         "Q00-CR",
@@ -1136,9 +1136,9 @@ def test_deploy_instruments_uses_one_session_for_all_ports(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
-            assert append is False
+            assert append is True
             deploy_calls.append(port_id)
             return [
                 _InstrumentInfo(
@@ -1256,9 +1256,9 @@ def test_deploy_instruments_parallelizes_ports_by_default(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
-            assert append is False
+            assert append is True
             probe.active += 1
             probe.max_active = max(probe.max_active, probe.active)
             await asyncio.sleep(0)
@@ -1376,9 +1376,9 @@ def test_deploy_instruments_parallel_false_serializes_ports(
             port_id: str,
             *,
             definitions: list[_Definition],
-            append: bool = False,
+            append: bool = True,
         ) -> list[_InstrumentInfo]:
-            assert append is False
+            assert append is True
             probe.active += 1
             probe.max_active = max(probe.max_active, probe.active)
             await asyncio.sleep(0)
@@ -1452,11 +1452,11 @@ def test_load_client_factory_uses_configured_client_runtime(
     monkeypatch.setattr(
         runtime_config_module,
         "load_quelware_client_factory",
-        lambda *, client_mode, pat_path=None, transport, http_transport: (
+        lambda *, client_mode, pat_provider=None, transport, http_transport: (
             captured.update(
                 {
                     "client_mode": client_mode,
-                    "pat_path": pat_path,
+                    "pat_provider": pat_provider,
                     "transport": transport,
                     "http_transport": http_transport,
                 }
@@ -1473,7 +1473,7 @@ def test_load_client_factory_uses_configured_client_runtime(
     assert client_factory is fake_client_factory
     assert captured == {
         "client_mode": "server",
-        "pat_path": None,
+        "pat_provider": None,
         "transport": "grpc",
         "http_transport": None,
     }
@@ -1481,21 +1481,23 @@ def test_load_client_factory_uses_configured_client_runtime(
 
 def test_load_client_factory_uses_configured_pat_path(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     """Given PAT path runtime option, client factory loading should forward runtime settings."""
     captured: dict[str, object] = {}
     fake_client_factory = object()
-    pat_path = "/run/secrets/quelware-pat"
+    pat_path = str(tmp_path / "pat")
+    (tmp_path / "pat").write_text("file-secret\n")
 
     def _load_quelware_client_factory(
         *,
         client_mode: str,
-        pat_path: str,
+        pat_provider: Callable[[], str],
         transport: str,
         http_transport: Quel3HttpTransportConfig | None,
     ) -> object:
         captured["client_mode"] = client_mode
-        captured["pat_path"] = pat_path
+        captured["pat_provider"] = pat_provider
         captured["transport"] = transport
         captured["http_transport"] = http_transport
         return fake_client_factory
@@ -1509,16 +1511,18 @@ def test_load_client_factory_uses_configured_pat_path(
         runtime_config=Quel3RuntimeConfig(
             endpoint="worker-host",
             port=61000,
-            pat_path=pat_path,
+            credentials=QuelwareCredentials(pat_path=pat_path),
         ),
     )
 
     client_factory = manager._load_quelware_client_factory()  # noqa: SLF001
 
     assert client_factory is fake_client_factory
+    provider = captured.pop("pat_provider")
+    assert callable(provider)
+    assert provider() == "file-secret"
     assert captured == {
         "client_mode": "server",
-        "pat_path": pat_path,
         "transport": "grpc",
         "http_transport": None,
     }

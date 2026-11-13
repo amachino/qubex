@@ -10,6 +10,9 @@ from qxpulse import PulseSchedule
 
 from qubex.experiment.experiment import Experiment
 from qubex.experiment.services.characterization_service import CharacterizationService
+from tests.experiment.test_characterization_service_electrical_delay import (
+    _FakeSystemManager,
+)
 
 
 @pytest.mark.parametrize(
@@ -25,8 +28,28 @@ from qubex.experiment.services.characterization_service import CharacterizationS
 def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -> None:
     """Spectroscopy should separate control and readout only when explicitly requested."""
     schedules: list[PulseSchedule] = []
+    confirm = Mock(side_effect=AssertionError("Spectroscopy must not prompt"))
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.Confirm.ask", confirm
+    )
 
-    def execute(*, schedule: PulseSchedule, **kwargs):
+    def execute(
+        *,
+        schedule: PulseSchedule,
+        shot_averaging,
+        n_shots,
+        shot_interval,
+        readout_duration,
+        readout_pre_margin,
+        readout_post_margin,
+    ):
+        assert shot_averaging is True
+        assert (n_shots, shot_interval) == (13, 2048)
+        assert (readout_duration, readout_pre_margin, readout_post_margin) == (
+            2000,
+            0,
+            0,
+        )
         schedules.append(schedule)
         return SimpleNamespace(data={"Q00": [SimpleNamespace(kerneled=1 + 1j)]})
 
@@ -43,17 +66,21 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
                 traits=SimpleNamespace(ctrl_ssb="L")
             )
         ),
-        system_manager=SimpleNamespace(
-            modified_backend_settings=lambda **kwargs: nullcontext()
-        ),
+        system_manager=_FakeSystemManager(),
         modified_frequencies=lambda frequencies: nullcontext(),
         reset_awg_and_capunits=lambda **kwargs: None,
     )
+    ctx.measurement = SimpleNamespace(execute=execute)
     service = CharacterizationService(
         experiment_context=cast(Any, ctx),
         measurement_service=cast(Any, SimpleNamespace(execute=execute)),
         calibration_service=cast(Any, None),
-        pulse_service=cast(Any, None),
+        pulse_service=cast(
+            Any,
+            SimpleNamespace(
+                readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+            ),
+        ),
     )
     exp = object.__new__(Experiment)
     exp.__dict__["_characterization_service"] = service
@@ -61,8 +88,21 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
         "qubex.experiment.services.characterization_service.fitting.fit_sqrt_lorentzian",
         Mock(return_value={}),
     )
+    progress = []
+
+    def record_progress(values, *, desc, leave=True):
+        progress.append((desc, len(values), leave))
+        return values
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.tqdm", record_progress
+    )
     kwargs: dict[str, Any] = dict(
-        frequency_range=[5.0, 5.01, 5.02], plot=False, save_image=False
+        frequency_range=[5.0, 5.01, 5.02],
+        n_shots=13,
+        shot_interval=2048,
+        plot=False,
+        save_image=False,
     )
     if drive_mode != "omitted":
         kwargs["simultaneous_drive"] = drive_mode
@@ -76,6 +116,15 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
         getattr(exp, method)("Q00", **kwargs)
 
     assert len(schedules) == (6 if method == "qubit_spectroscopy" else 3)
+    confirm.assert_not_called()
+    assert ("qubit freq. scan subranges for Q00", 1, True) in progress
+    inner_progress = [
+        (count, leave)
+        for label, count, leave in progress
+        if label == "qubit frequency within subrange"
+    ]
+    assert sum(count for count, _ in inner_progress) == len(schedules)
+    assert all(leave is False for _, leave in inner_progress)
     for schedule in schedules:
         control = schedule.get_pulse_ranges()["Q00"][0]
         readout = schedule.get_pulse_ranges()["R00"][0]
@@ -83,3 +132,48 @@ def test_experiment_spectroscopy_drive_timing(method, drive_mode, monkeypatch) -
             assert readout.start == control.stop
         else:
             assert readout.start == control.start
+
+
+@pytest.mark.parametrize("subrange_width", ["omitted", None, 0.9])
+def test_qubit_spectroscopy_forwards_subrange_width_per_power(subrange_width) -> None:
+    """Each qubit power scan receives the requested width and complete frequency range."""
+    calls = []
+    frequencies = [5.0, 5.1, 5.4]
+    powers = [-30.0, -20.0]
+    service = CharacterizationService(
+        experiment_context=cast(Any, None),
+        measurement_service=cast(Any, None),
+        calibration_service=cast(Any, None),
+        pulse_service=cast(Any, None),
+    )
+
+    def scan(target, **kwargs):
+        calls.append((target, kwargs))
+        return {
+            "phases": [len(calls)] * len(frequencies),
+            "frequency_range": frequencies,
+            "readout_amplitude": 0.2,
+        }
+
+    service.scan_qubit_frequencies = cast(Any, scan)
+    kwargs = {} if subrange_width == "omitted" else {"subrange_width": subrange_width}
+    result = service.qubit_spectroscopy(
+        "Q00",
+        frequency_range=frequencies,
+        power_range=powers,
+        plot=False,
+        save_image=False,
+        **kwargs,
+    )
+
+    assert len(calls) == len(powers)
+    for (target, kwargs), power in zip(calls, powers, strict=True):
+        assert target == "Q00"
+        assert kwargs["frequency_range"] == frequencies
+        assert kwargs["control_amplitude"] == pytest.approx(
+            (10 ** (power / 10)) ** 0.5, rel=0, abs=1e-12
+        )
+        assert kwargs["subrange_width"] == (
+            None if subrange_width == "omitted" else subrange_width
+        )
+    assert result.data["data"].tolist() == [[1, 1, 1], [2, 2, 2]]

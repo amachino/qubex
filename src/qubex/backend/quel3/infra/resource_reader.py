@@ -80,11 +80,6 @@ class Quel3ResourceReader:
         """Return configured quelware client mode."""
         return self._runtime_config.client_mode_value
 
-    @property
-    def quelware_pat_path(self) -> str | None:
-        """Return configured quelware personal access token path."""
-        return self._runtime_config.pat_path
-
     def collect_snapshot(
         self,
         *,

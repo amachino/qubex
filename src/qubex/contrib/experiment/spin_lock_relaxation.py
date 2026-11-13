@@ -47,9 +47,9 @@ POINT_DISPLAY_NAMES = {
     "p": "Longitudinal polarization offset p(t)",
 }
 POINT_SUBPLOT_TITLES = {
-    "a": "a(t)<br><sup>Longitudinal retention (T1ρ)</sup>",
-    "b": "b(t)<br><sup>Transverse coherence (T2ρ)</sup>",
-    "p": "p(t)<br><sup>Longitudinal polarization offset</sup>",
+    "a": "Longitudinal retention (T1ρ)",
+    "b": "Transverse coherence (T2ρ)",
+    "p": "Longitudinal polarization offset",
 }
 MEASUREMENT_SETTINGS: tuple[tuple[str, Literal["X", "Y", "Z"]], ...] = (
     ("+", "X"),
@@ -80,10 +80,14 @@ def _normalize_targets(
     targets: Collection[str] | str | None,
 ) -> list[str]:
     if targets is None:
-        return list(exp.ctx.qubit_labels)
-    if isinstance(targets, str):
-        return [targets]
-    return list(targets)
+        normalized = list(exp.ctx.qubit_labels)
+    elif isinstance(targets, str):
+        normalized = [targets]
+    else:
+        normalized = list(targets)
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("targets must not contain duplicate labels.")
+    return normalized
 
 
 def _resolve_measurement_options(
@@ -1144,7 +1148,7 @@ def _make_spectroscopy_summary_figure(
         yref="y3",
         line={"color": "gray", "dash": "dot"},
     )
-    figure.update_layout(title=f"Spin-lock relaxation spectroscopy: {target}")
+    figure.update_layout(title=f"Spin-lock spectroscopy: {target}")
     return figure
 
 

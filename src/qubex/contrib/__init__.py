@@ -36,6 +36,10 @@ from .experiment.gef_population_estimation import (
     fit_gef_population,
     measure_gef_populations,
 )
+from .experiment.gef_relaxation import (
+    analyze_gef_relaxation,
+    characterize_gef_relaxation,
+)
 from .experiment.gf_calibration import (
     calibrate_gf_hpi_pulse,
     calibrate_gf_pi_pulse,
@@ -142,6 +146,7 @@ __all__ = [
     "GefPopulationCalibration",
     "GefPopulationFit",
     "analyze_chevron_matched_transform",
+    "analyze_gef_relaxation",
     "analyze_paired_irb",
     "analyze_readout_mist",
     "calibrate_cr_pi_pulse",
@@ -150,6 +155,7 @@ __all__ = [
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
     "characterize_coarse_readout_parameters",
+    "characterize_gef_relaxation",
     "characterize_readout_mist",
     "characterize_readout_parameters",
     "ckp_measurement_v2",

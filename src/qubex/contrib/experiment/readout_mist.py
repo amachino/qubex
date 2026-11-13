@@ -2242,6 +2242,8 @@ def characterize_readout_mist(
     configured readout, independently of `readout_cycle`. If the candidate cycle
     also creates captures, only the last capture—the final GEF diagnostic
     readout—is used for population estimation and retained as raw IQ.
+    Earlier capture windows are omitted on QuEL-3 while all candidate pulses
+    and their timing are preserved. QuEL-1 continues to acquire all windows.
     Population-fit curves are evaluated at every integer cycle through the largest
     requested repetition. Transition-matrix heatmaps show local standard errors
     when available and saturate their shared color scale at probability 0.1.
@@ -2336,6 +2338,7 @@ def characterize_readout_mist(
             else "readout MIST actual"
         ),
         capture_index=_DIAGNOSTIC_CAPTURE_INDEX,
+        final_capture_only=True,
     )
     acquisition_data = cast(Mapping[str, Any], acquisition_result.data)
     calibration = acquisition_data["calibration"]
