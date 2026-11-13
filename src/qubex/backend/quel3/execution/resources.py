@@ -139,7 +139,8 @@ class Quel3PayloadAnalyzer:
                     alias: info.config.sampling_period_fs
                     for alias, info in instruments.items()
                 },
-                resolved.max_waveform_samples,
+                target_block_samples=resolved.compression_target_block_samples,
+                min_chunk_samples=resolved.compression_min_chunk_samples,
             )
         return PayloadAnalysis(normalized, self._planning_info(normalized, instruments))
 

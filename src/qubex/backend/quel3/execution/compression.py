@@ -4,179 +4,215 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import cast
 
 import numpy as np
 
 from qubex.backend.quel3.models.payload import (
-    Quel3CompressionHint,
     Quel3ExecutionPayload,
-    Quel3FixedTimeline,
     Quel3Waveform,
     Quel3WaveformEvent,
 )
 
 
-def _candidates(length: int, quantum: int) -> set[int]:
-    """Return aligned quotient-interval endpoints without scanning every length."""
-    result = {quantum}
-    start = quantum
-    while start <= length // 2:
-        end = length // (length // start)
-        aligned = end // quantum * quantum
-        if aligned >= quantum:
-            result.add(aligned)
-        start = max(start + quantum, (end // quantum + 1) * quantum)
+@dataclass(frozen=True)
+class _Region:
+    """Verified constant envelope on an instrument's sample grid."""
+
+    start: int
+    stop: int
+    quantum: int
+    detuning_ghz: float
+
+
+@dataclass(frozen=True)
+class _Split:
+    """A prefix, repeated block, and combined remainder and suffix."""
+
+    start: int
+    block: int
+    repeats: int
+
+    @property
+    def tail_start(self) -> int:
+        """Return the first sample after the repeated blocks."""
+        return self.start + self.block * self.repeats
+
+
+def _verify_region(waveform: Quel3Waveform, sampling_fs: int) -> _Region | None:
+    """Check the hint against the actual IQ before selecting any split."""
+    hint = waveform.compression_hint
+    period = waveform.sampling_period_ns
+    if hint is None or period is None:
+        return None
+    start, stop = hint.start_sample, hint.stop_sample
+    if not (0 <= start < stop <= len(waveform.iq_array)):
+        return None
+    if not math.isfinite(hint.detuning_ghz):
+        return None
+    quantum = sampling_fs // math.gcd(round(period * 1e6), sampling_fs)
+    start = (start + quantum - 1) // quantum * quantum
+    stop = stop // quantum * quantum
+    if stop - start < 2 * quantum:
+        return None
+    expected = waveform.iq_array[start] * np.exp(
+        -2j * np.pi * hint.detuning_ghz * period * np.arange(stop - start)
+    )
+    if not np.allclose(waveform.iq_array[start:stop], expected, rtol=0, atol=1e-10):
+        return None
+    return _Region(start, stop, quantum, hint.detuning_ghz)
+
+
+def _choose_split(
+    length: int, region: _Region, target: int, minimum: int
+) -> _Split | None:
+    """Choose near-target repeats arithmetically while protecting every fragment."""
+    start, stop, quantum = region.start, region.stop, region.quantum
+    if 0 < start < minimum:
+        start = (minimum + quantum - 1) // quantum * quantum
+    if 0 < length - stop < minimum:
+        stop = (length - minimum) // quantum * quantum
+    span = stop - start
+    # Round the repeat count to the nearest integer, resolving ties upward.
+    repeats = (2 * span + target) // (2 * target)
+    if repeats < 2:
+        return None
+    block = span // (repeats * quantum) * quantum
+    tail = length - start - repeats * block
+    if 0 < tail < minimum:
+        block = (length - start - minimum) // (repeats * quantum) * quantum
+        tail = length - start - repeats * block
+    if block < minimum or (0 < tail < minimum):
+        return None
+    # The shared block is stored once; prefix and tail are stored separately.
+    if start + block + tail >= length:
+        return None
+    return _Split(start, block, repeats)
+
+
+def _build_events(
+    waveform: Quel3Waveform,
+    event: Quel3WaveformEvent,
+    region: _Region,
+    split: _Split,
+    library: dict[str, Quel3Waveform],
+) -> list[Quel3WaveformEvent]:
+    """Materialize only the selected pieces and correct repeated-block phases."""
+    period = cast(float, waveform.sampling_period_ns)
+    pieces = [
+        (0, split.start),
+        (split.start, split.start + split.block),
+        (split.tail_start, len(waveform.iq_array)),
+    ]
+    names = []
+    for first, last in pieces:
+        if first == last:
+            names.append(None)
+            continue
+        samples = waveform.iq_array[first:last]
+        digest = hashlib.blake2b(samples.tobytes(), digest_size=16).hexdigest()
+        name = f"compressed_{round(period * 1e6)}_{digest}"
+        library.setdefault(name, Quel3Waveform(samples, period))
+        names.append(name)
+    result = []
+    prefix_name, shared_name, tail_name = names
+    if prefix_name is not None:
+        result.append(replace(event, waveform_name=prefix_name))
+    block_name = cast(str, shared_name)
+    for index in range(split.repeats):
+        offset = split.start + index * split.block
+        phase = math.remainder(
+            -360 * region.detuning_ghz * index * split.block * period, 360
+        )
+        result.append(
+            replace(
+                event,
+                waveform_name=block_name,
+                start_offset_ns=event.start_offset_ns + offset * period,
+                phase_offset_deg=event.phase_offset_deg + phase,
+            )
+        )
+    if tail_name is not None:
+        result.append(
+            replace(
+                event,
+                waveform_name=tail_name,
+                start_offset_ns=event.start_offset_ns + split.tail_start * period,
+            )
+        )
     return result
 
 
 def compress_payload(
     payload: Quel3ExecutionPayload,
     sampling_periods_fs: dict[str, int],
-    max_samples: int,
+    *,
+    target_block_samples: int = 5000,
+    min_chunk_samples: int = 1000,
 ) -> Quel3ExecutionPayload:
     """
-    Choose shared blocks by estimated IQ and event transfer size per instrument.
+    Share near-target blocks without creating fragments below the minimum length.
 
-    Only verified compression hints are considered. Inputs are never mutated.
-    The estimate charges 16 bytes per complex sample and 32 bytes each per
-    event and waveform entry, accounting conservatively for protobuf metadata.
-    Search covers quotient-interval endpoints rather than all possible lengths.
-    The existing planner reports infeasible memory budgets after optimization.
+    Counts use registered waveform samples, after readout normalization. Short
+    original waveforms remain unchanged. Prefixes and tails include adjacent
+    constant-envelope samples when needed to meet the minimum. Repeated blocks
+    preserve detuning through per-event phase correction. Inputs are not mutated.
+    Memory feasibility remains the execution planner's responsibility.
     """
+    if not 0 < min_chunk_samples <= target_block_samples:
+        raise ValueError("Compression lengths must satisfy 0 < minimum <= target.")
     library = dict(payload.waveform_library)
     timelines = dict(payload.fixed_timelines)
     changed = False
     for alias, timeline in payload.fixed_timelines.items():
-        names = sorted({e.waveform_name for e in timeline.events})
-        regions: dict[str, tuple[int, int, int]] = {}
-        candidates: set[int] = set()
-        for name in names:
-            waveform = library[name]
-            hint = waveform.compression_hint
-            period = waveform.sampling_period_ns
-            if hint is None or period is None:
+        replacements: dict[str, tuple[_Region, _Split]] = {}
+        for name in sorted({event.waveform_name for event in timeline.events}):
+            waveform = payload.waveform_library[name]
+            region = _verify_region(waveform, sampling_periods_fs[alias])
+            if region is None:
                 continue
-            a, b = hint.start_sample, hint.stop_sample
-            if not (0 <= a < b <= len(waveform.iq_array)):
-                continue
-            if not math.isfinite(hint.detuning_ghz):
-                continue
-            fs = round(period * 1e6)
-            quantum = sampling_periods_fs[alias] // math.gcd(
-                fs, sampling_periods_fs[alias]
+            split = _choose_split(
+                len(waveform.iq_array), region, target_block_samples, min_chunk_samples
             )
-            a = math.ceil(a / quantum) * quantum
-            b = b // quantum * quantum
-            if b - a < 2 * quantum:
-                continue
-            expected = waveform.iq_array[a] * np.exp(
-                -2j * np.pi * hint.detuning_ghz * period * np.arange(b - a)
+            if split is not None:
+                replacements[name] = region, split
+        if not replacements:
+            continue
+        templates = {
+            name: _build_events(
+                payload.waveform_library[name],
+                Quel3WaveformEvent(name, 0),
+                region,
+                split,
+                library,
             )
-            if not np.allclose(waveform.iq_array[a:b], expected, rtol=0, atol=1e-10):
-                continue
-            regions[name] = a, b, quantum
-            candidates.update(_candidates(b - a, quantum))
-        if not regions:
-            continue
-
-        def describe(
-            block: int | None,
-            names: list[str] = names,
-            regions: dict[str, tuple[int, int, int]] = regions,
-            timeline: Quel3FixedTimeline = timeline,
-        ):
-            pieces: dict[str, list[tuple[str, int, int, float]]] = {}
-            entries: dict[str, Quel3Waveform] = {}
-            for name in names:
-                waveform = library[name]
-                period = cast(float, waveform.sampling_period_ns)
-                region = regions.get(name)
-                slices = [(0, len(waveform.iq_array), 0, 0.0)]
-                if block is not None and region is not None:
-                    a, b, quantum = region
-                    if block % quantum == 0 and (b - a) // block >= 2:
-                        hint = cast(Quel3CompressionHint, waveform.compression_hint)
-                        count = (b - a) // block
-                        slices = [(0, a, 0, 0.0)] if a else []
-                        slices.extend(
-                            (
-                                a,
-                                a + block,
-                                a + k * block,
-                                math.remainder(
-                                    -360 * hint.detuning_ghz * k * block * period, 360
-                                ),
-                            )
-                            for k in range(count)
-                        )
-                        end = a + count * block
-                        if end < len(waveform.iq_array):
-                            slices.append((end, len(waveform.iq_array), end, 0.0))
-                parts = []
-                keys = {}
-                for first, last, offset, phase in slices:
-                    interval = first, last
-                    key = keys.get(interval)
-                    if key is None:
-                        samples = waveform.iq_array[first:last]
-                        digest = hashlib.blake2b(
-                            samples.tobytes(), digest_size=16
-                        ).hexdigest()
-                        key = f"compressed_{round(period * 1e6)}_{digest}"
-                        keys[interval] = key
-                        entries.setdefault(key, Quel3Waveform(samples, period))
-                    parts.append((key, first, offset, phase))
-                pieces[name] = parts
-            event_count = sum(len(pieces[e.waveform_name]) for e in timeline.events)
-            stored = sum(len(w.iq_array) for w in entries.values())
-            score = 16 * stored + 32 * (event_count + len(entries))
-            return score, event_count, stored, pieces, entries
-
-        baseline = describe(None)
-        best = baseline
-        ideal = math.sqrt(sum(b - a for a, b, _ in regions.values()) * 2)
-        for block in sorted(candidates, key=lambda value: (abs(value - ideal), value)):
-            minimum_events = 0
-            for event in timeline.events:
-                region = regions.get(event.waveform_name)
-                count = (
-                    (region[1] - region[0]) // block
-                    if region and block % region[2] == 0
-                    else 1
-                )
-                minimum_events += max(1, count)
-            if best[2] <= max_samples and 32 * minimum_events >= best[0]:
-                continue
-            candidate = describe(block)
-            feasible = candidate[2] <= max_samples
-            best_feasible = best[2] <= max_samples
-            if (feasible and not best_feasible) or (
-                feasible == best_feasible and candidate[:2] < best[:2]
-            ):
-                best = candidate
-        if best is baseline or best[0] >= baseline[0]:
-            continue
+            for name, (region, split) in replacements.items()
+        }
         events = []
         for event in timeline.events:
-            waveform = library[event.waveform_name]
-            for key, _, offset, phase in best[3][event.waveform_name]:
-                events.append(
-                    Quel3WaveformEvent(
-                        key,
-                        event.start_offset_ns
-                        + offset * cast(float, waveform.sampling_period_ns),
-                        event.gain,
-                        event.phase_offset_deg + phase,
-                    )
+            parts = templates.get(event.waveform_name)
+            if parts is None:
+                events.append(event)
+                continue
+            events.extend(
+                replace(
+                    part,
+                    start_offset_ns=event.start_offset_ns + part.start_offset_ns,
+                    gain=event.gain,
+                    phase_offset_deg=event.phase_offset_deg + part.phase_offset_deg,
                 )
-        library.update(best[4])
+                for part in parts
+            )
         timelines[alias] = replace(timeline, events=tuple(events))
         changed = True
     if not changed:
         return payload
-    referenced = {e.waveform_name for t in timelines.values() for e in t.events}
+    referenced = {
+        event.waveform_name
+        for timeline in timelines.values()
+        for event in timeline.events
+    }
     return replace(
         payload,
         waveform_library={name: library[name] for name in referenced},

@@ -64,7 +64,7 @@ def test_modified_rect_falls_back_without_changing_samples():
         0,
         Quel3CaptureMode.RAW_WAVEFORMS,
     )
-    assert compress_payload(payload, {"Q": 400000}, 50000) is payload
+    assert compress_payload(payload, {"Q": 400000}) is payload
 
 
 @pytest.mark.parametrize("read", [False, True])
@@ -120,7 +120,7 @@ def test_compression_preserves_complex_samples(read, frequency, shape):
             )
         },
     )
-    compressed = compress_payload(payload, {"Q": round(dt * 1e6)}, 50000)
+    compressed = compress_payload(payload, {"Q": round(dt * 1e6)})
     actual = render(compressed)
     expected = render(payload)
     assert actual.shape == expected.shape
@@ -129,6 +129,7 @@ def test_compression_preserves_complex_samples(read, frequency, shape):
     assert sum(len(w.iq_array) for w in compressed.waveform_library.values()) < 50000
     assert len(compressed.fixed_timelines["Q"].events) > len(events)
     assert compressed.fixed_timelines["Q"].length_ns == sequence.duration
+    assert all(len(w.iq_array) >= 1000 for w in compressed.waveform_library.values())
     without_hints = replace(
         payload,
         waveform_library={
@@ -136,6 +137,130 @@ def test_compression_preserves_complex_samples(read, frequency, shape):
             for name, waveform in library.items()
         },
     )
-    assert (
-        compress_payload(without_hints, {"Q": round(dt * 1e6)}, 50000) is without_hints
+    assert compress_payload(without_hints, {"Q": round(dt * 1e6)}) is without_hints
+
+
+@pytest.mark.parametrize(
+    ("length", "sizes"),
+    [
+        (999, [999]),
+        (5001, [5001]),
+        (7499, [7499]),
+        (7500, [3750, 3750]),
+        (9999, [4499, 4499, 1001]),
+        (10000, [5000, 5000]),
+        (10001, [4500, 4500, 1001]),
+        (14999, [4666, 4666, 4666, 1001]),
+        (19999, [4749, 4749, 4749, 4749, 1003]),
+    ],
+)
+def test_compression_avoids_short_fragments(length, sizes):
+    """Near-target blocks preserve every sample without creating short tails."""
+    waveform = Quel3Waveform(
+        np.full(length, 0.2 + 0j), 0.4, Quel3CompressionHint(0, length, 0.0)
     )
+    payload = Quel3ExecutionPayload(
+        {"wave": waveform},
+        {"Q": Quel3FixedTimeline((Quel3WaveformEvent("wave", 0),), (), length * 0.4)},
+        1,
+        0,
+        Quel3CaptureMode.RAW_WAVEFORMS,
+    )
+    result = compress_payload(payload, {"Q": 400000})
+    events = result.fixed_timelines["Q"].events
+    assert [
+        len(result.waveform_library[e.waveform_name].iq_array) for e in events
+    ] == sizes
+    if len(sizes) == 1:
+        assert result is payload
+    else:
+        assert all(size >= 1000 for size in sizes)
+    assert sum(sizes) == length
+    assert len(payload.waveform_library["wave"].iq_array) == length
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"compression_target_block_samples": 0},
+        {"compression_min_chunk_samples": -1},
+        {"compression_min_chunk_samples": 5001},
+        {"compression_target_block_samples": True},
+    ],
+)
+def test_compression_options_reject_invalid_lengths(values):
+    """Compression lengths must be positive integers with minimum below target."""
+    with pytest.raises(ValueError, match=r"compression_|Compression"):
+        Quel3ExecutionOptions(**values)
+
+
+def test_compression_lengths_load_from_config():
+    """System execution configuration controls block and minimum chunk lengths."""
+    controller = Quel3BackendController.from_config_mapping(
+        {
+            "execution": {
+                "compression_target_block_samples": 4000,
+                "compression_min_chunk_samples": 1500,
+            }
+        }
+    )
+    assert controller.execution_options.compression_target_block_samples == 4000
+    assert controller.execution_options.compression_min_chunk_samples == 1500
+
+
+@pytest.mark.parametrize("sampling_fs", [400000, 1200000])
+@pytest.mark.parametrize("length", [5001, 9999, 10001, 14999, 19999])
+def test_flat_top_fragments_preserve_iq_and_sample_grid(length, sampling_fs):
+    """Short ramps join adjacent samples and all generated events stay on grid."""
+    samples = np.full(length, 0.2 + 0j)
+    samples[:113] = np.linspace(0, 0.2, 113)
+    samples[-113:] = np.linspace(0.2, 0, 113)
+    payload = Quel3ExecutionPayload(
+        {
+            "wave": Quel3Waveform(
+                samples, 0.4, Quel3CompressionHint(115, length - 115, 0)
+            )
+        },
+        {"Q": Quel3FixedTimeline((Quel3WaveformEvent("wave", 0),), (), length * 0.4)},
+        1,
+        0,
+        Quel3CaptureMode.RAW_WAVEFORMS,
+    )
+    result = compress_payload(payload, {"Q": sampling_fs})
+    reconstructed = np.zeros_like(samples)
+    for event in result.fixed_timelines["Q"].events:
+        chunk = result.waveform_library[event.waveform_name].iq_array
+        assert len(chunk) >= 1000
+        start = round(event.start_offset_ns / 0.4)
+        assert start % (sampling_fs // 400000) == 0
+        reconstructed[start : start + len(chunk)] = chunk
+    np.testing.assert_array_equal(reconstructed, samples)
+
+
+def test_custom_lengths_control_actual_fragments():
+    """Custom target and minimum lengths change compression through the analyzer."""
+    waveform = Quel3Waveform(
+        np.full(12001, 0.2 + 0j), 0.4, Quel3CompressionHint(0, 12001, 0.0)
+    )
+    payload = Quel3ExecutionPayload(
+        {"wave": waveform},
+        {"Q": Quel3FixedTimeline((Quel3WaveformEvent("wave", 0),), (), 4800.4, 5e9)},
+        1,
+        0,
+        Quel3CaptureMode.RAW_WAVEFORMS,
+    )
+    instrument = SimpleNamespace(
+        config=SimpleNamespace(sampling_period_fs=400000, timeline_step_samples=64)
+    )
+    result = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4).analyze(
+        payload,
+        {"Q": cast(Any, instrument)},
+        options=Quel3ExecutionOptions(
+            compression_target_block_samples=4000, compression_min_chunk_samples=1500
+        ),
+    )
+    sizes = [
+        len(result.payload.waveform_library[e.waveform_name].iq_array)
+        for e in result.payload.fixed_timelines["Q"].events
+    ]
+    assert sizes == [3500, 3500, 3500, 1501]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Quel3ExecutionOptions(BaseModel):
@@ -23,6 +23,11 @@ class Quel3ExecutionOptions(BaseModel):
     constant-envelope regions on control and readout channels before planning.
     Set it to False to preserve uncompressed registration. Configure it under
     `quel3.execution` in `system.yaml` or override the complete execution options.
+    `compression_target_block_samples` defaults to 5000 registered samples;
+    `compression_min_chunk_samples` defaults to 1000 and bounds every new
+    fragment, including prefixes and tails. Both must be positive integers,
+    with the minimum no greater than the target. Short original waves are kept.
+    Memory feasibility is checked by the planner after compression.
     Passing options to an execution replaces the controller's complete options.
     """
 
@@ -32,10 +37,21 @@ class Quel3ExecutionOptions(BaseModel):
 
     merge_jobs: bool = True
     compress_waveforms: bool = True
+    compression_target_block_samples: int = Field(default=5000, gt=0)
+    compression_min_chunk_samples: int = Field(default=1000, gt=0)
     max_waveform_samples: int = Field(default=60_000, gt=0)
     max_capture_samples: int = Field(default=15_000_000, gt=0)
     max_return_capture_samples: int = Field(default=3_125_000, gt=0)
     max_execution_duration_ns: float = Field(default=15_000_000_000, gt=0)
+
+    @model_validator(mode="after")
+    def _validate_compression_lengths(self) -> Quel3ExecutionOptions:
+        """Require the minimum fragment length to fit within the target block."""
+        if self.compression_min_chunk_samples > self.compression_target_block_samples:
+            raise ValueError(
+                "Compression minimum chunk length must not exceed target block length."
+            )
+        return self
 
 
 @dataclass(frozen=True)
