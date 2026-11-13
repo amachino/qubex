@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from io import StringIO
@@ -3040,7 +3041,8 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
             execution_options=Quel3ExecutionOptions(max_capture_samples=4),
         )
     )
-    assert applied_frequencies == [6e9, 6e9, 6e9, 6.1e9, 6e9]
+    assert applied_frequencies == [6e9, 6e9, 6.1e9, 6e9]
+    assert len(session.initialize_calls) == 4
     assert len(session.trigger_calls) == 5
     for result, expected, shots in zip(
         results, (6, 7, 6, 6.1, 6), (2, 2, 5, 2, 2), strict=True
@@ -3060,10 +3062,10 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
         for message in messages
     )
     assert any(
-        "execution=1 sources=(job=2 shots=[0,4))" in message for message in messages
+        "execution=1 sources=(job=2 shots=[0,3))" in message for message in messages
     )
     assert any(
-        "execution=2 sources=(job=2 shots=[4,5))" in message for message in messages
+        "execution=2 sources=(job=2 shots=[3,5))" in message for message in messages
     )
     assert (
         len(
@@ -3154,3 +3156,182 @@ def test_execution_phase_timings_measure_hardware_operations(
         rel=0,
         abs=1e-9,
     )
+
+
+@pytest.mark.parametrize(
+    ("failure_calls", "expected_calls", "expected_triggers"),
+    [
+        ((1,), [True, True, False, False], [0, 3]),
+        ((2,), [True, False, True, False], [1, 2]),
+        ((3,), [True, False, False, True], [2, 1]),
+        ((2, 3), [True, False, True, True, False], [1, 0, 2]),
+    ],
+)
+def test_split_retry_preserves_completed_chunks(
+    monkeypatch, failure_calls, expected_calls, expected_triggers
+):
+    """A failed split chunk should rebuild its session and retain earlier results."""
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00p01", _FakeInstrumentDefinition("TRANSCEIVER")
+            ),
+        }
+    )
+    sessions = []
+
+    def client_factory(endpoint, port):
+        session = _FakeSession(session_id=str(len(sessions)))
+        sessions.append(session)
+        return _FakeClient(session)
+
+    api = _make_fake_execution_api(
+        client_factory=client_factory,
+        fixed_timeline_driver_factory=lambda session, info: _FakeInstrumentDriver(),
+    )
+    monkeypatch.setattr(manager, "_load_quelware_api", lambda: api)
+    original = manager._execute_payload
+    calls = []
+    seen_sessions = []
+
+    async def execute(**kwargs):
+        session = kwargs["session_state"].session
+        calls.append(session not in seen_sessions)
+        seen_sessions.append(session)
+        if len(calls) in failure_calls:
+            raise RuntimeError("temporary chunk failure")
+        return await original(**kwargs)
+
+    monkeypatch.setattr(manager, "_execute_payload", execute)
+    result = asyncio.run(
+        manager.execute_async(
+            request=BackendExecutionRequest(payload=_make_payload(n_iterations=5)),
+            instrument_cache=cache,
+            execution_options=Quel3ExecutionOptions(max_capture_samples=2),
+        )
+    )
+    assert calls == expected_calls
+    assert [len(s.initialize_calls) for s in sessions] == [1] * len(sessions)
+    assert [len(s.trigger_calls) for s in sessions] == expected_triggers
+    assert result.data["alias-rq00"][0].shape == (1,)
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    [
+        "initialize",
+        "apply",
+        "trigger",
+        "fetch",
+        "extend_before",
+        "extend_after",
+    ],
+)
+@pytest.mark.parametrize("cancel", [False, True])
+def test_split_session_failure_boundaries(monkeypatch, failure_stage, cancel):
+    """Split execution should retain accepted results and propagate cancellation after cleanup."""
+    monkeypatch.setattr(session_workarounds_module.asyncio, "sleep", AsyncMock())
+    sessions = []
+    counts = defaultdict(int)
+
+    def checkpoint(stage):
+        counts[stage] += 1
+        occurrence = 1 if stage in ("initialize", "apply") else 2
+        if stage == failure_stage and counts[stage] == occurrence:
+            if cancel:
+                raise asyncio.CancelledError
+            if stage.startswith("extend"):
+                return False
+            raise RuntimeError(f"transient {stage} failure")
+        return True
+
+    class Session(_FakeSession):
+        def __init__(self):
+            super().__init__(session_id=str(len(sessions)))
+            self.closed = False
+            self.extension_count = 0
+
+        async def initialize(self, instrument_ids, parallel=True):
+            await super().initialize(instrument_ids, parallel)
+            checkpoint("initialize")
+
+        async def trigger(self, instrument_ids, wait_ms=None):
+            checkpoint("trigger")
+            return await super().trigger(instrument_ids, wait_ms)
+
+        async def wait_for_results(self, instrument_ids):
+            checkpoint("fetch")
+            return await super().wait_for_results(instrument_ids)
+
+        async def extend(self, new_ttl_ms):
+            self.extension_count += 1
+            assert new_ttl_ms == 30_000
+            return checkpoint(
+                "extend_before" if self.extension_count % 2 else "extend_after"
+            )
+
+        async def __aexit__(self, *args):
+            self.closed = True
+
+    class Driver(_FakeInstrumentDriver):
+        def __init__(self, value):
+            super().__init__()
+            self.value = value
+
+        async def apply(self, directives):
+            checkpoint("apply")
+            await super().apply(directives)
+
+        async def wait_for_result(self):
+            return SimpleNamespace(
+                iq_point_result={"capture_0": [self.value]}, iq_waveform_result={}
+            )
+
+    def client_factory(endpoint, port):
+        session = Session()
+        sessions.append(session)
+        return _FakeClient(session)
+
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
+    api = _make_fake_execution_api(
+        client_factory=client_factory,
+        fixed_timeline_driver_factory=lambda session, info: Driver(
+            1 if session is sessions[0] else 10
+        ),
+    )
+    monkeypatch.setattr(manager, "_load_quelware_api", lambda: api)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00p01", _FakeInstrumentDefinition("TRANSCEIVER")
+            )
+        }
+    )
+    execution = manager.execute_async(
+        request=BackendExecutionRequest(payload=_make_payload(n_iterations=5)),
+        instrument_cache=cache,
+        execution_options=Quel3ExecutionOptions(max_capture_samples=2),
+    )
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(execution)
+        assert len(sessions) == 1
+        expected_triggers = {
+            "initialize": 0,
+            "apply": 0,
+            "trigger": 1,
+            "fetch": 2,
+            "extend_before": 1,
+            "extend_after": 2,
+        }
+        assert len(sessions[0].trigger_calls) == expected_triggers[failure_stage]
+    else:
+        result = asyncio.run(execution)
+        assert len(sessions) == 2
+        assert [len(s.initialize_calls) for s in sessions] == [1, 1]
+        expected = 10 if failure_stage in ("initialize", "apply") else 7
+        np.testing.assert_allclose(
+            result.data["alias-rq00"][0], [expected], rtol=0, atol=1e-12
+        )
+    assert all(s.closed for s in sessions)

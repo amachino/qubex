@@ -40,10 +40,11 @@ class PayloadResultFragment:
 
 @dataclass(frozen=True)
 class ResultMapping:
-    """Expected capture counts and routes back to original payload captures."""
+    """Capture counts, result routes, and executed shot count for one trigger."""
 
     capture_counts: dict[str, int]
     fragments: tuple[PayloadResultFragment, ...]
+    n_iterations: int
 
 
 @dataclass(frozen=True)
@@ -151,10 +152,11 @@ class Quel3ExecutionPayloadBuilder:
                 alias: builder.finish(execution.timeline_length_ns)
                 for alias, builder in timelines.items()
             },
-            n_iterations=execution.shot_stop - execution.shot_start,
+            n_iterations=execution.n_iterations,
         )
         mapping = ResultMapping(
             {alias: len(builder.windows) for alias, builder in timelines.items()},
             tuple(fragments),
+            payload.n_iterations,
         )
         return BuiltExecution(payload, mapping, execution.resources)

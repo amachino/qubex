@@ -405,8 +405,14 @@ class Quel3ExecutionManager:
         assembler = Quel3ResultAssembler(
             tuple(analysis.payload for analysis in analyses)
         )
+        previous_jobs: tuple[int, ...] = ()
+        prepared: _PayloadExecutionSession | None = None
         try:
             for index, run in enumerate(executions):
+                jobs = tuple(f.job_index for f in run.result_mapping.fragments)
+                if jobs != previous_jobs:
+                    prepared = None
+
                 if logger.isEnabledFor(logging.DEBUG):
                     sources = ", ".join(
                         f"job={f.job_index} shots=[{f.shot_start},{f.shot_stop})"
@@ -422,21 +428,34 @@ class Quel3ExecutionManager:
                     alias: instruments[alias]
                     for alias in sorted(run.payload.fixed_timelines)
                 }
+
                 started = time.monotonic()
-                result = await run_with_session_request_retry(
+                result, prepared = await run_with_session_request_retry(
                     manager=self._session_manager,
                     client_factory=quelware_api.client_factory,
                     resource_ids=tuple(
                         info.id for info in alias_to_instrument_info.values()
                     ),
+                    reuse_session=jobs == previous_jobs,
                     operation=partial(
                         self._execute_payload_in_session,
                         payload=run.payload,
                         alias_to_instrument_info=alias_to_instrument_info,
                         quelware_api=quelware_api,
                         parallel=parallel,
+                        prepared=prepared,
                     ),
                 )
+                fragment = run.result_mapping.fragments[0]
+                requested_shots = fragment.shot_stop - fragment.shot_start
+                logger.debug(
+                    "QuEL-3 execution=%d requested_shots=%d executed_shots=%d padding_shots=%d",
+                    index,
+                    requested_shots,
+                    run.payload.n_iterations,
+                    run.payload.n_iterations - requested_shots,
+                )
+                previous_jobs = jobs
                 with _log_phase_duration("restore_results"):
                     assembler.add(run.result_mapping, result)
                 logger.debug(
@@ -458,8 +477,36 @@ class Quel3ExecutionManager:
         alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
         quelware_api: QuelwareExecutionApi,
         parallel: bool,
-    ) -> Quel3BackendExecutionResult:
-        """Build session-bound drivers and execute a validated payload."""
+        prepared: _PayloadExecutionSession | None,
+    ) -> tuple[Quel3BackendExecutionResult, _PayloadExecutionSession]:
+        """
+        Execute a payload and return its successfully prepared session state.
+
+        Request retries open a fresh session, so previous preparation is reused
+        only when it belongs to the supplied session. Failed attempts never
+        publish preparation back to the execution loop.
+        """
+        if prepared is None or prepared.session is not session:
+            prepared = await self._prepare_payload_in_session(
+                session,
+                payload=payload,
+                alias_to_instrument_info=alias_to_instrument_info,
+                quelware_api=quelware_api,
+                parallel=parallel,
+            )
+        result = await self._execute_payload(payload=payload, session_state=prepared)
+        return result, prepared
+
+    async def _prepare_payload_in_session(
+        self,
+        session: SessionProtocol,
+        *,
+        payload: Quel3ExecutionPayload,
+        alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
+        quelware_api: QuelwareExecutionApi,
+        parallel: bool,
+    ) -> _PayloadExecutionSession:
+        """Bind session drivers and apply the payload settings."""
         with _log_phase_duration("bind_instruments"):
             session_state = self._build_payload_execution_session(
                 session=session,
@@ -472,7 +519,7 @@ class Quel3ExecutionManager:
                 },
                 quelware_api=quelware_api,
             )
-        return await self._execute_payload(
+        await self._prepare_payload(
             alias_to_port={
                 alias: str(info.port_id)
                 for alias, info in alias_to_instrument_info.items()
@@ -482,6 +529,7 @@ class Quel3ExecutionManager:
             quelware_api=quelware_api,
             parallel=parallel,
         )
+        return session_state
 
     def _build_payload_execution_session(
         self,
@@ -547,7 +595,7 @@ class Quel3ExecutionManager:
                 raise ValueError("Capture aliases must agree on sampling period.")
         return capture_sampling_period_ns
 
-    async def _execute_payload(
+    async def _prepare_payload(
         self,
         *,
         payload: Quel3ExecutionPayload,
@@ -555,8 +603,8 @@ class Quel3ExecutionManager:
         quelware_api: QuelwareExecutionApi,
         parallel: bool,
         alias_to_port: dict[str, str],
-    ) -> Quel3BackendExecutionResult:
-        """Execute one payload using an already-open payload session."""
+    ) -> None:
+        """Initialize instruments and apply the payload's fixed timelines."""
         cable_delay_ns = payload.cable_delay_ns
         aliases = sorted(payload.fixed_timelines.keys())
         alias_bindings: dict[str, tuple[int, int]] = {}
@@ -643,12 +691,25 @@ class Quel3ExecutionManager:
                         alias_to_directives[alias]
                     )
 
+    async def _execute_payload(
+        self,
+        *,
+        payload: Quel3ExecutionPayload,
+        session_state: _PayloadExecutionSession,
+    ) -> Quel3BackendExecutionResult:
+        """Trigger the prepared payload and collect its results."""
+        instrument_resource_ids = [
+            session_state.alias_to_resource_id[alias]
+            for alias in sorted(payload.fixed_timelines)
+        ]
         shot_samples = {
             alias: {window.name: [] for window in timeline.capture_windows}
             for alias, timeline in payload.fixed_timelines.items()
         }
         with _log_phase_duration("trigger"):
-            await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS)
+            ttl_ms = QUELWARE_SESSION_EXTEND_TTL_MS
+            if not await session_state.session.extend(ttl_ms):
+                raise RuntimeError("QuEL-3 session lease extension rejected.")
             await session_state.session.trigger(
                 instrument_ids=instrument_resource_ids,
                 wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,
@@ -657,6 +718,9 @@ class Quel3ExecutionManager:
             results = await session_state.session.wait_for_results(
                 instrument_resource_ids
             )
+
+        if not await session_state.session.extend(ttl_ms):
+            raise RuntimeError("QuEL-3 session lease extension rejected.")
 
         with _log_phase_duration("convert_result"):
             for alias, timeline in payload.fixed_timelines.items():

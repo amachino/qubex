@@ -88,14 +88,14 @@ async def run_with_session_request_retry(
     client_factory: QuelwareClientFactory,
     resource_ids: tuple[ResourceIdProtocol, ...],
     operation: Callable[[SessionProtocol], Awaitable[T]],
+    reuse_session: bool = False,
 ) -> T:
     """
-    Run one operation, recreating the client and session after request failures.
+    Run an operation, retrying request failures with a fresh client and session.
 
-    Session creation retains its own retry budget. Successful sessions remain
-    open until the next operation or the caller's batch cleanup. Missing
-    resources propagate immediately so the caller can refresh stale identities
-    and retry the batch.
+    `reuse_session` keeps an open session when its resource IDs match.
+    Otherwise, open a new session. Session creation has its own retry budget.
+    Missing resources propagate to the caller for cache refresh.
     """
     max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
     for attempt in range(max_attempts):
@@ -106,7 +106,11 @@ async def run_with_session_request_retry(
                 await manager.open(client_factory=client_factory)
             session_token = manager.session_token or "<unavailable>"
             try:
-                session = await manager.reopen_session(resource_ids)
+                session = (
+                    await manager.open(resource_ids)
+                    if reuse_session and manager.resource_ids == resource_ids
+                    else await manager.reopen_session(resource_ids)
+                )
             except QuelwareSessionError:
                 raise
             except Exception as exc:
