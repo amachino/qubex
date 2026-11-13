@@ -10,6 +10,7 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike
 from tqdm import tqdm
+from typing_extensions import deprecated
 
 import qubex.visualization as viz
 from qubex.analysis import FitStatus, fitting
@@ -86,6 +87,13 @@ class _SpinLockAnalysis:
     figures: FigureMap
 
 
+@deprecated(
+    "`spin_lock_sequence` is deprecated. The newer "
+    "`spin_lock_relaxation_spectroscopy` workflow has no drop-in "
+    "sequence-builder replacement; migrate to that workflow or build the "
+    "required schedule explicitly. Deprecated in v1.5.0; will be removed no "
+    "earlier than v1.6.0."
+)
 def spin_lock_sequence(
     exp: Experiment,
     *,
@@ -99,6 +107,11 @@ def spin_lock_sequence(
 ) -> PulseSchedule:
     """
     Build a simple spin-lock pulse schedule for one target qubit.
+
+    Deprecated since v1.5.0. The newer
+    `spin_lock_relaxation_spectroscopy` workflow has no drop-in
+    sequence-builder replacement. This function will be removed no earlier
+    than v1.6.0.
 
     Sequence structure:
 
@@ -1526,6 +1539,13 @@ def _make_spin_lock_result_data(
     }
 
 
+@deprecated(
+    "`spin_lock_spectroscopy` is deprecated; use "
+    "`spin_lock_relaxation_spectroscopy` for new code. It is not a drop-in "
+    "replacement: its pulse sequence, inputs, analysis model, and result "
+    "schema differ. Deprecated in v1.5.0; will be removed no earlier than "
+    "v1.6.0."
+)
 def spin_lock_spectroscopy(
     exp: Experiment,
     targets: Collection[str] | str | None = None,
@@ -1547,6 +1567,11 @@ def spin_lock_spectroscopy(
 ) -> Result:
     """
     Run a simple spin-lock spectroscopy measurement.
+
+    Deprecated since v1.5.0. Use `spin_lock_relaxation_spectroscopy` for new
+    code. It is not a drop-in replacement because its pulse sequence, inputs,
+    analysis model, and result schema differ. This function will be removed no
+    earlier than v1.6.0.
 
     This experiment prepares each qubit along the spin-lock drive axis, applies
     a continuous drive for each requested duration, and projects the state back
