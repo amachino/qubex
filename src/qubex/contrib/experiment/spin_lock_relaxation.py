@@ -22,7 +22,7 @@ from qubex.core.async_bridge import get_shared_async_bridge
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.experiment.models.result import Result
-from qubex.pulse import FlatTop, PulseSchedule
+from qubex.pulse import Arbitrary, FlatTop, PulseArray, PulseSchedule, Rect, Waveform
 
 __all__ = ["spin_lock_relaxation", "spin_lock_relaxation_spectroscopy"]
 
@@ -34,6 +34,9 @@ DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = (
 DEFAULT_RAMP_DURATION = 16.0
 MIN_DURATION = 100.0
 POINT_UNCERTAINTY_SAMPLES = 500
+# Bound the two rectangular library entries (chunk and remainder) to at most
+# 16_383 samples, leaving most of a 40_000-sample QuEL-3 budget for pulse edges.
+_SPIN_LOCK_CHUNK_SAMPLES = 8192
 ANALYSIS_EXCEPTIONS = (
     ValueError,
     RuntimeError,
@@ -658,6 +661,68 @@ def _model_diagnostics(observations: np.ndarray, theta: float) -> dict[str, Any]
 # Pulse construction and acquisition
 
 
+def _build_spin_lock_pulse(
+    *,
+    flat_duration: float,
+    drive_amplitude: float,
+    ramp_duration: float,
+) -> Waveform:
+    """Build a flat-top drive with shared chunks for long constant sections."""
+    pulse = FlatTop(
+        duration=flat_duration + 2.0 * ramp_duration,
+        amplitude=drive_amplitude,
+        tau=ramp_duration,
+        type="RaisedCosine",
+    )
+    if pulse.length <= _SPIN_LOCK_CHUNK_SAMPLES:
+        return pulse
+
+    edge = FlatTop(
+        duration=2.0 * ramp_duration,
+        amplitude=drive_amplitude,
+        tau=ramp_duration,
+        type="RaisedCosine",
+        sampling_period=pulse.sampling_period,
+    )
+    rise_samples = (edge.length + 1) // 2
+    flat_samples = pulse.length - edge.length
+    if flat_samples <= _SPIN_LOCK_CHUNK_SAMPLES:
+        return pulse
+
+    chunk_count, remainder = divmod(flat_samples, _SPIN_LOCK_CHUNK_SAMPLES)
+    elements: list[Waveform] = []
+    if rise_samples:
+        elements.append(
+            Arbitrary(
+                edge.shape_values[:rise_samples],
+                sampling_period=pulse.sampling_period,
+            )
+        )
+    if chunk_count:
+        chunk = Rect(
+            duration=_SPIN_LOCK_CHUNK_SAMPLES * pulse.sampling_period,
+            amplitude=drive_amplitude,
+            sampling_period=pulse.sampling_period,
+        )
+        elements.extend([chunk] * chunk_count)
+    if remainder:
+        elements.append(
+            Rect(
+                duration=remainder * pulse.sampling_period,
+                amplitude=drive_amplitude,
+                sampling_period=pulse.sampling_period,
+            )
+        )
+    if edge.length > rise_samples:
+        elements.append(
+            Arbitrary(
+                edge.shape_values[rise_samples:],
+                sampling_period=pulse.sampling_period,
+            )
+        )
+    return PulseArray(elements)
+
+
 def _build_sequence(
     exp: Experiment,
     *,
@@ -672,11 +737,10 @@ def _build_sequence(
         schedule.add(target, exp.pulse.get_pulse_for_state(target, initial_state))
         schedule.add(
             target,
-            FlatTop(
-                duration=flat_duration + 2.0 * ramp_duration,
-                amplitude=drive_amplitude,
-                tau=ramp_duration,
-                type="RaisedCosine",
+            _build_spin_lock_pulse(
+                flat_duration=flat_duration,
+                drive_amplitude=drive_amplitude,
+                ramp_duration=ramp_duration,
             ),
         )
         if basis == "X":

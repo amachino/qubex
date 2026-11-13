@@ -11,15 +11,19 @@ import numpy as np
 import pytest
 from plotly.graph_objects import Figure
 
+from qubex.backend.quel3.builders import Quel3PulseEventBuilder
+from qubex.backend.quel3.models import Quel3Waveform
 from qubex.contrib import spin_lock_relaxation, spin_lock_relaxation_spectroscopy
 from qubex.contrib.experiment import (
     spin_lock_relaxation as experiment_api,
     spin_lock_relaxation_spectroscopy as experiment_spectroscopy_api,
 )
 from qubex.contrib.experiment.spin_lock_relaxation import (
+    _SPIN_LOCK_CHUNK_SAMPLES,
     MEASUREMENT_SETTINGS,
     _assemble_spectroscopy_result,
     _build_sequence,
+    _build_spin_lock_pulse,
     _fit_global_model,
     _make_figure,
     _measure_target,
@@ -33,7 +37,7 @@ from qubex.contrib.experiment.spin_lock_relaxation import (
     _resolve_spin_lock_frequency_range,
     _try_analyze_expectations,
 )
-from qubex.pulse import FlatTop, Rect
+from qubex.pulse import FlatTop, PulseArray, Rect
 
 spin_lock_module = importlib.import_module(
     "qubex.contrib.experiment.spin_lock_relaxation"
@@ -411,6 +415,87 @@ def test_sequence_uses_flattop_duration_excluding_both_ramps() -> None:
     spin_lock_pulse = next(pulse for pulse in pulses if isinstance(pulse, FlatTop))
     assert spin_lock_pulse.duration == pytest.approx(132.0)
     assert spin_lock_pulse.tau == pytest.approx(16.0)
+
+
+def test_spin_lock_pulse_keeps_long_ramps_without_reusable_flat_chunks() -> None:
+    """A drive without a reusable flat chunk should remain one flat-top pulse."""
+    reference = FlatTop(
+        duration=32.0,
+        amplitude=0.2,
+        tau=16.0,
+        type="RaisedCosine",
+    )
+    sampling_period = reference.sampling_period
+
+    pulse = _build_spin_lock_pulse(
+        flat_duration=137 * sampling_period,
+        drive_amplitude=0.2,
+        ramp_duration=5000 * sampling_period,
+    )
+
+    assert isinstance(pulse, FlatTop)
+
+
+def test_long_spin_lock_pulse_preserves_flattop_samples() -> None:
+    """A segmented long drive should preserve the original flat-top waveform."""
+    reference_edge = FlatTop(
+        duration=32.0,
+        amplitude=0.2,
+        tau=16.0,
+        type="RaisedCosine",
+    )
+    flat_duration = (
+        2 * _SPIN_LOCK_CHUNK_SAMPLES + 137
+    ) * reference_edge.sampling_period
+
+    pulse = _build_spin_lock_pulse(
+        flat_duration=flat_duration,
+        drive_amplitude=0.2,
+        ramp_duration=16.0,
+    )
+    expected = FlatTop(
+        duration=flat_duration + 32.0,
+        amplitude=0.2,
+        tau=16.0,
+        type="RaisedCosine",
+    )
+
+    assert isinstance(pulse, PulseArray)
+    np.testing.assert_allclose(pulse.values, expected.values, rtol=1e-14, atol=1e-14)
+    assert pulse.duration == pytest.approx(expected.duration)
+
+
+def test_long_spin_lock_pulse_reuses_short_quel3_waveforms() -> None:
+    """A segmented long drive should fit the QuEL-3 waveform library limit."""
+    reference_edge = FlatTop(
+        duration=32.0,
+        amplitude=0.2,
+        tau=16.0,
+        type="RaisedCosine",
+    )
+    flat_duration = (
+        3 * _SPIN_LOCK_CHUNK_SAMPLES + 137
+    ) * reference_edge.sampling_period
+    pulse = _build_spin_lock_pulse(
+        flat_duration=flat_duration,
+        drive_amplitude=0.2,
+        ramp_duration=16.0,
+    )
+    assert isinstance(pulse, PulseArray)
+    library: dict[str, Quel3Waveform] = {}
+
+    events, _ = Quel3PulseEventBuilder.build(
+        target_is_read=False,
+        sequence=pulse,
+        waveform_name_by_shape_key={},
+        waveform_library=library,
+        waveform_index=0,
+    )
+
+    registered_samples = sum(len(waveform.iq_array) for waveform in library.values())
+    assert registered_samples < 40_000
+    assert registered_samples < pulse.length
+    assert len({event.waveform_name for event in events}) < len(events)
 
 
 def test_frequency_points_are_shuffled_and_restored(
