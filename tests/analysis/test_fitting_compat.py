@@ -55,8 +55,8 @@ def test_fit_rabi_can_suppress_low_r2_warning(
         qubex_fitting,
         "_curve_fit",
         lambda *args, **kwargs: (
-            np.array([1.0, 2 * np.pi, 0.0, 0.0]),
-            np.eye(4),
+            np.array([1.0, 2 * np.pi, 0.0, 0.0, 10_000.0]),
+            np.eye(5),
         ),
     )
 
@@ -67,6 +67,7 @@ def test_fit_rabi_can_suppress_low_r2_warning(
             data=1j * np.array([0.0, 1.0, 2.0, 3.0]),
             reference_point=1j,
             plot=False,
+            is_damped=True,
             warn_low_r2=False,
         )
 

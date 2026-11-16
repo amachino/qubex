@@ -1666,7 +1666,7 @@ def fit_rabi(
     tau_est: float | None = None,
     reference_point: complex | None = None,
     plot: bool = True,
-    is_damped: bool = False,
+    is_damped: bool | None = None,
     warn_low_r2: bool = True,
     ylabel: str | None = None,
     yaxis_range: tuple[float, float] | None = None,
@@ -1688,8 +1688,9 @@ def fit_rabi(
         Reference point for the I/Q values.
     plot : bool, optional
         Whether to plot the data and the fit.
-    is_damped : bool, optional
-        Whether to fit the data to a damped cosine function.
+    is_damped : bool | None, optional
+        Whether to fit the data to a damped cosine function. If None, a
+        damped cosine fit is used. Pass False to fit an undamped cosine.
     warn_low_r2 : bool, optional
         Whether to emit a warning log when the fit quality is low.
     ylabel : str | None, optional
@@ -1702,6 +1703,8 @@ def fit_rabi(
     FitResult
         Result with fitted parameters and the figure.
     """
+    if is_damped is None:
+        is_damped = True
     if tau_est is None:
         tau_est = 10_000.0
 
