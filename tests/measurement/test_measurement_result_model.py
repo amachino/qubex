@@ -165,7 +165,7 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
         n_shots=2,
         shot_interval=100.0,
         shot_averaging=False,
-        time_integration=False,
+        time_integration=True,
         state_classification=True,
     )
     result = MeasurementResult(
@@ -173,7 +173,7 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
             "Q00": [
                 _make_capture(
                     target="Q00",
-                    raw=np.array([[1.0 + 0.0j], [2.0 + 0.0j]]),
+                    raw=np.array([0, 1], dtype=np.int64),
                     measurement_config=config,
                     sampling_period=0.4,
                 )
@@ -181,7 +181,7 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
             "Q01": [
                 _make_capture(
                     target="Q01",
-                    raw=np.array([[3.0 + 0.0j], [4.0 + 0.0j]]),
+                    raw=np.array([1, 0], dtype=np.int64),
                     measurement_config=config,
                     sampling_period=0.4,
                 )
@@ -195,7 +195,7 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
     assert "targets=[Q00, Q01]" in text
     assert "captures=2" in text
     assert "shot_averaging=False" in text
-    assert "time_integration=False" in text
+    assert "time_integration=True" in text
     assert "state_classification=True" in text
 
 
@@ -227,6 +227,41 @@ def test_to_measure_result_propagates_sampling_period() -> None:
 
     assert single.data["Q00"].sampling_period == 0.8
     assert np.array_equal(single.data["Q00"].times, np.array([0.0]))
+
+
+def test_converter_rejects_state_series_for_legacy_results(dummy_classifier) -> None:
+    """Legacy result conversion should reject canonical classified states."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([0, -1, -1, 1], dtype=np.int64),
+                    measurement_config=config,
+                    sampling_period=0.4,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+
+    with pytest.raises(ValueError, match="run_measurement"):
+        MeasurementResultConverter.to_multiple_measure_result(
+            result,
+            classifiers={"Q00": dummy_classifier},
+        )
+    with pytest.raises(ValueError, match="run_measurement"):
+        MeasurementResultConverter.to_measure_result(
+            result,
+            classifiers={"Q00": dummy_classifier},
+        )
 
 
 def test_json_roundtrip_preserves_capture_data() -> None:
@@ -322,6 +357,45 @@ def test_netcdf_roundtrip_preserves_capture_data(tmp_path) -> None:
     )
     assert restored.data["Q00"][0].sampling_period == pytest.approx(2.0)
     assert restored.data["Q01"][0].sampling_period == pytest.approx(1.0)
+
+
+def test_netcdf_roundtrip_preserves_classification_decisions(tmp_path) -> None:
+    """NetCDF round-trip should preserve states and pre-rejection decisions."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    decisions = np.array(
+        [[0, 0], [1, 0], [0, 1], [1, 1]],
+        dtype=np.uint8,
+    )
+    original = MeasurementResult(
+        data={
+            "Q00": [
+                CaptureData.from_primary_data(
+                    target="Q00",
+                    data=np.array([0, -1, -1, 1], dtype=np.int64),
+                    config=config,
+                    sampling_period=2.0,
+                    classification_decisions=decisions,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+
+    restored = MeasurementResult.load(
+        original.save(tmp_path / "classification_result.nc")
+    )
+    capture = restored.data["Q00"][0]
+
+    assert capture.state_series is not None
+    assert capture.classification_decisions is not None
+    assert capture.state_series.tolist() == [0, -1, -1, 1]
+    assert np.array_equal(capture.classification_decisions, decisions)
 
 
 def test_netcdf_writes_nested_capture_payload_as_variables(tmp_path) -> None:
@@ -730,7 +804,7 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
         state_classification=True,
         return_items=(ReturnItem.STATE_SERIES, ReturnItem.IQ_SERIES),
     )
-    raw = np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128)
+    raw = np.array([0, 1], dtype=np.uint8)
 
     capture = CaptureData.from_primary_data(
         target="Q00",
@@ -739,10 +813,88 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
         sampling_period=0.4,
     )
 
-    assert capture.payload.iq_series is not None
-    assert np.array_equal(capture.payload.iq_series, raw)
-    assert capture.payload.state_series is None
+    assert capture.payload.state_series is not None
+    assert np.array_equal(capture.payload.state_series, raw)
+    assert capture.payload.iq_series is None
     assert np.array_equal(capture.data, raw)
+
+
+def test_capture_data_preserves_classification_decisions_and_counts() -> None:
+    """State captures should expose logical counts and pre-rejection decisions."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    decisions = np.array(
+        [[0, 0], [1, 0], [0, 1], [1, 1]],
+        dtype=np.uint8,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([0, -1, -1, 1], dtype=np.int64),
+        config=config,
+        sampling_period=0.4,
+        classification_decisions=decisions,
+    )
+
+    assert capture.classification_decisions is not None
+    assert np.array_equal(capture.classification_decisions, decisions)
+    assert capture.get_state_counts() == {0: 1, 1: 1}
+    assert capture.get_state_counts(include_rejected=True) == {-1: 2, 0: 1, 1: 1}
+
+
+@pytest.mark.parametrize("state", [0.5, float("nan")])
+def test_capture_data_state_counts_reject_invalid_labels(state: float) -> None:
+    """State counting should reject non-integral and non-finite labels."""
+    config = MeasurementConfig(
+        n_shots=1,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([state]),
+        config=config,
+        sampling_period=0.4,
+    )
+
+    with pytest.raises(ValueError, match="finite integer state labels"):
+        capture.get_state_counts()
+
+
+def test_measurement_result_aggregates_state_counts() -> None:
+    """MeasurementResult should aggregate state counts for every capture."""
+    config = MeasurementConfig(
+        n_shots=3,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([0, -1, 1], dtype=np.int64),
+        config=config,
+        sampling_period=0.4,
+        classification_decisions=np.array(
+            [[0, 0], [1, 0], [1, 1]],
+            dtype=np.uint8,
+        ),
+    )
+    result = MeasurementResult(
+        data={"Q00": [capture]},
+        measurement_config=config,
+    )
+
+    assert result.get_state_counts() == {"Q00": [{0: 1, 1: 1}]}
+    assert result.get_state_counts(include_rejected=True) == {
+        "Q00": [{-1: 1, 0: 1, 1: 1}]
+    }
 
 
 def test_capture_data_state_series_returns_payload_when_available() -> None:
@@ -775,13 +927,16 @@ def test_capture_data_state_series_returns_none_when_not_provided() -> None:
         n_shots=2,
         shot_interval=100.0,
         shot_averaging=False,
-        time_integration=True,
-        state_classification=True,
-        return_items=(ReturnItem.IQ_SERIES, ReturnItem.STATE_SERIES),
+        time_integration=False,
+        state_classification=False,
+        return_items=(ReturnItem.WAVEFORM_SERIES,),
     )
     capture = CaptureData.from_primary_data(
         target="Q00",
-        data=np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128),
+        data=np.array(
+            [[1.0 + 0.0j], [2.0 + 0.0j]],
+            dtype=np.complex128,
+        ),
         config=config,
         sampling_period=0.4,
     )
@@ -1018,6 +1173,80 @@ def test_converter_falls_back_to_empty_config_when_missing() -> None:
 
     assert multiple.config == {}
     assert single.config == {}
+
+
+@pytest.mark.parametrize("entry_point", ["figure", "plot", "plot_return_figure"])
+@pytest.mark.parametrize("time_integration", [False, True])
+@pytest.mark.parametrize("with_iq", [False, True])
+def test_measurement_result_plotting_rejects_state_payload_before_rendering(
+    monkeypatch: pytest.MonkeyPatch,
+    entry_point: str,
+    time_integration: bool,
+    with_iq: bool,
+) -> None:
+    """State payloads should fail before any rendering, even alongside IQ captures."""
+    iq_config = _make_config(mode="single", shots=2, time_integration=True)
+    state_config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=time_integration,
+        state_classification=True,
+        return_items=(ReturnItem.STATE_SERIES, ReturnItem.IQ_SERIES) if with_iq else (),
+    )
+    iq_data = np.array([1.0 + 2.0j, 3.0 + 4.0j])
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=iq_data,
+                    measurement_config=iq_config,
+                    sampling_period=0.8,
+                )
+            ],
+            "Q01": [
+                CaptureData(
+                    target="Q01",
+                    config=state_config,
+                    payload=CapturePayload(
+                        state_series=np.array([0, -1]),
+                        iq_series=iq_data if with_iq else None,
+                    ),
+                    sampling_period=0.8,
+                )
+            ],
+        },
+        measurement_config=iq_config,
+    )
+
+    def unexpected_plot(**kwargs: object) -> None:
+        raise AssertionError(f"Unexpected plotting call: {kwargs}")
+
+    for name in (
+        "scatter_iq_data",
+        "plot_waveform",
+        "make_iq_scatter_figure",
+        "make_waveform_figure",
+        "save_figure",
+    ):
+        monkeypatch.setattr(
+            f"qubex.measurement.models.measurement_result.viz.{name}",
+            unexpected_plot,
+        )
+
+    if entry_point == "plot_return_figure":
+        with (
+            pytest.warns(DeprecationWarning, match=r"figure\("),
+            pytest.raises(NotImplementedError, match="state_series"),
+        ):
+            result.plot(return_figure=True, save_image=True)
+    elif entry_point == "figure":
+        with pytest.raises(NotImplementedError, match="state_series"):
+            result.figure()
+    else:
+        with pytest.raises(NotImplementedError, match="state_series"):
+            result.plot(save_image=True)
 
 
 def test_plot_calls_waveform_plot_for_avg_mode(monkeypatch) -> None:

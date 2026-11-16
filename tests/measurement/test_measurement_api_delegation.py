@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import MethodType, SimpleNamespace
 from typing import Any, ClassVar, cast
 
@@ -1323,6 +1323,54 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
+@pytest.mark.parametrize("entrypoint", ["measure", "execute"])
+@pytest.mark.parametrize(
+    "option_name", ["state_classification", "enable_dsp_classification"]
+)
+def test_legacy_dsp_request_is_rejected_before_backend_execution(
+    entrypoint: str,
+    option_name: str,
+) -> None:
+    """Legacy DSP requests should fail before backend I/O with valid API guidance."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    backend_calls: list[dict[str, object]] = []
+
+    def unexpected_execute(**kwargs: object) -> None:
+        backend_calls.append(kwargs)
+        raise AssertionError("A rejected request must not execute the backend")
+
+    _bind_runtime(
+        measurement,
+        backend_controller=SimpleNamespace(execute_sync=unexpected_execute),
+        experiment_system=object(),
+    )
+    method = measurement.measure if entrypoint == "measure" else measurement.execute
+    options: dict[str, Any] = {option_name: True}
+    warning = (
+        pytest.warns(DeprecationWarning, match="enable_dsp_classification")
+        if option_name == "enable_dsp_classification"
+        else nullcontext()
+    )
+    with (
+        warning,
+        pytest.raises(
+            ValueError, match=r"MeasurementConfig.*state_classification=True"
+        ),
+    ):
+        method(
+            {"Q00": np.array([0.0 + 0.0j])},
+            time_integration=False,
+            **options,
+        )
+
+    assert backend_calls == []
+
+
 def test_measure_accepts_deprecated_alias_options() -> None:
     """Given deprecated alias options, when measure is called, then it forwards them for compatibility."""
     measurement = Measurement(
@@ -1508,8 +1556,9 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
             config: MeasurementConfig,
             quel1_options: Quel1MeasurementOptions | None = None,
         ) -> MeasurementResult:
-            _ = (schedule, quel1_options)
+            _ = schedule
             called["config"] = config
+            called["run_quel1_options"] = quel1_options
             return MeasurementResultConverter.from_multiple(
                 multiple,
                 measurement_config=_make_config(),
@@ -1552,6 +1601,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
     config = called["config"]
     assert config.time_integration is True
     assert config.state_classification is False
+    assert called["run_quel1_options"] is None
 
 
 def test_run_measurement_delegates_to_executor(
