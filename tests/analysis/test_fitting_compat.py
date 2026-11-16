@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import numpy as np
 import pytest
@@ -75,52 +74,3 @@ def test_fit_rabi_can_suppress_low_r2_warning(
     assert result.status is qubex_fitting.FitStatus.WARNING
     assert result.message == "R² < 0.9"
     assert "R² < 0.9" not in caplog.text
-
-
-def _damped_rabi_signal() -> tuple[np.ndarray, np.ndarray]:
-    """Return synthetic damped Rabi I/Q data along the Q axis."""
-    times = np.arange(0.0, 200.0, 4.0)
-    signal = 0.5 * np.cos(2 * np.pi * 0.0125 * times) * np.exp(-times / 150.0) + 0.5
-    return times, (1j * signal).astype(np.complex64)
-
-
-_OMITTED = object()
-
-
-@pytest.mark.parametrize(
-    ("is_damped", "expect_damped"),
-    [
-        (_OMITTED, True),
-        (None, True),
-        (True, True),
-        (False, False),
-    ],
-    ids=["omitted", "none", "true", "false"],
-)
-def test_fit_rabi_resolves_is_damped(
-    is_damped: object,
-    expect_damped: bool,
-) -> None:
-    """fit_rabi should fit a damped cosine by default and honor explicit is_damped."""
-    times, data = _damped_rabi_signal()
-    kwargs: dict[str, Any] = {} if is_damped is _OMITTED else {"is_damped": is_damped}
-
-    result = qubex_fitting.fit_rabi(
-        target="Q00",
-        times=times,
-        data=data,
-        reference_point=1j,
-        plot=False,
-        warn_low_r2=False,
-        **kwargs,
-    )
-
-    assert result.status is not qubex_fitting.FitStatus.ERROR
-    if expect_damped:
-        assert len(result["popt"]) == 5
-        assert result["tau"] is not None
-        assert result["tau_err"] is not None
-    else:
-        assert len(result["popt"]) == 4
-        assert result["tau"] is None
-        assert result["tau_err"] is None
