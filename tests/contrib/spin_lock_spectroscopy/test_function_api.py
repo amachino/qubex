@@ -56,6 +56,27 @@ def test_all_spin_lock_spectroscopy_functions_are_exported_from_experiment() -> 
     assert experiment_spin_lock_spectroscopy is spin_lock_spectroscopy
 
 
+@pytest.mark.parametrize(
+    ("api", "api_name"),
+    [
+        (spin_lock_sequence, "spin_lock_sequence"),
+        (spin_lock_spectroscopy, "spin_lock_spectroscopy"),
+    ],
+)
+def test_legacy_spin_lock_apis_expose_complete_deprecation_metadata(
+    api: Any,
+    api_name: str,
+) -> None:
+    """Deprecated spin-lock APIs should expose complete migration metadata."""
+    message = getattr(api, "__deprecated__", "")
+
+    assert f"`{api_name}` is deprecated" in message
+    assert "`spin_lock_relaxation_spectroscopy`" in message
+    assert "drop-in" in message
+    assert "Deprecated in v1.5.0" in message
+    assert "will be removed no earlier than v1.6.0" in message
+
+
 def test_spin_lock_spectroscopy_checks_hpi_pulse_before_measurement() -> None:
     """Given unavailable half-pi pulse, then spectroscopy fails before calibration."""
 
@@ -68,7 +89,13 @@ def test_spin_lock_spectroscopy_checks_hpi_pulse_before_measurement() -> None:
 
     exp: Any = SimpleNamespace(pulse=_Pulse())
 
-    with pytest.raises(ValueError, match="hpi pulse"):
+    with (
+        pytest.warns(
+            DeprecationWarning,
+            match=r"spin_lock_relaxation_spectroscopy.*not a drop-in replacement",
+        ),
+        pytest.raises(ValueError, match="hpi pulse"),
+    ):
         spin_lock_spectroscopy(
             exp,
             targets=["Q00"],
@@ -96,7 +123,13 @@ def test_spin_lock_spectroscopy_requires_rabi_params_with_calibration() -> None:
 
     exp: Any = SimpleNamespace(pulse=_Pulse())
 
-    with pytest.raises(ValueError, match="Rabi parameters"):
+    with (
+        pytest.warns(
+            DeprecationWarning,
+            match=r"spin_lock_relaxation_spectroscopy.*not a drop-in replacement",
+        ),
+        pytest.raises(ValueError, match="Rabi parameters"),
+    ):
         spin_lock_spectroscopy(
             exp,
             targets=["Q00"],
@@ -970,7 +1003,13 @@ def test_spin_lock_sequence_rejects_invalid_scalar_inputs(
     match: str,
 ) -> None:
     """Given invalid scalar inputs, when building a sequence, then validation fails."""
-    with pytest.raises(ValueError, match=match):
+    with (
+        pytest.warns(
+            DeprecationWarning,
+            match=r"spin_lock_relaxation_spectroscopy.*no drop-in sequence-builder",
+        ),
+        pytest.raises(ValueError, match=match),
+    ):
         spin_lock_sequence(
             object(),  # type: ignore[arg-type]
             target="Q00",

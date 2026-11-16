@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Protocol
+
+from numpy.typing import ArrayLike
+
+from qubex.backend.frequency_sweep import SweepConfiguration, SweepSegment
 
 if TYPE_CHECKING:
     from qubex.backend.backend_controller import SystemBackendController
@@ -28,6 +33,33 @@ class SystemSynchronizer(Protocol):
     @property
     def supports_mutable_backend_settings_cache(self) -> bool:
         """Return whether mutable backend-settings cache writes are supported."""
+        ...
+
+    def modified_frequencies(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        target_frequencies: dict[str, float],
+    ) -> AbstractContextManager[None]:
+        """Temporarily update carriers and restore the backend's changed state."""
+        ...
+
+    def modified_capture_delay(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        capture_delay: Mapping[int, int | float],
+    ) -> AbstractContextManager[None]:
+        """
+        Convert nanosecond delays and temporarily apply backend-specific settings.
+
+        Notes
+        -----
+        The manager validates mux keys and finite, non-negative numeric values.
+        The synchronizer validates the backend resolution and owns temporary
+        control parameters and controller state, restoring both on exit,
+        including partial entry failures.
+        """
         ...
 
     def resolve_custom_target_channel(
@@ -103,4 +135,24 @@ class SystemSynchronizer(Protocol):
 
     def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
         """Replace mutable backend cache state when supported."""
+        ...
+
+    def plan_frequency_sweep(
+        self,
+        experiment_system: ExperimentSystem,
+        target: str,
+        frequencies: ArrayLike,
+        *,
+        subrange_width: float | None = None,
+        overlap: bool = False,
+    ) -> tuple[SweepSegment[SweepConfiguration], ...]:
+        """Resolve native resources and request backend sweep segments."""
+        ...
+
+    def modified_sweep_configuration(
+        self,
+        experiment_system: ExperimentSystem,
+        configuration: SweepConfiguration,
+    ) -> AbstractContextManager[None]:
+        """Validate native settings, apply them, and synchronize affected model fields."""
         ...

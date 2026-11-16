@@ -65,11 +65,6 @@ class Quel3ConnectionManager:
         """Return configured quelware client mode."""
         return self._runtime_config.client_mode_value
 
-    @property
-    def quelware_pat_path(self) -> str | None:
-        """Return configured quelware personal access token path."""
-        return self._runtime_config.pat_path
-
     def connect(
         self,
         unit_labels: str | list[str] | None = None,

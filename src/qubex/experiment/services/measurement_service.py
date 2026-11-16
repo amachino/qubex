@@ -6,6 +6,7 @@ import logging
 import warnings
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
+from contextlib import nullcontext
 from itertools import product
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
@@ -608,8 +609,6 @@ class MeasurementService:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -628,7 +627,8 @@ class MeasurementService:
         time_integration
             Whether to integrate captured waveforms over time.
         state_classification
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         frequencies
             Temporary frequency overrides keyed by target label.
         readout_amplitudes
@@ -649,10 +649,6 @@ class MeasurementService:
             Whether to insert readout amplification pulses.
         final_measurement
             Whether to append final measurement windows.
-        classification_line_param0
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1
-            Optional QuEL-1 classification line parameter 1.
         reset_awg_and_capunits
             Whether to reset AWGs/capture units before execution.
         plot
@@ -695,8 +691,6 @@ class MeasurementService:
                 readout_ramp_type=readout_ramp_type,
                 readout_amplification=readout_amplification,
                 final_measurement=final_measurement,
-                classification_line_param0=classification_line_param0,
-                classification_line_param1=classification_line_param1,
                 plot=plot,
                 **deprecated_options,
             )
@@ -736,8 +730,6 @@ class MeasurementService:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -758,7 +750,8 @@ class MeasurementService:
         time_integration
             Whether to integrate captured waveforms over time.
         state_classification
-            Whether to enable state classification.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         frequencies
             Temporary frequency overrides keyed by target label.
         readout_amplitudes
@@ -777,10 +770,6 @@ class MeasurementService:
             Ramp type for readout pulses.
         readout_amplification
             Whether to insert readout amplification pulses.
-        classification_line_param0
-            Optional QuEL-1 classification line parameter 0.
-        classification_line_param1
-            Optional QuEL-1 classification line parameter 1.
         reset_awg_and_capunits
             Whether to reset AWGs/capture units before measurement.
         plot
@@ -870,8 +859,6 @@ class MeasurementService:
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
                 readout_amplification=readout_amplification,
-                classification_line_param0=classification_line_param0,
-                classification_line_param1=classification_line_param1,
                 **deprecated_options,
             )
         if plot:
@@ -1700,6 +1687,7 @@ class MeasurementService:
         method: Literal["measure", "execute"] | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        capture_delay: dict[int, int | float] | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1722,6 +1710,16 @@ class MeasurementService:
             Number of shots.
         shot_interval : float | None, optional
             Interval between shots in ns.
+        capture_delay : dict[int, int | float], optional
+            Temporary total capture delays in ns keyed by mux index, e.g. `{0: 800.0}`.
+            Values must be finite and non-negative. QuEL-1 requires multiples
+            of 32 ns (4 words); QuEL-3 requires multiples of 0.8 ns. Invalid values raise
+            `ValueError` rather than being rounded. QuEL-1 splits the delay
+            into coarse and word offsets internally, replacing both settings.
+            Unspecified muxes retain their configured delays.
+            Defaults to None, preserving the configured delays. Shared mux
+            channels are affected. Original settings are restored on exit,
+            including when measurement fails. Configuration files are not changed.
         readout_amplitude : float, optional
             Amplitude of the readout pulse.
         readout_duration : float, optional
@@ -1794,8 +1792,13 @@ class MeasurementService:
             for target in targets:
                 ps.add(target, Blank(0))
 
-        result = MeasurementResultConverter.to_measure_result(
-            _run_async(
+        delay_context = (
+            self.ctx.system_manager.modified_capture_delay(capture_delay)
+            if capture_delay is not None
+            else nullcontext()
+        )
+        with delay_context:
+            measurement_result = _run_async(
                 lambda: self.run_measurement(
                     schedule=ps,
                     n_shots=n_shots,
@@ -1809,7 +1812,8 @@ class MeasurementService:
                     time_integration=False,
                 )
             )
-        )
+        # Conversion does not depend on the temporary capture delays.
+        result = MeasurementResultConverter.to_measure_result(measurement_result)
         if plot:
             result.plot()
         return result

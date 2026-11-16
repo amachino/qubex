@@ -53,8 +53,6 @@ class MeasurementConfig(Model):
             )
 
         required = {self._primary_return_item()}
-        if self.state_classification:
-            required.add(ReturnItem.STATE_SERIES)
         missing = [item for item in required if item not in return_items]
         if missing:
             joined = ", ".join(item.value for item in missing)
@@ -70,6 +68,8 @@ class MeasurementConfig(Model):
 
     def _primary_return_item(self) -> ReturnItem:
         """Return the primary return item inferred from legacy mode flags."""
+        if self.state_classification:
+            return ReturnItem.STATE_SERIES
         match (self.shot_averaging, self.time_integration):
             case (True, True):
                 return ReturnItem.AVERAGED_IQ
@@ -82,10 +82,7 @@ class MeasurementConfig(Model):
 
     def _infer_return_items(self) -> tuple[ReturnItem, ...]:
         """Infer default return items from legacy flags."""
-        items: list[ReturnItem] = [self._primary_return_item()]
-        if self.state_classification:
-            items.append(ReturnItem.STATE_SERIES)
-        return tuple(items)
+        return (self._primary_return_item(),)
 
     def _allowed_return_items(self) -> set[ReturnItem]:
         """Return allowed return-item set for the configured mode."""

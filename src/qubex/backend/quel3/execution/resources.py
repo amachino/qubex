@@ -29,6 +29,7 @@ class ResourceRequirements:
     capture_samples_per_shot: dict[str, int]
     timeline_duration_ns: float
     sampling_grid_fs: int
+    capture_window_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,9 @@ class Quel3PayloadAnalyzer:
                 t.length_ns for t in payload.fixed_timelines.values()
             ),
             sampling_grid_fs=math.lcm(*sampling_periods),
+            capture_window_count=sum(
+                len(t.capture_windows) for t in payload.fixed_timelines.values()
+            ),
         )
         conditions = ExecutionConditions(
             n_iterations=payload.n_iterations,

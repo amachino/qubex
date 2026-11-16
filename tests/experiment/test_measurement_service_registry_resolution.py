@@ -215,6 +215,38 @@ def test_execute_does_not_reset_awg_by_default() -> None:
     assert captured["reset_calls"] == []
 
 
+@pytest.mark.parametrize("entrypoint", ["execute", "measure"])
+@pytest.mark.parametrize(
+    "option_name", ["state_classification", "enable_dsp_classification"]
+)
+def test_legacy_dsp_validation_is_delegated_to_measurement(
+    entrypoint: str,
+    option_name: str,
+) -> None:
+    """Experiment should delegate DSP options and preserve explicit reset ordering."""
+    service, captured = _make_service()
+    options: dict[str, Any] = {option_name: True}
+    if entrypoint == "execute":
+        schedule = PulseSchedule(["custom-target"])
+        service.execute(
+            schedule,
+            reset_awg_and_capunits=True,
+            plot=False,
+            **options,
+        )
+    else:
+        service.measure(
+            sequence={"custom-target": np.array([0.0 + 0.0j])},
+            reset_awg_and_capunits=True,
+            plot=False,
+            **options,
+        )
+
+    calls = cast(list[dict[str, object]], captured[f"{entrypoint}_calls"])
+    assert calls[0][option_name] is True
+    assert captured["reset_calls"] == [{"Q17"}]
+
+
 def test_execute_uses_experiment_readout_timing_defaults() -> None:
     """Given omitted readout timing, when executing, then Experiment defaults are delegated."""
     service, captured = _make_service()
@@ -472,3 +504,73 @@ def test_measure_state_preserves_legacy_time_integration_opt_out() -> None:
     measure_calls = cast(list[dict[str, object]], captured["measure_calls"])
     assert measure_calls[0]["time_integration"] is None
     assert measure_calls[0]["enable_dsp_sum"] is False
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_check_waveform_applies_capture_delay_during_measurement(fail: bool) -> None:
+    """Waveform checks run inside the temporary delay context and exit even on failure."""
+    service, _ = _make_service()
+    events: list[object] = []
+
+    @contextmanager
+    def modified_capture_delay(delay: object):
+        events.append(delay)
+        try:
+            yield
+        finally:
+            events.append("restored")
+
+    cast(Any, service.ctx).system_manager = SimpleNamespace(
+        modified_capture_delay=modified_capture_delay
+    )
+
+    async def run_measurement(**kwargs: object) -> MeasurementResult:
+        assert events == [{0: 24}]
+        if fail:
+            raise RuntimeError("measurement failed")
+        return _make_measurement_result()
+
+    service.__dict__["run_measurement"] = run_measurement
+    if fail:
+        with pytest.raises(RuntimeError, match="measurement failed"):
+            service.check_waveform("custom-target", capture_delay={0: 24}, plot=False)
+    else:
+        service.check_waveform("custom-target", capture_delay={0: 24}, plot=False)
+    assert events == [{0: 24}, "restored"]
+
+
+def test_check_waveform_restores_capture_delay_before_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Waveform checks restore the delay override before converting the result."""
+    import qubex.experiment.services.measurement_service as module
+
+    service, _ = _make_service()
+    events: list[str] = []
+
+    @contextmanager
+    def modified_capture_delay(delay: object):
+        try:
+            yield
+        finally:
+            events.append("restored")
+
+    cast(Any, service.ctx).system_manager = SimpleNamespace(
+        modified_capture_delay=modified_capture_delay
+    )
+
+    async def run_measurement(**kwargs: object) -> MeasurementResult:
+        return _make_measurement_result()
+
+    original_convert = module.MeasurementResultConverter.to_measure_result
+
+    def to_measure_result(result: MeasurementResult) -> object:
+        events.append("converted")
+        return original_convert(result)
+
+    service.__dict__["run_measurement"] = run_measurement
+    monkeypatch.setattr(
+        module.MeasurementResultConverter, "to_measure_result", to_measure_result
+    )
+    service.check_waveform("custom-target", capture_delay={0: 24}, plot=False)
+    assert events == ["restored", "converted"]

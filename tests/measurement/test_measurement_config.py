@@ -131,8 +131,8 @@ def test_factory_rejects_frequency_overrides() -> None:
         factory.create(frequencies={"Q00": 5.0, "Q01": 5.2})  # type: ignore[call-arg]
 
 
-def test_model_populates_return_items_from_flags() -> None:
-    """Given legacy booleans, model should infer return items."""
+def test_model_selects_state_series_primary_for_classification() -> None:
+    """State classification should select state series independent of backend."""
     config = MeasurementConfig(
         n_shots=4,
         shot_interval=100.0,
@@ -141,10 +141,32 @@ def test_model_populates_return_items_from_flags() -> None:
         state_classification=True,
     )
 
-    assert tuple(config.return_items) == (
-        ReturnItem.IQ_SERIES,
-        ReturnItem.STATE_SERIES,
+    assert config.primary_return_item == ReturnItem.STATE_SERIES
+    assert tuple(config.return_items) == (ReturnItem.STATE_SERIES,)
+
+
+def test_factory_selects_state_series_primary_for_classification() -> None:
+    """The factory should select state-series output for classification."""
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    factory = MeasurementConfigFactory(
+        experiment_system=cast(ExperimentSystem, experiment_system),
     )
+
+    config = factory.create(
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+
+    assert config.primary_return_item == ReturnItem.STATE_SERIES
+    assert config.return_items == (ReturnItem.STATE_SERIES,)
 
 
 def test_model_rejects_return_items_conflicting_with_flags() -> None:

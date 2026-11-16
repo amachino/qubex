@@ -209,6 +209,24 @@ data:
   1: 8
 ```
 
+QuEL-1 decimated capture requires delay offsets in steps of **4 words =
+16 input samples = 32 ns**. `capture_delay.yaml` retains its coarse 128 ns
+`ndelay` unit. `capture_delay_word.yaml` accepts non-negative integers divisible
+by 4; invalid values raise `ValueError` instead of being rounded. Total delay is
+`128 * capture_delay + 8 * capture_delay_word` ns. Temporary ns overrides in
+`check_waveform(capture_delay={0: 800.0})` must be multiples of 32 ns and replace
+both settings. QuEL-3 retains its 0.8 ns resolution.
+
+```yaml
+# capture_delay_word.yaml for QuEL-1
+meta:
+  description: Capture delay offsets in multiples of 4 words (32 ns)
+  unit: word
+data:
+  0: 0
+  1: 4
+```
+
 ```yaml
 # jpa_params.yaml
 meta:

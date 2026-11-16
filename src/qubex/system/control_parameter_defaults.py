@@ -113,8 +113,10 @@ class ControlParameterDefaults:
         still be `None`. That `None` is the resolved effective value kept for
         serialization, while typed getters on `ControlParameters` raise when
         such unsupported settings are accessed.
+        Backends validate the effective values via `_validate_resolved_values`
+        before model coercion.
         """
-        return ControlParameters(
+        resolved: dict[str, Any] = dict(
             frequency_margin=self._resolve_frequency_margin(frequency_margin),
             control_amplitude=self._resolve_qubit_values(
                 quantum_system=quantum_system,
@@ -172,6 +174,11 @@ class ControlParameterDefaults:
                 pump_frequency_by_mux=pump_frequency_by_mux,
             ),
         )
+        self._validate_resolved_values(resolved)
+        return ControlParameters(**resolved)
+
+    def _validate_resolved_values(self, resolved: Mapping[str, Any]) -> None:
+        """Validate effective values against backend constraints."""
 
     def _resolve_frequency_margin(
         self,

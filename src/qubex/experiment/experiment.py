@@ -508,6 +508,10 @@ class Experiment:
         """Return the active state classifiers."""
         return self.ctx.classifiers
 
+    def set_classifier(self, classifiers: TargetMap[StateClassifier]) -> None:
+        """Register state classifiers by target label."""
+        self.ctx.measurement.update_classifiers(classifiers)
+
     @property
     def state_centers(self) -> dict[str, dict[int, complex]]:
         """Return state centers from calibration notes."""
@@ -1772,6 +1776,7 @@ class Experiment:
         method: Literal["measure", "execute"] | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        capture_delay: dict[int, int | float] | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1794,6 +1799,16 @@ class Experiment:
             Number of shots.
         shot_interval : float, optional
             Interval between shots in ns.
+        capture_delay : dict[int, int | float], optional
+            Temporary total capture delays in ns keyed by mux index, e.g. `{0: 800.0}`.
+            Values must be finite and non-negative. QuEL-1 requires multiples
+            of 32 ns (4 words); QuEL-3 requires multiples of 0.8 ns. Invalid values raise
+            `ValueError` rather than being rounded. QuEL-1 splits the delay
+            into coarse and word offsets internally, replacing both settings.
+            Unspecified muxes retain their configured delays.
+            Defaults to None, preserving the configured delays. Shared mux
+            channels are affected. Original settings are restored on exit,
+            including when measurement fails. Configuration files are not changed.
         readout_amplitude : float, optional
             Amplitude of the readout pulse.
         readout_duration : float, optional
@@ -1821,6 +1836,7 @@ class Experiment:
             method=method,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            capture_delay=capture_delay,
             readout_amplitude=readout_amplitude,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -1903,8 +1919,6 @@ class Experiment:
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -1951,7 +1965,8 @@ class Experiment:
         enable_dsp_sum : bool | None, optional
             Whether to enable DSP summation. Defaults to None.
         enable_dsp_classification : bool, optional
-            Whether to enable DSP classification. Defaults to False
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -1991,8 +2006,6 @@ class Experiment:
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
             **deprecated_options,
@@ -2045,8 +2058,6 @@ class Experiment:
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -2091,7 +2102,8 @@ class Experiment:
         enable_dsp_sum : bool | None, optional
             Whether to enable DSP summation. Defaults to None.
         enable_dsp_classification : bool, optional
-            Whether to enable DSP classification. Defaults to False.
+            Unsupported by this legacy result API. Use
+            ``await run_measurement(..., state_classification=True)`` instead.
         reset_awg_and_capunits : bool, optional
             Whether to reset the AWG and capture units before the experiment. Defaults to False.
         plot : bool, optional
@@ -2131,8 +2143,6 @@ class Experiment:
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
             **deprecated_options,
@@ -4875,17 +4885,28 @@ class Experiment:
         frequency_range: ArrayLike | None = None,
         power_range: ArrayLike | None = None,
         electrical_delay: float | None = None,
+        subrange_width: float | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Run resonator spectroscopy for a target."""
+        """
+        Run resonator spectroscopy for a target.
+
+        Parameters
+        ----------
+        subrange_width : float | None, optional
+            Maximum span in GHz per frequency segment, including overlap
+            references. Backend limits may shorten segments. None uses the
+            frequency scan's default.
+        """
         return self.characterization_service.resonator_spectroscopy(
             target=target,
             frequency_range=frequency_range,
             power_range=power_range,
             electrical_delay=electrical_delay,
+            subrange_width=subrange_width,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,
@@ -5075,6 +5096,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
         *,
+        subrange_width: float | None = None,
         simultaneous_drive: bool | None = None,
     ) -> Result:
         """
@@ -5082,6 +5104,9 @@ class Experiment:
 
         Parameters
         ----------
+        subrange_width : float | None, optional
+            Maximum span in GHz per frequency segment. Backend limits may
+            shorten segments. None uses the frequency scan's default.
         simultaneous_drive : bool | None, optional
             Whether control and readout pulses start together. False starts
             readout after the control pulse ends. None defaults to True.
@@ -5089,6 +5114,7 @@ class Experiment:
         return self.characterization_service.qubit_spectroscopy(
             target=target,
             frequency_range=frequency_range,
+            subrange_width=subrange_width,
             simultaneous_drive=simultaneous_drive,
             power_range=power_range,
             readout_amplitude=readout_amplitude,

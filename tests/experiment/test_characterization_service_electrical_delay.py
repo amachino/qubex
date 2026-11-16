@@ -1,15 +1,17 @@
-"""Tests for electrical-delay measurement reset behavior."""
+"""Regression tests for scoped frequency scans and electrical-delay calibration."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from types import MethodType, SimpleNamespace
 from typing import Any, cast
+from unittest.mock import Mock, PropertyMock
 
 import numpy as np
 import pytest
 
 from qubex.experiment.services.characterization_service import CharacterizationService
+from qubex.system.system_manager import SystemManager
 
 
 class _FakeFigure:
@@ -52,12 +54,28 @@ class _FakeSystemManager:
     """System-manager stub for electrical-delay tests."""
 
     def __init__(self) -> None:
-        self.modified_backend_settings_calls = 0
+        self.sweep_configuration_calls = 0
+
+    def plan_frequency_sweep(
+        self, target, frequencies, *, subrange_width=None, overlap=False
+    ):
+        """Provide windows to the characterization workflow."""
+        from qubex.backend.frequency_sweep import plan_frequency_sweep
+
+        return plan_frequency_sweep(
+            frequencies,
+            subrange_width=subrange_width,
+            overlap=overlap,
+            configure=lambda points: (
+                {},
+                True,
+            ),
+        )
 
     @contextmanager
-    def modified_backend_settings(self, *_args, **_kwargs):
-        """Given a settings override request, yield without side effects."""
-        self.modified_backend_settings_calls += 1
+    def modified_sweep_configuration(self, configuration):
+        """Count one preparation per window."""
+        self.sweep_configuration_calls += 1
         yield
 
 
@@ -71,6 +89,7 @@ class _FakeContext:
             "R00": SimpleNamespace(sideband="U", fine_frequency=1.0),
         }
         self.current_frequency = 1.0
+        self.measurement = SimpleNamespace()
         self.reset_calls: list[list[str] | None] = []
         self.system_manager = _FakeSystemManager()
         read_box = SimpleNamespace(
@@ -103,81 +122,127 @@ class _FakeContext:
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float]):
         """Apply a temporary frequency for measurement stubs."""
-        self.current_frequency = next(iter(frequencies.values()))
-        yield
+        from qubex.system.quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
 
+        target = SimpleNamespace(label="R00", frequency=self.current_frequency)
+        control = SimpleNamespace(label="Q00", frequency=self.current_frequency)
 
-class _Quel3SystemManager:
-    """QuEL-3 system-manager stub that rejects QuEL-1 backend retunes."""
+        def update_targets(values):
+            for item in (target, control):
+                if item.label in values:
+                    item.frequency = values[item.label]
 
-    backend_kind = "quel3"
+        def update_backend(values):
+            self.current_frequency = next(iter(values.values()))
 
-    @contextmanager
-    def modified_backend_settings(self, *_args, **_kwargs):
-        """Given QuEL-3 spectroscopy, backend-settings retunes must not be used."""
-        raise AssertionError("QuEL-3 spectroscopy must not retune backend settings")
-        yield
-
-
-class _Quel3Context(_FakeContext):
-    """Experiment-context stub for QuEL-3 spectroscopy tests."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.params = SimpleNamespace(
-            control_amplitude={"Q00": 0.1},
-            readout_amplitude={"Q00": 0.1},
-        )
-        self.targets = {
-            "Q00": SimpleNamespace(frequency=4.9),
-            "R00": SimpleNamespace(
-                frequency=6.2,
-                sideband=None,
-                fine_frequency=6.2,
+        controller = SimpleNamespace(modify_target_frequencies=update_backend)
+        synchronizer = Quel1SystemSynchronizer(backend_controller=cast(Any, controller))
+        manager = SimpleNamespace(
+            experiment_system=SimpleNamespace(
+                targets=[control, target], modify_target_frequencies=update_targets
             ),
-        }
-        self.system_manager = _Quel3SystemManager()
-        read_box = SimpleNamespace(
-            id="BOX0",
-            traits=SimpleNamespace(
-                default_readout_frequency_range=(6.15, 6.25, 0.01),
-                readout_cnco_center=None,
-                readout_ssb=None,
-            ),
+            _resolve_system_synchronizer=lambda: synchronizer,
         )
-        ctrl_box = SimpleNamespace(
-            id="BOX0",
-            traits=SimpleNamespace(
-                default_control_frequency_range=(4.8, 5.0, 0.01),
-                ctrl_ssb=None,
-            ),
-        )
-        self.experiment_system = SimpleNamespace(
-            get_mux_by_qubit=lambda _qubit: SimpleNamespace(label="MUX0"),
-            get_readout_box_for_qubit=lambda _qubit: read_box,
-            get_control_box_for_qubit=lambda _qubit: ctrl_box,
-        )
+        with SystemManager.modified_frequencies(cast(Any, manager), frequencies):
+            yield
 
 
-def test_measure_electrical_delay_skips_redundant_reset_when_backend_settings_change(
+@pytest.mark.parametrize(
+    ("fine_error", "f_start", "expected_start"),
+    [
+        (None, None, 1.0),
+        (ValueError("CNCO frequency is not set."), None, 2.0),
+        (ValueError("CNCO frequency is not set."), 1.5, 1.5),
+        (TypeError("Invalid channel."), None, None),
+        (RuntimeError("Unexpected frequency failure."), None, None),
+    ],
+)
+def test_measure_electrical_delay_resolves_start_frequency(
+    fine_error: Exception | None,
+    f_start: float | None,
+    expected_start: float | None,
+) -> None:
+    """Default starts prefer the fine frequency and fall back only on ValueError."""
+    ctx = _FakeContext()
+    readout = Mock(frequency=2.0)
+    fine_frequency = PropertyMock(return_value=1.0, side_effect=fine_error)
+    type(readout).fine_frequency = fine_frequency
+    ctx.targets["R00"] = readout
+    carriers = []
+
+    def measure(*_args, **_kwargs):
+        carriers.append(ctx.current_frequency)
+        signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
+        return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
+
+    ctx.measurement = SimpleNamespace(measure=measure)
+    service = CharacterizationService(
+        experiment_context=cast(Any, ctx),
+        measurement_service=cast(Any, None),
+        calibration_service=cast(Any, None),
+        pulse_service=cast(
+            Any,
+            SimpleNamespace(
+                readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+            ),
+        ),
+    )
+    kwargs: dict[str, Any] = dict(
+        f_start=f_start, df=0.0001, n_samples=4, plot=False, confirm=False
+    )
+    if expected_start is None:
+        assert fine_error is not None
+        with pytest.raises(type(fine_error), match=str(fine_error)):
+            service.measure_electrical_delay("Q00", **kwargs)
+        assert carriers == []
+    else:
+        delay = service.measure_electrical_delay("Q00", **kwargs)
+        assert delay == pytest.approx(1.0, rel=0, abs=1e-9)
+        np.testing.assert_allclose(
+            carriers, expected_start + np.arange(4) * 0.0001, rtol=0, atol=1e-12
+        )
+        assert ctx.current_frequency == 1.0
+    if f_start is not None:
+        fine_frequency.assert_not_called()
+
+
+def test_electrical_delay_prepares_one_configuration_and_restores_frequency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given LO/CNCO retune path, electrical-delay measurement skips redundant reset."""
+    """Electrical delay prepares one configuration without resetting units between points."""
     service = cast(Any, object.__new__(CharacterizationService))
     ctx = _FakeContext()
     service.__dict__["_experiment_context"] = ctx
 
-    def _fake_measure(*_args, **_kwargs):
+    def measure(
+        waveforms,
+        *,
+        shot_averaging,
+        n_shots,
+        shot_interval,
+        readout_duration,
+        readout_pre_margin,
+        readout_post_margin,
+        readout_amplitudes,
+        plot,
+    ):
+        assert list(waveforms) == ["Q00"]
+        assert shot_averaging is True
+        assert (n_shots, shot_interval) == (1, 0)
+        assert (readout_duration, readout_pre_margin, readout_post_margin) == (
+            2000,
+            0,
+            0,
+        )
+        assert readout_amplitudes == {"Q00": 0.1}
+        assert plot is False
         signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
         return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
 
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    ctx.measurement = SimpleNamespace(measure=measure)
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
-
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.MixingUtil.calc_lo_cnco",
-        lambda *_args, **_kwargs: (10_000_000_000, 1_500_000_000, 0),
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
     )
 
     tau = service.measure_electrical_delay(
@@ -193,67 +258,30 @@ def test_measure_electrical_delay_skips_redundant_reset_when_backend_settings_ch
     )
 
     assert isinstance(tau, float)
-    assert ctx.system_manager.modified_backend_settings_calls == 1
+    assert ctx.system_manager.sweep_configuration_calls == 1
     assert ctx.reset_calls == []
+    assert ctx.current_frequency == 1.0
 
 
-def test_measure_electrical_delay_quel3_uses_direct_frequency_sweep() -> None:
-    """Given QuEL-3 backend, electrical-delay measurement avoids LO/CNCO retunes."""
-    service = cast(Any, object.__new__(CharacterizationService))
-    ctx = _Quel3Context()
-    service.__dict__["_experiment_context"] = ctx
-
-    def _fake_measure(*_args, **_kwargs):
-        signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
-        return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
-
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
-    service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
-
-    tau = service.measure_electrical_delay(
-        target="Q00",
-        f_start=6.5,
-        df=0.0001,
-        n_samples=4,
-        readout_amplitude=0.1,
-        shots=1,
-        interval=0,
-        plot=False,
-        confirm=False,
-    )
-
-    assert isinstance(tau, float)
-    assert ctx.reset_calls == []
-
-
-def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
+def test_resonator_scan_prepares_each_segment_without_extra_resets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given subrange LO retune, scan avoids explicit reset duplication per subrange."""
+    """Resonator scans prepare each segment once and preserve progress and target state."""
     service = cast(Any, object.__new__(CharacterizationService))
     ctx = _FakeContext()
     service.__dict__["_experiment_context"] = ctx
 
     def _fake_measure(*_args, **_kwargs):
+        assert "frequencies" not in _kwargs
         signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
         return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
 
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    ctx.measurement = SimpleNamespace(measure=_fake_measure)
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.ExperimentUtil.split_frequency_range",
-        lambda **_kwargs: [
-            np.array([9.8, 9.9]),
-            np.array([10.1, 10.2]),
-        ],
-    )
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.MixingUtil.calc_lo_cnco",
-        lambda *_args, **_kwargs: (10_000_000_000, 1_500_000_000, 0),
-    )
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.viz.make_figure",
         lambda **_kwargs: _FakeFigure(),
@@ -263,21 +291,39 @@ def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
         lambda values, **_kwargs: (np.array([], dtype=int), {}),
     )
 
+    progress = []
+
+    def record_progress(values, *, desc, leave=True):
+        progress.append((desc, len(values), leave))
+        return values
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.tqdm",
+        record_progress,
+    )
+
     result = service.scan_resonator_frequencies(
         target="Q00",
-        frequency_range=np.array([9.8, 9.9, 10.1, 10.2]),
+        frequency_range=np.array([9.75, 9.875, 10.0, 10.125]),
         electrical_delay=0.0,
         readout_amplitude=0.1,
         plot=False,
         save_image=False,
-        subrange_width=0.2,
+        subrange_width=0.25,
         shots=1,
         interval=0,
     )
 
     assert "peaks" in result.data
-    assert ctx.system_manager.modified_backend_settings_calls == 2
+    assert ctx.system_manager.sweep_configuration_calls == 2
     assert ctx.reset_calls == []
+    assert ctx.current_frequency == 1.0
+
+    assert progress == [
+        ("resonator freq. scan subranges for Q00", 2, True),
+        ("resonator frequency within subrange", 3, False),
+        ("resonator frequency within subrange", 1, False),
+    ]
 
 
 def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
@@ -300,6 +346,7 @@ def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
         return 0.0
 
     def _fake_measure(*_args, **_kwargs):
+        assert "frequencies" not in _kwargs
         signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
         return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
 
@@ -307,20 +354,12 @@ def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
         _fake_measure_electrical_delay,
         service,
     )
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    ctx.measurement = SimpleNamespace(measure=_fake_measure)
     service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+    )
 
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.ExperimentUtil.split_frequency_range",
-        lambda **_kwargs: [
-            np.array([9.8, 9.9]),
-        ],
-    )
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.MixingUtil.calc_lo_cnco",
-        lambda *_args, **_kwargs: (10_000_000_000, 1_500_000_000, 0),
-    )
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.viz.make_figure",
         lambda **_kwargs: _FakeFigure(),
@@ -354,83 +393,187 @@ def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
     ]
 
 
-def test_scan_resonator_frequencies_quel3_uses_direct_frequency_sweep(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given QuEL-3 backend, resonator spectroscopy avoids LO/CNCO retunes."""
-    service = cast(Any, object.__new__(CharacterizationService))
-    ctx = _Quel3Context()
-    service.__dict__["_experiment_context"] = ctx
+def test_resonator_scan_corrects_phase_jump_at_configuration_boundary(monkeypatch):
+    """A reference acquired in the new configuration removes its phase jump."""
+    ctx = _FakeContext()
+    calls = []
+    ramp_times = []
 
-    def _fake_measure(*_args, **_kwargs):
-        signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
-        return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
+    def measure(
+        waveforms,
+        *,
+        shot_averaging,
+        n_shots,
+        shot_interval,
+        readout_duration,
+        readout_pre_margin,
+        readout_post_margin,
+        readout_amplitudes,
+        readout_ramp_time,
+        readout_drag_coeff,
+        readout_ramp_type,
+    ):
+        assert list(waveforms) == ["Q00"]
+        assert shot_averaging is True
+        assert (n_shots, shot_interval) == (7, 128)
+        frequency = ctx.current_frequency
+        window = ctx.system_manager.sweep_configuration_calls
+        calls.append((window, frequency, readout_amplitudes["Q00"]))
+        ramp_times.append(readout_ramp_time)
+        return SimpleNamespace(
+            data={
+                "Q00": SimpleNamespace(kerneled=np.exp(1j * (frequency + 0.7 * window)))
+            }
+        )
 
-    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
-    service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
-
+    ctx.measurement = SimpleNamespace(measure=measure)
+    service = CharacterizationService(
+        experiment_context=cast(Any, ctx),
+        measurement_service=cast(Any, None),
+        calibration_service=cast(Any, None),
+        pulse_service=cast(
+            Any,
+            SimpleNamespace(
+                readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+            ),
+        ),
+    )
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.viz.make_figure",
-        lambda **_kwargs: _FakeFigure(),
+        lambda **kwargs: _FakeFigure(),
     )
     monkeypatch.setattr(
         "scipy.signal.find_peaks",
-        lambda values, **_kwargs: (np.array([], dtype=int), {}),
+        lambda values, **kwargs: (np.array([], dtype=int), {}),
     )
-
     result = service.scan_resonator_frequencies(
-        target="Q00",
-        frequency_range=np.array([6.15, 6.16, 6.17]),
-        electrical_delay=0.0,
-        readout_amplitude=0.1,
-        plot=False,
-        save_image=False,
-        subrange_width=0.02,
-        shots=1,
-        interval=0,
-    )
-
-    assert result.data["peaks"].size == 0
-
-
-def test_scan_qubit_frequencies_quel3_uses_direct_frequency_sweep(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given QuEL-3 backend, qubit spectroscopy avoids LO/CNCO retunes."""
-    service = cast(Any, object.__new__(CharacterizationService))
-    ctx = _Quel3Context()
-    service.__dict__["_experiment_context"] = ctx
-
-    def _fake_execute(*_args, **_kwargs):
-        signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
-        return SimpleNamespace(data={"Q00": [SimpleNamespace(kerneled=signal)]})
-
-    service.__dict__["_measurement_service"] = SimpleNamespace(execute=_fake_execute)
-    service.__dict__["_calibration_service"] = SimpleNamespace()
-    service.__dict__["_pulse_service"] = SimpleNamespace()
-
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.viz.make_figure",
-        lambda **_kwargs: _FakeFigure(),
-    )
-    monkeypatch.setattr(
-        "scipy.signal.find_peaks",
-        lambda values, **_kwargs: (np.array([], dtype=int), {}),
-    )
-
-    result = service.scan_qubit_frequencies(
-        target="Q00",
-        frequency_range=np.array([4.85, 4.86, 4.87]),
-        control_amplitude=0.1,
-        readout_amplitude=0.1,
-        readout_frequency=6.2,
-        subrange_width=0.02,
-        shots=1,
-        interval=0,
+        "Q00",
+        frequency_range=[5.0, 5.125, 5.375, 5.5],
+        readout_amplitude=0.2,
+        readout_ramptime=64,
+        electrical_delay=0,
+        subrange_width=0.25,
+        shots=7,
+        interval=128,
         plot=False,
         save_image=False,
     )
+    np.testing.assert_allclose(
+        result.data["phases_diff"], [0.125, 0.25, 0.125], atol=1e-12, rtol=1e-12
+    )
+    assert calls == [
+        (1, 5.0, 0.2),
+        (1, 5.125, 0.2),
+        (2, 5.125, 0.2),
+        (2, 5.375, 0.2),
+        (3, 5.375, 0.2),
+        (3, 5.5, 0.2),
+    ]
+    assert ramp_times == [64, 64, None, 64, None, 64]
 
-    assert result.data["peaks"].size == 0
-    assert result.data["frequency_guess"]["f_ge"] is None
+
+@pytest.mark.parametrize("fail_acquisition", [False, True])
+def test_electrical_delay_updates_quel1_converter_carrier(
+    monkeypatch, fail_acquisition
+):
+    """Electrical-delay acquisitions update the driver carrier and restore it on exit."""
+    from unittest.mock import Mock
+
+    from quel_ic_config import QUEL1_BOXTYPE_ALIAS
+    from qxdriver_quel1.pulse import GenSampledSequence, GenSampledSubSequence
+    from qxdriver_quel1.runtime.converter import Converter
+    from qxdriver_quel1.sysconf import BoxSetting, PortSetting
+
+    ctx = _FakeContext()
+    ctx.current_frequency = 5.0
+    multiplex = Mock(wraps=Converter.multiplex)
+    monkeypatch.setattr(Converter, "multiplex", multiplex)
+    carriers = []
+
+    def measure(*args, **kwargs):
+        assert "frequencies" not in kwargs
+        frequency = 5.01 + len(carriers) * 0.0001
+        sequence = GenSampledSequence(
+            target_name="R00",
+            prev_blank=0,
+            post_blank=0,
+            repeats=1,
+            padding=2,
+            modulation_frequency=frequency - 5.0,
+            sub_sequences=[
+                GenSampledSubSequence(
+                    real=np.ones(3) * 0.1, imag=np.zeros(3), repeats=1, post_blank=0
+                )
+            ],
+        )
+        Converter.convert_to_gen_device_specific_sequence(
+            gen_sampled_sequence={"R00": sequence},
+            cap_sampled_sequence={},
+            resource_map={
+                "R00": {
+                    "box": BoxSetting(
+                        box_name="B0",
+                        ipaddr_wss="127.0.0.1",
+                        boxtype=next(iter(QUEL1_BOXTYPE_ALIAS.values())),
+                    ),
+                    "port": PortSetting(
+                        port_name="P0", box_name="B0", port=0, ndelay_or_nwait=(0,)
+                    ),
+                    "channel_number": 0,
+                    "target": {"frequency": ctx.current_frequency},
+                }
+            },
+            port_config=cast(
+                Any,
+                {
+                    "R00": SimpleNamespace(
+                        lo_freq=None,
+                        cnco_freq=5e9,
+                        fnco_freq=0.0,
+                        sideband="U",
+                        dump_config={"direction": "out"},
+                        box_name="B0",
+                        port=0,
+                        channel=0,
+                    )
+                },
+            ),
+            repeats=1,
+            interval=64.0,
+        )
+        modulation = multiplex.call_args.kwargs["modfreqs"]["R00"]
+        carriers.append(modulation + 5.0)
+        assert carriers[-1] == pytest.approx(frequency, abs=1e-12)
+        if fail_acquisition:
+            raise RuntimeError("acquisition failed")
+        return SimpleNamespace(
+            data={
+                "Q00": SimpleNamespace(
+                    kerneled=np.exp(-1j * 2 * np.pi * modulation * 220.1)
+                )
+            }
+        )
+
+    ctx.measurement = SimpleNamespace(measure=measure)
+    service = CharacterizationService(
+        experiment_context=cast(Any, ctx),
+        measurement_service=cast(Any, None),
+        calibration_service=cast(Any, None),
+        pulse_service=cast(
+            Any,
+            SimpleNamespace(
+                readout_duration=2000, readout_pre_margin=0, readout_post_margin=0
+            ),
+        ),
+    )
+    kwargs: dict[str, Any] = dict(
+        f_start=5.01, df=0.0001, n_samples=4, plot=False, confirm=False
+    )
+    if fail_acquisition:
+        with pytest.raises(RuntimeError, match="acquisition failed"):
+            service.measure_electrical_delay("Q00", **kwargs)
+    else:
+        tau = service.measure_electrical_delay("Q00", **kwargs)
+        assert tau == pytest.approx(220.1, abs=1e-7)
+        assert len(carriers) >= 4
+    assert ctx.current_frequency == 5.0

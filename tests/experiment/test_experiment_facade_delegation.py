@@ -109,6 +109,14 @@ class _MeasurementServiceStub:
         return "state_tomography_result"
 
 
+class _ClassifierRegistryStub:
+    def __init__(self) -> None:
+        self.classifiers: dict[str, object] = {}
+
+    def update_classifiers(self, classifiers: dict[str, object]) -> None:
+        self.classifiers.update(classifiers)
+
+
 class _ExperimentContextStub:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -553,6 +561,22 @@ def test_capture_loopback_delegates_to_measurement_service() -> None:
     ]
 
 
+def test_set_classifier_registers_target_classifiers() -> None:
+    """Experiment should register classifiers through its measurement context."""
+    exp = object.__new__(Experiment)
+    registry = _ClassifierRegistryStub()
+    exp.__dict__["_experiment_context"] = type(
+        "_CTX",
+        (),
+        {"measurement": registry},
+    )()
+    classifier = cast(Any, object())
+
+    exp.set_classifier({"Q00": classifier})
+
+    assert registry.classifiers == {"Q00": classifier}
+
+
 def test_execute_delegates_new_shot_arguments_to_measurement_service() -> None:
     """Given n_shots args, when execute is called, then it delegates canonical shot keys."""
     exp = object.__new__(Experiment)
@@ -584,8 +608,6 @@ def test_execute_delegates_new_shot_arguments_to_measurement_service() -> None:
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
-                "line_param0": None,
-                "line_param1": None,
                 "reset_awg_and_capunits": None,
                 "plot": None,
             },
@@ -627,8 +649,6 @@ def test_execute_delegates_time_integration_to_measurement_service() -> None:
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
-                "line_param0": None,
-                "line_param1": None,
                 "reset_awg_and_capunits": None,
                 "plot": None,
             },
@@ -667,8 +687,6 @@ def test_measure_delegates_legacy_shot_arguments_to_measurement_service() -> Non
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
-                "line_param0": None,
-                "line_param1": None,
                 "reset_awg_and_capunits": None,
                 "plot": None,
                 "shots": 64,
@@ -712,8 +730,6 @@ def test_measure_delegates_time_integration_to_measurement_service() -> None:
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
-                "line_param0": None,
-                "line_param1": None,
                 "reset_awg_and_capunits": None,
                 "plot": None,
             },
@@ -1385,6 +1401,38 @@ def test_spectroscopy_delegates_drive_timing(method, simultaneous_drive) -> None
     assert delegate.call_args.kwargs["simultaneous_drive"] is simultaneous_drive
     assert delegate.call_args.kwargs["shots"] == 32
     assert delegate.call_args.kwargs["interval"] == 100.0
+
+
+@pytest.mark.parametrize("method", ["resonator_spectroscopy", "qubit_spectroscopy"])
+@pytest.mark.parametrize("subrange_width", ["omitted", None, 0.9])
+def test_spectroscopy_delegates_subrange_width(method, subrange_width) -> None:
+    """Spectroscopy forwards optional frequency widths to its characterization service."""
+    exp = object.__new__(Experiment)
+    service = Mock()
+    exp.__dict__["_characterization_service"] = service
+    delegate = getattr(service, method)
+    kwargs = {} if subrange_width == "omitted" else {"subrange_width": subrange_width}
+
+    result = getattr(exp, method)("Q00", **kwargs)
+
+    assert result is delegate.return_value
+    delegate.assert_called_once()
+    assert delegate.call_args.kwargs["subrange_width"] == (
+        None if subrange_width == "omitted" else subrange_width
+    )
+
+
+@pytest.mark.parametrize("delay", [None, {}, {0: 0}, {0: 24, 1: 26}, {0: 24.0}])
+def test_check_waveform_delegates_capture_delay(
+    delay: dict[int, int | float] | None,
+) -> None:
+    """Waveform checks forward the capture-delay override and preserve the result."""
+    exp = object.__new__(Experiment)
+    service = Mock()
+    exp.__dict__["_measurement_service"] = service
+    result = exp.check_waveform("Q00", capture_delay=delay, plot=False)
+    assert result is service.check_waveform.return_value
+    assert service.check_waveform.call_args.kwargs["capture_delay"] == delay
 
 
 def test_register_custom_target_forwards_omitted_channel() -> None:

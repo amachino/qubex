@@ -30,17 +30,25 @@ def _capture(
     averaged: bool = False,
     states: bool = False,
 ) -> CaptureData:
+    if waveform:
+        data_item = (
+            ReturnItem.AVERAGED_WAVEFORM if averaged else ReturnItem.WAVEFORM_SERIES
+        )
+    else:
+        data_item = ReturnItem.AVERAGED_IQ if averaged else ReturnItem.IQ_SERIES
+    return_items = (data_item, ReturnItem.STATE_SERIES) if states else ()
     config = MeasurementConfig(
         n_shots=len(values),
         shot_interval=100.0,
         shot_averaging=averaged,
         time_integration=not waveform,
         state_classification=states,
+        return_items=return_items,
     )
     data = np.asarray(np.mean(values) if averaged else values, dtype=complex)
     if waveform:
         data = np.stack([data / 2, data / 2], axis=-1)
-    payload: dict[str, Any] = {config.primary_return_item.value: data}
+    payload: dict[str, Any] = {data_item.value: data}
     if states:
         payload[ReturnItem.STATE_SERIES.value] = np.asarray(values)
     return CaptureData(

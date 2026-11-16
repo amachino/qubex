@@ -704,6 +704,7 @@ def measure_gef_populations(
     enable_tqdm: bool = False,
     progress_label: str | None = None,
     capture_index: int | None = None,
+    final_capture_only: bool = False,
 ) -> Result:
     """
     Calibrate and estimate GEF populations after arbitrary pulse schedules.
@@ -756,6 +757,9 @@ def measure_gef_populations(
         point. Negative indexing is supported. By default, exactly one capture
         is required. Any calibration acquired by this call retains the
         single-capture contract.
+    final_capture_only
+        Whether to acquire only the final capture per target during population
+        measurement. QuEL-1 still acquires all windows. Calibration is unchanged.
 
     Returns
     -------
@@ -860,6 +864,7 @@ def measure_gef_populations(
         shot_interval=resolved_shot_interval,
         enable_tqdm=enable_tqdm,
         capture_index=resolved_capture_index,
+        final_capture_only=final_capture_only,
     )
     raw_iq = {
         sequence_name: {
@@ -1413,6 +1418,7 @@ def _measure_configurations(
     shot_interval: float,
     enable_tqdm: bool,
     capture_index: int | None = None,
+    final_capture_only: bool = False,
 ) -> tuple[
     dict[_ConfigurationKey, dict[str, NDArray[np.complex128]]],
     dict[_ConfigurationKey, dict[str, IQMomentSummary]],
@@ -1427,6 +1433,7 @@ def _measure_configurations(
         shot_interval=shot_interval,
         enable_tqdm=enable_tqdm,
         capture_index=capture_index,
+        final_capture_only=final_capture_only,
     )
     for key, result in zip(schedules, results, strict=True):
         raw_iq[key] = {}

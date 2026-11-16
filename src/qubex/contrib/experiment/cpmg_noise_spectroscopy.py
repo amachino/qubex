@@ -251,10 +251,14 @@ def _normalize_targets(
             labels = getattr(exp, "qubit_labels", None)
         if labels is None:
             raise ValueError("targets must be provided when exp has no qubit labels.")
-        return list(labels)
-    if isinstance(targets, str):
-        return [targets]
-    return list(targets)
+        normalized = list(labels)
+    elif isinstance(targets, str):
+        normalized = [targets]
+    else:
+        normalized = list(targets)
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("targets must not contain duplicate labels.")
+    return normalized
 
 
 def _validate_rabi_params(exp: Experiment, targets: Collection[str]) -> None:
@@ -1310,6 +1314,7 @@ def _add_target_traces(
                             "visible": bool(np.any(np.isfinite(errors))),
                         },
                         marker={"symbol": "circle"},
+                        line={"dash": "dot" if displayed_mode == "gamma2" else "solid"},
                         customdata=summary.counts[plot_indices],
                         hovertemplate=(
                             "frequency=%{x:.6g} MHz<br>"
@@ -1640,7 +1645,7 @@ def _plot_cpmg_raw_data_heatmap(
                 "cmin": 0,
                 "cmax": 1,
                 "colorscale": "Viridis",
-                "colorbar": {"title": "Normalized signal P"},
+                "colorbar": {"title": "Normalized signal"},
                 "showscale": True,
                 "line": {"width": 0},
             },
@@ -2277,6 +2282,9 @@ def cpmg_noise_spectroscopy(
         n_shots = DEFAULT_SHOTS
     if shot_interval is None:
         shot_interval = DEFAULT_INTERVAL
+    shot_interval = float(shot_interval)
+    if not np.isfinite(shot_interval) or shot_interval < 0:
+        raise ValueError("shot_interval must be finite and nonnegative.")
     if plot is None:
         plot = True
     if save_image is None:

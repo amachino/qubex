@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection, Mapping, Sequence
+from contextlib import AbstractContextManager
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
+
+from numpy.typing import ArrayLike
 
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
+from qubex.backend.frequency_sweep import SweepSegment
 
 from .managers import (
     Quel1ClockManager,
@@ -28,11 +32,13 @@ from .managers import (
     Quel1ExecutionManager,
     Quel1SkewManager,
 )
+from .managers.frequency_configuration_manager import Quel1FrequencyConfigurationManager
 from .quel1_backend_constants import (
     CAPTURE_DECIMATION_FACTOR,
     ExecutionMode,
 )
 from .quel1_runtime_context import Quel1RuntimeContext
+from .sweep_configuration import Quel1BoxFrequencySettings, Quel1SweepConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -509,6 +515,33 @@ class Quel1BackendController(BackendController):
             ndelay_or_nwait=ndelay_or_nwait,
         )
 
+    def set_capture_ndelay(
+        self, *, port_name: str, channel_number: int, ndelay: int
+    ) -> int:
+        """
+        Update a capture channel's coarse delay and return its previous value.
+
+        Parameters
+        ----------
+        port_name : str
+            Registered capture port name.
+        channel_number : int
+            Registered capture channel number.
+        ndelay : int
+            Non-negative coarse capture delay in 128 ns steps.
+            This method does not update the separate capture word offset.
+
+        Returns
+        -------
+        int
+            Previous delay in `ndelay` units, suitable for restoration.
+        """
+        return self._configuration_manager.set_capture_ndelay(
+            port_name=port_name,
+            channel_number=channel_number,
+            ndelay=ndelay,
+        )
+
     def add_channel_target_relation(self, channel_name: str, target_name: str) -> None:
         """
         Add a channel-target relation if it does not already exist.
@@ -564,6 +597,32 @@ class Quel1BackendController(BackendController):
             target=target,
             frequency_ghz=frequency_ghz,
         )
+
+    def plan_frequency_sweep(
+        self,
+        frequencies: ArrayLike,
+        *,
+        configuration: dict[str, Quel1BoxFrequencySettings],
+        sideband: Literal["U", "L"] | None,
+        cnco_center: int | None,
+        subrange_width: float | None = None,
+        overlap: bool = False,
+    ) -> tuple[SweepSegment[Quel1SweepConfiguration], ...]:
+        """Plan native settings for a carrier sweep without hardware writes."""
+        return Quel1FrequencyConfigurationManager(self).plan(
+            frequencies,
+            configuration=configuration,
+            sideband=sideband,
+            cnco_center=cnco_center,
+            subrange_width=subrange_width,
+            overlap=overlap,
+        )
+
+    def modified_sweep_configuration(
+        self, configuration: Quel1SweepConfiguration
+    ) -> AbstractContextManager[None]:
+        """Apply native sweep settings and restore the entry state."""
+        return Quel1FrequencyConfigurationManager(self).modified(configuration)
 
     def modify_target_frequencies(
         self, target_frequencies_ghz: dict[str, float]

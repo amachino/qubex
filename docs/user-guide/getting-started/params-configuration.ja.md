@@ -206,6 +206,30 @@ data:
   1: 8
 ```
 
+QuEL-1 の decimation を伴うキャプチャでは、遅延を
+**4 words = 16 入力 samples = 32 ns** 刻みで指定します。
+`capture_delay.yaml` の単位 `ndelay` は、従来どおり 128 ns です。
+`capture_delay_word.yaml` の値には、0 以上の整数で、かつ 4 の倍数を指定してください。
+条件を満たさない値を指定すると、丸め処理は行わず `ValueError` を送出します。
+合計遅延は `128 * capture_delay + 8 * capture_delay_word` ns です。
+
+`check_waveform(capture_delay={0: 800.0})` で合計遅延を一時的に指定する場合も、
+32 ns の倍数を指定してください。指定値は既存の遅延には加算されず、
+その合計遅延になるように `capture_delay` と `capture_delay_word` が
+一時的に設定されます。処理終了後は元の設定に戻ります。
+
+QuEL-3 の遅延の分解能は、従来どおり 0.8 ns です。
+
+```yaml
+# capture_delay_word.yaml for QuEL-1
+meta:
+  description: Capture delay offsets in multiples of 4 words (32 ns)
+  unit: word
+data:
+  0: 0
+  1: 4
+```
+
 ```yaml
 # jpa_params.yaml
 meta:

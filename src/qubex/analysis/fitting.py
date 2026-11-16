@@ -2111,7 +2111,7 @@ def fit_ramsey(
     if phase_est is None:
         phase_est = np.angle(F[i])
     if offset_est is None:
-        offset_est = max(data) + min(data) / 2
+        offset_est = (max(data) + min(data)) / 2
     if tau_est is None:
         tau_est = 10_000
 

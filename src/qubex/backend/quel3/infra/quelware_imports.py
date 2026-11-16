@@ -64,7 +64,7 @@ def validate_quelware_client_runtime(
 def load_quelware_client_factory(
     *,
     client_mode: Quel3ClientMode,
-    pat_path: str | None = None,
+    pat_provider: Callable[[], str] | None = None,
     transport: str = "grpc",
     http_transport: Quel3HttpTransportConfig | None = None,
 ) -> QuelwareClientFactory:
@@ -81,11 +81,6 @@ def load_quelware_client_factory(
         transport=normalized_transport,
         http_transport=http_transport,
     )
-
-    pat_provider: Callable[[], str] | None = None
-    if pat_path is not None:
-        path = Path(pat_path).expanduser()
-        pat_provider = lambda: path.read_text(encoding="utf-8").rstrip("\r\n")
 
     def _create_client(endpoint: str, port: int | None):
         with _CHANNEL_OVERRIDE_LOCK:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -11,6 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from numpy.typing import ArrayLike
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
 
@@ -20,6 +22,7 @@ from qubex.backend.backend_controller import (
     BackendKind,
     SystemBackendController,
 )
+from qubex.backend.frequency_sweep import SweepConfiguration, SweepSegment
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.constants import (
@@ -573,7 +576,9 @@ class SystemManager:
             defaults to `True`.
         target_labels : Sequence[str] | None, optional
             Logical target labels to apply for backends that support
-            target-scoped hardware configuration.
+            target-scoped hardware configuration. QuEL-3 adds or updates these
+            instruments while preserving other aliases, including those on the
+            same port. Excluded targets are not deleted from hardware.
         """
         supports_cache_sync = self._supports_box_settings_cache_sync()
         if not supports_cache_sync:
@@ -867,35 +872,135 @@ This operation will overwrite the existing backend settings. Do you want to cont
         """Refresh `cached_state` from current hash summaries."""
         self._cached_state = self.current_state
 
+    def plan_frequency_sweep(
+        self,
+        target: str,
+        frequencies: ArrayLike,
+        *,
+        subrange_width: float | None = None,
+        overlap: bool = False,
+    ) -> tuple[SweepSegment[SweepConfiguration], ...]:
+        """
+        Plan fixed carrier configurations without changing hardware.
+
+        Parameters
+        ----------
+        target
+            Logical target label.
+        frequencies
+            Finite, nonempty one-dimensional frequency array in GHz.
+        subrange_width
+            Optional positive maximum span in GHz, including any overlap reference.
+        overlap
+            Include the previous segment's last frequency as a reference.
+
+        Returns
+        -------
+        tuple[SweepSegment[SweepConfiguration], ...]
+            Ordered segments and their temporary configurations. Input order
+            and duplicate points are retained. Each configuration is a
+            backend-specific `SweepConfiguration` subclass whose native settings
+            are interpreted by the owning backend synchronizer.
+        """
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError("Backend is not configured.")
+        return synchronizer.plan_frequency_sweep(
+            self.experiment_system,
+            target,
+            frequencies,
+            subrange_width=subrange_width,
+            overlap=overlap,
+        )
+
+    @contextmanager
+    def modified_sweep_configuration(
+        self, configuration: SweepConfiguration
+    ) -> Iterator[None]:
+        """
+        Apply planned native settings and restore the entry state on exit.
+
+        Pass a configuration from this system's sweep plan. The owning backend
+        synchronizer validates and interprets the native configuration.
+
+        Planned values and references are realizable under these settings.
+        Schedule carrier overrides do not change the configured oscillators or
+        instrument definitions. Callers remain responsible for explicit settings
+        changes; existing frequency and reset APIs retain their behavior.
+
+        Normal and exceptional exits restore touched settings and corresponding
+        models and caches. Restoration failures propagate. Waveform memory,
+        results, phase continuity and arbitrary waveform spectra are not covered.
+        """
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError("Backend is not configured.")
+        with synchronizer.modified_sweep_configuration(
+            self.experiment_system, configuration
+        ):
+            yield
+
     @contextmanager
     def modified_frequencies(
         self, target_frequencies: dict[str, float]
     ) -> Iterator[None]:
+        """Temporarily override carriers through the backend system synchronizer."""
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError("Backend is not configured.")
+        with synchronizer.modified_frequencies(
+            experiment_system=self.experiment_system,
+            target_frequencies=target_frequencies,
+        ):
+            yield
+
+    @contextmanager
+    def modified_capture_delay(
+        self,
+        capture_delay: Mapping[int, int | float],
+    ) -> Iterator[None]:
         """
-        Temporarily override target frequencies on software and controller.
+        Temporarily override total capture delays in ns by mux index.
 
         Parameters
         ----------
-        target_frequencies : dict[str, float]
-            Mapping from target label to temporary frequency.
+        capture_delay : Mapping[int, int | float]
+            Mux indices mapped to finite, non-negative delays in ns.
+            Each backend validates its resolution and converts to native units.
+            Unspecified muxes retain their configured values.
+
+        Notes
+        -----
+        Backend synchronizers restore software and controller settings even if
+        applying the override or the context body fails. Configuration files
+        are not changed.
         """
-        original_frequencies = {
-            target.label: target.frequency
-            for target in self.experiment_system.targets
-            if target.label in target_frequencies
-        }
-        self.experiment_system.modify_target_frequencies(target_frequencies)
-        modify_target_frequencies = getattr(
-            self.backend_controller, "modify_target_frequencies", None
-        )
-        if callable(modify_target_frequencies):
-            modify_target_frequencies(target_frequencies)
-        try:
+        if not isinstance(capture_delay, Mapping):
+            raise TypeError("Capture delay must be a mapping keyed by mux index.")
+        overrides = dict(capture_delay)
+        if not overrides:
             yield
-        finally:
-            self.experiment_system.modify_target_frequencies(original_frequencies)
-            if callable(modify_target_frequencies):
-                modify_target_frequencies(original_frequencies)
+            return
+        synchronizer = self._resolve_system_synchronizer()
+        if synchronizer is None:
+            raise RuntimeError(
+                "Cannot override capture delay: backend controller is not initialized."
+            )
+        for index, delay in overrides.items():
+            if isinstance(index, bool) or not isinstance(index, int):
+                raise TypeError("Capture-delay keys must be integer mux indices.")
+            if isinstance(delay, bool) or not isinstance(delay, (int, float)):
+                raise TypeError("Capture delay must be numeric in ns.")
+            if not math.isfinite(delay) or delay < 0:
+                raise ValueError("Capture delay must be finite and non-negative in ns.")
+        system = self.experiment_system
+        unknown = overrides.keys() - system.control_params.capture_delay.keys()
+        if unknown:
+            raise ValueError(f"Unknown capture-delay mux indices: {sorted(unknown)}")
+        with synchronizer.modified_capture_delay(
+            experiment_system=system, capture_delay=overrides
+        ):
+            yield
 
     @contextmanager
     def modified_backend_settings(

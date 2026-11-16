@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING
 
+from numpy.typing import ArrayLike
+
+from qubex.backend.frequency_sweep import SweepConfiguration, SweepSegment
+from qubex.backend.quel3.capture_delay import normalize_capture_delay_ns
+from qubex.backend.quel3.sweep_configuration import Quel3SweepConfiguration
 from qubex.system.control_system import GenPort
 from qubex.system.target_type import TargetType
 
@@ -52,6 +58,75 @@ class Quel3SystemSynchronizer:
         """Return whether QuEL-3 supports mutable backend-settings cache writes."""
         return False
 
+    @contextmanager
+    def modified_frequencies(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        target_frequencies: dict[str, float],
+    ) -> Iterator[None]:
+        """Restore only instruments changed by temporary carrier selection."""
+        original_frequencies = {
+            target.label: target.frequency
+            for target in experiment_system.targets
+            if target.label in target_frequencies
+        }
+        controller = self.backend_controller
+        original_instruments = controller.get_instrument_configuration().instruments
+        restore_instruments = ()
+        try:
+            experiment_system.modify_target_frequencies(target_frequencies)
+            try:
+                controller.modify_target_frequencies(target_frequencies)
+            finally:
+                current_instruments = (
+                    controller.get_instrument_configuration().instruments
+                )
+                restore_instruments = tuple(
+                    instrument
+                    for instrument in original_instruments
+                    if instrument.alias in target_frequencies
+                    and instrument not in current_instruments
+                )
+            yield
+        finally:
+            with ExitStack() as restore:
+                for instrument in restore_instruments:
+                    restore.callback(
+                        controller.deploy_instrument, instrument=instrument, append=True
+                    )
+                experiment_system.modify_target_frequencies(original_frequencies)
+
+    @contextmanager
+    def modified_capture_delay(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        capture_delay: Mapping[int, int | float],
+    ) -> Iterator[None]:
+        """
+        Validate nanosecond overrides against the QuEL-3 readout sampling period.
+
+        Notes
+        -----
+        Common input validation belongs to `SystemManager`. QuEL-3 consumes
+        control parameters during measurement, so no controller update is needed.
+        """
+        normalized = {}
+        index = None
+        try:
+            for index, delay in capture_delay.items():
+                normalized[index] = normalize_capture_delay_ns(delay)
+        except ValueError as exc:
+            raise ValueError(f"Invalid capture delay for MUX{index}: {exc}") from exc
+        delays = experiment_system.control_params.capture_delay
+        original = {index: delays[index] for index in normalized}
+        try:
+            delays.update(normalized)
+            yield
+        finally:
+            delays.update(original)
+
     def sync_experiment_system_to_backend_controller(
         self,
         experiment_system: ExperimentSystem,
@@ -67,15 +142,15 @@ class Quel3SystemSynchronizer:
         parallel: bool | None = None,
         target_labels: Sequence[str] | None = None,
     ) -> None:
-        """Deploy instruments for selected boxes from the current target registry."""
+        """Add or update selected instruments while preserving other aliases."""
         box_ids = [box.id for box in boxes]
-        if len(box_ids) == 0:
-            return
         configuration = self._deploy_planner.build_configuration(
             experiment_system=experiment_system,
             box_ids=box_ids,
             target_labels=target_labels,
         )
+        if not configuration.instruments:
+            return
         # Treat QuEL-3 instrument deploy as the push-time hardware sync
         # equivalent of QuEL-1 CNCO/FNCO updates. Execution paths should only
         # resolve and use the instruments that push configured.
@@ -245,6 +320,35 @@ class Quel3SystemSynchronizer:
     def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
         """Ignore cache replacement because QuEL-3 cache mutation is unsupported."""
         del box_configs
+
+    def plan_frequency_sweep(
+        self,
+        experiment_system: ExperimentSystem,
+        target: str,
+        frequencies: ArrayLike,
+        *,
+        subrange_width: float | None = None,
+        overlap: bool = False,
+    ) -> tuple[SweepSegment[Quel3SweepConfiguration], ...]:
+        """Plan port-specific instrument spans with margins around all sweep carriers."""
+        return self.backend_controller.plan_frequency_sweep(
+            frequencies,
+            target=target,
+            subrange_width=subrange_width,
+            overlap=overlap,
+        )
+
+    @contextmanager
+    def modified_sweep_configuration(
+        self,
+        experiment_system: ExperimentSystem,
+        configuration: SweepConfiguration,
+    ) -> Iterator[None]:
+        """Apply instrument definitions while leaving logical carriers unchanged."""
+        if not isinstance(configuration, Quel3SweepConfiguration):
+            raise TypeError("Configuration belongs to a different backend.")
+        with self.backend_controller.modified_sweep_configuration(configuration):
+            yield
 
 
 def create_system_synchronizer(

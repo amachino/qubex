@@ -17,6 +17,7 @@ from qubex.backend.quel3 import (
     Quel3BackendController,
     Quel3HttpTransportConfig,
     Quel3RuntimeConfig,
+    QuelwareCredentials,
 )
 from qubex.external_devices import (
     DCVoltageConfig,
@@ -1729,7 +1730,6 @@ def test_load_creates_quel3_controller_from_runtime_config(
         endpoint="192.0.2.10",
         port=443,
         client_mode="server",
-        pat_path="/run/secrets/quelware-pat",
         transport="https",
         http_transport=Quel3HttpTransportConfig(
             base_path="/quelware",
@@ -1740,6 +1740,7 @@ def test_load_creates_quel3_controller_from_runtime_config(
                 "CF-Access-Client-Secret": "/run/secrets/cf-access-client-secret",
             },
         ),
+        credentials=QuelwareCredentials(pat_path="/run/secrets/quelware-pat"),
     )
 
 

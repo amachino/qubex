@@ -56,10 +56,10 @@ class _ConfigurationManager(Quel3ConfigurationManager):
         self,
         *,
         specifications: tuple[InstrumentSpec, ...],
-        append: bool = False,
+        append: bool = True,
         parallel: bool = True,
     ) -> tuple[InstrumentInfoProtocol, ...]:
-        assert append is False
+        assert append is True
         self.calls.append(("deploy", specifications, parallel))
         if self.fail:
             raise RuntimeError("deploy failed")
@@ -104,7 +104,7 @@ def _reader(
 def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
     source: str, tmp_path: Path
 ) -> None:
-    """Deploy should replace listed ports from memory or YAML using fresh hardware infos."""
+    """Default deployment should retain same-port aliases and cache complete readback."""
     calls: list[object] = []
     specification = _specification()
     configuration = InstrumentConfiguration(instruments=(specification,))
@@ -113,11 +113,13 @@ def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
         path = configuration.save_yaml(tmp_path / "instruments.yaml")
         configuration = manager.load_instrument_configuration(path)
     actual = _info("unit-a:Q00", "unit-a:new", specification.port_id)
+    retained = _info("retained", "unit-a:retained", specification.port_id)
     other = _info("Q01", "unit-b:other", "unit-b:tx_p01")
     cache = InstrumentCache()
     cache.replace_all(
         instrument_infos=(
-            _info("obsolete", "unit-a:old", specification.port_id),
+            _info("Q00", "unit-a:old", specification.port_id),
+            retained,
             other,
         )
     )
@@ -125,7 +127,7 @@ def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
     result = manager.deploy_instruments(
         configuration=configuration,
         instrument_cache=cache,
-        resource_reader=_reader(calls, (actual,)),
+        resource_reader=_reader(calls, (actual, retained)),
         parallel=False,
     )
 
@@ -133,9 +135,9 @@ def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
         ("deploy", (specification,), False),
         ("read", (), (specification.port_id,), False),
     ]
-    assert result == {"Q00": actual}
+    assert result == {"Q00": actual, "retained": retained}
     assert cache.get("Q00") is actual
-    assert cache.snapshot() == {"Q00": actual, "Q01": other}
+    assert cache.snapshot() == {"Q00": actual, "retained": retained, "Q01": other}
 
 
 @pytest.mark.parametrize(

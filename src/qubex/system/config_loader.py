@@ -1098,7 +1098,7 @@ class ConfigLoader:
             # Logging: indicate source(s), warning on overrides, info otherwise.
             if legacy_data:
                 if overridden_keys:
-                    preview = ", ".join(sorted(overridden_keys)[:5])
+                    preview = ", ".join(sorted(str(key) for key in overridden_keys)[:5])
                     more = (
                         ""
                         if len(overridden_keys) <= 5

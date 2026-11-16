@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from qubex.backend.quel3.infra import (
     Quel3HttpTransportConfig,
     Quel3RuntimeConfig,
+    QuelwareCredentials,
     quelware_imports as quelware_imports_module,
 )
 from qubex.backend.quel3.managers import (
@@ -119,10 +121,9 @@ def test_load_client_factory_binds_pat_for_server_mode(
         quelware_imports_module.importlib, "import_module", _import_module
     )
 
-    client_factory = quelware_imports_module.load_quelware_client_factory(
-        client_mode="server",
-        pat_path=str(pat_path),
-    )
+    client_factory = Quel3RuntimeConfig(
+        credentials=QuelwareCredentials(pat_path=str(pat_path))
+    ).load_client_factory()
     context_manager = client_factory("worker-host", 61000)
 
     assert context_manager == ("worker-host", 61000)
@@ -291,15 +292,15 @@ def test_runtime_config_normalizes_client_runtime() -> None:
         endpoint="worker-host",
         port=61000,
         client_mode=" Server ",
-        pat_path="/run/secrets/quelware-pat",
         transport=" HTTPS ",
         http_transport=Quel3HttpTransportConfig(),
+        credentials=QuelwareCredentials(pat_path="/run/secrets/quelware-pat"),
     )
 
     assert config.endpoint == "worker-host"
     assert config.port == 61000
     assert config.client_mode == "server"
-    assert config.pat_path == "/run/secrets/quelware-pat"
+    assert config.credentials.pat_path == "/run/secrets/quelware-pat"
     assert config.transport == "https"
 
 
@@ -379,7 +380,6 @@ def test_runtime_config_from_mapping_parses_nested_http_options() -> None:
         endpoint="api.example.com",
         port=443,
         client_mode="server",
-        pat_path="/run/secrets/quelware-pat",
         transport="https",
         http_transport=Quel3HttpTransportConfig(
             base_path="/quelware",
@@ -390,6 +390,7 @@ def test_runtime_config_from_mapping_parses_nested_http_options() -> None:
                 "CF-Access-Client-Secret": "/run/secrets/cf-access-client-secret",
             },
         ),
+        credentials=QuelwareCredentials(pat_path="/run/secrets/quelware-pat"),
     )
 
 
@@ -470,3 +471,314 @@ def test_connection_probe_lists_units_without_scanning_resources(
 
     assert manager.is_connected is True
     assert calls == ["client:worker-host:61000", "list-units"]
+
+
+@pytest.mark.parametrize("initial", [None, "initial-secret"])
+def test_pat_provider_is_shared_and_rotatable(monkeypatch, initial) -> None:
+    """Direct PAT updates should reach every shared runtime without exposing secrets."""
+    from qubex.backend.quel3 import Quel3BackendController
+    from qubex.backend.quel3.infra import runtime_config as runtime_module
+
+    providers = []
+    monkeypatch.setattr(
+        runtime_module,
+        "load_quelware_client_factory",
+        lambda **kw: providers.append(kw["pat_provider"]),
+    )
+    controller = Quel3BackendController(
+        runtime_config=Quel3RuntimeConfig(
+            credentials=QuelwareCredentials(
+                pat_provider=None if initial is None else lambda: initial,
+                pat_path="missing-file",
+            )
+        ),
+    )
+    if initial is not None:
+        controller.runtime_config.load_client_factory()
+        assert providers.pop()() == initial
+    before = hash(controller.runtime_config)
+    controller.set_quelware_pat_provider(lambda: "updated-secret")
+    for owner in (
+        controller.connection_manager,
+        controller.session_manager,
+        controller.configuration_manager,
+        controller.execution_manager,
+        controller.resource_reader,
+    ):
+        owner.runtime_config.load_client_factory()
+    assert [provider() for provider in providers] == ["updated-secret"] * 5
+    controller.set_quelware_pat_provider(lambda: "rotated-secret")
+    assert providers[0]() == "rotated-secret"
+    assert hash(controller.runtime_config) == before
+    assert "secret" not in repr(controller.runtime_config)
+    assert "secret" not in repr(controller)
+
+
+def test_pat_path_provider_reads_updated_file(monkeypatch, tmp_path) -> None:
+    """Runtime config should read and normalize the PAT file on each provider call."""
+    from qubex.backend.quel3.infra import runtime_config as runtime_module
+
+    path = tmp_path / "pat"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    providers = []
+    monkeypatch.setattr(
+        runtime_module,
+        "load_quelware_client_factory",
+        lambda **kw: providers.append(kw["pat_provider"]),
+    )
+    config = Quel3RuntimeConfig(credentials=QuelwareCredentials(pat_path="~/pat"))
+    config.load_client_factory()
+    path.write_text("first\n")
+    assert providers[0]() == "first"
+    path.write_text("second\r\n")
+    assert providers[0]() == "second"
+
+
+@pytest.mark.parametrize(
+    ("value", "error"), [("secret", TypeError), (None, TypeError), (123, TypeError)]
+)
+def test_pat_provider_rejects_invalid_values(monkeypatch, value, error) -> None:
+    """Invalid PAT updates should preserve the previous credentials."""
+    from qubex.backend.quel3.infra import runtime_config as runtime_module
+
+    providers = []
+    monkeypatch.setattr(
+        runtime_module,
+        "load_quelware_client_factory",
+        lambda **kw: providers.append(kw["pat_provider"]),
+    )
+    config = Quel3RuntimeConfig()
+    config.credentials.set_pat_provider(lambda: "previous-secret")
+    config.load_client_factory()
+    with pytest.raises(error) as exc:
+        config.credentials.set_pat_provider(value)
+    assert "previous-secret" not in str(exc.value)
+    assert providers[0]() == "previous-secret"
+
+
+@pytest.mark.parametrize("connected", [True, False])
+def test_controller_rejects_provider_change_while_in_use(connected) -> None:
+    """A connected controller or open session should reject PAT changes."""
+    from qubex.backend.quel3 import Quel3BackendController
+
+    controller = Quel3BackendController(
+        connection_manager=cast(
+            Quel3ConnectionManager, SimpleNamespace(is_connected=connected)
+        ),
+        session_manager=cast(
+            Quel3SessionManager, SimpleNamespace(is_open=not connected)
+        ),
+    )
+    with pytest.raises(RuntimeError, match="Disconnect"):
+        controller.set_quelware_pat_provider(lambda: "new-secret")
+
+
+def test_pat_provider_rejects_combined_runtime_options() -> None:
+    """Explicit runtime configuration cannot be combined with endpoint overrides."""
+    from qubex.backend.quel3 import Quel3BackendController
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        Quel3BackendController(
+            runtime_config=Quel3RuntimeConfig(
+                credentials=QuelwareCredentials(pat_provider=lambda: "secret")
+            ),
+            quelware_endpoint="conflicting-host",
+        )
+
+
+def test_pat_provider_is_lazy_and_reads_current_value(monkeypatch) -> None:
+    """Registering and binding a provider should defer evaluation until token access."""
+    from qubex.backend.quel3 import Quel3BackendController
+    from qubex.backend.quel3.infra import runtime_config as runtime_module
+
+    calls = []
+    state = {"pat": "first-secret"}
+    providers = []
+
+    def provider() -> str:
+        calls.append("read")
+        return state["pat"]
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_quelware_client_factory",
+        lambda **kw: providers.append(kw["pat_provider"]),
+    )
+    controller = Quel3BackendController(
+        runtime_config=Quel3RuntimeConfig(
+            credentials=QuelwareCredentials(pat_provider=provider)
+        )
+    )
+    controller.set_quelware_pat_provider(provider)
+    controller.runtime_config.load_client_factory()
+    assert calls == []
+    assert providers[0]() == "first-secret"
+    state["pat"] = "second-secret"
+    assert providers[0]() == "second-secret"
+    assert calls == ["read", "read"]
+
+
+def test_pat_provider_failure_is_deferred(monkeypatch) -> None:
+    """A failing provider should raise only when the token is requested."""
+    from qubex.backend.quel3 import Quel3BackendController
+    from qubex.backend.quel3.infra import runtime_config as runtime_module
+
+    providers = []
+    error = RuntimeError("credentials unavailable")
+
+    def provider() -> str:
+        raise error
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_quelware_client_factory",
+        lambda **kw: providers.append(kw["pat_provider"]),
+    )
+    controller = Quel3BackendController(
+        runtime_config=Quel3RuntimeConfig(
+            credentials=QuelwareCredentials(pat_provider=provider)
+        )
+    )
+    controller.runtime_config.load_client_factory()
+    with pytest.raises(RuntimeError) as exc:
+        providers[0]()
+    assert exc.value is error
+
+
+@pytest.mark.parametrize("provider", ["secret", 123])
+def test_runtime_constructor_rejects_noncallable_provider(provider) -> None:
+    """Runtime construction should reject a noncallable provider without exposing it."""
+    with pytest.raises(TypeError, match="must be callable") as exc:
+        Quel3RuntimeConfig(credentials=QuelwareCredentials(pat_provider=provider))
+    assert str(provider) not in str(exc.value)
+
+
+def test_runtime_replacement_preserves_credentials(monkeypatch) -> None:
+    """Replacing transport settings should retain the shared credentials object."""
+    from dataclasses import replace
+
+    from qubex.backend.quel3.infra import runtime_config as runtime_module
+
+    providers = []
+    monkeypatch.setattr(
+        runtime_module,
+        "load_quelware_client_factory",
+        lambda **kw: providers.append(kw["pat_provider"]),
+    )
+    credentials = QuelwareCredentials(pat_provider=lambda: "original-secret")
+    config = Quel3RuntimeConfig(credentials=credentials)
+    replaced = replace(config, endpoint="other-host")
+    assert replaced.credentials is credentials
+    replaced.load_client_factory()
+    credentials.set_pat_provider(lambda: "updated-secret")
+    assert providers[0]() == "updated-secret"
+
+
+def test_default_runtime_credentials_are_independent(monkeypatch) -> None:
+    """Default credentials should not leak providers between runtime instances."""
+    from qubex.backend.quel3.infra import runtime_config as runtime_module
+
+    providers = []
+    monkeypatch.setattr(
+        runtime_module,
+        "load_quelware_client_factory",
+        lambda **kw: providers.append(kw["pat_provider"]),
+    )
+    first, second = Quel3RuntimeConfig(), Quel3RuntimeConfig()
+    first.credentials.set_pat_provider(lambda: "private-secret")
+    first.load_client_factory()
+    second.load_client_factory()
+    assert providers[0]() == "private-secret"
+    assert providers[1] is None
+
+
+@pytest.mark.parametrize(
+    "component",
+    [
+        "connection_manager",
+        "session_manager",
+        "configuration_manager",
+        "execution_manager",
+        "resource_reader",
+    ],
+)
+def test_provider_update_rejects_unshared_injected_credentials(component) -> None:
+    """Provider updates must reject components whose credentials would remain unchanged."""
+    from qubex.backend.quel3 import Quel3BackendController
+
+    injected = Quel3BackendController()
+    controller = Quel3BackendController(**{component: getattr(injected, component)})
+    with pytest.raises(ValueError, match=r"share.*credentials"):
+        controller.set_quelware_pat_provider(lambda: "new-secret")
+    assert controller.runtime_config.credentials.resolve_pat_provider() is None
+    assert injected.runtime_config.credentials.resolve_pat_provider() is None
+
+
+def test_provider_update_accepts_injected_shared_credentials() -> None:
+    """Components with distinct runtime configs may share the same credentials."""
+    from qubex.backend.quel3 import Quel3BackendController
+
+    credentials = QuelwareCredentials()
+    injected = Quel3BackendController(
+        runtime_config=Quel3RuntimeConfig(credentials=credentials)
+    )
+    controller = Quel3BackendController(
+        runtime_config=Quel3RuntimeConfig(credentials=credentials),
+        connection_manager=injected.connection_manager,
+        session_manager=injected.session_manager,
+        configuration_manager=injected.configuration_manager,
+        execution_manager=injected.execution_manager,
+        resource_reader=injected.resource_reader,
+    )
+    controller.set_quelware_pat_provider(lambda: "shared-secret")
+    provider = injected.runtime_config.credentials.resolve_pat_provider()
+    assert provider is not None
+    assert provider() == "shared-secret"
+
+
+@pytest.mark.parametrize("transport", ["grpc", "http", "https"])
+def test_real_upstream_client_evaluates_provider_at_creation(
+    monkeypatch, transport
+) -> None:
+    """The upstream client should snapshot one PAT per creation without connecting."""
+    from unittest.mock import Mock
+
+    upstream = pytest.importorskip("quelware_client.client._grpc")
+
+    channel = Mock()
+    monkeypatch.setattr(
+        quelware_imports_module,
+        "_load_channel_factory",
+        lambda **kwargs: lambda *args: channel,
+    )
+    state = {"pat": "first-secret"}
+    calls = []
+    metadata = []
+
+    def provider() -> str:
+        calls.append("read")
+        return state["pat"]
+
+    monkeypatch.setattr(
+        upstream,
+        "SessionAgentGrpc",
+        lambda channel, *, metadata: metadata_log(metadata),
+    )
+
+    def metadata_log(value):
+        metadata.append(value["x-pat"])
+        return Mock()
+
+    credentials = QuelwareCredentials(pat_provider=provider)
+    factory = Quel3RuntimeConfig(
+        transport=transport, credentials=credentials
+    ).load_client_factory()
+    assert calls == []
+    first = factory("localhost", 50051)
+    assert calls == ["read"]
+    state["pat"] = "second-secret"
+    assert metadata == ["first-secret"]
+    second = factory("localhost", 50051)
+    assert calls == ["read", "read"]
+    assert metadata == ["first-secret", "second-secret"]
+    assert first is not second
