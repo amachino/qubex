@@ -12,6 +12,7 @@
 - `qubex.backend` から低レベル型を import している
 - RZX、multipartite entanglement、purity benchmarking、Stark 系など、
   contrib 寄りの `Experiment` helper を使っている
+- `spin_lock_sequence()` または `spin_lock_spectroscopy()` を使っている
 - 固定 `2 ns` を前提にした timing-sensitive な code を持っている
 - simulator の `Control` 補間に依存している、または control の segment data を
   in-place で変更している
@@ -28,6 +29,7 @@
 - system 側の import を `qubex.backend` から `qubex.system` へ移す
 - `shots` を `n_shots` に、`interval` を `shot_interval` に変える
 - 移動した `Experiment` helper を `qubex.contrib` 呼び出しへ置き換える
+- deprecated な spin-lock spectroscopy helper の移行方法を確認する
 - simulator の `Control` 補間を、明示的に sample した waveform へ置き換える
 - sweep、plot、timing utility で固定 `2 ns` を使わないようにする
 
@@ -382,6 +384,27 @@ schedule = qx.contrib.rzx(
     angle=0.78539816339,
 )
 ```
+
+### deprecated な spin-lock spectroscopy workflow を慎重に移行する
+
+`spin_lock_sequence()` と `spin_lock_spectroscopy()` は `v1.5.0` で
+deprecated となり、`v1.6.0` より前には削除されません。新しい workflow では
+`spin_lock_relaxation_spectroscopy()` の採用を検討してください。ただし、これは
+関数名の変更でも完全互換の置き換えでもないため、既存 notebook の関数名だけを
+変更して移行してはいけません。
+
+deprecated な workflow は、2 本の half-pi pulse の間に矩形の locking pulse を置き、
+1 種類の射影信号を解析します。また、chevron による Rabi 周波数と AC Stark shift の
+較正、明示的な drive detuning と phase、Rabi 周波数ゼロの参照点、複数 qubit の
+同時 sweep に対応しています。新しい workflow は raised-cosine flat-top pulse を使い、
+7 種類の初期化・射影設定を測定して、T1-rho、T2-rho、dressed-frequency shift、
+effective-axis rotation を global fit します。引数と `Result.data` schema は異なり、
+複数 target は逐次測定されます。
+
+移行前に、旧 workflow の較正、detuning、phase、ゼロ周波数、同時測定が引き続き
+必要か確認してください。`spin_lock_sequence()` に完全互換の公開 API はありません。
+`spin_lock_relaxation_spectroscopy()` の workflow 全体を採用するか、必要な schedule を
+明示的に構築してください。
 
 ### 可視化 import と結果アクセスを更新する
 

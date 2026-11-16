@@ -14,6 +14,7 @@ Read this guide if any of the following apply:
 - You import low-level types from `qubex.backend`
 - You use contrib-heavy `Experiment` helpers such as RZX, multipartite
   entanglement, purity benchmarking, or Stark workflows
+- You use `spin_lock_sequence()` or `spin_lock_spectroscopy()`
 - You wrote timing-sensitive code that assumed a fixed `2 ns` sampling period
 - You rely on simulator `Control` interpolation or mutate control segment data
   in place
@@ -30,6 +31,7 @@ imports, the upgrade is usually straightforward.
 - Move system-side imports from `qubex.backend` to `qubex.system`
 - Rename `shots` to `n_shots` and `interval` to `shot_interval`
 - Replace moved `Experiment` helper methods with `qubex.contrib` functions
+- Review spin-lock spectroscopy workflows before replacing deprecated helpers
 - Replace simulator `Control` interpolation with explicitly sampled waveforms
 - Remove hardcoded `2 ns` assumptions from sweeps, plots, and timing utilities
 
@@ -391,6 +393,29 @@ schedule = qx.contrib.rzx(
     angle=0.78539816339,
 )
 ```
+
+### Migrate deprecated spin-lock spectroscopy workflows deliberately
+
+`spin_lock_sequence()` and `spin_lock_spectroscopy()` are deprecated in
+`v1.5.0` and will be removed no earlier than `v1.6.0`. For new workflows,
+evaluate `spin_lock_relaxation_spectroscopy()` instead. This is not a function
+rename or a drop-in replacement, so do not update existing notebooks by only
+changing the called function.
+
+The deprecated workflow uses a rectangular locking pulse between two half-pi
+pulses and analyzes one projected signal. It also supports chevron-based Rabi
+and AC-Stark-shift calibration, explicit drive detuning and phases, a zero-Rabi
+reference point, and simultaneous multi-qubit sweeps. The newer workflow uses
+a raised-cosine flat-top pulse, measures seven preparation and projection
+settings, and globally fits T1-rho, T2-rho, the dressed-frequency shift, and
+the effective-axis rotation. Its arguments and `Result.data` schema differ,
+and it measures multiple targets sequentially.
+
+Before migrating, review whether the deprecated workflow's calibration,
+detuning, phase, zero-frequency, or simultaneous-measurement behavior is still
+required. There is no public drop-in replacement for `spin_lock_sequence()`;
+either adopt the complete `spin_lock_relaxation_spectroscopy()` workflow or
+construct the required schedule explicitly.
 
 ### Update visualization and result access
 
