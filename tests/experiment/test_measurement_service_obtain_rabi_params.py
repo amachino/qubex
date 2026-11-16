@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import MethodType, SimpleNamespace
 from typing import Any, cast
 
+import pytest
+
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.services.measurement_service import MeasurementService
 
@@ -46,3 +48,39 @@ def test_obtain_rabi_params_scopes_frequencies_to_each_sequential_target() -> No
     assert received_frequencies == [{target: frequencies[target]} for target in targets]
     assert list(result.data) == targets
     assert list(result.rabi_params or {}) == targets
+
+
+@pytest.mark.parametrize("is_damped", [None, True, False])
+def test_obtain_rabi_params_forwards_is_damped_unchanged(
+    is_damped: bool | None,
+) -> None:
+    """obtain_rabi_params should forward is_damped as given so fit_rabi owns the default."""
+    target = "Q040"
+    received: list[bool | None] = []
+    service = cast(Any, object.__new__(MeasurementService))
+
+    def _rabi_experiment(
+        self: MeasurementService,
+        *,
+        is_damped: bool | None,
+        **_kwargs: object,
+    ) -> Any:
+        _ = self
+        received.append(is_damped)
+        return SimpleNamespace(
+            data={
+                target: SimpleNamespace(rabi_param=RabiParam.nan(target=target)),
+            }
+        )
+
+    service.rabi_experiment = MethodType(_rabi_experiment, service)
+
+    service.obtain_rabi_params(
+        targets=[target],
+        amplitudes={target: 0.1},
+        is_damped=is_damped,
+        plot=False,
+        store_params=False,
+    )
+
+    assert received == [is_damped]
