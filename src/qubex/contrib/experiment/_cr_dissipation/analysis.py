@@ -85,12 +85,29 @@ PSD_RELATIVE_TOLERANCE = 1e-10
 CD_NONNEGATIVE_RATE_START_FRACTIONS = (0.5,)
 CD_SIGNED_RATE_START_FRACTIONS = (0.25,)
 CD_SIGNED_DIAGNOSTIC_POLICY = "conditional_when_null_selected_or_free_rate_unresolved"
+RATE_UPPER_BOUND_POLICY = "50_over_shortest_positive_cr_active_exposure"
+STATISTICAL_MISMATCH_PROPAGATION = "fixed_rate_dependency_graph"
 
 _CONTROL_RATE_ORDER = (
     "control_e_to_g",
     "control_g_to_e",
     "control_e_to_f",
     "control_f_to_e",
+)
+_AB_REQUIRED_RATE_ORDER = (
+    *_CONTROL_RATE_ORDER,
+    "target_t1rho",
+    "target_leakage",
+    "target_seepage",
+)
+_CONTROL_TRANSVERSE_DEPENDENCIES = (
+    "control_e_to_g",
+    "control_g_to_e",
+    "control_pure_dephasing",
+)
+_TARGET_T2RHO_DEPENDENCIES = (
+    "target_t1rho",
+    "target_rotating_frame_pure_dephasing",
 )
 
 
@@ -183,6 +200,46 @@ def _has_statistical_mismatch(
         goodness is not None
         and goodness.quality == CrDissipationFitQuality.STATISTICAL_MISMATCH
     )
+
+
+def _statistically_mismatched_rates(
+    fit_mismatch: Mapping[str, bool],
+) -> set[str]:
+    """Propagate direct fit mismatch through fixed-rate dependencies."""
+    mismatched: set[str] = set()
+    if fit_mismatch.get("control_population_ab", False):
+        mismatched.update(_CONTROL_RATE_ORDER)
+
+    leakage_mismatch = fit_mismatch.get("target_a_leakage", False) or fit_mismatch.get(
+        "target_b_leakage", False
+    )
+    if leakage_mismatch:
+        mismatched.update(("target_leakage", "target_seepage"))
+
+    t1rho_mismatch = (
+        fit_mismatch.get("target_a_t1rho", False)
+        or fit_mismatch.get("target_b_t1rho", False)
+        or leakage_mismatch
+    )
+    if t1rho_mismatch:
+        mismatched.add("target_t1rho")
+
+    if mismatched.intersection(_AB_REQUIRED_RATE_ORDER):
+        mismatched.update(
+            (
+                "control_pure_dephasing",
+                "target_rotating_frame_pure_dephasing",
+            )
+        )
+    if fit_mismatch.get("control_pure_dephasing_c", False):
+        mismatched.add("control_pure_dephasing")
+    if fit_mismatch.get("target_rotating_frame_pure_dephasing_d", False):
+        mismatched.add("target_rotating_frame_pure_dephasing")
+    if mismatched.intersection(_CONTROL_TRANSVERSE_DEPENDENCIES):
+        mismatched.add("control_transverse")
+    if mismatched.intersection(_TARGET_T2RHO_DEPENDENCIES):
+        mismatched.add("target_t2rho")
+    return mismatched
 
 
 def _goodness_metadata(goodness: FitGoodnessOfFit | None) -> dict[str, Any]:
@@ -453,19 +510,22 @@ def _control_observations(
                 series.covariance[index][1:3, 1:3], dtype=np.float64
             )
             label = f"{protocol}[{index}]"
-            try:
-                whitener, _ = covariance_whitener(covariance, rcond=covariance_rcond)
-                observations.append(
-                    _VectorObservation(
-                        protocol,
-                        index,
-                        (1, 2),
-                        ResidualBlock(observed, whitener, label),
+            if np.all(np.isfinite(observed)):
+                try:
+                    whitener, _ = covariance_whitener(
+                        covariance, rcond=covariance_rcond
                     )
-                )
-                continue
-            except ValueError:
-                pass
+                    observations.append(
+                        _VectorObservation(
+                            protocol,
+                            index,
+                            (1, 2),
+                            ResidualBlock(observed, whitener, label),
+                        )
+                    )
+                    continue
+                except ValueError:
+                    pass
             errors = np.asarray(series.standard_error[index, 1:3], dtype=np.float64)
             usable = np.flatnonzero(
                 np.isfinite(errors) & (errors > 0.0) & np.isfinite(observed)
@@ -1208,18 +1268,19 @@ def fit_physical_dephasing(
     The nonnegative free and zero-rate candidates always participate in AICc
     selection. The costlier signed diagnostic runs only when the zero-rate
     candidate is selected or the free rate is unresolved. `force_free` is
-    reserved for the non-recursive synthetic idle baseline.
+    reserved for the non-recursive synthetic idle baseline. The free-rate
+    ceiling is based on the shortest positive CR-active exposure, so appending
+    a later endpoint cannot narrow the optimizer's search interval.
     """
-    maximum_count = max(1, int(np.max(repetition_counts)))
-    duration = (
-        sum(
-            float(getattr(operation, "duration_ns", 0.0))
-            for operation in block_operations
-            if getattr(operation, "cr_active", False)
-        )
-        * maximum_count
+    active_duration_per_block = sum(
+        float(getattr(operation, "duration_ns", 0.0))
+        for operation in block_operations
+        if getattr(operation, "cr_active", False)
     )
-    upper = max(1e-8, 50.0 / max(duration, 1.0))
+    active_exposure = (
+        np.asarray(repetition_counts, dtype=np.float64) * active_duration_per_block
+    )
+    upper = _rate_upper_bound(active_exposure)
     curve_cache: dict[tuple[float, bool], NDArray[np.float64]] = {}
     superoperator_cache: SuperoperatorCache = {}
 
@@ -2356,12 +2417,9 @@ def analyze_cr_dissipation(
         leak_b.seepage_standard_error_per_ns,
     )
     nominal: dict[str, float] = {}
-    statuses: dict[str, CrDissipationRateStatus] = {}
+    statuses = dict(control_fit.statuses)
     if control_fit.success:
         nominal.update(control_fit.rates_per_ns)
-        statuses.update(control_fit.statuses)
-    else:
-        statuses.update(control_fit.statuses)
     nominal.update(
         {
             "target_t1rho": target_t1rho,
@@ -2376,12 +2434,7 @@ def analyze_cr_dissipation(
             "target_seepage": seep_status,
         }
     )
-    required_ab = (
-        *_CONTROL_RATE_ORDER,
-        "target_t1rho",
-        "target_leakage",
-        "target_seepage",
-    )
+    required_ab = _AB_REQUIRED_RATE_ORDER
     dependency_failure = any(
         statuses[name] == CrDissipationRateStatus.FIT_FAILED for name in required_ab
     )
@@ -2486,17 +2539,7 @@ def analyze_cr_dissipation(
         "target_rotating_frame_pure_dephasing_d": _has_statistical_mismatch(d_fit),
     }
     mismatched_fits = tuple(name for name, mismatch in fit_mismatch.items() if mismatch)
-    statistically_mismatched_rates: set[str] = set()
-    if fit_mismatch["control_population_ab"]:
-        statistically_mismatched_rates.update(_CONTROL_RATE_ORDER)
-    if fit_mismatch["target_a_t1rho"] or fit_mismatch["target_b_t1rho"]:
-        statistically_mismatched_rates.add("target_t1rho")
-    if fit_mismatch["target_a_leakage"] or fit_mismatch["target_b_leakage"]:
-        statistically_mismatched_rates.update(("target_leakage", "target_seepage"))
-    if fit_mismatch["control_pure_dephasing_c"]:
-        statistically_mismatched_rates.add("control_pure_dephasing")
-    if fit_mismatch["target_rotating_frame_pure_dephasing_d"]:
-        statistically_mismatched_rates.add("target_rotating_frame_pure_dephasing")
+    statistically_mismatched_rates = _statistically_mismatched_rates(fit_mismatch)
     if mismatched_fits:
         warnings.append(
             CrDissipationWarning(
@@ -2684,7 +2727,13 @@ def analyze_cr_dissipation(
             "initial_condition_treatment": "latent_nuisance_with_n0_observation",
             "model_selection": "simplest_candidate_within_global_delta_aicc_6",
             "rate_optimization": "deterministic_multistart",
+            "rate_upper_bound_policy": RATE_UPPER_BOUND_POLICY,
+            "statistical_mismatch_propagation": STATISTICAL_MISMATCH_PROPAGATION,
             "c_d_signed_diagnostic": CD_SIGNED_DIAGNOSTIC_POLICY,
+            "direct_statistically_mismatched_fits": mismatched_fits,
+            "statistically_mismatched_rates": tuple(
+                sorted(statistically_mismatched_rates)
+            ),
             "absolute_goodness_of_fit_limits": {
                 "reduced_chi_squared": GOODNESS_OF_FIT_REDUCED_CHI_SQUARED_LIMIT,
                 "maximum_mahalanobis_residual": (

@@ -512,6 +512,12 @@ def test_primary_gef_acquisition_is_split_by_protocol_and_shot_policy(
     assert result.data["analysis_options"]["c_d_signed_diagnostic"] == (
         "conditional_when_null_selected_or_free_rate_unresolved"
     )
+    assert result.data["analysis_options"]["rate_upper_bound_policy"] == (
+        "50_over_shortest_positive_cr_active_exposure"
+    )
+    assert result.data["analysis_options"]["statistical_mismatch_propagation"] == (
+        "fixed_rate_dependency_graph"
+    )
     assert bootstrap_calls == [
         {
             "n_resamples": 12,

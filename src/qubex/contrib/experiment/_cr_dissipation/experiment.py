@@ -47,6 +47,8 @@ from .analysis import (
     PARAMETER_SIGNIFICANCE_THRESHOLD,
     POPULATION_MINIMUM_CHANGE,
     PSD_RELATIVE_TOLERANCE,
+    RATE_UPPER_BOUND_POLICY,
+    STATISTICAL_MISMATCH_PROPAGATION,
     analyze_cr_dissipation,
     computational_polarization,
     nonnormalized_ge_expectation,
@@ -2163,6 +2165,8 @@ def characterize_cr_dissipation(
         "model_selection_statistic": "gaussian_gls_aicc",
         "model_selection_rule": "simplest_within_global_delta_aicc",
         "rate_optimizer_initialization": "deterministic_multistart",
+        "rate_upper_bound_policy": RATE_UPPER_BOUND_POLICY,
+        "statistical_mismatch_propagation": STATISTICAL_MISMATCH_PROPAGATION,
         "c_d_rate_optimizer_initialization": "initial_guess_plus_interval_fractions",
         "c_d_rate_start_fractions": {
             "nonnegative": CD_NONNEGATIVE_RATE_START_FRACTIONS,

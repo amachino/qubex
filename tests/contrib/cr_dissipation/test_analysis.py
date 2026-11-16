@@ -13,12 +13,14 @@ import pytest
 import qubex.contrib.experiment._cr_dissipation.analysis as analysis_module
 import qubex.contrib.experiment._cr_dissipation.fit as fit_module
 from qubex.contrib.experiment._cr_dissipation.analysis import (
+    _control_observations,
     _fidelity_limits,
     _fit_idle_control_rates,
     _fit_idle_target_exchange,
     _fit_idle_target_t1rho,
     _pure_dephasing_component,
     _selected_rate_status,
+    _statistically_mismatched_rates,
     computational_polarization,
     control_population_trajectory,
     fit_control_populations,
@@ -406,6 +408,16 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
         "Fidelity uncertainty calculation was disabled."
     )
 
+    propagated_mismatch = _statistically_mismatched_rates({"target_a_leakage": True})
+    assert {
+        "target_leakage",
+        "target_seepage",
+        "target_t1rho",
+        "control_pure_dephasing",
+        "target_rotating_frame_pure_dephasing",
+        "control_transverse",
+        "target_t2rho",
+    }.issubset(propagated_mismatch)
     blocked, _ = _fidelity_limits(
         descriptor(),
         IdleNoiseParameters(float("inf"), float("inf")),
@@ -415,7 +427,7 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
         covariance,
         primitive_order,
         compute_uncertainty=False,
-        statistically_mismatched_rates=("target_t1rho",),
+        statistically_mismatched_rates=tuple(propagated_mismatch),
     )
     assert blocked.idle_coherence_limited.available
     assert blocked.cr_on_coherence_limited.available
@@ -427,6 +439,35 @@ def test_fidelity_fixed_metadata_matches_sigma_point_parameters(
     )
     assert blocked.cr_on_coherence_limited.standard_error is None
     assert "statistically mismatched" in str(blocked.cr_on_coherence_limited.message)
+
+
+def test_control_observations_fall_back_to_finite_population_components() -> None:
+    """A partial nonfinite GEF point retains only its usable scalar component."""
+    counts = np.array([0, 1, 2, 3, 5], dtype=np.int64)
+    values = np.tile([0.8, 0.18, 0.02], (counts.size, 1))
+    values[1, 1] = np.nan
+    control = population_series(values)
+    target = population_series(np.tile([0.5, 0.5, 0.0], (counts.size, 1)))
+    ab = CrDissipationProtocolData(control_gef=control, target_gef=target)
+    cd = CrDissipationProtocolData(
+        primary_expectation=np.ones(counts.size),
+        primary_standard_error=np.full(counts.size, 1e-4),
+    )
+    measurements = measurements_from_protocol_data(
+        counts,
+        {PROTOCOL_A: ab, PROTOCOL_B: ab, PROTOCOL_C: cd, PROTOCOL_D: cd},
+    )
+
+    observations, excluded = _control_observations(
+        measurements,
+        covariance_rcond=1e-12,
+    )
+
+    partial = [item for item in observations if item.point_index == 1]
+    assert not excluded
+    assert len(partial) == 2
+    assert all(item.component_indices == (2,) for item in partial)
+    assert all(np.all(np.isfinite(item.block.observed)) for item in observations)
 
 
 def test_pure_dephasing_component_uses_both_longitudinal_directions() -> None:
@@ -1096,7 +1137,7 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """C physical fit selects a significant free pure-dephasing rate."""
-    counts = np.array([0, 1, 2, 3, 5, 8], dtype=np.int64)
+    counts = np.array([0, 1, 2, 3, 5, 10_000], dtype=np.int64)
     idle = IdleNoiseParameters(float("inf"), float("inf"))
     block = (
         SemanticSegment(
@@ -1182,6 +1223,7 @@ def test_physical_forward_fit_selects_resolved_control_pure_dephasing(
         (0.5,),
         None,
     ]
+    assert profiled_calls[0]["rate_bounds"] == pytest.approx((0.0, 50.0 / 80.0))
     assert "signed_diagnostic" not in fit.candidates
     assert fit.unconstrained_rate_per_ns is None
     assert "skipped" in fit.message
