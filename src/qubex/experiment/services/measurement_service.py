@@ -1522,6 +1522,8 @@ class MeasurementService:
         """
         if time_range is None:
             time_range = DEFAULT_RABI_TIME_RANGE
+        if is_damped is None:
+            is_damped = True
         if fit_threshold is None:
             fit_threshold = 0.5
         n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
@@ -1623,6 +1625,8 @@ class MeasurementService:
         # TODO: Integrate with obtain_rabi_params
         if time_range is None:
             time_range = DEFAULT_RABI_TIME_RANGE
+        if is_damped is None:
+            is_damped = True
         n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
             n_shots=n_shots,
             shot_interval=shot_interval,
@@ -1931,6 +1935,8 @@ class MeasurementService:
         """
         if time_range is None:
             time_range = DEFAULT_RABI_TIME_RANGE
+        if is_damped is None:
+            is_damped = True
         if fit_threshold is None:
             fit_threshold = 0.5
         n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
@@ -2088,6 +2094,8 @@ class MeasurementService:
             Optional detuning applied to target frequencies.
         """
         # TODO: Integrate with rabi_experiment
+        if is_damped is None:
+            is_damped = True
         n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
             n_shots=n_shots,
             shot_interval=shot_interval,
