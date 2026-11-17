@@ -6,6 +6,7 @@ from types import MethodType, SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 
 from qubex.clifford.clifford import Clifford
 from qubex.experiment.models.result import Result
@@ -311,3 +312,54 @@ def test_irb_experiment_includes_reference_and_interleaved_trial_data(
     np.testing.assert_array_equal(irb_data["seeds"], np.tile([11, 22], (3, 1)))
     assert rb_data["trials"].shape == (3, 2)
     assert irb_data["trials"].shape == (3, 2)
+
+
+@pytest.mark.parametrize("is_2q", [False, True])
+def test_irb_preserves_target_specific_seed_rows(monkeypatch: Any, is_2q: bool) -> None:
+    """Grouped IRB should reuse each target's acquired range and matching seed rows."""
+    _patch_fit_helpers(monkeypatch)
+    service = cast(Any, object.__new__(BenchmarkingService))
+    calls: list[dict[str, Any]] = []
+    resets: list[set[str]] = []
+    seeds = np.arange(6).reshape(3, 2)
+    ranges = {"A": np.array([0, 1]), "B": np.array([0, 1, 2])}
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        experiment_system=SimpleNamespace(
+            get_target=lambda _: SimpleNamespace(is_cr=is_2q)
+        ),
+        resolve_qubit_label=lambda target: target,
+        cr_pair=lambda target: (target + "0", target + "1"),
+        reset_awg_and_capunits=lambda *, qubits: resets.append(set(qubits)),
+    )
+
+    def acquire(targets: list[str] | str, **kwargs: Any) -> Result:
+        labels = [targets] if isinstance(targets, str) else targets
+        calls.append({"targets": labels, **kwargs})
+        data = {}
+        for target in labels:
+            payload = _rb_payload_with_range([target], ranges[target])[target]
+            payload["seeds"] = np.asarray(kwargs["seeds"])[: len(ranges[target])]
+            data[target] = payload
+        return Result(data=data)
+
+    service.rb_experiment_1q = acquire
+    service.rb_experiment_2q = acquire
+    result = service.irb_experiment(
+        ["A", "B"],
+        interleaved_clifford=Clifford.X90(),
+        seeds=seeds,
+        n_trials=2,
+        max_n_cliffords=2,
+        in_parallel=False,
+        plot=False,
+        save_image=False,
+    )
+    assert len(resets) == 1
+    assert [call["targets"] for call in calls] == [["A", "B"], ["A"], ["B"]]
+    for call, target in zip(calls[1:], ["A", "B"], strict=True):
+        np.testing.assert_array_equal(call["n_cliffords_range"], ranges[target])
+        np.testing.assert_array_equal(call["seeds"], seeds[: len(ranges[target])])
+        assert call["reset_awg_and_capunits"] is False
+        np.testing.assert_array_equal(
+            result[target]["rb_data"]["seeds"], result[target]["irb_data"]["seeds"]
+        )

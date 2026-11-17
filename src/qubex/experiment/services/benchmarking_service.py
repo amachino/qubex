@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection, Mapping
+from functools import partial
 from typing import Literal
 
 import numpy as np
@@ -1024,136 +1025,93 @@ class BenchmarkingService:
 
         is_2q = self.ctx.experiment_system.get_target(targets[0]).is_cr
 
-        if is_2q:
-            dimension = 4
-            rb_result = self.rb_experiment_2q(
-                targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                zx90=zx90,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                time_integration=time_integration,
-                plot=False,
-                save_image=False,
-                reset_awg_and_capunits=False,
-            )
-            reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
-            irb_n_cliffords_range = (
-                n_cliffords_range
-                if n_cliffords_range is not None
-                else _shared_n_cliffords_range(reference_ranges)
-            )
-            if irb_n_cliffords_range is None:
-                irb_data = {}
-                for target in targets:
-                    target_irb_result = self.rb_experiment_2q(
-                        targets=target,
-                        n_cliffords_range=reference_ranges[target],
-                        n_trials=n_trials,
-                        seeds=rb_result[target]["seeds"],
-                        max_n_cliffords=max_n_cliffords,
-                        x90=x90,
-                        zx90=zx90,
-                        interleaved_waveform=interleaved_waveform,  # type: ignore
-                        interleaved_clifford=interleaved_clifford,
-                        in_parallel=False,
-                        shots=shots,
-                        interval=interval,
-                        time_integration=time_integration,
-                        plot=False,
-                        save_image=False,
-                        reset_awg_and_capunits=False,
-                    )
-                    irb_data[target] = target_irb_result[target]
-                irb_result = Result(data=irb_data)
-            else:
-                irb_result = self.rb_experiment_2q(
-                    targets=targets,
-                    n_cliffords_range=irb_n_cliffords_range,
-                    n_trials=n_trials,
-                    seeds=rb_result[targets[0]]["seeds"],
-                    max_n_cliffords=max_n_cliffords,
-                    x90=x90,
-                    zx90=zx90,
-                    interleaved_waveform=interleaved_waveform,  # type: ignore
-                    interleaved_clifford=interleaved_clifford,
-                    in_parallel=in_parallel,
-                    shots=shots,
-                    interval=interval,
-                    time_integration=time_integration,
-                    plot=False,
-                    save_image=False,
-                    reset_awg_and_capunits=False,
-                )
-        else:
-            dimension = 2
-            rb_result = self.rb_experiment_1q(
-                targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                time_integration=time_integration,
-                plot=False,
-                save_image=False,
-                reset_awg_and_capunits=False,
-            )
-            reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
-            irb_n_cliffords_range = (
-                n_cliffords_range
-                if n_cliffords_range is not None
-                else _shared_n_cliffords_range(reference_ranges)
-            )
-            if irb_n_cliffords_range is None:
-                irb_data = {}
-                for target in targets:
-                    target_irb_result = self.rb_experiment_1q(
-                        targets=target,
-                        n_cliffords_range=reference_ranges[target],
-                        n_trials=n_trials,
-                        seeds=rb_result[target]["seeds"],
-                        max_n_cliffords=max_n_cliffords,
-                        x90=x90,
-                        interleaved_waveform=interleaved_waveform,  # type: ignore
-                        interleaved_clifford=interleaved_clifford,
-                        in_parallel=False,
-                        shots=shots,
-                        interval=interval,
-                        time_integration=time_integration,
-                        plot=False,
-                        save_image=False,
-                        reset_awg_and_capunits=False,
-                    )
-                    irb_data[target] = target_irb_result[target]
-                irb_result = Result(data=irb_data)
-            else:
-                irb_result = self.rb_experiment_1q(
-                    targets=targets,
-                    n_cliffords_range=irb_n_cliffords_range,
-                    n_trials=n_trials,
-                    seeds=rb_result[targets[0]]["seeds"],
-                    max_n_cliffords=max_n_cliffords,
-                    x90=x90,
-                    interleaved_waveform=interleaved_waveform,  # type: ignore
-                    interleaved_clifford=interleaved_clifford,
-                    in_parallel=in_parallel,
-                    shots=shots,
-                    interval=interval,
-                    time_integration=time_integration,
-                    plot=False,
-                    save_image=False,
-                    reset_awg_and_capunits=False,
-                )
+        run_rb = (
+            partial(self.rb_experiment_2q, zx90=zx90)
+            if is_2q
+            else self.rb_experiment_1q
+        )
+        run_rb = partial(
+            run_rb,
+            n_trials=n_trials,
+            seeds=seeds,
+            max_n_cliffords=max_n_cliffords,
+            x90=x90,
+            in_parallel=in_parallel,
+            shots=shots,
+            interval=interval,
+            time_integration=time_integration,
+            plot=False,
+            save_image=False,
+            reset_awg_and_capunits=False,
+        )
+        rb_result, irb_result = self._acquire_grouped_irb(
+            targets,
+            run_rb=run_rb,
+            n_cliffords_range=n_cliffords_range,
+            clifford=clifford,
+            interleaved_waveform=interleaved_waveform,
+        )
+        return self._analyze_irb(
+            targets,
+            rb_result=rb_result,
+            irb_result=irb_result,
+            dimension=4 if is_2q else 2,
+            clifford=clifford,
+            plot=plot,
+            save_image=save_image,
+        )
 
+    def _acquire_grouped_irb(
+        self,
+        targets: list[str],
+        *,
+        run_rb: Callable[..., Result],
+        n_cliffords_range: ArrayLike | None,
+        clifford: Clifford,
+        interleaved_waveform: TargetMap[PulseSchedule] | TargetMap[Waveform] | None,
+    ) -> tuple[Result, Result]:
+        """Acquire grouped arms while retaining each reference range and seed matrix."""
+        reference = run_rb(targets, n_cliffords_range=n_cliffords_range)
+        ranges = _n_cliffords_ranges_by_target(reference, targets)
+        shared_range = (
+            n_cliffords_range
+            if n_cliffords_range is not None
+            else _shared_n_cliffords_range(ranges)
+        )
+        run_interleaved = partial(
+            run_rb,
+            interleaved_clifford=clifford,
+            interleaved_waveform=interleaved_waveform,
+        )
+        if shared_range is not None:
+            return reference, run_interleaved(
+                targets,
+                n_cliffords_range=shared_range,
+                seeds=reference[targets[0]]["seeds"],
+            )
+        interleaved = {}
+        for target in targets:
+            result = run_interleaved(
+                target,
+                n_cliffords_range=ranges[target],
+                seeds=reference[target]["seeds"],
+                in_parallel=False,
+            )
+            interleaved[target] = result[target]
+        return reference, Result(data=interleaved)
+
+    def _analyze_irb(
+        self,
+        targets: list[str],
+        *,
+        rb_result: Result,
+        irb_result: Result,
+        dimension: int,
+        clifford: Clifford,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Fit and plot acquired IRB curves without further hardware access."""
         results = {}
         for target in targets:
             rb_n_cliffords = rb_result[target]["n_cliffords"]
