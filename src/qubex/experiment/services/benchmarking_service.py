@@ -38,6 +38,32 @@ from .pulse_service import PulseService
 logger = logging.getLogger(__name__)
 
 
+def _rb_lengths(values: ArrayLike | None, maximum: int) -> np.ndarray:
+    """Resolve the ordered candidate lengths before acquiring any trials."""
+    if values is not None:
+        return np.asarray(values, dtype=int)
+    return np.asarray(
+        [0, *(2**i for i in range(maximum.bit_length()) if 2**i <= maximum)], dtype=int
+    )
+
+
+def _resolve_rb_seeds(
+    seeds: ArrayLike | None, *, n_lengths: int, n_trials: int
+) -> np.ndarray:
+    """Resolve one uint32 seed per length and trial without accepting legacy vectors."""
+    shape = (n_lengths, n_trials)
+    if seeds is None:
+        return np.random.default_rng().integers(0, 2**32, size=shape, dtype=np.int64)
+    values = np.asarray(seeds)
+    if values.shape != shape:
+        raise ValueError(f"seeds must have shape {shape}; got {values.shape}.")
+    if values.dtype.kind not in "iu":
+        raise TypeError("seeds must contain integers.")
+    if np.any(values < 0) or np.any(values >= 2**32):
+        raise ValueError("seeds must be in the uint32 range.")
+    return values.astype(np.int64)
+
+
 def _n_cliffords_ranges_by_target(
     rb_result: Result,
     targets: Collection[str],
@@ -353,7 +379,17 @@ class BenchmarkingService:
         save_image: bool | None = None,
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
-        """Run single-qubit randomized benchmarking."""
+        """
+        Run single-qubit randomized benchmarking.
+
+        Parameters
+        ----------
+        seeds : ArrayLike | None, optional
+            Uint32 seed matrix of shape `(n_lengths, n_trials)`. Rows follow
+            the supplied length grid, or the full candidate grid through
+            `max_n_cliffords` for automatic acquisition. Legacy vectors are
+            not accepted. Results retain only acquired rows.
+        """
         return get_shared_async_bridge(key="experiment").run_without_timeout(
             lambda: self._run_rb_experiment_1q(
                 targets=targets,
@@ -395,7 +431,17 @@ class BenchmarkingService:
         save_image: bool | None = None,
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
-        """Run single-qubit randomized benchmarking."""
+        """
+        Run single-qubit randomized benchmarking.
+
+        Parameters
+        ----------
+        seeds : ArrayLike | None, optional
+            Uint32 seed matrix of shape `(n_lengths, n_trials)`. Rows follow
+            the supplied length grid, or the full candidate grid through
+            `max_n_cliffords` for automatic acquisition. Legacy vectors are
+            not accepted. Results retain only acquired rows.
+        """
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -416,17 +462,12 @@ class BenchmarkingService:
         if n_trials is None:
             n_trials = DEFAULT_RB_N_TRIALS
 
-        if seeds is None:
-            seeds = np.random.default_rng().integers(0, 2**32, n_trials)
-        else:
-            seeds = np.array(seeds, dtype=int)
-            if len(seeds) != n_trials:
-                raise ValueError(
-                    "The number of seeds must be equal to the number of trials."
-                )
-
         if max_n_cliffords is None:
             max_n_cliffords = DEFAULT_MAX_N_CLIFFORDS_1Q
+        candidate_lengths = _rb_lengths(n_cliffords_range, max_n_cliffords)
+        seeds = _resolve_rb_seeds(
+            seeds, n_lengths=len(candidate_lengths), n_trials=n_trials
+        )
 
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -499,7 +540,7 @@ class BenchmarkingService:
                             seed=seed,
                         )
                     ),
-                    seeds=np.asarray(seeds, dtype=int),
+                    seeds=np.asarray(seeds[idx - 1], dtype=int),
                     targets=target_group,
                     shots=shots,
                     interval=interval,
@@ -564,7 +605,7 @@ class BenchmarkingService:
                     "mean": mean,
                     "std": std,
                     "trials": trial_matrix_data[target],
-                    "seeds": np.asarray(seeds, dtype=int),
+                    "seeds": np.asarray(seeds[: len(sweep_range)], dtype=int),
                     **fit_result,
                 }
 
@@ -607,6 +648,9 @@ class BenchmarkingService:
         Notes
         -----
         Calibrate the gate pulses and readout before running this experiment.
+        `seeds` must have shape `(n_lengths, n_trials)` and follow the supplied
+        length grid, or the full automatic candidate grid through the maximum.
+        Results retain only acquired seed rows.
         Two-qubit RB estimates the joint ground-state probability using state
         classifiers registered for both the control and target qubits.
         """
@@ -655,7 +699,17 @@ class BenchmarkingService:
         save_image: bool | None = None,
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
-        """Run two-qubit randomized benchmarking."""
+        """
+        Run two-qubit randomized benchmarking.
+
+        Parameters
+        ----------
+        seeds : ArrayLike | None, optional
+            Uint32 seed matrix of shape `(n_lengths, n_trials)`. Rows follow
+            the supplied length grid, or the full candidate grid through
+            `max_n_cliffords` for automatic acquisition. Legacy vectors are
+            not accepted. Results retain only acquired rows.
+        """
         if in_parallel is None:
             in_parallel = False
         if mitigate_readout is None:
@@ -707,17 +761,12 @@ class BenchmarkingService:
         if n_trials is None:
             n_trials = DEFAULT_RB_N_TRIALS
 
-        if seeds is None:
-            seeds = np.random.default_rng().integers(0, 2**32, n_trials)
-        else:
-            seeds = np.array(seeds, dtype=int)
-            if len(seeds) != n_trials:
-                raise ValueError(
-                    "The number of seeds must be equal to the number of trials."
-                )
-
         if max_n_cliffords is None:
             max_n_cliffords = DEFAULT_MAX_N_CLIFFORDS_2Q
+        candidate_lengths = _rb_lengths(n_cliffords_range, max_n_cliffords)
+        seeds = _resolve_rb_seeds(
+            seeds, n_lengths=len(candidate_lengths), n_trials=n_trials
+        )
 
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -801,7 +850,7 @@ class BenchmarkingService:
                             seed=seed,
                         )
                     ),
-                    seeds=np.asarray(seeds, dtype=int),
+                    seeds=np.asarray(seeds[idx - 1], dtype=int),
                     targets=target_group,
                     shots=shots,
                     interval=interval,
@@ -883,7 +932,7 @@ class BenchmarkingService:
                     "mean": mean,
                     "std": std,
                     "trials": trial_matrix_data[target],
-                    "seeds": np.asarray(seeds, dtype=int),
+                    "seeds": np.asarray(seeds[: len(sweep_range)], dtype=int),
                     **fit_result,
                 }
 
@@ -913,7 +962,17 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Run interleaved randomized benchmarking."""
+        """
+        Run interleaved randomized benchmarking.
+
+        Parameters
+        ----------
+        seeds : ArrayLike | None, optional
+            Uint32 seed matrix of shape `(n_lengths, n_trials)`. Rows follow
+            the supplied length grid, or the full candidate grid through
+            `max_n_cliffords` for automatic acquisition. Legacy vectors are
+            not accepted. Results retain only acquired rows.
+        """
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -935,6 +994,19 @@ class BenchmarkingService:
             interleaved_clifford = clifford
         else:
             clifford = interleaved_clifford
+
+        is_2q = self.ctx.experiment_system.get_target(targets[0]).is_cr
+        maximum = (
+            max_n_cliffords
+            if max_n_cliffords is not None
+            else (DEFAULT_MAX_N_CLIFFORDS_2Q if is_2q else DEFAULT_MAX_N_CLIFFORDS_1Q)
+        )
+        candidate_lengths = _rb_lengths(n_cliffords_range, maximum)
+        seeds = _resolve_rb_seeds(
+            seeds,
+            n_lengths=len(candidate_lengths),
+            n_trials=n_trials if n_trials is not None else DEFAULT_RB_N_TRIALS,
+        )
 
         reset_qubits: set[str] = set()
         for target in targets:
@@ -979,7 +1051,7 @@ class BenchmarkingService:
                         targets=target,
                         n_cliffords_range=reference_ranges[target],
                         n_trials=n_trials,
-                        seeds=seeds,
+                        seeds=rb_result[target]["seeds"],
                         max_n_cliffords=max_n_cliffords,
                         x90=x90,
                         zx90=zx90,
@@ -1000,7 +1072,7 @@ class BenchmarkingService:
                     targets=targets,
                     n_cliffords_range=irb_n_cliffords_range,
                     n_trials=n_trials,
-                    seeds=seeds,
+                    seeds=rb_result[targets[0]]["seeds"],
                     max_n_cliffords=max_n_cliffords,
                     x90=x90,
                     zx90=zx90,
@@ -1044,7 +1116,7 @@ class BenchmarkingService:
                         targets=target,
                         n_cliffords_range=reference_ranges[target],
                         n_trials=n_trials,
-                        seeds=seeds,
+                        seeds=rb_result[target]["seeds"],
                         max_n_cliffords=max_n_cliffords,
                         x90=x90,
                         interleaved_waveform=interleaved_waveform,  # type: ignore
@@ -1064,7 +1136,7 @@ class BenchmarkingService:
                     targets=targets,
                     n_cliffords_range=irb_n_cliffords_range,
                     n_trials=n_trials,
-                    seeds=seeds,
+                    seeds=rb_result[targets[0]]["seeds"],
                     max_n_cliffords=max_n_cliffords,
                     x90=x90,
                     interleaved_waveform=interleaved_waveform,  # type: ignore
@@ -1210,7 +1282,17 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Dispatch randomized benchmarking based on target type."""
+        """
+        Dispatch randomized benchmarking based on target type.
+
+        Parameters
+        ----------
+        seeds : ArrayLike | None, optional
+            Uint32 seed matrix of shape `(n_lengths, n_trials)`. Rows follow
+            the supplied length grid, or the full candidate grid through
+            `max_n_cliffords` for automatic acquisition. Legacy vectors are
+            not accepted. Results retain only acquired rows.
+        """
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1277,7 +1359,17 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Dispatch interleaved randomized benchmarking."""
+        """
+        Dispatch interleaved randomized benchmarking.
+
+        Parameters
+        ----------
+        seeds : ArrayLike | None, optional
+            Uint32 seed matrix of shape `(n_lengths, n_trials)`. Rows follow
+            the supplied length grid, or the full candidate grid through
+            `max_n_cliffords` for automatic acquisition. Legacy vectors are
+            not accepted. Results retain only acquired rows.
+        """
         if isinstance(targets, str):
             targets = [targets]
         else:

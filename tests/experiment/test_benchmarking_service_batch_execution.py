@@ -140,11 +140,11 @@ def test_rb_1q_awaits_canonical_trial_sweeps(
 ) -> None:
     """1Q RB should await one canonical sweep per Clifford length."""
     _patch_fit(monkeypatch)
-    seeds = np.array([11, 22], dtype=int)
+    seeds = np.array([[11, 22], [33, 44]], dtype=int)
     sequence_calls: list[tuple[int, int]] = []
     sweep_calls: list[dict[str, object]] = []
     reset_calls: list[set[str]] = []
-    normalized_signal = {11: 0.8, 22: 0.4}
+    normalized_signal = {11: 0.8, 22: 0.4, 33: 0.8, 44: 0.4}
 
     service = cast(Any, object.__new__(BenchmarkingService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
@@ -222,7 +222,7 @@ def test_rb_1q_awaits_canonical_trial_sweeps(
     )
 
     assert len(sweep_calls) == 2
-    assert [call["values"] for call in sweep_calls] == [[11, 22], [11, 22]]
+    assert [call["values"] for call in sweep_calls] == [[11, 22], [33, 44]]
     assert all(
         isinstance(schedule, PulseSchedule)
         for call in sweep_calls
@@ -237,7 +237,7 @@ def test_rb_1q_awaits_canonical_trial_sweeps(
     assert all(call["readout_amplification"] is False for call in sweep_calls)
     assert all(call["plot"] is False for call in sweep_calls)
     assert all(call["enable_tqdm"] is False for call in sweep_calls)
-    assert sequence_calls == [(1, 11), (1, 22), (2, 11), (2, 22)]
+    assert sequence_calls == [(1, 11), (1, 22), (2, 33), (2, 44)]
     assert reset_calls == [{"Q00"}, {"Q00"}]
     np.testing.assert_allclose(
         result["Q00"]["trials"],
@@ -258,7 +258,7 @@ def test_rb_2q_interprets_canonical_capture_data(
 ) -> None:
     """2Q RB should classify canonical captures and mitigate joint probabilities."""
     _patch_fit(monkeypatch)
-    seeds = np.array([31, 32], dtype=int)
+    seeds = np.array([[31, 32]], dtype=int)
     sequence_calls: list[tuple[int, int]] = []
     sweep_calls: list[dict[str, object]] = []
     reset_calls: list[set[str]] = []
@@ -394,7 +394,7 @@ def test_rb_1q_auto_range_stops_after_completed_trial_sweep(
 ) -> None:
     """Auto-range 1Q RB should stop between awaited Clifford-length sweeps."""
     _patch_fit(monkeypatch)
-    seeds = np.array([41, 42], dtype=int)
+    seeds = np.tile([41, 42], (5, 1))
     active_n_cliffords = 0
     measured_n_cliffords: list[int] = []
 
@@ -419,7 +419,7 @@ def test_rb_1q_auto_range_stops_after_completed_trial_sweep(
     ) -> PulseArray:
         nonlocal active_n_cliffords
         assert target == "Q00"
-        assert seed in seeds
+        assert seed in seeds.reshape(-1)
         active_n_cliffords = n
         return PulseArray([])
 
