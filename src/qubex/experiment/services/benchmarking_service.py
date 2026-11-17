@@ -721,39 +721,12 @@ class BenchmarkingService:
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
 
-        if self.ctx.state_centers is None:
-            raise ValueError("State classifiers are not built.")
-
         if isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
 
-        if not targets:
-            raise ValueError("At least one 2Q target is required.")
-
-        for target in targets:
-            if not self.ctx.experiment_system.get_target(target).is_cr:
-                raise ValueError(f"`{target}` is not a 2Q target.")
-
-        missing_cr_params = [
-            target for target in targets if target not in self.ctx.calib_note.cr_params
-        ]
-        if missing_cr_params:
-            missing = ", ".join(missing_cr_params)
-            raise ValueError(f"CR parameters not found for {missing}.")
-
-        missing_classifiers = list(
-            dict.fromkeys(
-                qubit
-                for target in targets
-                for qubit in self.ctx.cr_pair(target)
-                if self.ctx.classifiers.get(qubit) is None
-            )
-        )
-        if missing_classifiers:
-            missing = ", ".join(missing_classifiers)
-            raise ValueError(f"Classifier not found for {missing}.")
+        self._validate_rb_2q_targets(targets)
 
         if n_cliffords_range is not None:
             n_cliffords_range = np.array(n_cliffords_range, dtype=int)
@@ -940,6 +913,37 @@ class BenchmarkingService:
             data=return_data,
             figures={target: result["fig"] for target, result in return_data.items()},
         )
+
+    def _validate_rb_2q_targets(self, targets: list[str]) -> None:
+        """Check two-qubit target prerequisites before constructing any schedules."""
+        if self.ctx.state_centers is None:
+            raise ValueError("State classifiers are not built.")
+
+        if not targets:
+            raise ValueError("At least one 2Q target is required.")
+
+        for target in targets:
+            if not self.ctx.experiment_system.get_target(target).is_cr:
+                raise ValueError(f"`{target}` is not a 2Q target.")
+
+        missing_cr_params = [
+            target for target in targets if target not in self.ctx.calib_note.cr_params
+        ]
+        if missing_cr_params:
+            missing = ", ".join(missing_cr_params)
+            raise ValueError(f"CR parameters not found for {missing}.")
+
+        missing_classifiers = list(
+            dict.fromkeys(
+                qubit
+                for target in targets
+                for qubit in self.ctx.cr_pair(target)
+                if self.ctx.classifiers.get(qubit) is None
+            )
+        )
+        if missing_classifiers:
+            missing = ", ".join(missing_classifiers)
+            raise ValueError(f"Classifier not found for {missing}.")
 
     def irb_experiment(
         self,
