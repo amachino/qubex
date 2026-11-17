@@ -87,6 +87,9 @@ from .experiment.multipartite_entanglement import (
     partial_transpose,
     visualize_graph,
 )
+from .experiment.multiplexed_readout_qubit_spectroscopy import (
+    multiplexed_readout_qubit_spectroscopy,
+)
 from .experiment.paired_interleaved_randomized_benchmarking import (
     analyze_paired_irb,
     measure_paired_irb,
@@ -210,6 +213,7 @@ __all__ = [
     "measurement_induced_dephasing",
     "measurement_induced_dephasing_experiment",
     "mqc_experiment",
+    "multiplexed_readout_qubit_spectroscopy",
     "obtain_anharmonicity_with_cr",
     "obtain_gf_rabi_params",
     "paired_interleaved_randomized_benchmarking",
