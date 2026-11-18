@@ -50,6 +50,7 @@ from qubex.backend.quel3.interfaces import (
 from qubex.backend.quel3.managers.configuration_manager import Quel3ConfigurationManager
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.managers.session_workarounds import (
+    Quel3ExecutionOutcomeUnknown,
     QuelwareSessionError,
     is_resource_not_found_error,
     quelware_exception_summary,
@@ -237,6 +238,8 @@ class Quel3ExecutionManager:
         Recovery requires every requested alias to retain its port. Replanning
         uses current instrument settings and restarts the entire batch,
         including any executions that already completed.
+
+        A missing result after lease loss ends the batch with an unknown outcome.
         """
         requests = tuple(requests)
         options = execution_options or self.execution_options
@@ -267,7 +270,11 @@ class Quel3ExecutionManager:
                     parallel=parallel,
                 )
             except QuelwareSessionError as exc:  # noqa: PERF203 - Replanning and IO need a bounded retry loop.
-                if attempt or not is_resource_not_found_error(exc):
+                if (
+                    attempt
+                    or isinstance(exc, Quel3ExecutionOutcomeUnknown)
+                    or not is_resource_not_found_error(exc)
+                ):
                     raise
                 # TODO: Resume from the failed execution instead of replaying the whole batch.
                 expected_ports = {
@@ -439,6 +446,7 @@ class Quel3ExecutionManager:
                     operation=partial(
                         self._execute_payload_in_session,
                         payload=run.payload,
+                        execution_index=index,
                         alias_to_instrument_info=alias_to_instrument_info,
                         quelware_api=quelware_api,
                         parallel=parallel,
@@ -473,6 +481,7 @@ class Quel3ExecutionManager:
         session: SessionProtocol,
         *,
         payload: Quel3ExecutionPayload,
+        execution_index: int,
         alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
         quelware_api: QuelwareExecutionApi,
         parallel: bool,
@@ -493,7 +502,9 @@ class Quel3ExecutionManager:
                 quelware_api=quelware_api,
                 parallel=parallel,
             )
-        result = await self._execute_payload(payload=payload, session_state=prepared)
+        result = await self._execute_payload(
+            payload=payload, execution_index=execution_index, session_state=prepared
+        )
         return result, prepared
 
     async def _prepare_payload_in_session(
@@ -690,10 +701,37 @@ class Quel3ExecutionManager:
                         alias_to_directives[alias]
                     )
 
+    async def _trigger_and_fetch(
+        self,
+        session: SessionProtocol,
+        instrument_ids: list[ResourceIdProtocol],
+        execution_index: int,
+    ) -> dict[ResourceIdProtocol, ResultContainerProtocol]:
+        """Dispatch one trigger with a valid lease and retrieve its results."""
+        if not self._session_manager.has_valid_lease(session):
+            raise RuntimeError("QuEL-3 session lease lost before trigger.")
+        try:
+            with _log_phase_duration("trigger"):
+                await session.trigger(
+                    instrument_ids=instrument_ids, wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS
+                )
+            with _log_phase_duration("fetch_results"):
+                return await session.wait_for_results(instrument_ids)
+        except Exception as exc:
+            if not self._session_manager.has_valid_lease(session):
+                raise Quel3ExecutionOutcomeUnknown(
+                    f"QuEL-3 trigger outcome unknown after lease loss; execution={execution_index}",
+                    session_token=self._session_manager.session_token
+                    or "<unavailable>",
+                    cause=exc,
+                ) from exc
+            raise
+
     async def _execute_payload(
         self,
         *,
         payload: Quel3ExecutionPayload,
+        execution_index: int,
         session_state: _PayloadExecutionSession,
     ) -> Quel3BackendExecutionResult:
         """Trigger the prepared payload and collect its results."""
@@ -705,17 +743,9 @@ class Quel3ExecutionManager:
             alias: {window.name: [] for window in timeline.capture_windows}
             for alias, timeline in payload.fixed_timelines.items()
         }
-        if not self._session_manager.has_valid_lease(session_state.session):
-            raise RuntimeError("QuEL-3 session lease lost before trigger.")
-        with _log_phase_duration("trigger"):
-            await session_state.session.trigger(
-                instrument_ids=instrument_resource_ids,
-                wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,
-            )
-        with _log_phase_duration("fetch_results"):
-            results = await session_state.session.wait_for_results(
-                instrument_resource_ids
-            )
+        results = await self._trigger_and_fetch(
+            session_state.session, instrument_resource_ids, execution_index
+        )
 
         with _log_phase_duration("convert_result"):
             for alias, timeline in payload.fixed_timelines.items():

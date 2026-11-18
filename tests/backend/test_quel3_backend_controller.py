@@ -3323,6 +3323,11 @@ def test_split_session_failure_boundaries(monkeypatch, failure_stage, cancel):
 def execute_sessions(monkeypatch):
     """Execute a payload with a new observable session for every acquisition."""
     manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
+    monkeypatch.setattr(
+        manager._configuration_manager,
+        "refresh_instrument_cache",
+        Mock(side_effect=AssertionError("Unexpected batch replay")),
+    )
     cache = _make_instrument_cache(
         alias_to_info={
             "alias-rq00": _FakeInstrumentInfo(
@@ -3346,6 +3351,49 @@ def execute_sessions(monkeypatch):
         )
 
     return execute
+
+
+@pytest.mark.parametrize("fetch_fails", [False, True])
+def test_rejected_lease_during_acquisition_never_replays_trigger(
+    monkeypatch, execute_sessions, fetch_fails
+):
+    """A rejected renewal should preserve received shots or report an unknown outcome."""
+    monkeypatch.setattr(session_manager_module, "QUEL3_LEASE_RENEW_INTERVAL_SECONDS", 0)
+    fetching = asyncio.Event()
+    rejected = asyncio.Event()
+    missing_resource = type(
+        "ResourceNotFoundError",
+        (Exception,),
+        {"__module__": "quelware_client.core.exceptions"},
+    )
+
+    class Session(_FakeSession):
+        async def extend(self, new_ttl_ms):
+            await fetching.wait()
+            rejected.set()
+            return False
+
+        async def wait_for_results(self, instrument_ids):
+            fetching.set()
+            await asyncio.wait_for(rejected.wait(), timeout=1)
+            if fetch_fails:
+                raise missing_resource("fetch failed")
+            return await super().wait_for_results(instrument_ids)
+
+    first, second = Session(), _FakeSession()
+    run = execute_sessions(
+        [first, second], _make_payload(n_iterations=3), max_capture_samples=2
+    )
+    if fetch_fails:
+        with pytest.raises(QuelwareSessionError, match="outcome unknown") as error:
+            asyncio.run(run)
+        assert str(error.value.__cause__) == "fetch failed"
+        assert not second.trigger_calls
+    else:
+        result = asyncio.run(run)
+        np.testing.assert_allclose(result.data["alias-rq00"][0], [1], rtol=0, atol=0)
+        assert len(second.initialize_calls) == len(second.trigger_calls) == 1
+    assert len(first.trigger_calls) == 1
 
 
 def test_expired_lease_during_preparation_reopens_before_trigger(

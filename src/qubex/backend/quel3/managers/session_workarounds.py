@@ -82,6 +82,10 @@ class QuelwareSessionError(RuntimeError):
         )
 
 
+class Quel3ExecutionOutcomeUnknown(QuelwareSessionError):
+    """A dispatched trigger whose outcome could not be confirmed; never replay it."""
+
+
 async def run_with_session_request_retry(
     *,
     manager: Quel3SessionManager,
@@ -131,6 +135,8 @@ async def run_with_session_request_retry(
                 time.monotonic() - started,
             )
             return await operation(session)
+        except Quel3ExecutionOutcomeUnknown:
+            raise
         except Exception as exc:
             session_token = (
                 exc.session_token
