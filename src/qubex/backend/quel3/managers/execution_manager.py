@@ -50,7 +50,6 @@ from qubex.backend.quel3.interfaces import (
 from qubex.backend.quel3.managers.configuration_manager import Quel3ConfigurationManager
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.managers.session_workarounds import (
-    QUELWARE_SESSION_EXTEND_TTL_MS,
     QuelwareSessionError,
     is_resource_not_found_error,
     quelware_exception_summary,
@@ -706,9 +705,9 @@ class Quel3ExecutionManager:
             alias: {window.name: [] for window in timeline.capture_windows}
             for alias, timeline in payload.fixed_timelines.items()
         }
+        if not self._session_manager.has_valid_lease(session_state.session):
+            raise RuntimeError("QuEL-3 session lease lost before trigger.")
         with _log_phase_duration("trigger"):
-            if not await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS):
-                raise RuntimeError("QuEL-3 session lease extension rejected.")
             await session_state.session.trigger(
                 instrument_ids=instrument_resource_ids,
                 wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,
@@ -717,9 +716,6 @@ class Quel3ExecutionManager:
             results = await session_state.session.wait_for_results(
                 instrument_resource_ids
             )
-
-        if not await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS):
-            raise RuntimeError("QuEL-3 session lease extension rejected.")
 
         with _log_phase_duration("convert_result"):
             for alias, timeline in payload.fixed_timelines.items():

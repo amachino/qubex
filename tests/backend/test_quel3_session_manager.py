@@ -731,3 +731,59 @@ def test_open_succeeds_on_final_session_create_retry(
     ]
     assert sleep_delays == pytest.approx([0.5, 0.75, 1.125])
     assert session.exit_calls == 1
+
+
+@pytest.mark.parametrize("ending", ["close", "reopen", "close_error"])
+def test_session_renews_until_stopped_before_exit(monkeypatch, ending):
+    """One renewal task should survive reuse and stop before its session exits."""
+    offset = 0.0
+    attempts = asyncio.Queue()
+    stopped = asyncio.Event()
+
+    class Session(_SuccessfulSession):
+        calls = 0
+
+        async def extend(self, new_ttl_ms):
+            self.calls += 1
+            attempts.put_nowait(new_ttl_ms)
+            if self.calls == 1:
+                raise ConnectionError("temporary renewal failure")
+            if self.calls == 2:
+                return True
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.set()
+
+        async def __aexit__(self, *args):
+            assert stopped.is_set()
+            await super().__aexit__(*args)
+            if ending == "close_error":
+                raise RuntimeError("close failed")
+
+    async def run():
+        nonlocal offset
+        loop = asyncio.get_running_loop()
+        original_time = loop.time
+        monkeypatch.setattr(loop, "time", lambda: original_time() + offset)
+        manager = Quel3SessionManager()
+        session = Session()
+        client = _FakeClient(successful_session=session, failures_before_success=0)
+        ctx = _FakeClientContext(client)
+        opened = await manager.open(("inst",), client_factory=cast(Any, lambda *_: ctx))
+        assert await manager.open(("inst",)) is opened
+        # Synchronous setup may occupy the loop before the renewal task first runs.
+        offset += 4
+        await asyncio.sleep(0)
+        assert attempts.empty()
+        for increment in (1.01, 5.01, 5.01):
+            offset += increment
+            assert await asyncio.wait_for(attempts.get(), timeout=0.5) == 30_000
+        if ending == "reopen":
+            await manager.reopen_session()
+        await manager.close_safely()
+        assert session.exit_calls == 1
+        assert ctx.exit_calls == 1
+        assert stopped.is_set()
+
+    asyncio.run(run())
