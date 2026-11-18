@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar
 
@@ -602,17 +602,13 @@ class Quel3ConfigurationManager:
         specifications_by_port: dict[str, list[InstrumentSpec]] = defaultdict(list)
         for specification in specifications:
             specifications_by_port[specification.port_id].append(specification)
-        port_batches = tuple(
-            (port_id, tuple(port_specifications))
-            for port_id, port_specifications in specifications_by_port.items()
-        )
         max_attempts = 1 if append else QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS
-        instrument_infos: tuple[InstrumentInfoProtocol, ...] = ()
+        responses: dict[str, list[InstrumentInfoProtocol]] = {}
         for attempt in range(max_attempts):
             try:
-                instrument_infos = await self._deploy_port_batches(
+                responses = await self._deploy_port_batches(
                     client_factory=client_factory,
-                    port_batches=port_batches,
+                    port_batches=specifications_by_port,
                     instrument_entities=instrument_entities,
                     append=append,
                     parallel=parallel,
@@ -632,28 +628,34 @@ class Quel3ConfigurationManager:
                         session_token=missing_session_id,
                         cause=exc,
                     ) from exc
-        return instrument_infos
+        deployed: list[InstrumentInfoProtocol] = []
+        for port_id, infos in responses.items():
+            deployed.extend(
+                self._select_port_instruments(
+                    port_id, specifications_by_port[port_id], infos, append=append
+                )
+            )
+        return tuple(deployed)
 
     async def _deploy_port_batches(
         self,
         *,
         client_factory: QuelwareClientFactory,
-        port_batches: tuple[tuple[str, tuple[InstrumentSpec, ...]], ...],
+        port_batches: Mapping[str, Sequence[InstrumentSpec]],
         instrument_entities: QuelwareInstrumentEntities,
         append: bool,
         parallel: bool,
         attempt: int,
         max_attempts: int,
-    ) -> tuple[InstrumentInfoProtocol, ...]:
-        """Deploy port batches in one quelware client/session context."""
+    ) -> dict[str, list[InstrumentInfoProtocol]]:
+        """Return the raw response for each port written in the session."""
         async with client_factory(
             self._runtime_config.endpoint,
             self._runtime_config.port,
         ) as client:
-            session_resource_ids = [port_id for port_id, _ in port_batches]
             session_cm, session = await enter_quelware_session_with_resource_retry(
                 client=client,
-                resource_ids=session_resource_ids,
+                resource_ids=list(port_batches),
             )
             session_token = quelware_session_token(session)
             try:
@@ -668,29 +670,26 @@ class Quel3ConfigurationManager:
                                 instrument_entities=instrument_entities,
                                 append=append,
                             )
-                            for port_id, port_specifications in port_batches
+                            for port_id, port_specifications in port_batches.items()
                         ),
                         return_exceptions=True,
                     )
-                    infos: list[InstrumentInfoProtocol] = []
-                    for result in results:
+                    responses = {}
+                    for port_id, result in zip(port_batches, results, strict=True):
                         if isinstance(result, BaseException):
                             raise result  # noqa: TRY301
-                        infos.extend(result)
-                    return tuple(infos)
-                else:
-                    infos = []
-                    for port_id, port_specifications in port_batches:
-                        infos.extend(
-                            await self._deploy_port_batch(
-                                session=session,
-                                port_id=port_id,
-                                port_specifications=port_specifications,
-                                instrument_entities=instrument_entities,
-                                append=append,
-                            )
-                        )
-                    return tuple(infos)
+                        responses[port_id] = result
+                    return responses
+                return {
+                    port_id: await self._deploy_port_batch(
+                        session=session,
+                        port_id=port_id,
+                        port_specifications=port_specifications,
+                        instrument_entities=instrument_entities,
+                        append=append,
+                    )
+                    for port_id, port_specifications in port_batches.items()
+                }
             except Exception as exc:
                 if attempt >= max_attempts:
                     raise QuelwareSessionError(
@@ -725,10 +724,10 @@ class Quel3ConfigurationManager:
         *,
         session: SessionProtocol,
         port_id: str,
-        port_specifications: tuple[InstrumentSpec, ...],
+        port_specifications: Sequence[InstrumentSpec],
         instrument_entities: QuelwareInstrumentEntities,
         append: bool,
-    ) -> tuple[InstrumentInfoProtocol, ...]:
+    ) -> list[InstrumentInfoProtocol]:
         """Deploy one port batch through the active quelware session."""
         definitions: list[InstrumentDefinitionProtocol] = []
         for specification in port_specifications:
@@ -745,12 +744,57 @@ class Quel3ConfigurationManager:
                 )
             )
 
-        infos = await session.deploy_instruments(
+        return await session.deploy_instruments(
             port_id,
             definitions=definitions,
             append=append,
         )
-        return tuple(infos or ())
+
+    @staticmethod
+    def _select_port_instruments(
+        port_id: str,
+        specifications: Sequence[InstrumentSpec],
+        infos: Sequence[InstrumentInfoProtocol],
+        *,
+        append: bool,
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        """Validate one completed write and select the instruments requested on its port."""
+        requested = {spec.alias for spec in specifications}
+        deployed: dict[str, InstrumentInfoProtocol] = {}
+        seen_ids: set[str] = set()
+        for info in infos:
+            if info.port_id != port_id:
+                raise ValueError(
+                    f"Deployment on {port_id!r} returned unexpected port {info.port_id!r}."
+                )
+            if info.id in seen_ids:
+                raise ValueError(
+                    f"Duplicate resource ID {info.id!r} in deployment response on {port_id!r}."
+                )
+            seen_ids.add(info.id)
+            try:
+                alias = InstrumentCache.alias_for(info)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid instrument in deployment response on {port_id!r}: {exc}"
+                ) from exc
+            if alias not in requested:
+                if append:
+                    # quelware may include existing instruments on this port.
+                    continue
+                raise ValueError(
+                    f"Unexpected alias {alias!r} in replacement response on {port_id!r}."
+                )
+            if alias in deployed:
+                raise ValueError(
+                    f"Duplicate alias {alias!r} in deployment response on {port_id!r}."
+                )
+            deployed[alias] = info
+        if missing := requested - deployed.keys():
+            raise ValueError(
+                f"Missing instruments in deployment response on {port_id!r}: {sorted(missing)}."
+            )
+        return tuple(deployed.values())
 
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""

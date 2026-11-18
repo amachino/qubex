@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, cast
@@ -156,13 +157,7 @@ class _Hardware:
                     )
                 if hardware.fail_after_write:
                     raise RuntimeError("response lost after deployment")
-                return [
-                    info
-                    for info in hardware.infos
-                    if info.port_id == port_id
-                    and InstrumentCache.alias_for(info)
-                    in {definition.alias for definition in definitions}
-                ]
+                return [info for info in hardware.infos if info.port_id == port_id]
 
         return _Session()
 
@@ -203,6 +198,77 @@ def deployment(
     cache = InstrumentCache()
     cache.replace_all(instrument_infos=hardware.infos)
     return manager, hardware, cache
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_deployment_request_returns_only_requested_instruments(deployment, parallel):
+    """Each port should return its requested instruments even when append reports siblings."""
+    manager, hardware, _ = deployment
+    other_port = "unit-a:tx_p02"
+    hardware.infos.append(_info("another-user", other_port))
+    specifications = (_spec("Q02"), _spec("Q03", other_port))
+
+    infos = asyncio.run(
+        manager._deploy_instruments(  # noqa: SLF001
+            specifications=specifications, append=True, parallel=parallel
+        )
+    )
+
+    assert [(InstrumentCache.alias_for(info), info.port_id) for info in infos] == [
+        (spec.alias, spec.port_id) for spec in specifications
+    ]
+
+
+@pytest.mark.parametrize(
+    ("failure", "append", "message"),
+    [
+        ("missing", True, "Missing"),
+        ("duplicate_alias", True, "Duplicate alias"),
+        ("duplicate_id", True, "Duplicate resource ID"),
+        ("swapped_ports", True, "unexpected port"),
+        ("extra", False, "Unexpected alias"),
+        ("empty_alias", False, "alias must not be empty"),
+    ],
+)
+@pytest.mark.parametrize("parallel", [False, True])
+def test_invalid_port_response_is_not_retried(
+    deployment, monkeypatch, failure, append, message, parallel
+):
+    """An invalid response should identify the port and propagate without retrying the write."""
+    manager, hardware, _ = deployment
+    ports = ("unit-a:tx_p01", "unit-a:tx_p02")
+    specifications = (_spec("A", ports[0]), _spec("B", ports[1]))
+    session = hardware.create_session(ports)
+    calls = []
+
+    async def deploy(port_id, **kwargs):
+        calls.append(port_id)
+        spec = specifications[ports.index(port_id)]
+        info = _info(spec.alias, port_id)
+        if failure == "empty_alias":
+            return [_info("", port_id)]
+        if failure == "missing":
+            return []
+        if failure == "duplicate_alias":
+            return [info, _info(spec.alias, port_id, resource_id="another-id")]
+        if failure == "duplicate_id":
+            return [info, _info("sibling", port_id, resource_id=info.id)]
+        if failure == "swapped_ports":
+            other = specifications[1 - ports.index(port_id)]
+            return [_info(other.alias, other.port_id)]
+        return [info, _info("unexpected", port_id)]
+
+    monkeypatch.setattr(session, "deploy_instruments", deploy)
+    monkeypatch.setattr(hardware, "create_session", lambda *args, **kwargs: session)
+    with pytest.raises(ValueError, match=message) as error:
+        asyncio.run(
+            manager._deploy_instruments(  # noqa: SLF001
+                specifications=specifications, append=append, parallel=parallel
+            )
+        )
+    assert ports[0] in str(error.value)
+    assert calls == list(ports)
+    assert hardware.closed_sessions == 1
 
 
 @pytest.mark.parametrize("append", [None, False])

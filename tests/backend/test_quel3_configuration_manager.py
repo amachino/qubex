@@ -422,7 +422,7 @@ def test_deploy_instruments_finishes_parallel_ports_before_retry(
             definitions: list[object],
             append: bool,
         ) -> list[object]:
-            del definitions, append
+            del append
             deploy_calls.append((self.attempt, port_id))
             if self.attempt == 0 and port_id == "unit:tx_p02":
                 raise RuntimeError("First port failed")
@@ -430,7 +430,14 @@ def test_deploy_instruments_finishes_parallel_ports_before_retry(
             await asyncio.sleep(0)
             await asyncio.sleep(0)
             self.active -= 1
-            return []
+            return [
+                SimpleNamespace(
+                    id=f"deployed:{definition.alias}",
+                    port_id=port_id,
+                    definition=definition,
+                )
+                for definition in cast(Any, definitions)
+            ]
 
     sessions: list[_FakeSession] = []
 
@@ -853,102 +860,6 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
     ]
     assert client.failing_context.exit_calls == 1
     assert session.exit_calls == 1
-    assert "Q00" in deployed
-
-
-def test_deploy_instruments_ignores_returned_instrument_infos(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given no returned instrument infos, deploy should still apply the specification."""
-    manager = Quel3ConfigurationManager()
-
-    class _Profile:
-        def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
-            self.frequency_range_min = frequency_range_min
-            self.frequency_range_max = frequency_range_max
-
-    class _Definition:
-        def __init__(self, *, alias: str, mode: object, role: object, profile: object):
-            self.alias = alias
-            self.mode = mode
-            self.role = role
-            self.profile = profile
-
-    class _Mode:
-        FIXED_TIMELINE = "fixed_timeline"
-
-    class _Role:
-        TRANSMITTER = "transmitter"
-
-    @dataclass(frozen=True)
-    class _InstrumentInfo:
-        id: str
-        port_id: str
-        definition: _Definition
-
-    deploy_definitions: list[_Definition] = []
-
-    class _FakeSession:
-        async def __aenter__(self) -> _FakeSession:
-            return self
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-
-        async def deploy_instruments(
-            self,
-            port_id: str,
-            *,
-            definitions: list[_Definition],
-            append: bool = True,
-        ) -> list[_InstrumentInfo]:
-            del append
-            deploy_definitions.extend(definitions)
-            return []
-
-    class _FakeClient:
-        async def __aenter__(self) -> _FakeClient:
-            return self
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-
-        def create_session(self, resource_ids: list[str], **_: object) -> _FakeSession:
-            del resource_ids
-            return _FakeSession()
-
-    monkeypatch.setattr(
-        manager,
-        "_load_quelware_client_factory",
-        lambda: lambda endpoint, port: _FakeClient(),
-    )
-    monkeypatch.setattr(
-        manager,
-        "_load_instrument_entities",
-        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
-    )
-
-    specification = InstrumentSpec(
-        port_id="quel3-02-a01:tx_p02",
-        role="TRANSMITTER",
-        frequency_range_min_hz=4.1e9,
-        frequency_range_max_hz=4.3e9,
-        alias="Q00",
-    )
-
-    deployed = _deploy_configuration(manager, specifications=(specification,))
-
-    assert [definition.alias for definition in deploy_definitions] == ["Q00"]
     assert "Q00" in deployed
 
 
