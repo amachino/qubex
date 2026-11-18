@@ -47,23 +47,29 @@ def _specification(
 
 
 class _ConfigurationManager(Quel3ConfigurationManager):
-    def __init__(self, calls: list[object], *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        calls: list[object],
+        *,
+        infos: tuple[InstrumentInfoProtocol, ...] = (),
+        fail: bool = False,
+    ) -> None:
         super().__init__()
         self.calls = calls
+        self.infos = infos
         self.fail = fail
 
-    async def _deploy_instruments(
+    async def _request_instrument_deployment(
         self,
         *,
         specifications: tuple[InstrumentSpec, ...],
         append: bool = True,
         parallel: bool = True,
     ) -> tuple[InstrumentInfoProtocol, ...]:
-        assert append is True
         self.calls.append(("deploy", specifications, parallel))
         if self.fail:
             raise RuntimeError("deploy failed")
-        return ()
+        return self.infos
 
 
 class _Reader:
@@ -101,18 +107,18 @@ def _reader(
 
 
 @pytest.mark.parametrize("source", ["memory", "yaml"])
-def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
+def test_deploy_caches_response_and_preserves_other_ports(
     source: str, tmp_path: Path
 ) -> None:
-    """Default deployment should retain same-port aliases and cache complete readback."""
+    """Default deployment should cache returned instruments and retain cached siblings."""
     calls: list[object] = []
     specification = _specification()
     configuration = InstrumentConfiguration(instruments=(specification,))
-    manager = _ConfigurationManager(calls)
+    actual = _info("unit-a:Q00", "unit-a:new", specification.port_id)
+    manager = _ConfigurationManager(calls, infos=(actual,))
     if source == "yaml":
         path = configuration.save_yaml(tmp_path / "instruments.yaml")
         configuration = manager.load_instrument_configuration(path)
-    actual = _info("unit-a:Q00", "unit-a:new", specification.port_id)
     retained = _info("retained", "unit-a:retained", specification.port_id)
     other = _info("Q01", "unit-b:other", "unit-b:tx_p01")
     cache = InstrumentCache()
@@ -127,48 +133,51 @@ def test_deploy_reads_hardware_after_write_and_preserves_other_ports(
     result = manager.deploy_instruments(
         configuration=configuration,
         instrument_cache=cache,
-        resource_reader=_reader(calls, (actual, retained)),
         parallel=False,
     )
 
     assert calls == [
         ("deploy", (specification,), False),
-        ("read", (), (specification.port_id,), False),
     ]
-    assert result == {"Q00": actual, "retained": retained}
+    assert result == {"Q00": actual}
     assert cache.get("Q00") is actual
     assert cache.snapshot() == {"Q00": actual, "retained": retained, "Q01": other}
 
 
-@pytest.mark.parametrize(
-    "failure", ["deploy", "read", "missing", "duplicate", "wrong-port", "conflict"]
-)
-def test_failed_deploy_does_not_retain_stale_resource_ids(failure: str) -> None:
-    """Write or readback failures should leave touched ports absent and others intact."""
+@pytest.mark.parametrize("failure", ["deploy", "duplicate_resource_id"])
+@pytest.mark.parametrize("append", [False, True])
+def test_failed_deploy_does_not_retain_stale_resource_ids(
+    failure: str, append: bool
+) -> None:
+    """Write or cache validation failures should leave only unaffected instruments cached."""
     calls: list[object] = []
     specification = _specification()
     other = _info("Q01", "unit-b:other", "unit-b:tx_p01")
-    actual = _info("Q00", "unit-a:new", specification.port_id)
-    infos = {
-        "missing": (),
-        "duplicate": (actual, _info("Q00", "unit-a:duplicate", specification.port_id)),
-        "wrong-port": (_info("Q00", "unit-a:new", "unit-a:tx_p02"),),
-        "conflict": (actual, _info("Q01", "unit-a:conflict", specification.port_id)),
-    }.get(failure, (actual,))
-    manager = _ConfigurationManager(calls, fail=failure == "deploy")
+    conflicting = _info("Q00", other.id, specification.port_id)
+    manager = _ConfigurationManager(
+        calls, infos=(conflicting,), fail=failure == "deploy"
+    )
     cache = InstrumentCache()
+    sibling = _info("sibling", "unit-a:sibling", specification.port_id)
     cache.replace_all(
-        instrument_infos=(_info("Q00", "unit-a:old", specification.port_id), other)
+        instrument_infos=(
+            _info("Q00", "unit-a:old", specification.port_id),
+            sibling,
+            other,
+        )
     )
 
     with pytest.raises((RuntimeError, ValueError)):
         manager.deploy_instruments(
             configuration=InstrumentConfiguration(instruments=(specification,)),
             instrument_cache=cache,
-            resource_reader=_reader(calls, infos, fail=failure == "read"),
+            append=append,
         )
 
-    assert cache.snapshot() == {"Q01": other}
+    expected = {"Q01": other}
+    if append:
+        expected["sibling"] = sibling
+    assert cache.snapshot() == expected
 
 
 def test_empty_deploy_does_not_clear_cache_or_contact_hardware() -> None:
@@ -182,7 +191,6 @@ def test_empty_deploy_does_not_clear_cache_or_contact_hardware() -> None:
     result = manager.deploy_instruments(
         configuration=InstrumentConfiguration(instruments=()),
         instrument_cache=cache,
-        resource_reader=_reader(calls, ()),
     )
 
     assert result == {}

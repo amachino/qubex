@@ -70,6 +70,12 @@ class _Reader:
         self.reads += 1
         return self.infos
 
+    def read_instrument_infos_by_ids(
+        self, instrument_ids: Sequence[str], *, parallel: bool = True
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        self.reads += 1
+        return tuple(info for info in self.infos if info.id in instrument_ids)
+
     def collect_snapshot(self, **kwargs: object) -> Quel3ResourceSnapshot:
         return self.state
 
@@ -123,21 +129,21 @@ def test_loading_configuration_does_not_populate_execution_cache(
     assert controller.hash == previous_hash
 
 
-def test_controller_deploys_loaded_configuration_and_passes_readback_to_execution(
+def test_controller_deploys_loaded_configuration_and_passes_response_to_execution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """File deployment should execute with the newly read hardware identity and driver config."""
+    """File deployment should execute with the returned hardware identity and driver config."""
     reader = _Reader((_info(),))
     manager = Quel3ConfigurationManager()
     deployed: list[object] = []
     actual = _info("unit-a:new")
 
-    async def deploy(**kwargs: object) -> None:
+    async def deploy(**kwargs: object) -> tuple[InstrumentInfoProtocol, ...]:
         deployed.append(kwargs["specifications"])
-        reader.infos = (actual,)
+        return (actual,)
 
-    monkeypatch.setattr(manager, "_deploy_instruments", deploy)
+    monkeypatch.setattr(manager, "_request_instrument_deployment", deploy)
     observed: list[InstrumentInfoProtocol] = []
 
     def execute_sync(
@@ -174,7 +180,7 @@ def test_controller_deploys_loaded_configuration_and_passes_readback_to_executio
 
     assert deployed == [configuration.instruments]
     assert result == {"Q00": actual}
-    assert reader.reads == 2
+    assert reader.reads == 1
     assert observed[0] is actual
     assert executed == "executed"
     assert controller.hash != old_hash

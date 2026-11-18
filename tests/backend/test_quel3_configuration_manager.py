@@ -13,7 +13,6 @@ import pytest
 
 from qubex.backend.quel3.infra import (
     Quel3HttpTransportConfig,
-    Quel3ResourceReader,
     Quel3RuntimeConfig,
     QuelwareCredentials,
     runtime_config as runtime_config_module,
@@ -40,58 +39,17 @@ def _deploy_configuration(
     append: bool = True,
     parallel: bool = True,
 ) -> dict[str, InstrumentInfoProtocol]:
-    """Deploy with complete readback objects and a fresh real instrument cache."""
+    """Deploy the specifications into a fresh instrument cache."""
     configuration = InstrumentConfiguration(instruments=tuple(specifications))
-    infos = tuple(
-        cast(
-            InstrumentInfoProtocol,
-            SimpleNamespace(
-                id=f"readback:{specification.alias}",
-                port_id=specification.port_id,
-                definition=SimpleNamespace(
-                    alias=specification.alias,
-                    role=specification.role,
-                    mode="FIXED_TIMELINE",
-                    profile=SimpleNamespace(
-                        frequency_range_min=specification.frequency_range_min_hz,
-                        frequency_range_max=specification.frequency_range_max_hz,
-                    ),
-                ),
-                config=SimpleNamespace(sampling_period_fs=400_000),
-            ),
-        )
-        for specification in specifications
-    )
     cache = InstrumentCache()
-    read_calls: list[tuple[str, ...]] = []
-
-    def read_infos(
-        *, port_ids: Sequence[str], parallel: bool
-    ) -> tuple[InstrumentInfoProtocol, ...]:
-        read_calls.append(tuple(port_ids))
-        return infos
-
-    reader = cast(
-        Quel3ResourceReader,
-        SimpleNamespace(read_instrument_infos=read_infos),
-    )
-
     result = manager.deploy_instruments(
         configuration=configuration,
         instrument_cache=cache,
-        resource_reader=reader,
         append=append,
         parallel=parallel,
     )
 
-    expected = {info.definition.alias: info for info in infos}
-    assert result == expected
-    assert cache.snapshot() == expected
-    assert read_calls == (
-        [tuple(dict.fromkeys(spec.port_id for spec in specifications))]
-        if specifications
-        else []
-    )
+    assert cache.snapshot() == result
     return result
 
 
@@ -182,7 +140,7 @@ def test_deploy_instruments_calls_session_api(
             deploy_calls.append((port_id, definitions))
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}",
+                    id=f"deployed:{definitions[0].alias}",
                     port_id=port_id,
                     definition=definitions[0],
                 )
@@ -316,7 +274,7 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
                 raise RuntimeError("quelware specification failed")
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}",
+                    id=f"deployed:{definitions[0].alias}",
                     port_id=port_id,
                     definition=definitions[0],
                 )
@@ -557,7 +515,7 @@ def test_deploy_instruments_ignores_session_close_failure_after_success(
             del append
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}",
+                    id=f"deployed:{definitions[0].alias}",
                     port_id=port_id,
                     definition=definitions[0],
                 )
@@ -802,7 +760,7 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
             del append
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}",
+                    id=f"deployed:{definitions[0].alias}",
                     port_id=port_id,
                     definition=definitions[0],
                 )
@@ -932,11 +890,11 @@ def test_deploy_instruments_groups_requests_by_port(
             deploy_calls.append((port_id, definitions, append))
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{index}",
+                    id=f"deployed:{definition.alias}",
                     port_id=port_id,
                     definition=definition,
                 )
-                for index, definition in enumerate(definitions)
+                for definition in definitions
             ]
 
     class _FakeClient:
@@ -1053,7 +1011,7 @@ def test_deploy_instruments_uses_one_session_for_all_ports(
             deploy_calls.append(port_id)
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"deployed:{definition.alias}",
                     port_id=port_id,
                     definition=definition,
                 )
@@ -1176,7 +1134,7 @@ def test_deploy_instruments_parallelizes_ports_by_default(
             probe.active -= 1
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"deployed:{definition.alias}",
                     port_id=port_id,
                     definition=definition,
                 )
@@ -1296,7 +1254,7 @@ def test_deploy_instruments_parallel_false_serializes_ports(
             probe.active -= 1
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"deployed:{definition.alias}",
                     port_id=port_id,
                     definition=definition,
                 )

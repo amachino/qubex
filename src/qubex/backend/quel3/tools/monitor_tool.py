@@ -227,13 +227,11 @@ class Quel3MonitorTool:
                 self._configuration_manager.deploy_instrument(
                     instrument=spec.model_copy(update={"role": "TRANSMITTER"}),
                     instrument_cache=self._instrument_cache,
-                    resource_reader=self._resource_reader,
                     append=True,
                     parallel=parallel,
                 )
                 self._configuration_manager.deploy_instrument(
                     instrument_cache=self._instrument_cache,
-                    resource_reader=self._resource_reader,
                     instrument=InstrumentSpec(
                         port_id=f"{unit_label}:mon",
                         alias=monitor_alias,
@@ -269,7 +267,6 @@ class Quel3MonitorTool:
             self._configuration_manager.deploy_instruments(
                 configuration=original_configuration,
                 instrument_cache=self._instrument_cache,
-                resource_reader=self._resource_reader,
                 parallel=parallel,
             )
         return captured
