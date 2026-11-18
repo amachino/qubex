@@ -3396,6 +3396,67 @@ def test_rejected_lease_during_acquisition_never_replays_trigger(
     assert len(first.trigger_calls) == 1
 
 
+@pytest.mark.parametrize(("planned_s", "limit_s"), [(1, 300), (30, 300), (45, 450)])
+@pytest.mark.parametrize("stall_phase", ["trigger", "fetch"])
+def test_physical_trigger_timeout_ends_batch_without_replay(
+    monkeypatch, execute_sessions, planned_s, limit_s, stall_phase
+):
+    """The padded final trigger should have one deadline covering trigger and retrieval."""
+    offset = 0.0
+    closed = False
+
+    class Session(_FakeSession):
+        async def trigger(self, instrument_ids, wait_ms=None):
+            nonlocal offset
+            result = await super().trigger(instrument_ids, wait_ms)
+            if len(self.trigger_calls) == 2:
+                offset += limit_s - 1
+                if stall_phase == "trigger":
+                    offset += 2
+                    await asyncio.sleep(0.05)
+            return result
+
+        async def wait_for_results(self, instrument_ids):
+            nonlocal offset
+            if len(self.trigger_calls) == 2 and stall_phase == "fetch":
+                offset += 2
+                await asyncio.sleep(0.05)
+            return await super().wait_for_results(instrument_ids)
+
+        async def __aexit__(self, *args):
+            nonlocal closed
+            closed = True
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        original_time = loop.time
+        monkeypatch.setattr(loop, "time", lambda: original_time() + offset)
+        payload = replace(
+            _make_payload(n_iterations=3), shot_interval_ns=planned_s * 1e9 / 2 - 0.8
+        )
+        await execute_sessions(
+            [session],
+            payload,
+            max_capture_samples=2,
+            max_execution_duration_ns=planned_s * 1e9 + 1,
+        )
+
+    session = Session(session_id="timed-out")
+    with pytest.raises(QuelwareSessionError, match="outcome unknown") as error:
+        asyncio.run(run())
+    assert error.value.session_token == session.token
+    assert isinstance(error.value.__cause__, TimeoutError)
+    for detail in (
+        "execution=1",
+        f"planned_seconds={planned_s}",
+        f"limit_seconds={limit_s}",
+        "elapsed_seconds=",
+    ):
+        assert detail in str(error.value)
+    assert len(session.trigger_calls) == 2
+    assert closed
+
+
 def test_expired_lease_during_preparation_reopens_before_trigger(
     monkeypatch, execute_sessions
 ):

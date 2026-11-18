@@ -239,7 +239,9 @@ class Quel3ExecutionManager:
         uses current instrument settings and restarts the entire batch,
         including any executions that already completed.
 
-        A missing result after lease loss ends the batch with an unknown outcome.
+        Each physical trigger has ten times the greater of 30 seconds and its
+        planned duration to return results. A trigger timeout or a missing
+        result after lease loss ends the batch with an unknown outcome.
         """
         requests = tuple(requests)
         options = execution_options or self.execution_options
@@ -445,7 +447,7 @@ class Quel3ExecutionManager:
                     reuse_session=jobs == previous_jobs,
                     operation=partial(
                         self._execute_payload_in_session,
-                        payload=run.payload,
+                        run=run,
                         execution_index=index,
                         alias_to_instrument_info=alias_to_instrument_info,
                         quelware_api=quelware_api,
@@ -480,7 +482,7 @@ class Quel3ExecutionManager:
         self,
         session: SessionProtocol,
         *,
-        payload: Quel3ExecutionPayload,
+        run: BuiltExecution,
         execution_index: int,
         alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
         quelware_api: QuelwareExecutionApi,
@@ -497,13 +499,13 @@ class Quel3ExecutionManager:
         if prepared is None or prepared.session is not session:
             prepared = await self._prepare_payload_in_session(
                 session,
-                payload=payload,
+                payload=run.payload,
                 alias_to_instrument_info=alias_to_instrument_info,
                 quelware_api=quelware_api,
                 parallel=parallel,
             )
         result = await self._execute_payload(
-            payload=payload, execution_index=execution_index, session_state=prepared
+            run=run, execution_index=execution_index, session_state=prepared
         )
         return result, prepared
 
@@ -730,11 +732,12 @@ class Quel3ExecutionManager:
     async def _execute_payload(
         self,
         *,
-        payload: Quel3ExecutionPayload,
+        run: BuiltExecution,
         execution_index: int,
         session_state: _PayloadExecutionSession,
     ) -> Quel3BackendExecutionResult:
         """Trigger the prepared payload and collect its results."""
+        payload = run.payload
         instrument_resource_ids = [
             session_state.alias_to_resource_id[alias]
             for alias in sorted(payload.fixed_timelines)
@@ -743,9 +746,33 @@ class Quel3ExecutionManager:
             alias: {window.name: [] for window in timeline.capture_windows}
             for alias, timeline in payload.fixed_timelines.items()
         }
-        results = await self._trigger_and_fetch(
-            session_state.session, instrument_resource_ids, execution_index
+        planned_seconds = run.resources.duration_ns / 1e9
+        limit_seconds = 10 * max(30.0, planned_seconds)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        acquisition = asyncio.create_task(
+            self._trigger_and_fetch(
+                session_state.session, instrument_resource_ids, execution_index
+            )
         )
+        try:
+            done, _ = await asyncio.wait((acquisition,), timeout=limit_seconds)
+            if not done:
+                cause = TimeoutError(
+                    "Timed out waiting for QuEL-3 trigger and results."
+                )
+                raise Quel3ExecutionOutcomeUnknown(
+                    f"QuEL-3 trigger outcome unknown after timeout; execution={execution_index}; "
+                    f"planned_seconds={planned_seconds:g}; limit_seconds={limit_seconds:g}; "
+                    f"elapsed_seconds={loop.time() - started:g}",
+                    session_token=self._session_manager.session_token
+                    or "<unavailable>",
+                    cause=cause,
+                ) from cause
+            results = acquisition.result()
+        finally:
+            acquisition.cancel()
+            await asyncio.gather(acquisition, return_exceptions=True)
 
         with _log_phase_duration("convert_result"):
             for alias, timeline in payload.fixed_timelines.items():
