@@ -56,6 +56,10 @@ own session creation budget; cancellation is not retried. A failure after trigge
 can therefore execute the same payload again. Healthy clients are reused within
 a batch. Final cleanup failures are logged without replacing the result or error.
 
+Split QuEL-3 jobs use equal shot counts per trigger and may execute extra shots.
+Per-shot results omit the extras; hardware-averaged results include them. For
+example, five requested shots split into `2+2+2` produce an average over six shots.
+
 ## Recommended path
 
 1. Read the section overview: [Low-level APIs](../low-level-apis/index.md)

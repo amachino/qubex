@@ -58,6 +58,7 @@ class _PayloadResultAccumulator:
                 raise ValueError(
                     f"Invalid capture shape or shot count for job {self.job_index}, {capture.alias}: expected {expected}, got {data.shape}."
                 )
+            # Trim padding shots from per-shot results to the requested range.
             self.capture_chunks[capture.alias, capture.original_index].append(
                 (
                     data[:shots]
@@ -70,6 +71,7 @@ class _PayloadResultAccumulator:
                 ).copy()
             )
         self.shots_received = fragment.shot_stop
+        # Hardware averages include padding shots, so weight by physical counts.
         self.shot_counts.append(n_iterations)
         self.config = dict(result.config)
         self.status.update(result.status)
