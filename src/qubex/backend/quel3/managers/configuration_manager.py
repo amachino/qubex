@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable, Sequence
+from collections import defaultdict
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar
 
@@ -348,12 +348,11 @@ class Quel3ConfigurationManager:
         *,
         configuration: InstrumentConfiguration,
         instrument_cache: InstrumentCache,
-        resource_reader: Quel3ResourceReader,
         append: bool = True,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         """
-        Deploy configured ports and cache their complete hardware readback.
+        Deploy instruments and cache the information returned by quelware.
 
         Parameters
         ----------
@@ -361,39 +360,58 @@ class Quel3ConfigurationManager:
             Instrument definitions to deploy.
         instrument_cache : InstrumentCache
             Controller-owned cache to update after deployment.
-        resource_reader : Quel3ResourceReader
-            Reader for complete port readback after deployment.
         append : bool, default=True
             Preserve other aliases on each requested port. If false, replace
             all instruments on each requested port.
         parallel : bool, default=True
-            Whether port deployments and hardware reads may run concurrently.
+            Whether port deployments may run concurrently.
 
         Notes
         -----
-        Old identities on listed ports are discarded before hardware writes.
-        Failed deployment or readback leaves those ports absent from the cache.
-        Other ports are retained, and an empty configuration performs no work.
+        Return only the deployed instruments. With `append=True`, invalidate
+        and refresh only the specified aliases, preserving other cached entries.
+        With `append=False`, invalidate and replace the entire requested ports.
+        Invalidation precedes hardware writes, so failure leaves the affected
+        scope uncached. An empty configuration performs no work.
         """
-        return self._deploy_and_refresh(
-            specifications=configuration.instruments,
-            instrument_cache=instrument_cache,
-            resource_reader=resource_reader,
+        specifications = configuration.instruments
+        if not specifications:
+            return {}
+        port_ids = tuple(dict.fromkeys(spec.port_id for spec in specifications))
+        self._validate_deployment_targets(
+            specifications=specifications,
+            cached=instrument_cache.snapshot(),
+            port_ids=port_ids,
             append=append,
-            parallel=parallel,
         )
+        aliases = tuple(spec.alias for spec in specifications)
+        if append:
+            instrument_cache.replace_aliases(aliases=aliases, instrument_infos=())
+        else:
+            instrument_cache.replace_ports(port_ids=port_ids, instrument_infos=())
+        deployed = _run_async(
+            lambda: self._request_instrument_deployment(
+                specifications=specifications,
+                append=append,
+                parallel=parallel,
+            )
+        )
+        if append:
+            instrument_cache.replace_aliases(aliases=aliases, instrument_infos=deployed)
+        else:
+            instrument_cache.replace_ports(port_ids=port_ids, instrument_infos=deployed)
+        return {InstrumentCache.alias_for(info): info for info in deployed}
 
     def deploy_instrument(
         self,
         *,
         instrument: InstrumentSpec,
         instrument_cache: InstrumentCache,
-        resource_reader: Quel3ResourceReader,
         append: bool = True,
         parallel: bool = True,
     ) -> InstrumentInfoProtocol:
         """
-        Deploy one instrument and return its complete hardware readback.
+        Deploy one instrument and return its deployment information.
 
         Parameters
         ----------
@@ -401,103 +419,43 @@ class Quel3ConfigurationManager:
             Instrument definition and its unit-qualified port ID.
         instrument_cache : InstrumentCache
             Controller-owned cache to update after deployment.
-        resource_reader : Quel3ResourceReader
-            Reader for complete port readback after deployment.
         append : bool, default=True
             Add or replace this alias while preserving the port's other
             instruments. If false, replace every instrument on the port
             with this one.
         parallel : bool, default=True
-            Whether hardware reads may run concurrently.
+            Whether to use the parallel deployment path for this single port.
 
         Raises
         ------
         ValueError
-            Hardware readback is invalid, or the alias is already cached on
+            The deployment response is invalid, or the alias is already cached on
             another port. Known cross-port collisions fail before writing.
 
         Notes
         -----
         Alias replacement is handled by quelware without a pre-deployment read.
-        Append does not retry the deployment request. After either operation,
-        read the entire port into the cache. Write or readback failure leaves
-        that port uncached.
+        Append requests run once and invalidate only the specified alias. With
+        `append=False`, invalidate and replace the entire port. Cache the
+        instrument information returned by a successful deployment.
         """
-        instrument_infos = self._deploy_and_refresh(
-            specifications=(instrument,),
+        instrument_infos = self.deploy_instruments(
+            configuration=InstrumentConfiguration(instruments=(instrument,)),
             instrument_cache=instrument_cache,
-            resource_reader=resource_reader,
             append=append,
             parallel=parallel,
         )
         return instrument_infos[instrument.alias]
 
-    def replace_instruments(
-        self,
-        *,
-        instrument: InstrumentSpec,
-        instrument_cache: InstrumentCache,
-        resource_reader: Quel3ResourceReader,
-        parallel: bool = True,
-    ) -> InstrumentInfoProtocol:
-        """
-        Replace a cached instrument and read back only its new resource ID.
-
-        Preserve other aliases, including those on the same port. A failed
-        write or readback leaves only the replaced alias absent from the cache.
-        """
-        previous = instrument_cache.get(instrument.alias)
-        if previous.port_id != instrument.port_id:
-            raise ValueError("Instrument redeployment must preserve its port.")
-        instrument_cache.replace_aliases(
-            aliases=(instrument.alias,), instrument_infos=()
-        )
-        deployed = _run_async(
-            lambda: self._deploy_instruments(
-                specifications=(instrument,), append=True, parallel=parallel
-            )
-        )
-        matching = [
-            info
-            for info in deployed
-            if InstrumentCache.alias_for(info) == instrument.alias
-            and info.port_id == instrument.port_id
-        ]
-        if len(matching) != 1:
-            raise ValueError(
-                "Deployment did not return exactly one matching instrument."
-            )
-        infos = resource_reader.read_instrument_infos_by_ids(
-            (matching[0].id,), parallel=parallel
-        )
-        if (
-            len(infos) != 1
-            or infos[0].id != matching[0].id
-            or infos[0].port_id != instrument.port_id
-            or InstrumentCache.alias_for(infos[0]) != instrument.alias
-        ):
-            raise ValueError(
-                "Hardware readback did not match the redeployed instrument."
-            )
-        instrument_cache.replace_aliases(
-            aliases=(instrument.alias,), instrument_infos=infos
-        )
-        return infos[0]
-
-    def _deploy_and_refresh(
-        self,
+    @staticmethod
+    def _validate_deployment_targets(
         *,
         specifications: tuple[InstrumentSpec, ...],
-        instrument_cache: InstrumentCache,
-        resource_reader: Quel3ResourceReader,
+        cached: Mapping[str, InstrumentInfoProtocol],
+        port_ids: tuple[str, ...],
         append: bool,
-        parallel: bool,
-    ) -> dict[str, InstrumentInfoProtocol]:
-        """Invalidate touched ports, deploy definitions, and publish complete readback."""
-        if not specifications:
-            return {}
-        port_ids = tuple(dict.fromkeys(spec.port_id for spec in specifications))
-        cached = instrument_cache.snapshot()
+    ) -> None:
+        """Reject aliases on retained ports before invalidating the cache or writing."""
         for specification in specifications:
             previous = cached.get(specification.alias)
             if (
@@ -509,31 +467,6 @@ class Quel3ConfigurationManager:
                     f"Instrument alias `{specification.alias}` is already cached on port "
                     f"`{previous.port_id}`; cannot deploy it on `{specification.port_id}`."
                 )
-        instrument_cache.replace_ports(port_ids=port_ids, instrument_infos=())
-        _run_async(
-            lambda: self._deploy_instruments(
-                specifications=specifications,
-                append=append,
-                parallel=parallel,
-            )
-        )
-        instrument_infos = resource_reader.read_instrument_infos(
-            port_ids=port_ids,
-            parallel=parallel,
-        )
-        readback_counts = Counter(
-            (InstrumentCache.alias_for(info), info.port_id) for info in instrument_infos
-        )
-        for specification in specifications:
-            if readback_counts[specification.alias, specification.port_id] != 1:
-                raise ValueError(
-                    "Hardware readback did not return exactly one instrument "
-                    f"for alias `{specification.alias}` on port `{specification.port_id}`."
-                )
-        instrument_cache.replace_ports(
-            port_ids=port_ids, instrument_infos=instrument_infos
-        )
-        return {InstrumentCache.alias_for(info): info for info in instrument_infos}
 
     def refresh_instrument_cache(
         self,
@@ -585,7 +518,7 @@ class Quel3ConfigurationManager:
         """Load deployable specifications from YAML without changing hardware or cache."""
         return InstrumentConfiguration.load_yaml(path)
 
-    async def _deploy_instruments(
+    async def _request_instrument_deployment(
         self,
         *,
         specifications: tuple[InstrumentSpec, ...],
@@ -602,17 +535,13 @@ class Quel3ConfigurationManager:
         specifications_by_port: dict[str, list[InstrumentSpec]] = defaultdict(list)
         for specification in specifications:
             specifications_by_port[specification.port_id].append(specification)
-        port_batches = tuple(
-            (port_id, tuple(port_specifications))
-            for port_id, port_specifications in specifications_by_port.items()
-        )
         max_attempts = 1 if append else QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS
-        instrument_infos: tuple[InstrumentInfoProtocol, ...] = ()
+        responses: dict[str, list[InstrumentInfoProtocol]] = {}
         for attempt in range(max_attempts):
             try:
-                instrument_infos = await self._deploy_port_batches(
+                responses = await self._deploy_port_batches(
                     client_factory=client_factory,
-                    port_batches=port_batches,
+                    port_batches=specifications_by_port,
                     instrument_entities=instrument_entities,
                     append=append,
                     parallel=parallel,
@@ -632,28 +561,34 @@ class Quel3ConfigurationManager:
                         session_token=missing_session_id,
                         cause=exc,
                     ) from exc
-        return instrument_infos
+        deployed: list[InstrumentInfoProtocol] = []
+        for port_id, infos in responses.items():
+            deployed.extend(
+                self._select_port_instruments(
+                    port_id, specifications_by_port[port_id], infos, append=append
+                )
+            )
+        return tuple(deployed)
 
     async def _deploy_port_batches(
         self,
         *,
         client_factory: QuelwareClientFactory,
-        port_batches: tuple[tuple[str, tuple[InstrumentSpec, ...]], ...],
+        port_batches: Mapping[str, Sequence[InstrumentSpec]],
         instrument_entities: QuelwareInstrumentEntities,
         append: bool,
         parallel: bool,
         attempt: int,
         max_attempts: int,
-    ) -> tuple[InstrumentInfoProtocol, ...]:
-        """Deploy port batches in one quelware client/session context."""
+    ) -> dict[str, list[InstrumentInfoProtocol]]:
+        """Return the raw response for each port written in the session."""
         async with client_factory(
             self._runtime_config.endpoint,
             self._runtime_config.port,
         ) as client:
-            session_resource_ids = [port_id for port_id, _ in port_batches]
             session_cm, session = await enter_quelware_session_with_resource_retry(
                 client=client,
-                resource_ids=session_resource_ids,
+                resource_ids=list(port_batches),
             )
             session_token = quelware_session_token(session)
             try:
@@ -668,29 +603,26 @@ class Quel3ConfigurationManager:
                                 instrument_entities=instrument_entities,
                                 append=append,
                             )
-                            for port_id, port_specifications in port_batches
+                            for port_id, port_specifications in port_batches.items()
                         ),
                         return_exceptions=True,
                     )
-                    infos: list[InstrumentInfoProtocol] = []
-                    for result in results:
+                    responses = {}
+                    for port_id, result in zip(port_batches, results, strict=True):
                         if isinstance(result, BaseException):
                             raise result  # noqa: TRY301
-                        infos.extend(result)
-                    return tuple(infos)
-                else:
-                    infos = []
-                    for port_id, port_specifications in port_batches:
-                        infos.extend(
-                            await self._deploy_port_batch(
-                                session=session,
-                                port_id=port_id,
-                                port_specifications=port_specifications,
-                                instrument_entities=instrument_entities,
-                                append=append,
-                            )
-                        )
-                    return tuple(infos)
+                        responses[port_id] = result
+                    return responses
+                return {
+                    port_id: await self._deploy_port_batch(
+                        session=session,
+                        port_id=port_id,
+                        port_specifications=port_specifications,
+                        instrument_entities=instrument_entities,
+                        append=append,
+                    )
+                    for port_id, port_specifications in port_batches.items()
+                }
             except Exception as exc:
                 if attempt >= max_attempts:
                     raise QuelwareSessionError(
@@ -725,10 +657,10 @@ class Quel3ConfigurationManager:
         *,
         session: SessionProtocol,
         port_id: str,
-        port_specifications: tuple[InstrumentSpec, ...],
+        port_specifications: Sequence[InstrumentSpec],
         instrument_entities: QuelwareInstrumentEntities,
         append: bool,
-    ) -> tuple[InstrumentInfoProtocol, ...]:
+    ) -> list[InstrumentInfoProtocol]:
         """Deploy one port batch through the active quelware session."""
         definitions: list[InstrumentDefinitionProtocol] = []
         for specification in port_specifications:
@@ -745,12 +677,57 @@ class Quel3ConfigurationManager:
                 )
             )
 
-        infos = await session.deploy_instruments(
+        return await session.deploy_instruments(
             port_id,
             definitions=definitions,
             append=append,
         )
-        return tuple(infos or ())
+
+    @staticmethod
+    def _select_port_instruments(
+        port_id: str,
+        specifications: Sequence[InstrumentSpec],
+        infos: Sequence[InstrumentInfoProtocol],
+        *,
+        append: bool,
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        """Validate one completed write and select the instruments requested on its port."""
+        requested = {spec.alias for spec in specifications}
+        deployed: dict[str, InstrumentInfoProtocol] = {}
+        seen_ids: set[str] = set()
+        for info in infos:
+            if info.port_id != port_id:
+                raise ValueError(
+                    f"Deployment on {port_id!r} returned unexpected port {info.port_id!r}."
+                )
+            if info.id in seen_ids:
+                raise ValueError(
+                    f"Duplicate resource ID {info.id!r} in deployment response on {port_id!r}."
+                )
+            seen_ids.add(info.id)
+            try:
+                alias = InstrumentCache.alias_for(info)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid instrument in deployment response on {port_id!r}: {exc}"
+                ) from exc
+            if alias not in requested:
+                if append:
+                    # quelware may include existing instruments on this port.
+                    continue
+                raise ValueError(
+                    f"Unexpected alias {alias!r} in replacement response on {port_id!r}."
+                )
+            if alias in deployed:
+                raise ValueError(
+                    f"Duplicate alias {alias!r} in deployment response on {port_id!r}."
+                )
+            deployed[alias] = info
+        if missing := requested - deployed.keys():
+            raise ValueError(
+                f"Missing instruments in deployment response on {port_id!r}: {sorted(missing)}."
+            )
+        return tuple(deployed.values())
 
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""

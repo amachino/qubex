@@ -13,7 +13,6 @@ import pytest
 
 from qubex.backend.quel3.infra import (
     Quel3HttpTransportConfig,
-    Quel3ResourceReader,
     Quel3RuntimeConfig,
     QuelwareCredentials,
     runtime_config as runtime_config_module,
@@ -40,58 +39,17 @@ def _deploy_configuration(
     append: bool = True,
     parallel: bool = True,
 ) -> dict[str, InstrumentInfoProtocol]:
-    """Deploy with complete readback objects and a fresh real instrument cache."""
+    """Deploy the specifications into a fresh instrument cache."""
     configuration = InstrumentConfiguration(instruments=tuple(specifications))
-    infos = tuple(
-        cast(
-            InstrumentInfoProtocol,
-            SimpleNamespace(
-                id=f"readback:{specification.alias}",
-                port_id=specification.port_id,
-                definition=SimpleNamespace(
-                    alias=specification.alias,
-                    role=specification.role,
-                    mode="FIXED_TIMELINE",
-                    profile=SimpleNamespace(
-                        frequency_range_min=specification.frequency_range_min_hz,
-                        frequency_range_max=specification.frequency_range_max_hz,
-                    ),
-                ),
-                config=SimpleNamespace(sampling_period_fs=400_000),
-            ),
-        )
-        for specification in specifications
-    )
     cache = InstrumentCache()
-    read_calls: list[tuple[str, ...]] = []
-
-    def read_infos(
-        *, port_ids: Sequence[str], parallel: bool
-    ) -> tuple[InstrumentInfoProtocol, ...]:
-        read_calls.append(tuple(port_ids))
-        return infos
-
-    reader = cast(
-        Quel3ResourceReader,
-        SimpleNamespace(read_instrument_infos=read_infos),
-    )
-
     result = manager.deploy_instruments(
         configuration=configuration,
         instrument_cache=cache,
-        resource_reader=reader,
         append=append,
         parallel=parallel,
     )
 
-    expected = {info.definition.alias: info for info in infos}
-    assert result == expected
-    assert cache.snapshot() == expected
-    assert read_calls == (
-        [tuple(dict.fromkeys(spec.port_id for spec in specifications))]
-        if specifications
-        else []
-    )
+    assert cache.snapshot() == result
     return result
 
 
@@ -182,7 +140,7 @@ def test_deploy_instruments_calls_session_api(
             deploy_calls.append((port_id, definitions))
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}",
+                    id=f"deployed:{definitions[0].alias}",
                     port_id=port_id,
                     definition=definitions[0],
                 )
@@ -316,7 +274,7 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
                 raise RuntimeError("quelware specification failed")
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}",
+                    id=f"deployed:{definitions[0].alias}",
                     port_id=port_id,
                     definition=definitions[0],
                 )
@@ -422,7 +380,7 @@ def test_deploy_instruments_finishes_parallel_ports_before_retry(
             definitions: list[object],
             append: bool,
         ) -> list[object]:
-            del definitions, append
+            del append
             deploy_calls.append((self.attempt, port_id))
             if self.attempt == 0 and port_id == "unit:tx_p02":
                 raise RuntimeError("First port failed")
@@ -430,7 +388,14 @@ def test_deploy_instruments_finishes_parallel_ports_before_retry(
             await asyncio.sleep(0)
             await asyncio.sleep(0)
             self.active -= 1
-            return []
+            return [
+                SimpleNamespace(
+                    id=f"deployed:{definition.alias}",
+                    port_id=port_id,
+                    definition=definition,
+                )
+                for definition in cast(Any, definitions)
+            ]
 
     sessions: list[_FakeSession] = []
 
@@ -550,7 +515,7 @@ def test_deploy_instruments_ignores_session_close_failure_after_success(
             del append
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}",
+                    id=f"deployed:{definitions[0].alias}",
                     port_id=port_id,
                     definition=definitions[0],
                 )
@@ -795,7 +760,7 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
             del append
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}",
+                    id=f"deployed:{definitions[0].alias}",
                     port_id=port_id,
                     definition=definitions[0],
                 )
@@ -853,102 +818,6 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
     ]
     assert client.failing_context.exit_calls == 1
     assert session.exit_calls == 1
-    assert "Q00" in deployed
-
-
-def test_deploy_instruments_ignores_returned_instrument_infos(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given no returned instrument infos, deploy should still apply the specification."""
-    manager = Quel3ConfigurationManager()
-
-    class _Profile:
-        def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
-            self.frequency_range_min = frequency_range_min
-            self.frequency_range_max = frequency_range_max
-
-    class _Definition:
-        def __init__(self, *, alias: str, mode: object, role: object, profile: object):
-            self.alias = alias
-            self.mode = mode
-            self.role = role
-            self.profile = profile
-
-    class _Mode:
-        FIXED_TIMELINE = "fixed_timeline"
-
-    class _Role:
-        TRANSMITTER = "transmitter"
-
-    @dataclass(frozen=True)
-    class _InstrumentInfo:
-        id: str
-        port_id: str
-        definition: _Definition
-
-    deploy_definitions: list[_Definition] = []
-
-    class _FakeSession:
-        async def __aenter__(self) -> _FakeSession:
-            return self
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-
-        async def deploy_instruments(
-            self,
-            port_id: str,
-            *,
-            definitions: list[_Definition],
-            append: bool = True,
-        ) -> list[_InstrumentInfo]:
-            del append
-            deploy_definitions.extend(definitions)
-            return []
-
-    class _FakeClient:
-        async def __aenter__(self) -> _FakeClient:
-            return self
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-
-        def create_session(self, resource_ids: list[str], **_: object) -> _FakeSession:
-            del resource_ids
-            return _FakeSession()
-
-    monkeypatch.setattr(
-        manager,
-        "_load_quelware_client_factory",
-        lambda: lambda endpoint, port: _FakeClient(),
-    )
-    monkeypatch.setattr(
-        manager,
-        "_load_instrument_entities",
-        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
-    )
-
-    specification = InstrumentSpec(
-        port_id="quel3-02-a01:tx_p02",
-        role="TRANSMITTER",
-        frequency_range_min_hz=4.1e9,
-        frequency_range_max_hz=4.3e9,
-        alias="Q00",
-    )
-
-    deployed = _deploy_configuration(manager, specifications=(specification,))
-
-    assert [definition.alias for definition in deploy_definitions] == ["Q00"]
     assert "Q00" in deployed
 
 
@@ -1021,11 +890,11 @@ def test_deploy_instruments_groups_requests_by_port(
             deploy_calls.append((port_id, definitions, append))
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{index}",
+                    id=f"deployed:{definition.alias}",
                     port_id=port_id,
                     definition=definition,
                 )
-                for index, definition in enumerate(definitions)
+                for definition in definitions
             ]
 
     class _FakeClient:
@@ -1142,7 +1011,7 @@ def test_deploy_instruments_uses_one_session_for_all_ports(
             deploy_calls.append(port_id)
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"deployed:{definition.alias}",
                     port_id=port_id,
                     definition=definition,
                 )
@@ -1265,7 +1134,7 @@ def test_deploy_instruments_parallelizes_ports_by_default(
             probe.active -= 1
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"deployed:{definition.alias}",
                     port_id=port_id,
                     definition=definition,
                 )
@@ -1385,7 +1254,7 @@ def test_deploy_instruments_parallel_false_serializes_ports(
             probe.active -= 1
             return [
                 _InstrumentInfo(
-                    id=f"id:{port_id}:{definition.alias}",
+                    id=f"deployed:{definition.alias}",
                     port_id=port_id,
                     definition=definition,
                 )

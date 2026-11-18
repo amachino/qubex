@@ -392,7 +392,6 @@ def monitor_schedule_runtime(
         *,
         instrument: InstrumentSpec,
         instrument_cache: InstrumentCache,
-        resource_reader: object,
         append: bool = True,
         parallel: bool = True,
     ) -> InstrumentInfoProtocol:
@@ -422,7 +421,6 @@ def monitor_schedule_runtime(
         *,
         configuration: InstrumentConfiguration,
         instrument_cache: InstrumentCache,
-        resource_reader: object,
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         actions.append(
@@ -934,7 +932,6 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
         *,
         instrument: InstrumentSpec,
         instrument_cache: InstrumentCache,
-        resource_reader: object,
         append: bool = True,
         parallel: bool = True,
     ) -> InstrumentInfoProtocol:
@@ -943,7 +940,6 @@ def test_run_monitor_schedule_restores_instruments_after_deployment_failure(
         return original_deploy(
             instrument=instrument,
             instrument_cache=instrument_cache,
-            resource_reader=cast(Any, resource_reader),
             append=append,
             parallel=parallel,
         )

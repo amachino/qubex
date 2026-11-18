@@ -512,25 +512,24 @@ class Quel3BackendController(BackendController):
             instruments. If false, replace every instrument on the specified
             port with this one.
         parallel : bool, default=True
-            Whether hardware reads may run concurrently.
+            Whether to use the parallel deployment path for this single port.
 
         Raises
         ------
         ValueError
-            Hardware readback is invalid, or the alias is already cached on
+            The deployment response is invalid, or the alias is already cached on
             another port. Known cross-port collisions fail before writing.
 
         Notes
         -----
         Alias replacement is handled by quelware without a pre-deployment read.
-        Append does not retry the deployment request. Both modes refresh the
-        entire touched port. Write or readback failure leaves that port absent
-        from the execution cache.
+        Append requests run once and invalidate only the specified alias. With
+        `append=False`, invalidate and replace the entire port. Cache the
+        instrument information returned by a successful deployment.
         """
         return self._configuration_manager.deploy_instrument(
             instrument=instrument,
             instrument_cache=self._instrument_cache,
-            resource_reader=self._resource_reader,
             append=append,
             parallel=parallel,
         )
@@ -583,10 +582,10 @@ class Quel3BackendController(BackendController):
         Notes
         -----
         Redeployment centers each instrument's range on the requested frequency
-        and reads back the updated instrument. Preserve its existing width or
+        and caches the returned instrument. Preserve its existing width or
         expand it to satisfy the minimum margin. If the entire minimum range is
         already within the cached range, including its endpoints, reuse the
-        instrument without redeployment, readback, or cache changes.
+        instrument without redeployment or cache changes.
         Other instruments are preserved.
         """
         if not target_frequencies_ghz:
@@ -619,7 +618,7 @@ class Quel3BackendController(BackendController):
                 / 2,
                 min_margin_hz,
             )
-            self._configuration_manager.replace_instruments(
+            self.deploy_instrument(
                 instrument=InstrumentSpec(
                     port_id=instrument.port_id,
                     alias=alias,
@@ -627,8 +626,6 @@ class Quel3BackendController(BackendController):
                     frequency_range_min_hz=frequency_hz - margin,
                     frequency_range_max_hz=frequency_hz + margin,
                 ),
-                instrument_cache=self._instrument_cache,
-                resource_reader=self._resource_reader,
             )
 
     def deploy_instruments(
@@ -639,7 +636,7 @@ class Quel3BackendController(BackendController):
         parallel: bool = True,
     ) -> dict[str, InstrumentInfoProtocol]:
         """
-        Deploy instruments and read their complete information back from hardware.
+        Deploy instruments and cache the information returned by quelware.
 
         Parameters
         ----------
@@ -649,26 +646,25 @@ class Quel3BackendController(BackendController):
             Add or replace the specified aliases while preserving other
             instruments. If false, replace all instruments on each requested port.
         parallel : bool, default=True
-            Whether port deployments and hardware reads may run concurrently.
+            Whether port deployments may run concurrently.
 
         Raises
         ------
         ValueError
             An alias conflicts with a cached instrument that would be retained,
-            or hardware readback is invalid.
+            or the deployment response is invalid.
 
         Notes
         -----
-        Only the requested ports are touched. Their old cached identities are
-        discarded before writing and remain absent if deployment or readback fails.
-        Successful deployment reads back every instrument on the touched ports.
-        Append requests are not retried. An empty configuration leaves hardware
-        and cache unchanged.
+        Return only the instruments requested in `configuration`. With `append=True`,
+        invalidate and refresh only the specified aliases. With `append=False`,
+        invalidate and replace the entire requested ports. Invalidation precedes
+        hardware writes, so failure leaves the affected scope uncached. Append
+        requests are not retried. An empty configuration performs no work.
         """
         return self._configuration_manager.deploy_instruments(
             configuration=configuration,
             instrument_cache=self._instrument_cache,
-            resource_reader=self._resource_reader,
             append=append,
             parallel=parallel,
         )

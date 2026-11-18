@@ -793,7 +793,7 @@ def test_connect_clears_existing_instrument_cache(
 
 
 def test_configuration_operations_receive_the_same_controller_owned_cache() -> None:
-    """Deploy and refresh should delegate with the same cache and injected reader."""
+    """Deploy and refresh should share the controller cache and use the reader for refresh."""
     captured: dict[str, dict[str, object]] = {}
     info = _FakeInstrumentInfo(
         id="new-q00",
@@ -836,7 +836,6 @@ def test_configuration_operations_receive_the_same_controller_owned_cache() -> N
         captured["deploy"]["instrument_cache"]
         is captured["refresh"]["instrument_cache"]
     )
-    assert captured["deploy"]["resource_reader"] is reader
     assert captured["refresh"]["resource_reader"] is reader
     assert captured["deploy"]["parallel"] is False
     assert captured["refresh"]["parallel"] is False

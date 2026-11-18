@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, cast
@@ -54,7 +55,7 @@ def test_modify_target_frequencies_preserves_instrument_width_and_other_aliases(
         deployed.append(instrument)
         return None
 
-    monkeypatch.setattr(manager, "replace_instruments", deploy)
+    monkeypatch.setattr(controller, "deploy_instrument", deploy)
     controller.modify_target_frequencies({"Q00": 7.0})
 
     assert deployed == [
@@ -100,10 +101,10 @@ class _Hardware:
         self.infos = [_info("Q00"), _info("Q01", "unit-b:tx_p02")]
         self.deploy_calls: list[tuple[str, bool]] = []
         self.read_calls: list[tuple[str, ...]] = []
+        self.id_read_calls: list[tuple[str, ...]] = []
         self.closed_sessions = 0
         self.fail_after_write = False
-        self.fail_read_number: int | None = None
-        self.omit_added = False
+        self.fail_deployment_number: int | None = None
 
     async def __aenter__(self) -> _Hardware:
         return self
@@ -143,26 +144,21 @@ class _Hardware:
                         if info.port_id != port_id
                         or InstrumentCache.alias_for(info) not in aliases
                     ]
-                if not hardware.omit_added:
-                    hardware.infos.extend(
-                        _info(
-                            definition.alias,
-                            port_id,
-                            resource_id=f"{port_id}:{definition.alias}:deployment-{len(hardware.deploy_calls)}",
-                            frequency_range_min_hz=definition.profile.frequency_range_min,
-                            frequency_range_max_hz=definition.profile.frequency_range_max,
-                        )
-                        for definition in definitions
+                hardware.infos.extend(
+                    _info(
+                        definition.alias,
+                        port_id,
+                        resource_id=f"{port_id}:{definition.alias}:deployment-{len(hardware.deploy_calls)}",
+                        frequency_range_min_hz=definition.profile.frequency_range_min,
+                        frequency_range_max_hz=definition.profile.frequency_range_max,
                     )
-                if hardware.fail_after_write:
+                    for definition in definitions
+                )
+                if hardware.fail_after_write or hardware.fail_deployment_number == len(
+                    hardware.deploy_calls
+                ):
                     raise RuntimeError("response lost after deployment")
-                return [
-                    info
-                    for info in hardware.infos
-                    if info.port_id == port_id
-                    and InstrumentCache.alias_for(info)
-                    in {definition.alias for definition in definitions}
-                ]
+                return [info for info in hardware.infos if info.port_id == port_id]
 
         return _Session()
 
@@ -174,11 +170,15 @@ class _Hardware:
         unit_labels: Sequence[str] = (),
     ) -> tuple[InstrumentInfoProtocol, ...]:
         self.read_calls.append(tuple(port_ids))
-        if self.fail_read_number == len(self.read_calls):
-            raise RuntimeError("read failed")
         return tuple(
             info for info in self.infos if not port_ids or info.port_id in port_ids
         )
+
+    def read_instrument_infos_by_ids(
+        self, instrument_ids: Sequence[str], *, parallel: bool = True
+    ) -> tuple[InstrumentInfoProtocol, ...]:
+        self.id_read_calls.append(tuple(instrument_ids))
+        return tuple(info for info in self.infos if info.id in instrument_ids)
 
 
 @pytest.fixture
@@ -205,6 +205,77 @@ def deployment(
     return manager, hardware, cache
 
 
+@pytest.mark.parametrize("parallel", [False, True])
+def test_deployment_request_returns_only_requested_instruments(deployment, parallel):
+    """Each port should return its requested instruments even when append reports siblings."""
+    manager, hardware, _ = deployment
+    other_port = "unit-a:tx_p02"
+    hardware.infos.append(_info("another-user", other_port))
+    specifications = (_spec("Q02"), _spec("Q03", other_port))
+
+    infos = asyncio.run(
+        manager._request_instrument_deployment(  # noqa: SLF001
+            specifications=specifications, append=True, parallel=parallel
+        )
+    )
+
+    assert [(InstrumentCache.alias_for(info), info.port_id) for info in infos] == [
+        (spec.alias, spec.port_id) for spec in specifications
+    ]
+
+
+@pytest.mark.parametrize(
+    ("failure", "append", "message"),
+    [
+        ("missing", True, "Missing"),
+        ("duplicate_alias", True, "Duplicate alias"),
+        ("duplicate_id", True, "Duplicate resource ID"),
+        ("swapped_ports", True, "unexpected port"),
+        ("extra", False, "Unexpected alias"),
+        ("empty_alias", False, "alias must not be empty"),
+    ],
+)
+@pytest.mark.parametrize("parallel", [False, True])
+def test_invalid_port_response_is_not_retried(
+    deployment, monkeypatch, failure, append, message, parallel
+):
+    """An invalid response should identify the port and propagate without retrying the write."""
+    manager, hardware, _ = deployment
+    ports = ("unit-a:tx_p01", "unit-a:tx_p02")
+    specifications = (_spec("A", ports[0]), _spec("B", ports[1]))
+    session = hardware.create_session(ports)
+    calls = []
+
+    async def deploy(port_id, **kwargs):
+        calls.append(port_id)
+        spec = specifications[ports.index(port_id)]
+        info = _info(spec.alias, port_id)
+        if failure == "empty_alias":
+            return [_info("", port_id)]
+        if failure == "missing":
+            return []
+        if failure == "duplicate_alias":
+            return [info, _info(spec.alias, port_id, resource_id="another-id")]
+        if failure == "duplicate_id":
+            return [info, _info("sibling", port_id, resource_id=info.id)]
+        if failure == "swapped_ports":
+            other = specifications[1 - ports.index(port_id)]
+            return [_info(other.alias, other.port_id)]
+        return [info, _info("unexpected", port_id)]
+
+    monkeypatch.setattr(session, "deploy_instruments", deploy)
+    monkeypatch.setattr(hardware, "create_session", lambda *args, **kwargs: session)
+    with pytest.raises(ValueError, match=message) as error:
+        asyncio.run(
+            manager._request_instrument_deployment(  # noqa: SLF001
+                specifications=specifications, append=append, parallel=parallel
+            )
+        )
+    assert ports[0] in str(error.value)
+    assert calls == list(ports)
+    assert hardware.closed_sessions == 1
+
+
 @pytest.mark.parametrize("append", [None, False])
 def test_batch_deployment_preserves_siblings_unless_replacement_is_explicit(
     deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
@@ -220,6 +291,9 @@ def test_batch_deployment_preserves_siblings_unless_replacement_is_explicit(
         resource_reader=cast(Quel3ResourceReader, hardware),
     )
     controller.refresh_instrument_cache()
+    hardware.read_calls.clear()
+    # An existing alias may be discovered in an append response for the first time.
+    hardware.infos.append(_info("uncached"))
     original = controller.get_instrument_configuration()
     configuration = InstrumentConfiguration(
         instruments=(
@@ -238,11 +312,12 @@ def test_batch_deployment_preserves_siblings_unless_replacement_is_explicit(
     expected = {"Q00", "Q01", "Q02"}
     if append is None:
         expected.add("Q03")
-        assert result["Q03"] is sibling
         assert sibling in hardware.infos
     else:
         assert sibling not in hardware.infos
-    assert set(result) == expected - {"Q01"}
+    assert set(result) == {"Q00", "Q02"}
+    assert hardware.read_calls == []
+    assert hardware.id_read_calls == []
     assert result["Q00"].id.endswith("deployment-1")
     profile = result["Q00"].definition.profile
     assert profile is not None
@@ -269,7 +344,6 @@ def test_batch_alias_conflict_fails_before_writes_or_cache_invalidation(
         manager.deploy_instruments(
             configuration=InstrumentConfiguration(instruments=(_spec("Q01"),)),
             instrument_cache=cache,
-            resource_reader=cast(Quel3ResourceReader, hardware),
             append=append,
         )
 
@@ -278,134 +352,31 @@ def test_batch_alias_conflict_fails_before_writes_or_cache_invalidation(
     assert cache.snapshot() == before
 
 
-@pytest.mark.parametrize("parallel", [False, True])
-def test_frequency_changes_only_read_changed_instruments(
-    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
-    monkeypatch: pytest.MonkeyPatch,
-    parallel: bool,
-) -> None:
-    """Frequency changes should read new target IDs without querying unrelated instruments."""
-    manager, hardware, cache = deployment
-    sibling = _info("Q03")
-    hardware.infos.append(sibling)
-    cache.replace_all(instrument_infos=hardware.infos)
-    untouched = cache.get("Q01")
-    requested: list[str] = []
-
-    async def get_info(resource_id: str) -> InstrumentInfoProtocol:
-        requested.append(resource_id)
-        return next(info for info in hardware.infos if info.id == resource_id)
-
-    reader = Quel3ResourceReader()
-    monkeypatch.setattr(
-        reader, "_load_quelware_client_factory", lambda: lambda *args: hardware
-    )
-    monkeypatch.setattr(hardware, "get_instrument_info", get_info, raising=False)
-
-    manager.replace_instruments(
-        instrument=_spec("Q00"),
-        instrument_cache=cache,
-        resource_reader=reader,
-        parallel=parallel,
-    )
-
-    updated = cache.get("Q00")
-    assert updated.id == "unit-a:tx_p01:Q00:deployment-1"
-    assert requested == [updated.id]
-    assert hardware.read_calls == []
-    assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
-    assert cache.get("Q03") is sibling
-    assert cache.get("Q01") is untouched
-
-
-@pytest.mark.parametrize(
-    "failure",
-    ["write", "response", "readback", "wrong_port", "wrong_alias", "wrong_id"],
-)
-def test_frequency_change_failure_preserves_unrelated_cached_instruments(
-    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
-    monkeypatch: pytest.MonkeyPatch,
-    failure: str,
-) -> None:
-    """Failed target redeployment should invalidate only that alias and preserve siblings."""
-    manager, hardware, cache = deployment
-    sibling = _info("Q03")
-    hardware.infos.append(sibling)
-    cache.replace_all(instrument_infos=hardware.infos)
-    untouched = cache.get("Q01")
-    hardware.fail_after_write = failure == "write"
-    hardware.omit_added = failure == "response"
-
-    def read_ids(*args: object, **kwargs: object) -> tuple[InstrumentInfoProtocol, ...]:
-        if failure == "readback":
-            raise RuntimeError("instrument unavailable")
-        updated = next(
-            info for info in hardware.infos if InstrumentCache.alias_for(info) == "Q00"
-        )
-        return (
-            _info(
-                "Q99" if failure == "wrong_alias" else "Q00",
-                "unit-a:tx_p02" if failure == "wrong_port" else updated.port_id,
-                resource_id="wrong-id" if failure == "wrong_id" else updated.id,
-            ),
-        )
-
-    reader = Quel3ResourceReader()
-    monkeypatch.setattr(reader, "read_instrument_infos_by_ids", read_ids)
-
-    with pytest.raises((QuelwareSessionError, ValueError, RuntimeError)):
-        manager.replace_instruments(
-            instrument=_spec("Q00"), instrument_cache=cache, resource_reader=reader
-        )
-
-    assert cache.snapshot() == {"Q01": untouched, "Q03": sibling}
-    assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
-    assert hardware.closed_sessions == 1
-
-
 @pytest.fixture
 def frequency_controller(
     deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
-    monkeypatch: pytest.MonkeyPatch,
-) -> tuple[Quel3BackendController, _Hardware, list[str]]:
+) -> tuple[Quel3BackendController, _Hardware]:
     """Provide a controller with cached instruments and recorded hardware requests."""
     manager, hardware, _ = deployment
-    reader = Quel3ResourceReader()
-    monkeypatch.setattr(
-        reader, "_load_quelware_client_factory", lambda: lambda *args: hardware
-    )
-    requested: list[str] = []
-
-    async def get_info(resource_id: str) -> InstrumentInfoProtocol:
-        requested.append(resource_id)
-        return next(info for info in hardware.infos if info.id == resource_id)
-
-    monkeypatch.setattr(hardware, "get_instrument_info", get_info, raising=False)
-    monkeypatch.setattr(
-        hardware,
-        "read_instrument_infos_by_ids",
-        reader.read_instrument_infos_by_ids,
-        raising=False,
-    )
     controller = Quel3BackendController(
         configuration_manager=manager,
         resource_reader=cast(Quel3ResourceReader, hardware),
     )
     controller.refresh_instrument_cache()
     hardware.read_calls.clear()
-    return controller, hardware, requested
+    return controller, hardware
 
 
 @pytest.mark.parametrize("frequency", [3.999999, 4.099999, 5.900001, 6.000001, 7.0])
-def test_controller_frequency_change_uses_only_target_readback(
-    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+def test_controller_frequency_change_caches_deployed_target(
+    frequency_controller: tuple[Quel3BackendController, _Hardware],
     frequency: float,
 ) -> None:
     """Insufficient frequency margins should redeploy only the target with its existing width."""
-    controller, hardware, requested = frequency_controller
+    controller, hardware = frequency_controller
     controller.modify_target_frequencies({"Q00": frequency})
 
-    assert requested == ["unit-a:tx_p01:Q00:deployment-1"]
+    assert hardware.id_read_calls == []
     assert hardware.read_calls == []
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
     specs = {
@@ -423,11 +394,11 @@ def test_controller_frequency_change_uses_only_target_readback(
 
 @pytest.mark.parametrize("frequency", [4.1, 4.100001, 5.0, 5.899999, 5.9])
 def test_controller_reuses_instrument_for_in_range_frequency(
-    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency_controller: tuple[Quel3BackendController, _Hardware],
     frequency: float,
 ) -> None:
     """Frequencies with at least the default margin should reuse instruments without hardware IO."""
-    controller, hardware, requested = frequency_controller
+    controller, hardware = frequency_controller
     original = controller.get_instrument_configuration()
     original_infos = tuple(hardware.infos)
     original_hash = controller.hash
@@ -436,7 +407,7 @@ def test_controller_reuses_instrument_for_in_range_frequency(
 
     assert hardware.deploy_calls == []
     assert hardware.read_calls == []
-    assert requested == []
+    assert hardware.id_read_calls == []
     assert controller.get_instrument_configuration() == original
     assert controller.hash == original_hash
     assert all(
@@ -446,32 +417,32 @@ def test_controller_reuses_instrument_for_in_range_frequency(
 
 
 def test_controller_only_redeploys_out_of_range_targets(
-    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency_controller: tuple[Quel3BackendController, _Hardware],
 ) -> None:
-    """Mixed frequency changes should redeploy and read back only out-of-range targets."""
-    controller, hardware, requested = frequency_controller
+    """Mixed frequency changes should redeploy only out-of-range targets."""
+    controller, hardware = frequency_controller
     original = hardware.infos[0]
 
     controller.modify_target_frequencies({"Q00": 5.5, "Q01": 7.0})
 
     assert hardware.deploy_calls == [("unit-b:tx_p02", True)]
-    assert requested == ["unit-b:tx_p02:Q01:deployment-1"]
+    assert hardware.id_read_calls == []
     assert hardware.read_calls == []
     assert hardware.infos[0] is original
 
 
 def test_controller_reuses_range_confirmed_after_redeployment(
-    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency_controller: tuple[Quel3BackendController, _Hardware],
 ) -> None:
-    """Later frequency changes should reuse the range read back after redeployment."""
-    controller, hardware, requested = frequency_controller
+    """Later frequency changes should reuse the range returned by redeployment."""
+    controller, hardware = frequency_controller
 
     controller.modify_target_frequencies({"Q00": 7.0})
     updated = controller.get_instrument_configuration()
     controller.modify_target_frequencies({"Q00": 7.5})
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
-    assert requested == ["unit-a:tx_p01:Q00:deployment-1"]
+    assert hardware.id_read_calls == []
     assert hardware.read_calls == []
     assert controller.get_instrument_configuration() == updated
 
@@ -493,20 +464,20 @@ def test_controller_reuses_range_confirmed_after_redeployment(
     ],
 )
 def test_controller_guarantees_requested_frequency_margin(
-    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency_controller: tuple[Quel3BackendController, _Hardware],
     margin_ghz: float | None,
     frequency: float,
     redeploy: bool,
 ) -> None:
     """The requested half-width should determine reuse and expand narrower deployment ranges."""
-    controller, hardware, requested = frequency_controller
+    controller, hardware = frequency_controller
 
     controller.modify_target_frequencies(
         {"Q00": frequency}, min_frequency_margin_ghz=margin_ghz
     )
 
     assert hardware.deploy_calls == ([("unit-a:tx_p01", True)] if redeploy else [])
-    assert requested == (["unit-a:tx_p01:Q00:deployment-1"] if redeploy else [])
+    assert hardware.id_read_calls == []
     assert hardware.read_calls == []
     specifications = {
         spec.alias: spec
@@ -528,11 +499,11 @@ def test_controller_guarantees_requested_frequency_margin(
     "margin_ghz", [-0.1, float("nan"), float("inf"), -float("inf"), 1e308]
 )
 def test_controller_rejects_invalid_frequency_margin_without_hardware_io(
-    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency_controller: tuple[Quel3BackendController, _Hardware],
     margin_ghz: float,
 ) -> None:
     """Invalid minimum margins should fail before changing hardware or cached instruments."""
-    controller, hardware, requested = frequency_controller
+    controller, hardware = frequency_controller
     original = controller.get_instrument_configuration()
 
     with pytest.raises(ValueError, match="min_frequency_margin_ghz"):
@@ -542,15 +513,15 @@ def test_controller_rejects_invalid_frequency_margin_without_hardware_io(
 
     assert hardware.deploy_calls == []
     assert hardware.read_calls == []
-    assert requested == []
+    assert hardware.id_read_calls == []
     assert controller.get_instrument_configuration() == original
 
 
 def test_controller_expands_narrow_instrument_to_default_frequency_margin(
-    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency_controller: tuple[Quel3BackendController, _Hardware],
 ) -> None:
     """A narrow cached instrument should expand to the default margin around an unchanged frequency."""
-    controller, hardware, requested = frequency_controller
+    controller, hardware = frequency_controller
     hardware.infos[0] = _info(
         "Q00", frequency_range_min_hz=4.95e9, frequency_range_max_hz=5.05e9
     )
@@ -560,7 +531,7 @@ def test_controller_expands_narrow_instrument_to_default_frequency_margin(
     controller.modify_target_frequencies({"Q00": 5.0})
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
-    assert requested == ["unit-a:tx_p01:Q00:deployment-1"]
+    assert hardware.id_read_calls == []
     specification = controller.get_instrument_configuration().instruments[0]
     assert specification.frequency_range_min_hz == 4.9e9
     assert specification.frequency_range_max_hz == 5.1e9
@@ -569,13 +540,13 @@ def test_controller_expands_narrow_instrument_to_default_frequency_margin(
 @pytest.mark.parametrize(("original_frequency", "frequency"), [(5.0, 5.5), (7.0, 5.5)])
 @pytest.mark.parametrize("fail_in_context", [False, True])
 def test_modified_frequencies_restores_software_without_redeployment(
-    frequency_controller: tuple[Quel3BackendController, _Hardware, list[str]],
+    frequency_controller: tuple[Quel3BackendController, _Hardware],
     fail_in_context: bool,
     original_frequency: float,
     frequency: float,
 ) -> None:
     """Temporary carrier changes restore software without changing deployed instruments."""
-    controller, hardware, requested = frequency_controller
+    controller, hardware = frequency_controller
     original = controller.get_instrument_configuration()
     target = SimpleNamespace(label="Q00", frequency=original_frequency)
 
@@ -609,7 +580,7 @@ def test_modified_frequencies_restores_software_without_redeployment(
     assert controller.get_instrument_configuration() == original
     assert hardware.deploy_calls == []
     assert hardware.read_calls == []
-    assert requested == []
+    assert hardware.id_read_calls == []
 
 
 def _frequency_system(
@@ -640,11 +611,43 @@ def _frequency_system(
 
 
 @pytest.mark.parametrize("fail_acquisition", [False, True])
+def test_frequency_override_restoration_uses_deployment_response(
+    frequency_controller, monkeypatch, fail_acquisition
+):
+    """Restoration should succeed without reading another MUX's instruments."""
+    controller, hardware = frequency_controller
+    hardware.infos[1] = _info("Q01", "unit-a:tx_p02")
+    controller.refresh_instrument_cache()
+    original = controller.get_instrument_configuration()
+    system = _frequency_system(controller, {"Q00": 5.0})
+
+    def fail_broad_read(**kwargs):
+        raise RuntimeError("another MUX's instrument was removed")
+
+    monkeypatch.setattr(hardware, "read_instrument_infos", fail_broad_read)
+
+    def acquire():
+        with system.modified_frequencies({"Q00": 7.0}):
+            if fail_acquisition:
+                raise RuntimeError("acquisition failed")
+
+    if fail_acquisition:
+        with pytest.raises(RuntimeError, match="acquisition failed"):
+            acquire()
+    else:
+        acquire()
+
+    assert controller.get_instrument_configuration() == original
+    assert hardware.id_read_calls == []
+    assert system.experiment_system.get_target("Q00").frequency == 5.0
+
+
+@pytest.mark.parametrize("fail_acquisition", [False, True])
 def test_frequency_override_restores_exact_definition_and_keeps_siblings(
     frequency_controller, fail_acquisition
 ):
     """Out-of-range overrides redeploy and restore only their changed instruments."""
-    controller, hardware, _ = frequency_controller
+    controller, hardware = frequency_controller
     sibling = _info("Q03")
     hardware.infos.append(sibling)
     controller.refresh_instrument_cache()
@@ -681,7 +684,7 @@ def test_frequency_override_restores_nested_entry_definitions(
     frequency_controller, inner_frequency
 ):
     """Nested overrides restore their own definitions without redeploying unchanged ranges."""
-    controller, hardware, _ = frequency_controller
+    controller, hardware = frequency_controller
     original = controller.get_instrument_configuration()
     system = _frequency_system(controller, {"Q00": 5.8})
     with system.modified_frequencies({"Q00": 7.0}):
@@ -699,22 +702,15 @@ def test_frequency_override_restores_nested_entry_definitions(
 
 @pytest.mark.parametrize("failed_deployment", [1, 2])
 def test_frequency_override_restores_after_partial_entry_failure(
-    frequency_controller, monkeypatch, failed_deployment
+    frequency_controller, failed_deployment
 ):
-    """Failed readback restores attempted instruments before propagating the entry error."""
-    controller, hardware, _ = frequency_controller
+    """Failed deployment restores attempted instruments before propagating the entry error."""
+    controller, hardware = frequency_controller
     original = controller.get_instrument_configuration()
     system = _frequency_system(controller, {"Q00": 5.8, "Q01": 5.0})
-    get_info = hardware.get_instrument_info
-
-    async def fail_readback(resource_id):
-        if len(hardware.deploy_calls) == failed_deployment:
-            raise RuntimeError("readback failed")
-        return await get_info(resource_id)
-
-    monkeypatch.setattr(hardware, "get_instrument_info", fail_readback)
+    hardware.fail_deployment_number = failed_deployment
     with (
-        pytest.raises(RuntimeError, match="readback failed"),
+        pytest.raises(QuelwareSessionError, match="without retry"),
         system.modified_frequencies({"Q00": 7.0, "Q01": 7.0}),
     ):
         pytest.fail("Entry must fail")
@@ -725,11 +721,11 @@ def test_frequency_override_restores_after_partial_entry_failure(
 
 def test_frequency_override_invalidates_failed_restoration(frequency_controller):
     """Failed restoration propagates while restoring model frequencies and invalidating the cache."""
-    controller, hardware, _ = frequency_controller
+    controller, hardware = frequency_controller
     system = _frequency_system(controller, {"Q00": 5.8})
-    hardware.fail_read_number = 1
+    hardware.fail_deployment_number = 2
     with (
-        pytest.raises(RuntimeError, match="read failed"),
+        pytest.raises(QuelwareSessionError, match="without retry"),
         system.modified_frequencies({"Q00": 7.0}),
     ):
         assert system.experiment_system.get_target("Q00").frequency == 7.0
@@ -743,12 +739,12 @@ def test_frequency_override_attempts_remaining_restorations_after_failure(
     frequency_controller,
 ):
     """One failed restoration does not prevent restoring the other changed instruments."""
-    controller, hardware, _ = frequency_controller
+    controller, hardware = frequency_controller
     original = controller.get_instrument_configuration().instruments[0]
     system = _frequency_system(controller, {"Q00": 5.8, "Q01": 5.0})
-    hardware.fail_read_number = 1
+    hardware.fail_deployment_number = 3
     with (
-        pytest.raises(RuntimeError, match="read failed"),
+        pytest.raises(QuelwareSessionError, match="without retry"),
         system.modified_frequencies({"Q00": 7.0, "Q01": 7.0}),
     ):
         assert system.experiment_system.get_target("Q00").frequency == 7.0
@@ -763,7 +759,7 @@ def test_sweep_frequency_overrides_do_not_redeploy_or_read_back(
     frequency_controller, fail_acquisition
 ):
     """Planned points and references preserve instruments even when restoring an outside carrier."""
-    controller, hardware, requested = frequency_controller
+    controller, hardware = frequency_controller
     system = _frequency_system(controller, {"Q00": 5.0})
     original = controller.get_instrument_configuration()
     plan = controller.plan_frequency_sweep(
@@ -778,7 +774,7 @@ def test_sweep_frequency_overrides_do_not_redeploy_or_read_back(
             counts = (
                 len(hardware.deploy_calls),
                 len(hardware.read_calls),
-                len(requested),
+                len(hardware.id_read_calls),
             )
             points = segment.values
             if segment.reference_value is not None:
@@ -793,7 +789,7 @@ def test_sweep_frequency_overrides_do_not_redeploy_or_read_back(
                 assert counts == (
                     len(hardware.deploy_calls),
                     len(hardware.read_calls),
-                    len(requested),
+                    len(hardware.id_read_calls),
                 )
 
     for number, segment in enumerate(plan, start=1):
@@ -808,7 +804,7 @@ def test_sweep_frequency_overrides_do_not_redeploy_or_read_back(
 
 
 @pytest.mark.parametrize("append", [True, False])
-def test_single_deploy_updates_the_full_port_and_returns_one_readback(
+def test_single_deploy_returns_cached_response(
     deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
     append: bool,
 ) -> None:
@@ -820,12 +816,12 @@ def test_single_deploy_updates_the_full_port_and_returns_one_readback(
         instrument=_spec(),
         append=append,
         instrument_cache=cache,
-        resource_reader=cast(Quel3ResourceReader, hardware),
         parallel=False,
     )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", append)]
-    assert hardware.read_calls == [("unit-a:tx_p01",)]
+    assert hardware.read_calls == []
+    assert hardware.id_read_calls == []
     assert cache.get("Q02") is result
     assert cache.get("Q01") is untouched
     assert set(cache.snapshot()) == (
@@ -858,7 +854,7 @@ def test_append_replaces_existing_alias_without_a_preflight_read(
     deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
     cache_populated: bool,
 ) -> None:
-    """Append should let hardware replace an existing alias and cache the full port readback."""
+    """Append should cache the replaced alias and retain already cached siblings."""
     manager, hardware, cache = deployment
     old = hardware.infos[0]
     sibling = _info("Q03")
@@ -868,58 +864,37 @@ def test_append_replaces_existing_alias_without_a_preflight_read(
     result = manager.deploy_instrument(
         instrument=_spec(alias="Q00"),
         instrument_cache=cache,
-        resource_reader=cast(Quel3ResourceReader, hardware),
     )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
-    assert hardware.read_calls == [("unit-a:tx_p01",)]
+    assert hardware.read_calls == []
+    assert hardware.id_read_calls == []
     assert result.id != old.id
     assert cache.get("Q00") is result
-    assert cache.get("Q03") is sibling
+    assert sibling in hardware.infos
+    if cache_populated:
+        assert cache.get("Q03") is sibling
     assert set(cache.snapshot()) == (
-        {"Q00", "Q01", "Q03"} if cache_populated else {"Q00", "Q03"}
+        {"Q00", "Q01", "Q03"} if cache_populated else {"Q00"}
     )
 
 
 def test_append_does_not_retry_after_an_uncertain_write(
     deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
 ) -> None:
-    """An uncertain append should run once and invalidate only the touched port."""
+    """An uncertain append should run once and invalidate only the deployed alias."""
     manager, hardware, cache = deployment
     hardware.fail_after_write = True
     untouched = cache.get("Q01")
 
     with pytest.raises(QuelwareSessionError, match="without retry"):
         manager.deploy_instrument(
-            instrument=_spec(),
+            instrument=_spec("Q00"),
             instrument_cache=cache,
-            resource_reader=cast(Quel3ResourceReader, hardware),
         )
 
     assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
     assert hardware.closed_sessions == 1
-    assert cache.snapshot() == {"Q01": untouched}
-
-
-@pytest.mark.parametrize("failure", ["readback", "missing"])
-def test_failed_append_readback_does_not_publish_partial_information(
-    deployment: tuple[Quel3ConfigurationManager, _Hardware, InstrumentCache],
-    failure: str,
-) -> None:
-    """Failed append readback should leave the touched port absent from the cache."""
-    manager, hardware, cache = deployment
-    hardware.fail_read_number = 1 if failure == "readback" else None
-    hardware.omit_added = failure == "missing"
-    untouched = cache.get("Q01")
-
-    with pytest.raises((ValueError, RuntimeError)):
-        manager.deploy_instrument(
-            instrument=_spec(),
-            instrument_cache=cache,
-            resource_reader=cast(Quel3ResourceReader, hardware),
-        )
-
-    assert hardware.deploy_calls == [("unit-a:tx_p01", True)]
     assert cache.snapshot() == {"Q01": untouched}
 
 
@@ -933,7 +908,6 @@ def test_single_deploy_rejects_alias_on_another_cached_port(
         manager.deploy_instrument(
             instrument=_spec("Q01"),
             instrument_cache=cache,
-            resource_reader=cast(Any, hardware),
         )
     assert hardware.deploy_calls == []
     assert cache.snapshot() == before

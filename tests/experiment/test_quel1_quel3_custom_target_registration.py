@@ -11,7 +11,6 @@ import pytest
 
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import Quel3BackendController
-from qubex.backend.quel3.infra import Quel3ResourceReader
 from qubex.backend.quel3.managers import Quel3ConfigurationManager
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.system import (
@@ -505,16 +504,13 @@ def quel3_registration(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Provide real QuEL-3 registration and cache management with in-memory hardware IO."""
     box = Box.new(id="Q3", name="QuEL-3", type="quel3", address="", adapter="")
     configuration_manager = Quel3ConfigurationManager()
-    resource_reader = Quel3ResourceReader()
-    controller = Quel3BackendController(
-        configuration_manager=configuration_manager, resource_reader=resource_reader
-    )
+    controller = Quel3BackendController(configuration_manager=configuration_manager)
     # Inspect identity invalidation directly: the public export omits resource IDs.
     cache = controller._instrument_cache  # noqa: SLF001
     context, system, _, manager = _make_context(
         port=box.get_port(2), backend_controller=controller
     )
-    hardware = SimpleNamespace(infos=[], calls=[], failure=None, read_count=0)
+    hardware = SimpleNamespace(infos=[], calls=[], failure=None)
 
     def info(alias: str, port_id: str) -> Any:
         return SimpleNamespace(
@@ -534,7 +530,7 @@ def quel3_registration(monkeypatch: pytest.MonkeyPatch) -> Any:
     hardware.infos = [info("sibling", "Q3:tx_p02"), info("elsewhere", "Q3:tx_p04")]
     cache.replace_all(instrument_infos=hardware.infos)
 
-    async def deploy(*, specifications: Any, append: bool, parallel: bool) -> None:
+    async def deploy(*, specifications: Any, append: bool, parallel: bool) -> Any:
         assert append is True
         assert len(specifications) == 1
         spec = specifications[0]
@@ -551,15 +547,9 @@ def quel3_registration(monkeypatch: pytest.MonkeyPatch) -> Any:
         hardware.infos.append(item)
         if hardware.failure == "write":
             raise RuntimeError("write failed")
+        return (item,)
 
-    def read(*, port_ids: Any, parallel: bool) -> Any:
-        hardware.read_count += 1
-        if hardware.failure == "read":
-            raise RuntimeError("read failed")
-        return tuple(item for item in hardware.infos if item.port_id in port_ids)
-
-    monkeypatch.setattr(configuration_manager, "_deploy_instruments", deploy)
-    monkeypatch.setattr(resource_reader, "read_instrument_infos", read)
+    monkeypatch.setattr(configuration_manager, "_request_instrument_deployment", deploy)
     system.control_params = SimpleNamespace(get_frequency_margin=lambda _: 0.1)
     system.wiring_info = SimpleNamespace(
         read_in=[(system.get_mux_by_qubit("Q00"), box.get_port(0))]
@@ -621,7 +611,6 @@ def test_quel3_custom_target_registration(
     assert target.channel.fnco_freq is None
     assert env.manager.push_calls == []
     assert len(env.hardware.calls) == 1
-    assert env.hardware.read_count == 1
     cache = env.cache.snapshot()
     assert set(cache) == {"sibling", "elsewhere", "custom"}
     spec = env.hardware.calls[0]
@@ -638,18 +627,17 @@ def test_quel3_custom_target_registration(
     assert spec.frequency_range_max_hz == pytest.approx(4.3e9)
 
 
-@pytest.mark.parametrize("failure", ["write", "read"])
 @pytest.mark.parametrize("replace", [False, True])
 @pytest.mark.parametrize("update", [None, False, True])
 def test_quel3_registration_failure_preserves_registry(
-    quel3_registration: Any, failure: str, replace: bool, update: bool | None
+    quel3_registration: Any, replace: bool, update: bool | None
 ) -> None:
-    """Failed deployment should retain the registry and invalidate only the touched port cache."""
+    """Failed deployment should retain the registry and invalidate only the deployed alias."""
     env = quel3_registration
     if replace:
         _register_quel3(env, update_backend_settings=True)
     previous = env.system.gen_targets
-    env.hardware.failure = failure
+    env.hardware.failure = "write"
     with pytest.raises(RuntimeError, match="failed"):
         _register_quel3(
             env,
@@ -657,7 +645,7 @@ def test_quel3_registration_failure_preserves_registry(
             **({} if update is None else {"update_backend_settings": update}),
         )
     assert env.system.gen_targets == previous
-    assert set(env.cache.snapshot()) == {"elsewhere"}
+    assert set(env.cache.snapshot()) == {"sibling", "elsewhere"}
 
 
 def test_quel3_same_port_reregistration_refreshes_identity(
@@ -853,8 +841,8 @@ def test_registered_custom_targets_compile_and_resolve_from_cache(
     analyzer = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4)
     analysis = analyzer.analyze_all((payload,), env.cache)
     assert set(analysis[0].payload.fixed_timelines) == {"custom", "custom-read"}
-    env.hardware.failure = "read"
-    with pytest.raises(RuntimeError, match="read failed"):
+    env.hardware.failure = "write"
+    with pytest.raises(RuntimeError, match="write failed"):
         _register_quel3(
             env,
             label="custom-read",

@@ -189,7 +189,7 @@ class Quel3SystemSynchronizer:
         update_backend_settings: bool = False,
         push_boxes: Callable[[Sequence[str]], None],
     ) -> None:
-        """Deploy and read back the instrument unconditionally before publishing its target."""
+        """Deploy the instrument and cache its returned information before publishing its target."""
         del update_backend_settings, push_boxes
         if (
             not target.label
