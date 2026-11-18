@@ -707,8 +707,7 @@ class Quel3ExecutionManager:
             for alias, timeline in payload.fixed_timelines.items()
         }
         with _log_phase_duration("trigger"):
-            ttl_ms = QUELWARE_SESSION_EXTEND_TTL_MS
-            if not await session_state.session.extend(ttl_ms):
+            if not await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS):
                 raise RuntimeError("QuEL-3 session lease extension rejected.")
             await session_state.session.trigger(
                 instrument_ids=instrument_resource_ids,
@@ -719,7 +718,7 @@ class Quel3ExecutionManager:
                 instrument_resource_ids
             )
 
-        if not await session_state.session.extend(ttl_ms):
+        if not await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS):
             raise RuntimeError("QuEL-3 session lease extension rejected.")
 
         with _log_phase_duration("convert_result"):
