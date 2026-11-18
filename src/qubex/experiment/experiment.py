@@ -893,11 +893,11 @@ class Experiment:
         registering an additional READ target does not change default readout
         selection. Pass its label explicitly in pulse and capture schedules.
 
-        QuEL-3 always validates, deploys, and reads back the instrument before
-        publishing the target; offline registration is not supported. If either
-        operation fails, the registry is unchanged and the touched port's
-        execution cache is invalidated. Hardware writes are not rolled back. Diagnostic backend
-        settings are refreshed separately with `pull()`.
+        QuEL-3 requires an online deployment. It caches the returned instrument
+        before publishing the target. If the write or response validation fails,
+        the previous registry is retained and the deployed alias is uncached.
+        Hardware writes are not rolled back. Use `pull()` to refresh diagnostic
+        backend settings.
         Same-port aliases may be updated; moving an existing alias to another
         port is unsupported. CNCO/FNCO allocation is delegated to quelware.
         """
