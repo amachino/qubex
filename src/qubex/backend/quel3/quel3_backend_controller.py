@@ -582,10 +582,10 @@ class Quel3BackendController(BackendController):
         Notes
         -----
         Redeployment centers each instrument's range on the requested frequency
-        and reads back the updated instrument. Preserve its existing width or
+        and caches the returned instrument. Preserve its existing width or
         expand it to satisfy the minimum margin. If the entire minimum range is
         already within the cached range, including its endpoints, reuse the
-        instrument without redeployment, readback, or cache changes.
+        instrument without redeployment or cache changes.
         Other instruments are preserved.
         """
         if not target_frequencies_ghz:
@@ -618,7 +618,7 @@ class Quel3BackendController(BackendController):
                 / 2,
                 min_margin_hz,
             )
-            self._configuration_manager.replace_instruments(
+            self.deploy_instrument(
                 instrument=InstrumentSpec(
                     port_id=instrument.port_id,
                     alias=alias,
@@ -626,8 +626,6 @@ class Quel3BackendController(BackendController):
                     frequency_range_min_hz=frequency_hz - margin,
                     frequency_range_max_hz=frequency_hz + margin,
                 ),
-                instrument_cache=self._instrument_cache,
-                resource_reader=self._resource_reader,
             )
 
     def deploy_instruments(

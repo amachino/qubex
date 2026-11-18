@@ -55,7 +55,7 @@ def test_modify_target_frequencies_preserves_instrument_width_and_other_aliases(
         deployed.append(instrument)
         return None
 
-    monkeypatch.setattr(manager, "replace_instruments", deploy)
+    monkeypatch.setattr(controller, "deploy_instrument", deploy)
     controller.modify_target_frequencies({"Q00": 7.0})
 
     assert deployed == [

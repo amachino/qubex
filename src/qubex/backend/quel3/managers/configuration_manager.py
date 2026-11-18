@@ -447,22 +447,6 @@ class Quel3ConfigurationManager:
         )
         return instrument_infos[instrument.alias]
 
-    def replace_instruments(
-        self,
-        *,
-        instrument: InstrumentSpec,
-        instrument_cache: InstrumentCache,
-        resource_reader: Quel3ResourceReader,
-        parallel: bool = True,
-    ) -> InstrumentInfoProtocol:
-        """Replace a cached instrument on its existing port."""
-        previous = instrument_cache.get(instrument.alias)
-        if previous.port_id != instrument.port_id:
-            raise ValueError("Instrument redeployment must preserve its port.")
-        return self.deploy_instrument(
-            instrument=instrument, instrument_cache=instrument_cache, parallel=parallel
-        )
-
     @staticmethod
     def _validate_deployment_targets(
         *,
