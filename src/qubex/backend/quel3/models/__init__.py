@@ -29,6 +29,7 @@ from .resource_snapshot import (
     Quel3UnitState,
 )
 from .result import Quel3BackendExecutionResult
+from .waveform_compression import Quel3WaveformCompression
 
 __all__ = [
     "InstrumentConfiguration",
@@ -54,5 +55,6 @@ __all__ = [
     "Quel3UnitControlState",
     "Quel3UnitState",
     "Quel3Waveform",
+    "Quel3WaveformCompression",
     "Quel3WaveformEvent",
 ]
