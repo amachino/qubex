@@ -3353,6 +3353,32 @@ def execute_sessions(monkeypatch):
     return execute
 
 
+@pytest.mark.parametrize("timeout_kind", ["grpc", "asyncio", "builtin"])
+def test_trigger_rpc_timeout_never_replays(execute_sessions, timeout_kind):
+    """A lost trigger acknowledgement should end the batch after one dispatch."""
+    if timeout_kind == "grpc":
+        grpc = pytest.importorskip("grpclib")
+        timeout = grpc.GRPCError(grpc.Status.DEADLINE_EXCEEDED)
+    elif timeout_kind == "asyncio":
+        timeout = asyncio.TimeoutError()
+    else:
+        timeout = TimeoutError()
+
+    class Session(_FakeSession):
+        async def trigger(self, instrument_ids, wait_ms=None):
+            await super().trigger(instrument_ids, wait_ms)
+            raise timeout
+
+    first, second = Session(), _FakeSession()
+    with pytest.raises(
+        session_workarounds_module.Quel3ExecutionOutcomeUnknown
+    ) as error:
+        asyncio.run(execute_sessions([first, second], _make_payload()))
+    assert error.value.__cause__ is timeout
+    assert len(first.trigger_calls) == 1
+    assert not second.trigger_calls
+
+
 @pytest.mark.parametrize("fetch_fails", [False, True])
 def test_rejected_lease_during_acquisition_never_replays_trigger(
     monkeypatch, execute_sessions, fetch_fails

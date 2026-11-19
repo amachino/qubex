@@ -73,6 +73,17 @@ logger = logging.getLogger(__name__)
 QUEL3_SESSION_TRIGGER_WAIT_MS: int | None = None
 
 
+def _is_trigger_timeout(exc: Exception) -> bool:
+    """Recognize local and remote deadlines reported by the trigger RPC."""
+    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+        return True
+    try:
+        from grpclib import GRPCError, Status
+    except ImportError:
+        return False
+    return isinstance(exc, GRPCError) and exc.status is Status.DEADLINE_EXCEEDED
+
+
 @contextmanager
 def _log_phase_duration(phase: str) -> Iterator[None]:
     """Measure an execution phase only when DEBUG diagnostics are enabled."""
@@ -712,22 +723,27 @@ class Quel3ExecutionManager:
         """Dispatch one trigger with a valid lease and retrieve its results."""
         if not self._session_manager.has_valid_lease(session):
             raise RuntimeError("QuEL-3 session lease lost before trigger.")
+        trigger_returned = False
         try:
             with _log_phase_duration("trigger"):
                 await session.trigger(
                     instrument_ids=instrument_ids, wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS
                 )
+            trigger_returned = True
             with _log_phase_duration("fetch_results"):
                 return await session.wait_for_results(instrument_ids)
         except Exception as exc:
-            if not self._session_manager.has_valid_lease(session):
-                raise Quel3ExecutionOutcomeUnknown(
-                    f"QuEL-3 trigger outcome unknown after lease loss; execution={execution_index}",
-                    session_token=self._session_manager.session_token
-                    or "<unavailable>",
-                    cause=exc,
-                ) from exc
-            raise
+            if not trigger_returned and _is_trigger_timeout(exc):
+                reason = "trigger RPC timeout"
+            elif not self._session_manager.has_valid_lease(session):
+                reason = "lease loss"
+            else:
+                raise
+            raise Quel3ExecutionOutcomeUnknown(
+                f"QuEL-3 trigger outcome unknown after {reason}; execution={execution_index}",
+                session_token=self._session_manager.session_token or "<unavailable>",
+                cause=exc,
+            ) from exc
 
     async def _execute_payload(
         self,
