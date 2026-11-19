@@ -10,17 +10,24 @@ from qubex.backend.quel3.builders import Quel3PulseEventBuilder
 
 
 @pytest.mark.parametrize(
-    ("target_is_read", "sampling_period_ns", "values", "expected", "expected_period"),
+    (
+        "instrument_period_fs",
+        "sampling_period_ns",
+        "values",
+        "expected",
+        "expected_period",
+    ),
     [
-        (False, 0.4, [1, 3, 5], [1, 3, 5], 0.4),
-        (True, 0.8, [1, 3, 5], [1, 3, 5], 0.8),
-        (True, 0.4, [1, 3, 5, 7], [2, 6], 0.8),
-        (True, 0.4, [1, 3, 5], [2, 5], 0.8),
-        (True, 0.4, [1 + 3j, 3 + 1j], [2 + 2j], 0.8),
+        (400_000, 0.4, [1, 3, 5], [1, 3, 5], 0.4),
+        (800_001, 0.4, [1, 3], [1, 3], 0.4),
+        (800_000, 0.8, [1, 3, 5], [1, 3, 5], 0.8),
+        (800_000, 0.4, [1, 3, 5, 7], [2, 6], 0.8),
+        (800_000, 0.4, [1, 3, 5], [2, 5], 0.8),
+        (800_000, 0.4, [1 + 3j, 3 + 1j], [2 + 2j], 0.8),
     ],
 )
 def test_builder_normalizes_readout_waveforms(
-    target_is_read: bool,
+    instrument_period_fs: int,
     sampling_period_ns: float,
     values: list[complex],
     expected: list[complex],
@@ -31,7 +38,10 @@ def test_builder_normalizes_readout_waveforms(
     original_shape = pulse.shape_values.copy()
     builder = Quel3PulseEventBuilder()
 
-    events, library = builder.build({"target": (PulseArray([pulse]), target_is_read)})
+    events, library = builder.build(
+        {"target": PulseArray([pulse])},
+        instrument_periods_fs={"target": instrument_period_fs},
+    )
 
     assert len(library) == 1
     waveform = library[events["target"][0].waveform_name]
@@ -48,11 +58,11 @@ def test_builder_rejects_incompatible_readout_sampling_periods(
     with pytest.raises(ValueError, match="must divide"):
         Quel3PulseEventBuilder().build(
             {
-                "target": (
-                    PulseArray([Arbitrary([1, 3], sampling_period=sampling_period_ns)]),
-                    True,
+                "target": PulseArray(
+                    [Arbitrary([1, 3], sampling_period=sampling_period_ns)]
                 )
-            }
+            },
+            instrument_periods_fs={"target": 800_000},
         )
 
 
@@ -62,13 +72,16 @@ def test_builder_preserves_sparse_readout_events_and_modifiers() -> None:
         [
             Arbitrary([0.1, 0.3], sampling_period=0.4, scale=0.5),
             Blank(0.4, sampling_period=0.4),
+            Arbitrary([], sampling_period=0.4),
             PhaseShift(np.pi / 2),
             Arbitrary([0.1, 0.3], sampling_period=0.4, scale=0.7),
         ]
     )
     builder = Quel3PulseEventBuilder()
 
-    by_target, library = builder.build({"readout": (sequence, True)})
+    by_target, library = builder.build(
+        {"readout": sequence}, instrument_periods_fs={"readout": 800_000}
+    )
     events = by_target["readout"]
 
     assert len(library) == 1
@@ -83,8 +96,13 @@ def test_builder_shares_waveforms_only_within_one_payload() -> None:
     sequence = PulseArray([Arbitrary([0.1, 0.3], sampling_period=0.4)])
     builder = Quel3PulseEventBuilder()
 
-    events, first = builder.build({"a": (sequence, False), "b": (sequence, False)})
-    readout, second = builder.build({"r": (sequence, True)})
+    events, first = builder.build(
+        {"a": sequence, "b": sequence},
+        instrument_periods_fs={"a": 400_000, "b": 400_000},
+    )
+    readout, second = builder.build(
+        {"r": sequence}, instrument_periods_fs={"r": 800_000}
+    )
 
     assert len(first) == len(second) == 1
     assert events["a"][0].waveform_name == events["b"][0].waveform_name
@@ -101,7 +119,8 @@ def test_builder_distinguishes_control_and_readout_shapes() -> None:
     sequence = PulseArray([Arbitrary([0.1, 0.3], sampling_period=0.4)])
     builder = Quel3PulseEventBuilder()
     events, library = builder.build(
-        {"control": (sequence, False), "readout": (sequence, True)}
+        {"control": sequence, "readout": sequence},
+        instrument_periods_fs={"control": 400_000, "readout": 800_000},
     )
     event_names = [events[label][0].waveform_name for label in ("control", "readout")]
 
@@ -118,15 +137,31 @@ def test_builder_distinguishes_control_and_readout_shapes() -> None:
     )
 
 
-@pytest.mark.parametrize("target_is_read", [False, True])
-def test_builder_rejects_nonfinite_iq(target_is_read: bool) -> None:
+@pytest.mark.parametrize("instrument_period_fs", [400_000, 800_000])
+def test_builder_rejects_nonfinite_iq(instrument_period_fs: int) -> None:
     """Nonfinite IQ should be rejected for control and readout waveforms."""
     with pytest.raises(ValueError, match="IQ values must be finite"):
         Quel3PulseEventBuilder().build(
-            {
-                "target": (
-                    PulseArray([Arbitrary([0, np.nan], sampling_period=0.4)]),
-                    target_is_read,
-                )
-            }
+            {"target": PulseArray([Arbitrary([0, np.nan], sampling_period=0.4)])},
+            instrument_periods_fs={"target": instrument_period_fs},
+        )
+
+
+def test_blank_only_target_needs_no_instrument_period() -> None:
+    """An idle timeline emits no events or waveforms without a deployed instrument."""
+    idle = PulseArray([Blank(0.8, sampling_period=0.4)])
+    events, library = Quel3PulseEventBuilder().build(
+        {"idle": idle}, instrument_periods_fs={}
+    )
+    assert events == {"idle": ()}
+    assert library == {}
+
+
+@pytest.mark.parametrize("periods", [{}, {"active": 0}, {"active": -1}])
+def test_active_target_requires_a_positive_instrument_period(periods) -> None:
+    """An unusable hardware grid should identify the active target before compilation."""
+    active = PulseArray([Arbitrary([1], sampling_period=0.4)])
+    with pytest.raises(ValueError, match="active"):
+        Quel3PulseEventBuilder().build(
+            {"active": active}, instrument_periods_fs=periods
         )

@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Final
 
 SAMPLING_PERIOD_NS: Final[float] = 0.4
-READOUT_SAMPLING_PERIOD_NS: Final[float] = 0.8
+READOUT_SAMPLING_PERIOD_FS: Final[int] = 800_000
+READOUT_SAMPLING_PERIOD_NS: Final[float] = READOUT_SAMPLING_PERIOD_FS / 1e6
 CAPTURE_DECIMATION_FACTOR: Final[int] = 1
 
 # Full instrument spans used for temporary frequency sweep windows.

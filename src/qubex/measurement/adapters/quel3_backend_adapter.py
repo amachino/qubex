@@ -85,7 +85,7 @@ class Quel3MeasurementBackendAdapter:
         config: MeasurementConfig,
         quel1_options: Quel1MeasurementOptions | None = None,
     ) -> BackendExecutionRequest:
-        """Build backend execution request as Quel3 fixed-timeline payload."""
+        """Build the payload using cached instrument periods for targets with pulses."""
         _ = quel1_options
         if config.state_classification:
             raise NotImplementedError(
@@ -94,22 +94,13 @@ class Quel3MeasurementBackendAdapter:
         pulse_schedule = schedule.pulse_schedule
         channel_captures = schedule.capture_schedule.channels
         builder = Quel3PulseEventBuilder()
-        target_types = {
-            target: self._experiment_system.get_target(target).type
-            for target in pulse_schedule.labels
-        }
         events_by_target, waveform_library = builder.build(
-            {
-                target: (
-                    pulse_schedule.get_sequence(target, copy=False),
-                    target_type is TargetType.READ,
-                )
-                for target, target_type in target_types.items()
-            }
+            pulse_schedule.get_sequences(copy=False),
+            instrument_periods_fs=self._backend_controller.instrument_sampling_periods_fs,
         )
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
-        for target, target_type in target_types.items():
-            events = events_by_target[target]
+        for target, events in events_by_target.items():
+            target_type = self._experiment_system.get_target(target).type
             captures = sorted(
                 channel_captures.get(target, []), key=lambda c: c.start_time
             )
