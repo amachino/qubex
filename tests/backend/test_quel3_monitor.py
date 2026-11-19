@@ -1138,4 +1138,23 @@ def test_controller_delegates_monitor_operations(
     result = getattr(controller, controller_method)(**arguments)
 
     assert result is expected
-    assert calls == [arguments]
+    assert calls == [{**arguments, "compression": controller.waveform_compression}]
+
+
+def test_monitor_builds_with_the_current_waveform_settings(monitor_schedule_runtime):
+    """Monitor runs compile their output payload with the controller's build settings."""
+    from qxpulse import Rect
+
+    from qubex.backend.quel3 import Quel3WaveformCompression
+
+    controller, manager, _ = monitor_schedule_runtime
+    with PulseSchedule() as schedule:
+        schedule.add(
+            "output-a", Rect(duration=8000, sampling_period=0.4, amplitude=0.2)
+        )
+    for enabled, count in [(True, 4), (False, 1)]:
+        controller.waveform_compression = Quel3WaveformCompression(enabled=enabled)
+        controller.run_monitor_schedule(pulse_schedule=schedule)
+        payload = manager.requests[-1].payload
+        assert len(payload.fixed_timelines["output-a"].events) == count
+        assert len(payload.waveform_library) == 1

@@ -154,7 +154,7 @@ class Quel3BackendController(BackendController):
         execution_options : Quel3ExecutionOptions | None, optional
             Default resource limits and adjacent-job packing settings.
         waveform_compression : Quel3WaveformCompression | None, optional
-            Waveform sharing settings for new measurement payloads.
+            Waveform sharing settings for new measurement and monitor payloads.
             Configure under `quel3.waveform_compression` in `system.yaml`.
         """
         if runtime_config is not None and any(
@@ -916,6 +916,7 @@ class Quel3BackendController(BackendController):
         allocating zero-filled waveform samples.
         """
         return self._monitor_tool.run_schedule(
+            compression=self.waveform_compression,
             pulse_schedule=pulse_schedule,
             capture_start_ns=capture_start_ns,
             capture_length_ns=capture_length_ns,

@@ -23,6 +23,7 @@ from qubex.backend.quel3.models import (
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
     Quel3Waveform,
+    Quel3WaveformCompression,
 )
 
 if TYPE_CHECKING:
@@ -72,6 +73,7 @@ class Quel3MonitorTool:
         self,
         *,
         pulse_schedule: PulseSchedule,
+        compression: Quel3WaveformCompression | None = None,
         capture_start_ns: float = 0.0,
         capture_length_ns: float | None = None,
         n_iterations: int = 1,
@@ -86,6 +88,8 @@ class Quel3MonitorTool:
         pulse_schedule : PulseSchedule
             Valid schedule whose target names uniquely identify live output
             instrument aliases on a single unit.
+        compression : Quel3WaveformCompression | None, optional
+            Waveform sharing settings used to build each output payload.
         capture_start_ns : float, default=0.0
             Capture start time relative to the output trigger, in ns.
         capture_length_ns : float | None, optional
@@ -164,7 +168,7 @@ class Quel3MonitorTool:
             monitor_alias = f"_qubex_monitor_{suffix}"
         prepared: dict[str, tuple[Quel3FixedTimeline, dict[str, Quel3Waveform]]] = {}
         instrument_periods_fs = original_cache.sampling_periods_fs
-        builder = Quel3PulseEventBuilder()
+        builder = Quel3PulseEventBuilder(compression=compression)
         for label in labels:
             spec = original_specs[label]
             if spec.role == "RECEIVER" or spec.port_id.endswith(":mon"):
