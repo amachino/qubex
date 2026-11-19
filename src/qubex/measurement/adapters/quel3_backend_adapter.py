@@ -93,7 +93,9 @@ class Quel3MeasurementBackendAdapter:
             )
         pulse_schedule = schedule.pulse_schedule
         channel_captures = schedule.capture_schedule.channels
-        builder = Quel3PulseEventBuilder()
+        builder = Quel3PulseEventBuilder(
+            compression=self._backend_controller.waveform_compression
+        )
         events_by_target, waveform_library = builder.build(
             pulse_schedule.get_sequences(copy=False),
             instrument_periods_fs=self._backend_controller.instrument_sampling_periods_fs,
