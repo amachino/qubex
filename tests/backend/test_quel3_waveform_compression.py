@@ -232,3 +232,94 @@ def test_repeated_flat_top_preserves_internal_ramps():
     np.testing.assert_array_equal(
         library[events[0].waveform_name].iq_array, pulse.shape_values
     )
+
+
+def test_template_reuse_generates_modulated_iq_once(monkeypatch):
+    """Gain and phase variants generate one IQ array per detuning."""
+    from qxpulse import Pulse
+
+    calls = []
+    original = Pulse.shape_values
+
+    def counted(pulse):
+        calls.append(pulse.detuning)
+        return original.__get__(pulse)
+
+    monkeypatch.setattr(Pulse, "shape_values", property(counted))
+    pulse = Rect(duration=50000, sampling_period=0.4, amplitude=0.2, detuning=0.01)
+    variants = [pulse.scaled(1 / (i + 1)).shifted(i / 100) for i in range(20)]
+    sequence = PulseArray([*variants, pulse.detuned(0.01)])
+    Quel3PulseEventBuilder().build({"a": sequence}, instrument_periods_fs={"a": 400000})
+    assert calls == [0.01, 0.02]
+
+
+def test_custom_shape_values_keep_distinct_templates():
+    """A custom pulse can derive different IQ from the same sampled envelope."""
+
+    class Offset(Arbitrary):
+        offset: float
+
+        @property
+        def shape_values(self):
+            return super().shape_values + self.offset
+
+    first = Offset([0.1, 0.2])
+    first.offset = 1.0
+    second = first.copy()
+    second.offset = 2.0
+    sequence = PulseArray([first, second])
+    events, library = Quel3PulseEventBuilder().build(
+        {"a": sequence}, instrument_periods_fs={"a": 400000}
+    )
+    for event, pulse in zip(events["a"], (first, second), strict=True):
+        np.testing.assert_array_equal(
+            library[event.waveform_name].iq_array, pulse.shape_values
+        )
+
+
+def test_template_cache_distinguishes_strided_envelopes():
+    """Views with the same start and length can have different IQ samples."""
+    values = np.arange(8, dtype=np.complex128)
+
+    class Strided(Arbitrary):
+        stride: int
+
+        def _sample_values(self):
+            return values[: 4 * self.stride : self.stride]
+
+    pulses = [Strided(duration=4, sampling_period=1) for _ in range(2)]
+    for pulse, stride in zip(pulses, (1, 2), strict=True):
+        pulse.stride = stride
+    builder = Quel3PulseEventBuilder()
+    events, library = builder.build(
+        {"a": PulseArray(pulses)}, instrument_periods_fs={"a": 400000}
+    )
+    for event, stride in zip(events["a"], (1, 2), strict=True):
+        np.testing.assert_array_equal(
+            library[event.waveform_name].iq_array, values[: 4 * stride : stride]
+        )
+
+
+def test_custom_samplers_can_reuse_scratch_space_across_targets():
+    """A custom sampler can refill one buffer while flattening the next target."""
+    scratch = np.zeros(4, dtype=np.complex128)
+
+    class Sampled(Arbitrary):
+        level: float
+
+        def _sample_values(self):
+            scratch.fill(self.level)
+            return scratch
+
+    pulses = [Sampled(duration=4, sampling_period=1) for _ in range(2)]
+    targets = {}
+    for label, pulse in enumerate(pulses):
+        pulse.level = float(label)
+        targets[str(label)] = PulseArray([pulse])
+    events, library = Quel3PulseEventBuilder().build(
+        targets, instrument_periods_fs=dict.fromkeys(targets, 400000)
+    )
+    for label, parts in events.items():
+        np.testing.assert_array_equal(
+            library[parts[0].waveform_name].iq_array, float(label)
+        )

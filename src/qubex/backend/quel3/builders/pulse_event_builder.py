@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass, replace
 
 import numpy as np
-from qxpulse import Blank, FlatTop, Pulse, PulseArray, Rect
+from qxpulse import Arbitrary, Blank, FlatTop, Pulse, PulseArray, Rect
 
 from qubex.backend.quel3.models import (
     Quel3Waveform,
@@ -34,13 +34,42 @@ class _RepeatedBlock:
         return self.start + self.size * self.count
 
 
+def _iq_digest(samples: np.ndarray) -> bytes:
+    """Hash IQ samples in playback order."""
+    return hashlib.blake2b(np.ascontiguousarray(samples).data, digest_size=16).digest()
+
+
+class _EnvelopeDigests:
+    """Reuse hashes of shared envelope views during one payload build."""
+
+    def __init__(self) -> None:
+        self._views: dict[
+            tuple[int, tuple[int, ...], tuple[int, ...]], tuple[np.ndarray, bytes]
+        ] = {}
+
+    def get(self, pulse: Pulse) -> bytes:
+        envelope = pulse.envelope_values
+        # Custom samplers may refill borrowed storage between targets.
+        if type(pulse) not in (Rect, FlatTop, Arbitrary):
+            return _iq_digest(envelope)
+        key = (envelope.ctypes.data, envelope.shape, envelope.strides)
+        cached = self._views.get(key)
+        if cached is not None:
+            return cached[1]
+
+        digest = _iq_digest(envelope)
+        # Retain the view so another allocation cannot reuse its address mid-build.
+        self._views[key] = (envelope, digest)
+        return digest
+
+
 class _WaveformLibrary:
     def __init__(self) -> None:
         self.waveforms: dict[str, Quel3Waveform] = {}
         self._names: dict[tuple[float, bytes], str] = {}
 
     def register(self, samples: np.ndarray, period: float) -> str:
-        key = (period, hashlib.blake2b(samples.tobytes(), digest_size=16).digest())
+        key = (period, _iq_digest(samples))
         name = self._names.get(key)
         if name is None:
             name = f"waveform_{len(self.waveforms):04d}"
@@ -68,8 +97,10 @@ class Quel3PulseEventBuilder:
         Event offsets are relative to the start of each target's sequence.
         """
         library = _WaveformLibrary()
+        digests = _EnvelopeDigests()
         templates: dict[
-            tuple[str, int, type[Pulse]], tuple[Quel3WaveformEvent, ...]
+            tuple[type[Pulse], bytes | str, float, float, range | None, int],
+            tuple[Quel3WaveformEvent, ...],
         ] = {}
         events_by_target: dict[str, tuple[Quel3WaveformEvent, ...]] = {}
 
@@ -95,10 +126,13 @@ class Quel3PulseEventBuilder:
                         "Deploy or refresh instruments before building the payload."
                     )
 
-                key = (waveform.shape_hash, instrument_period_fs, type(waveform))
+                plateau = self._plateau_range(waveform)
+                key = self._template_key(
+                    waveform, instrument_period_fs, plateau, digests
+                )
                 if key not in templates:
                     templates[key] = self._compile(
-                        waveform, instrument_period_fs, library
+                        waveform, instrument_period_fs, library, plateau
                     )
                 events.extend(
                     replace(
@@ -115,8 +149,40 @@ class Quel3PulseEventBuilder:
 
         return events_by_target, library.waveforms
 
+    @staticmethod
+    def _template_key(
+        pulse: Pulse,
+        instrument_period_fs: int,
+        plateau: range | None,
+        digests: _EnvelopeDigests,
+    ) -> tuple[type[Pulse], bytes | str, float, float, range | None, int]:
+        """Identify the IQ and grid inputs that determine a compiled template."""
+        cls = type(pulse)
+        if (
+            cls.shape_values is Pulse.shape_values
+            and cls.envelope_values is Pulse.envelope_values
+            and cls.times is Pulse.times
+            and cls.shape_hash is Pulse.shape_hash
+        ):
+            digest = digests.get(pulse)
+        else:
+            # Custom modulation or time axes require the actual modulated IQ.
+            digest = pulse.shape_hash
+        return (
+            cls,
+            digest,
+            pulse.detuning,
+            pulse.sampling_period,
+            plateau,
+            instrument_period_fs,
+        )
+
     def _compile(
-        self, pulse: Pulse, instrument_period_fs: int, library: _WaveformLibrary
+        self,
+        pulse: Pulse,
+        instrument_period_fs: int,
+        library: _WaveformLibrary,
+        plateau: range | None,
     ) -> tuple[Quel3WaveformEvent, ...]:
         shape, period = self._normalize_waveform(
             instrument_period_fs=instrument_period_fs,
@@ -127,6 +193,7 @@ class Quel3PulseEventBuilder:
             raise ValueError("Waveform IQ values must be finite.")
         block = self._find_repeated_block(
             pulse,
+            plateau=plateau,
             length=len(shape),
             period=period,
             instrument_period_fs=instrument_period_fs,
@@ -156,16 +223,29 @@ class Quel3PulseEventBuilder:
             )
         return tuple(parts)
 
+    def _plateau_range(self, pulse: Pulse) -> range | None:
+        """Return the candidate plateau in source samples, before readout averaging."""
+        if not self._compression.enabled:
+            return None
+        if type(pulse) is Rect:
+            return range(pulse.length)
+        if type(pulse) is FlatTop:
+            # Keep both ramps and their derivative neighbours.
+            margin = math.ceil(pulse.tau / pulse.sampling_period) + 2
+            return range(margin, pulse.length - margin)
+        return None
+
     def _find_repeated_block(
         self,
         pulse: Pulse,
         *,
+        plateau: range | None,
         length: int,
         period: float,
         instrument_period_fs: int,
     ) -> _RepeatedBlock | None:
         """Select a block on the registered grid and verify its source samples."""
-        if not self._compression.enabled or type(pulse) not in (Rect, FlatTop):
+        if plateau is None:
             return None
         stride = round(period / pulse.sampling_period)
         if stride * pulse.sampling_period != period:
@@ -176,16 +256,10 @@ class Quel3PulseEventBuilder:
         if not math.isclose(period * 1e6, period_fs, rel_tol=0, abs_tol=1e-8):
             return None
         quantum = instrument_period_fs // math.gcd(period_fs, instrument_period_fs)
-        # Keep both ramps, their derivative neighbours and partial readout groups.
-        margin = (
-            math.ceil(pulse.tau / pulse.sampling_period) + 2
-            if isinstance(pulse, FlatTop)
-            else 0
-        )
         block = self._choose_repeated_block(
             length=length,
-            first=(margin + stride - 1) // stride,
-            stop=(pulse.length - margin) // stride,
+            first=(plateau.start + stride - 1) // stride,
+            stop=plateau.stop // stride,
             alignment=quantum,
             target=self._compression.target_block_samples,
             minimum=self._compression.min_chunk_samples,
