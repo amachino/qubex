@@ -47,6 +47,7 @@ from .models import (
     Quel3ExecutionPlan,
     Quel3ResourceLevel,
     Quel3ResourceSnapshot,
+    Quel3WaveformCompression,
 )
 from .quel3_backend_constants import (
     CAPTURE_DECIMATION_FACTOR,
@@ -88,6 +89,11 @@ class Quel3BackendController(BackendController):
                 if "execution" in value
                 else None
             ),
+            waveform_compression=(
+                Quel3WaveformCompression.model_validate(value["waveform_compression"])
+                if "waveform_compression" in value
+                else None
+            ),
             cable_delay_ns=cast(
                 Mapping[str, Mapping[str, float]] | None,
                 value.get("cable_delay_ns"),
@@ -109,6 +115,7 @@ class Quel3BackendController(BackendController):
         execution_manager: Quel3ExecutionManager | None = None,
         resource_reader: Quel3ResourceReader | None = None,
         execution_options: Quel3ExecutionOptions | None = None,
+        waveform_compression: Quel3WaveformCompression | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -146,6 +153,9 @@ class Quel3BackendController(BackendController):
             recovery in the default execution manager.
         execution_options : Quel3ExecutionOptions | None, optional
             Default resource limits and adjacent-job packing settings.
+        waveform_compression : Quel3WaveformCompression | None, optional
+            Waveform sharing settings for new measurement and monitor payloads.
+            Configure under `quel3.waveform_compression` in `system.yaml`.
         """
         if runtime_config is not None and any(
             value is not None
@@ -170,6 +180,7 @@ class Quel3BackendController(BackendController):
             if execution_manager is not None
             else self.SAMPLING_PERIOD_NS
         )
+        self.waveform_compression = waveform_compression or Quel3WaveformCompression()
         self._runtime_config = resolved_runtime_config
         self._instrument_cache = InstrumentCache()
 
@@ -669,6 +680,11 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
 
+    @property
+    def instrument_sampling_periods_fs(self) -> dict[str, int]:
+        """Return per-alias sampling periods from the last instrument readback."""
+        return self._instrument_cache.sampling_periods_fs
+
     def get_instrument_configuration(self) -> InstrumentConfiguration:
         """
         Return deployable settings from the last successful connect, deploy, or refresh.
@@ -896,6 +912,7 @@ class Quel3BackendController(BackendController):
         allocating zero-filled waveform samples.
         """
         return self._monitor_tool.run_schedule(
+            compression=self.waveform_compression,
             pulse_schedule=pulse_schedule,
             capture_start_ns=capture_start_ns,
             capture_length_ns=capture_length_ns,

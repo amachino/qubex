@@ -63,6 +63,14 @@ class InstrumentCache:
                 f"instruments before execution. {INSTRUMENT_RECOVERY_HINT}"
             ) from exc
 
+    @property
+    def sampling_periods_fs(self) -> dict[str, int]:
+        """Return the reported hardware sampling period for each cached alias."""
+        return {
+            alias: info.config.sampling_period_fs
+            for alias, info in self._instruments.items()
+        }
+
     def snapshot(self) -> dict[str, InstrumentInfoProtocol]:
         """Return a copy of the alias index containing the original hardware objects."""
         return dict(self._instruments)

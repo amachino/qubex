@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -160,9 +161,9 @@ class _FakePulseSchedule:
     def is_valid(self) -> bool:
         return self.valid
 
-    def get_sequence(self, label: str, *, copy: bool = False) -> PulseArray:
+    def get_sequences(self, *, copy: bool = False) -> dict[str, PulseArray]:
         del copy
-        return self.sequences[label]
+        return self.sequences
 
     def get_sampled_sequences(self) -> dict[str, np.ndarray]:
         raise AssertionError("Quel3 adapter must not call get_sampled_sequences().")
@@ -245,8 +246,36 @@ class _FakeExperimentSystem:
         return SimpleNamespace(index=self.mux_by_qubit[label])
 
 
+def _cache_instrument_periods(
+    controller: Quel3BackendController, periods: dict[str, int]
+) -> None:
+    infos = [
+        SimpleNamespace(
+            id=f"unit:{alias}",
+            port_id=f"unit:tx_p{i:02d}",
+            definition=SimpleNamespace(alias=alias),
+            config=SimpleNamespace(sampling_period_fs=period),
+        )
+        for i, (alias, period) in enumerate(periods.items())
+    ]
+    with patch.object(
+        controller.resource_reader, "read_instrument_infos", return_value=infos
+    ):
+        controller.refresh_instrument_cache()
+
+
 def _make_backend_controller() -> Quel3BackendController:
-    return Quel3BackendController()
+    controller = Quel3BackendController()
+    _cache_instrument_periods(
+        controller,
+        {
+            "Q00": 400_000,
+            "RQ00": 800_000,
+            "RQ01": 800_000,
+            "raw-readout-target": 400_000,
+        },
+    )
+    return controller
 
 
 def _make_config(
@@ -682,7 +711,9 @@ def test_quel3_adapter_rejects_capture_delay_off_sampling_grid() -> None:
 
 def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
     """Given zeros inside one pulse, when building payload, then adapter keeps one event."""
-    target = "RQ00"
+    target = "Q00"
+    controller = Quel3BackendController()
+    _cache_instrument_periods(controller, {"Q00": 800_000})
     waveform = np.array(
         [0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j, 0.5 + 0.0j, 0.0 + 0.0j],
         dtype=np.complex128,
@@ -695,7 +726,7 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(),
+        backend_controller=controller,
         experiment_system=cast(Any, _FakeExperimentSystem()),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
@@ -1435,3 +1466,50 @@ def test_quel3_adapter_build_measurement_result_keeps_target_captures() -> None:
     assert np.array_equal(result.data["Q00"][0].data, np.array([1.0 + 0.0j]))
     assert np.array_equal(result.data["Q01"][0].data, np.array([2.0 + 0.0j]))
     assert np.array_equal(result.data["Q00"][1].data, np.array([3.0 + 0.0j]))
+
+
+def test_request_construction_fixes_waveform_registration_before_planning() -> None:
+    """Changing build settings affects only new payloads and planning counts their actual IQ."""
+    from qxpulse import PulseSchedule, Rect
+
+    from qubex.backend.quel3 import Quel3WaveformCompression
+    from qubex.backend.quel3.execution.resources import Quel3PayloadAnalyzer
+
+    controller = Quel3BackendController.from_config_mapping(
+        {
+            "waveform_compression": {
+                "target_block_samples": 4000,
+                "min_chunk_samples": 1000,
+            }
+        }
+    )
+    _cache_instrument_periods(controller, {"Q00": 400_000})
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=controller,
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+    )
+    with PulseSchedule(["Q00"]) as pulses:
+        pulses.add("Q00", Rect(duration=8000, amplitude=0.2, sampling_period=0.4))
+    pulses.set_frequency("Q00", 5.0)
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulses, capture_schedule=CaptureSchedule(captures=[])
+    )
+    compressed = adapter.build_execution_request(
+        schedule=schedule, config=_make_config()
+    ).payload
+    controller.waveform_compression = Quel3WaveformCompression(enabled=False)
+    whole = adapter.build_execution_request(
+        schedule=schedule, config=_make_config()
+    ).payload
+    instrument = SimpleNamespace(
+        config=SimpleNamespace(sampling_period_fs=400000, timeline_step_samples=64)
+    )
+    analyzer = Quel3PayloadAnalyzer(default_sampling_period_ns=0.4)
+    for payload, count, samples in [(compressed, 5, 4000), (whole, 1, 20000)]:
+        assert isinstance(payload, Quel3ExecutionPayload)
+        events = payload.fixed_timelines["Q00"].events
+        assert len(events) == count
+        assert len(payload.waveform_library) == 1
+        analysis = analyzer.analyze(payload, {"Q00": cast(Any, instrument)})
+        assert analysis.payload.fixed_timelines["Q00"].events == events
+        assert analysis.planning.requirements.waveform_samples["Q00"] == samples

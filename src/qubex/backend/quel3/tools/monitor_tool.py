@@ -23,6 +23,7 @@ from qubex.backend.quel3.models import (
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
     Quel3Waveform,
+    Quel3WaveformCompression,
 )
 
 if TYPE_CHECKING:
@@ -72,6 +73,7 @@ class Quel3MonitorTool:
         self,
         *,
         pulse_schedule: PulseSchedule,
+        compression: Quel3WaveformCompression | None = None,
         capture_start_ns: float = 0.0,
         capture_length_ns: float | None = None,
         n_iterations: int = 1,
@@ -86,6 +88,8 @@ class Quel3MonitorTool:
         pulse_schedule : PulseSchedule
             Valid schedule whose target names uniquely identify live output
             instrument aliases on a single unit.
+        compression : Quel3WaveformCompression | None, optional
+            Waveform sharing settings used to build each output payload.
         capture_start_ns : float, default=0.0
             Capture start time relative to the output trigger, in ns.
         capture_length_ns : float | None, optional
@@ -163,6 +167,8 @@ class Quel3MonitorTool:
             suffix += 1
             monitor_alias = f"_qubex_monitor_{suffix}"
         prepared: dict[str, tuple[Quel3FixedTimeline, dict[str, Quel3Waveform]]] = {}
+        instrument_periods_fs = original_cache.sampling_periods_fs
+        builder = Quel3PulseEventBuilder(compression=compression)
         for label in labels:
             spec = original_specs[label]
             if spec.role == "RECEIVER" or spec.port_id.endswith(":mon"):
@@ -188,17 +194,13 @@ class Quel3MonitorTool:
                     f"Monitor PulseSchedule frequency for {label!r} is outside "
                     f"the instrument range."
                 )
-            waveform_library: dict[str, Quel3Waveform] = {}
-            events, _ = Quel3PulseEventBuilder.build(
-                target_is_read=spec.port_id.partition(":")[2].startswith("trx_"),
-                sequence=pulse_schedule.get_sequence(label, copy=False),
-                waveform_name_by_shape_key={},
-                waveform_library=waveform_library,
-                waveform_index=0,
+            sequence = pulse_schedule.get_sequence(label, copy=False)
+            events_by_target, waveform_library = builder.build(
+                {label: sequence}, instrument_periods_fs=instrument_periods_fs
             )
             prepared[label] = (
                 Quel3FixedTimeline(
-                    events=events,
+                    events=events_by_target[label],
                     capture_windows=(),
                     length_ns=pulse_schedule.duration,
                     frequency_hz=frequency_hz,

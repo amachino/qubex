@@ -33,6 +33,7 @@ from .models import (
     Quel3UnitControlState,
     Quel3UnitState,
     Quel3Waveform,
+    Quel3WaveformCompression,
     Quel3WaveformEvent,
 )
 from .quel3_backend_controller import Quel3BackendController
@@ -68,6 +69,7 @@ __all__ = [
     "Quel3UnitControlState",
     "Quel3UnitState",
     "Quel3Waveform",
+    "Quel3WaveformCompression",
     "Quel3WaveformEvent",
     "QuelwareCredentials",
 ]

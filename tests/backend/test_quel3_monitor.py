@@ -324,6 +324,7 @@ def _instrument_info(
     port: str,
     *,
     unit_label: str = "unit-a",
+    sampling_period_fs: int = 400_000,
     role: InstrumentRoleName = "TRANSMITTER",
     frequency_range_min_hz: float = 4e9,
     frequency_range_max_hz: float = 6e9,
@@ -334,6 +335,7 @@ def _instrument_info(
         SimpleNamespace(
             id=f"{unit_label}:{alias}",
             port_id=f"{unit_label}:{port}",
+            config=SimpleNamespace(sampling_period_fs=sampling_period_fs),
             definition=SimpleNamespace(
                 alias=alias,
                 mode="FIXED_TIMELINE",
@@ -782,16 +784,18 @@ def test_run_monitor_schedule_read_failure_leaves_instruments_untouched(
 
 
 @pytest.mark.parametrize("role", ["TRANSMITTER", "TRANSCEIVER", "TRANSCEIVER_LOOPBACK"])
-def test_run_monitor_schedule_normalizes_trx_port_waveforms(
+def test_run_monitor_schedule_normalizes_using_live_instrument_period(
     monkeypatch: pytest.MonkeyPatch,
     monitor_schedule_runtime: tuple[
         Quel3BackendController, _MonitorExecutionManager, list[tuple[object, ...]]
     ],
     role: InstrumentRoleName,
 ) -> None:
-    """TRX ports should use 0.8 ns waveform samples regardless of instrument role."""
+    """A live 800,000 fs grid should select averaging regardless of port name or role."""
     controller, manager, actions = monitor_schedule_runtime
-    original = _instrument_info("readout", "trx_p00p01", role=role)
+    original = _instrument_info(
+        "readout", "tx_p00", role=role, sampling_period_fs=800_000
+    )
     monkeypatch.setattr(
         controller.resource_reader,
         "read_instrument_infos",
@@ -830,7 +834,11 @@ def test_run_monitor_schedule_rejects_incompatible_readout_before_deletion(
     monkeypatch.setattr(
         controller.resource_reader,
         "read_instrument_infos",
-        lambda **kwargs: (_instrument_info("readout", "trx_p00p01", role=role),),
+        lambda **kwargs: (
+            _instrument_info(
+                "readout", "trx_p00p01", role=role, sampling_period_fs=800_000
+            ),
+        ),
     )
     with PulseSchedule() as schedule:
         schedule.add("readout", Arbitrary([0.1, 0.3], sampling_period=0.3))
@@ -1126,4 +1134,23 @@ def test_controller_delegates_monitor_operations(
     result = getattr(controller, controller_method)(**arguments)
 
     assert result is expected
-    assert calls == [arguments]
+    assert calls == [{**arguments, "compression": controller.waveform_compression}]
+
+
+def test_monitor_builds_with_the_current_waveform_settings(monitor_schedule_runtime):
+    """Monitor runs compile their output payload with the controller's build settings."""
+    from qxpulse import Rect
+
+    from qubex.backend.quel3 import Quel3WaveformCompression
+
+    controller, manager, _ = monitor_schedule_runtime
+    with PulseSchedule() as schedule:
+        schedule.add(
+            "output-a", Rect(duration=8000, sampling_period=0.4, amplitude=0.2)
+        )
+    for enabled, count in [(True, 4), (False, 1)]:
+        controller.waveform_compression = Quel3WaveformCompression(enabled=enabled)
+        controller.run_monitor_schedule(pulse_schedule=schedule)
+        payload = manager.requests[-1].payload
+        assert len(payload.fixed_timelines["output-a"].events) == count
+        assert len(payload.waveform_library) == 1

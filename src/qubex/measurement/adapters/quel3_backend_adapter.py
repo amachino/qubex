@@ -85,7 +85,7 @@ class Quel3MeasurementBackendAdapter:
         config: MeasurementConfig,
         quel1_options: Quel1MeasurementOptions | None = None,
     ) -> BackendExecutionRequest:
-        """Build backend execution request as Quel3 fixed-timeline payload."""
+        """Build the payload using cached instrument periods for targets with pulses."""
         _ = quel1_options
         if config.state_classification:
             raise NotImplementedError(
@@ -93,22 +93,16 @@ class Quel3MeasurementBackendAdapter:
             )
         pulse_schedule = schedule.pulse_schedule
         channel_captures = schedule.capture_schedule.channels
-        waveform_library: dict[str, Quel3Waveform] = {}
-        waveform_name_by_shape_key: dict[tuple[str, int], str] = {}
-        waveform_index = 0
+        builder = Quel3PulseEventBuilder(
+            compression=self._backend_controller.waveform_compression
+        )
+        events_by_target, waveform_library = builder.build(
+            pulse_schedule.get_sequences(copy=False),
+            instrument_periods_fs=self._backend_controller.instrument_sampling_periods_fs,
+        )
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
-
-        for target in pulse_schedule.labels:
-            target_info = self._experiment_system.get_target(target)
-            sequence = pulse_schedule.get_sequence(target, copy=False)
-            target_type = target_info.type
-            events, waveform_index = Quel3PulseEventBuilder.build(
-                target_is_read=(target_type is TargetType.READ),
-                sequence=sequence,
-                waveform_name_by_shape_key=waveform_name_by_shape_key,
-                waveform_library=waveform_library,
-                waveform_index=waveform_index,
-            )
+        for target, events in events_by_target.items():
+            target_type = self._experiment_system.get_target(target).type
             captures = sorted(
                 channel_captures.get(target, []), key=lambda c: c.start_time
             )

@@ -28,6 +28,16 @@ def test_inheritance():
     assert issubclass(Pulse, Waveform)
 
 
+def test_envelope_values_preserve_padding_and_exclude_modifiers():
+    """The sampled envelope includes padding and precedes scale, phase and detuning."""
+    pulse = Rect(duration=4 * dt, amplitude=0.25, scale=-2, phase=1, detuning=0.1)
+    padded = pulse.padded(6 * dt, pad_side="left")
+    np.testing.assert_array_equal(
+        padded.envelope_values, [0, 0, 0.25, 0.25, 0.25, 0.25]
+    )
+    assert not padded.envelope_values.flags.writeable
+
+
 def test_direct_pulse_instantiation_is_deprecated():
     """Pulse should emit a deprecation warning on direct instantiation."""
     with pytest.warns(DeprecationWarning, match="Arbitrary"):

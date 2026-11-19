@@ -174,6 +174,11 @@ class Pulse(Waveform):
         )
 
     @property
+    def envelope_values(self) -> npt.NDArray[np.complex128]:
+        """Return a read-only view of the sampled IQ before scale, phase and detuning."""
+        return np.asarray(self._materialize_values().data.toreadonly())
+
+    @property
     def shape_values(self) -> npt.NDArray[np.complex128]:
         """Return pulse values with `scale=1` and `phase=0`."""
         values = self._materialize_values()
