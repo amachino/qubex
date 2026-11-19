@@ -163,6 +163,7 @@ class Quel3MonitorTool:
             suffix += 1
             monitor_alias = f"_qubex_monitor_{suffix}"
         prepared: dict[str, tuple[Quel3FixedTimeline, dict[str, Quel3Waveform]]] = {}
+        builder = Quel3PulseEventBuilder()
         for label in labels:
             spec = original_specs[label]
             if spec.role == "RECEIVER" or spec.port_id.endswith(":mon"):
@@ -188,17 +189,14 @@ class Quel3MonitorTool:
                     f"Monitor PulseSchedule frequency for {label!r} is outside "
                     f"the instrument range."
                 )
-            waveform_library: dict[str, Quel3Waveform] = {}
-            events, _ = Quel3PulseEventBuilder.build(
-                target_is_read=spec.port_id.partition(":")[2].startswith("trx_"),
-                sequence=pulse_schedule.get_sequence(label, copy=False),
-                waveform_name_by_shape_key={},
-                waveform_library=waveform_library,
-                waveform_index=0,
+            sequence = pulse_schedule.get_sequence(label, copy=False)
+            target_is_read = spec.port_id.partition(":")[2].startswith("trx_")
+            events_by_target, waveform_library = builder.build(
+                {label: (sequence, target_is_read)}
             )
             prepared[label] = (
                 Quel3FixedTimeline(
-                    events=events,
+                    events=events_by_target[label],
                     capture_windows=(),
                     length_ns=pulse_schedule.duration,
                     frequency_hz=frequency_hz,

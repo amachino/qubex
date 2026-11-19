@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+from dataclasses import replace
 
 import numpy as np
 from qxpulse import Blank, Pulse, PulseArray
@@ -11,93 +13,83 @@ from qubex.backend.quel3.models import Quel3Waveform, Quel3WaveformEvent
 from qubex.backend.quel3.quel3_backend_constants import READOUT_SAMPLING_PERIOD_NS
 
 
+class _WaveformLibrary:
+    def __init__(self) -> None:
+        self.waveforms: dict[str, Quel3Waveform] = {}
+        self._names: dict[tuple[float, bytes], str] = {}
+
+    def register(self, samples: np.ndarray, period: float) -> str:
+        key = (period, hashlib.blake2b(samples.tobytes(), digest_size=16).digest())
+        name = self._names.get(key)
+        if name is None:
+            name = f"waveform_{len(self.waveforms):04d}"
+            # A small slice must not retain the entire uncompressed IQ buffer.
+            self.waveforms[name] = Quel3Waveform(
+                samples.copy() if samples.base is not None else samples, period
+            )
+            self._names[key] = name
+        return name
+
+
 class Quel3PulseEventBuilder:
     """Build sparse events and shared waveform entries from `PulseArray`."""
 
-    @staticmethod
     def build(
-        *,
-        target_is_read: bool,
-        sequence: PulseArray,
-        waveform_name_by_shape_key: dict[tuple[str, int], str],
-        waveform_library: dict[str, Quel3Waveform],
-        waveform_index: int,
-    ) -> tuple[tuple[Quel3WaveformEvent, ...], int]:
+        self, targets: dict[str, tuple[PulseArray, bool]]
+    ) -> tuple[dict[str, tuple[Quel3WaveformEvent, ...]], dict[str, Quel3Waveform]]:
         """
-        Normalize pulse shapes and preserve blank timing, gain, and phase.
+        Compile the targets of one payload into events and a shared waveform library.
 
-        Parameters
-        ----------
-        target_is_read : bool
-            Whether to normalize shapes to the QuEL-3 readout sampling grid.
-        sequence : PulseArray
-            Pulse sequence with logical offsets in ns.
-        waveform_name_by_shape_key : dict
-            Shared index used to reuse registered pulse shapes.
-        waveform_library : dict[str, Quel3Waveform]
-            Shared waveform library to update.
-        waveform_index : int
-            Next waveform name index.
-
-        Returns
-        -------
-        tuple[tuple[Quel3WaveformEvent, ...], int]
-            Sparse events and the next unused waveform index.
-
-        Notes
-        -----
-        Update the supplied shape index and waveform library without modifying
-        the pulse sequence. Readout padding preserves logical event offsets.
+        Each target maps to its pulse sequence and a flag selecting the readout grid.
+        Event offsets are relative to the start of each target's sequence.
         """
-        events: list[Quel3WaveformEvent] = []
-        current_offset_ns = 0.0
-        for waveform in sequence.get_flattened_waveforms(apply_frame_shifts=True):
-            duration_ns = waveform.duration
-            if isinstance(waveform, Blank):
-                current_offset_ns += duration_ns
-                continue
-
-            if isinstance(waveform, Pulse):
-                sampling_period_ns = waveform.sampling_period
-                shape = np.asarray(waveform.shape_values, dtype=np.complex128)
-                if shape.size == 0:
-                    current_offset_ns += duration_ns
+        library = _WaveformLibrary()
+        templates: dict[
+            tuple[str, bool, type[Pulse]], tuple[Quel3WaveformEvent, ...]
+        ] = {}
+        events_by_target: dict[str, tuple[Quel3WaveformEvent, ...]] = {}
+        for label, (sequence, target_is_read) in targets.items():
+            events: list[Quel3WaveformEvent] = []
+            offset_ns = 0.0
+            for waveform in sequence.get_flattened_waveforms(apply_frame_shifts=True):
+                if isinstance(waveform, Blank):
+                    offset_ns += waveform.duration
                     continue
-                shape, sampling_period_ns = Quel3PulseEventBuilder._normalize_waveform(
-                    target_is_read=target_is_read,
-                    shape=shape,
-                    sampling_period_ns=sampling_period_ns,
-                )
-                if not np.all(np.isfinite(shape.real) & np.isfinite(shape.imag)):
-                    raise ValueError("Waveform IQ values must be finite.")
-                shape_key = (
-                    waveform.shape_hash,
-                    round(float(sampling_period_ns) * 1e6),
-                )
-                waveform_name = waveform_name_by_shape_key.get(shape_key)
-                if waveform_name is None:
-                    waveform_name = f"waveform_{waveform_index:04d}"
-                    waveform_index += 1
-                    waveform_library[waveform_name] = Quel3Waveform(
-                        iq_array=shape,
-                        sampling_period_ns=sampling_period_ns,
+                if not isinstance(waveform, Pulse):
+                    raise TypeError(
+                        f"Unsupported waveform type in PulseArray: {type(waveform).__name__}."
                     )
-                    waveform_name_by_shape_key[shape_key] = waveform_name
-                events.append(
-                    Quel3WaveformEvent(
-                        waveform_name=waveform_name,
-                        start_offset_ns=current_offset_ns,
-                        gain=waveform.scale,
-                        phase_offset_deg=math.degrees(waveform.phase),
+                if waveform.length:
+                    key = (waveform.shape_hash, target_is_read, type(waveform))
+                    if key not in templates:
+                        templates[key] = self._compile(
+                            waveform, target_is_read, library
+                        )
+                    events.extend(
+                        replace(
+                            part,
+                            start_offset_ns=offset_ns + part.start_offset_ns,
+                            gain=waveform.scale,
+                            phase_offset_deg=math.degrees(waveform.phase)
+                            + part.phase_offset_deg,
+                        )
+                        for part in templates[key]
                     )
-                )
-                current_offset_ns += duration_ns
-                continue
+                offset_ns += waveform.duration
+            events_by_target[label] = tuple(events)
+        return events_by_target, library.waveforms
 
-            raise TypeError(
-                f"Unsupported waveform type in PulseArray: {type(waveform).__name__}."
-            )
-        return tuple(events), waveform_index
+    def _compile(
+        self, pulse: Pulse, target_is_read: bool, library: _WaveformLibrary
+    ) -> tuple[Quel3WaveformEvent, ...]:
+        shape, period = self._normalize_waveform(
+            target_is_read=target_is_read,
+            shape=pulse.shape_values,
+            sampling_period_ns=pulse.sampling_period,
+        )
+        if not np.all(np.isfinite(shape)):
+            raise ValueError("Waveform IQ values must be finite.")
+        return (Quel3WaveformEvent(library.register(shape, period), 0.0),)
 
     @staticmethod
     def _normalize_waveform(
