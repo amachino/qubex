@@ -7,9 +7,13 @@ import math
 from dataclasses import dataclass, replace
 
 import numpy as np
-from qxpulse import Blank, Pulse, PulseArray
+from qxpulse import Blank, Pulse, PulseArray, Rect
 
-from qubex.backend.quel3.models import Quel3Waveform, Quel3WaveformEvent
+from qubex.backend.quel3.models import (
+    Quel3Waveform,
+    Quel3WaveformCompression,
+    Quel3WaveformEvent,
+)
 from qubex.backend.quel3.quel3_backend_constants import (
     READOUT_SAMPLING_PERIOD_FS,
     READOUT_SAMPLING_PERIOD_NS,
@@ -50,6 +54,9 @@ class _WaveformLibrary:
 
 class Quel3PulseEventBuilder:
     """Build sparse events and shared waveform entries from `PulseArray`."""
+
+    def __init__(self, *, compression: Quel3WaveformCompression | None = None) -> None:
+        self._compression = compression or Quel3WaveformCompression()
 
     def build(
         self, targets: dict[str, PulseArray], *, instrument_periods_fs: dict[str, int]
@@ -118,7 +125,72 @@ class Quel3PulseEventBuilder:
         )
         if not np.all(np.isfinite(shape)):
             raise ValueError("Waveform IQ values must be finite.")
-        return (Quel3WaveformEvent(library.register(shape, period), 0.0),)
+        block = self._find_repeated_block(
+            pulse,
+            length=len(shape),
+            period=period,
+            instrument_period_fs=instrument_period_fs,
+        )
+        if block is None:
+            return (Quel3WaveformEvent(library.register(shape, period), 0.0),)
+
+        parts = []
+        if block.start:
+            parts.append(
+                Quel3WaveformEvent(library.register(shape[: block.start], period), 0.0)
+            )
+        name = library.register(shape[block.start : block.start + block.size], period)
+        for index in range(block.count):
+            offset = index * block.size
+            phase = math.remainder(-360 * pulse.detuning * (offset * period), 360)
+            parts.append(
+                Quel3WaveformEvent(
+                    name, (block.start + offset) * period, phase_offset_deg=phase
+                )
+            )
+        if block.end < len(shape):
+            parts.append(
+                Quel3WaveformEvent(
+                    library.register(shape[block.end :], period), block.end * period
+                )
+            )
+        return tuple(parts)
+
+    def _find_repeated_block(
+        self,
+        pulse: Pulse,
+        *,
+        length: int,
+        period: float,
+        instrument_period_fs: int,
+    ) -> _RepeatedBlock | None:
+        """Select a block on the registered grid and verify its source samples."""
+        if not self._compression.enabled or type(pulse) is not Rect:
+            return None
+        stride = round(period / pulse.sampling_period)
+        if stride * pulse.sampling_period != period:
+            # Approximate readout ratios are valid for averaging, but drift in phase.
+            return None
+        # Only split at boundaries that are also hardware sample boundaries.
+        period_fs = round(period * 1e6)
+        if not math.isclose(period * 1e6, period_fs, rel_tol=0, abs_tol=1e-8):
+            return None
+        quantum = instrument_period_fs // math.gcd(period_fs, instrument_period_fs)
+        block = self._choose_repeated_block(
+            length=length,
+            first=0,
+            stop=pulse.length // stride,
+            alignment=quantum,
+            target=self._compression.target_block_samples,
+            minimum=self._compression.min_chunk_samples,
+        )
+        if block is None:
+            return None
+        # Sample transforms such as padded() preserve the original pulse type.
+        envelope = pulse.envelope_values[block.start * stride : block.end * stride]
+        if not np.allclose(envelope, envelope[0], rtol=1e-14, atol=0):
+            return None
+        return block
 
     @staticmethod
     def _choose_repeated_block(
