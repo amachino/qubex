@@ -673,6 +673,11 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
 
+    @property
+    def instrument_sampling_periods_fs(self) -> dict[str, int]:
+        """Return per-alias sampling periods from the last instrument readback."""
+        return self._instrument_cache.sampling_periods_fs
+
     def get_instrument_configuration(self) -> InstrumentConfiguration:
         """
         Return deployable settings from the last successful connect, deploy, or refresh.
