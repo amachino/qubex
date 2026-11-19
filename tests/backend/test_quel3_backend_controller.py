@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from io import StringIO
@@ -42,6 +43,7 @@ from qubex.backend.quel3.infra.quelware_imports import QuelwareExecutionApi
 from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.managers import (
     execution_manager as execution_manager_module,
+    session_manager as session_manager_module,
     session_workarounds as session_workarounds_module,
 )
 from qubex.backend.quel3.managers.configuration_manager import Quel3ConfigurationManager
@@ -3039,8 +3041,9 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
             execution_options=Quel3ExecutionOptions(max_capture_samples=4),
         )
     )
-    assert applied_frequencies == [6e9, 6e9, 6e9, 6.1e9, 6e9]
-    assert len(session.trigger_calls) == 5
+    assert applied_frequencies == [6e9, 6e9, 6.1e9, 6e9]
+    assert len(session.initialize_calls) == 4
+    assert session.lifecycle_calls == ["trigger"] * 5
     for result, expected, shots in zip(
         results, (6, 7, 6, 6.1, 6), (2, 2, 5, 2, 2), strict=True
     ):
@@ -3059,10 +3062,10 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
         for message in messages
     )
     assert any(
-        "execution=1 sources=(job=2 shots=[0,4))" in message for message in messages
+        "execution=1 sources=(job=2 shots=[0,3))" in message for message in messages
     )
     assert any(
-        "execution=2 sources=(job=2 shots=[4,5))" in message for message in messages
+        "execution=2 sources=(job=2 shots=[3,5))" in message for message in messages
     )
     assert (
         len(
@@ -3099,10 +3102,6 @@ def test_execution_phase_timings_measure_hardware_operations(
         async def __aenter__(self):
             clock.now += 1
             return await super().__aenter__()
-
-        async def extend(self, new_ttl_ms):
-            clock.now += 4
-            return await super().extend(new_ttl_ms)
 
         async def trigger(self, instrument_ids, wait_ms=None):
             clock.now += 5
@@ -3143,7 +3142,7 @@ def test_execution_phase_timings_measure_hardware_operations(
             "build_sequencer": 0,
             "initialize": 2,
             "apply": 3,
-            "trigger": 9,
+            "trigger": 5,
             "fetch_results": 6,
             "convert_result": 0,
             "restore_results": 0,
@@ -3153,3 +3152,402 @@ def test_execution_phase_timings_measure_hardware_operations(
         rel=0,
         abs=1e-9,
     )
+
+
+@pytest.mark.parametrize(
+    ("failure_calls", "expected_calls", "expected_triggers"),
+    [
+        ((1,), [True, True, False, False], [0, 3]),
+        ((2,), [True, False, True, False], [1, 2]),
+        ((3,), [True, False, False, True], [2, 1]),
+        ((2, 3), [True, False, True, True, False], [1, 0, 2]),
+    ],
+)
+def test_split_retry_preserves_completed_chunks(
+    monkeypatch, failure_calls, expected_calls, expected_triggers
+):
+    """A failed split chunk should rebuild its session and retain earlier results."""
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00p01", _FakeInstrumentDefinition("TRANSCEIVER")
+            ),
+        }
+    )
+    sessions = []
+
+    def client_factory(endpoint, port):
+        session = _FakeSession(session_id=str(len(sessions)))
+        sessions.append(session)
+        return _FakeClient(session)
+
+    api = _make_fake_execution_api(
+        client_factory=client_factory,
+        fixed_timeline_driver_factory=lambda session, info: _FakeInstrumentDriver(),
+    )
+    monkeypatch.setattr(manager, "_load_quelware_api", lambda: api)
+    original = manager._execute_payload
+    calls = []
+    seen_sessions = []
+
+    async def execute(**kwargs):
+        session = kwargs["session_state"].session
+        calls.append(session not in seen_sessions)
+        seen_sessions.append(session)
+        if len(calls) in failure_calls:
+            raise RuntimeError("temporary chunk failure")
+        return await original(**kwargs)
+
+    monkeypatch.setattr(manager, "_execute_payload", execute)
+    result = asyncio.run(
+        manager.execute_async(
+            request=BackendExecutionRequest(payload=_make_payload(n_iterations=5)),
+            instrument_cache=cache,
+            execution_options=Quel3ExecutionOptions(max_capture_samples=2),
+        )
+    )
+    assert calls == expected_calls
+    assert [len(s.initialize_calls) for s in sessions] == [1] * len(sessions)
+    assert [len(s.trigger_calls) for s in sessions] == expected_triggers
+    assert result.data["alias-rq00"][0].shape == (1,)
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    [
+        "initialize",
+        "apply",
+        "trigger",
+        "fetch",
+    ],
+)
+@pytest.mark.parametrize("cancel", [False, True])
+def test_split_session_failure_boundaries(monkeypatch, failure_stage, cancel):
+    """Split execution should retain accepted results and propagate cancellation after cleanup."""
+    monkeypatch.setattr(session_workarounds_module.asyncio, "sleep", AsyncMock())
+    sessions = []
+    counts = defaultdict(int)
+
+    def checkpoint(stage):
+        counts[stage] += 1
+        occurrence = 1 if stage in ("initialize", "apply") else 2
+        if stage == failure_stage and counts[stage] == occurrence:
+            if cancel:
+                raise asyncio.CancelledError
+            raise RuntimeError(f"transient {stage} failure")
+
+    class Session(_FakeSession):
+        def __init__(self):
+            super().__init__(session_id=str(len(sessions)))
+            self.closed = False
+
+        async def initialize(self, instrument_ids, parallel=True):
+            await super().initialize(instrument_ids, parallel)
+            checkpoint("initialize")
+
+        async def trigger(self, instrument_ids, wait_ms=None):
+            checkpoint("trigger")
+            return await super().trigger(instrument_ids, wait_ms)
+
+        async def wait_for_results(self, instrument_ids):
+            checkpoint("fetch")
+            return await super().wait_for_results(instrument_ids)
+
+        async def __aexit__(self, *args):
+            self.closed = True
+
+    class Driver(_FakeInstrumentDriver):
+        def __init__(self, value):
+            super().__init__()
+            self.value = value
+
+        async def apply(self, directives):
+            checkpoint("apply")
+            await super().apply(directives)
+
+        async def wait_for_result(self):
+            return SimpleNamespace(
+                iq_point_result={"capture_0": [self.value]}, iq_waveform_result={}
+            )
+
+    def client_factory(endpoint, port):
+        session = Session()
+        sessions.append(session)
+        return _FakeClient(session)
+
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
+    api = _make_fake_execution_api(
+        client_factory=client_factory,
+        fixed_timeline_driver_factory=lambda session, info: Driver(
+            1 if session is sessions[0] else 10
+        ),
+    )
+    monkeypatch.setattr(manager, "_load_quelware_api", lambda: api)
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00p01", _FakeInstrumentDefinition("TRANSCEIVER")
+            )
+        }
+    )
+    execution = manager.execute_async(
+        request=BackendExecutionRequest(payload=_make_payload(n_iterations=5)),
+        instrument_cache=cache,
+        execution_options=Quel3ExecutionOptions(max_capture_samples=2),
+    )
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(execution)
+        assert len(sessions) == 1
+        expected_triggers = {
+            "initialize": 0,
+            "apply": 0,
+            "trigger": 1,
+            "fetch": 2,
+        }
+        assert len(sessions[0].trigger_calls) == expected_triggers[failure_stage]
+    else:
+        result = asyncio.run(execution)
+        assert len(sessions) == 2
+        assert [len(s.initialize_calls) for s in sessions] == [1, 1]
+        expected = 10 if failure_stage in ("initialize", "apply") else 7
+        np.testing.assert_allclose(
+            result.data["alias-rq00"][0], [expected], rtol=0, atol=1e-12
+        )
+    assert all(s.closed for s in sessions)
+
+
+@pytest.fixture
+def execute_sessions(monkeypatch):
+    """Execute a payload with a new observable session for every acquisition."""
+    manager = Quel3ExecutionManager(sampling_period_ns=0.4, capture_decimation_factor=1)
+    monkeypatch.setattr(
+        manager._configuration_manager,
+        "refresh_instrument_cache",
+        Mock(side_effect=AssertionError("Unexpected batch replay")),
+    )
+    cache = _make_instrument_cache(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                "unit:trx_p00p01", _FakeInstrumentDefinition("TRANSCEIVER")
+            )
+        }
+    )
+
+    def execute(sessions, payload, **options):
+        client = _FakeClient(sessions[0])
+        monkeypatch.setattr(client, "create_session", Mock(side_effect=sessions))
+        api = _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            fixed_timeline_driver_factory=lambda session, info: _FakeInstrumentDriver(),
+        )
+        monkeypatch.setattr(manager, "_load_quelware_api", lambda: api)
+        return manager.execute_async(
+            request=BackendExecutionRequest(payload=payload),
+            instrument_cache=cache,
+            execution_options=Quel3ExecutionOptions(**options),
+        )
+
+    return execute
+
+
+@pytest.mark.parametrize("timeout_kind", ["grpc", "asyncio", "builtin"])
+def test_trigger_rpc_timeout_never_replays(execute_sessions, timeout_kind):
+    """A lost trigger acknowledgement should end the batch after one dispatch."""
+    if timeout_kind == "grpc":
+        grpc = pytest.importorskip("grpclib")
+        timeout = grpc.GRPCError(grpc.Status.DEADLINE_EXCEEDED)
+    elif timeout_kind == "asyncio":
+        timeout = asyncio.TimeoutError()
+    else:
+        timeout = TimeoutError()
+
+    class Session(_FakeSession):
+        async def trigger(self, instrument_ids, wait_ms=None):
+            await super().trigger(instrument_ids, wait_ms)
+            raise timeout
+
+    first, second = Session(), _FakeSession()
+    with pytest.raises(
+        session_workarounds_module.Quel3ExecutionOutcomeUnknown
+    ) as error:
+        asyncio.run(execute_sessions([first, second], _make_payload()))
+    assert error.value.__cause__ is timeout
+    assert len(first.trigger_calls) == 1
+    assert not second.trigger_calls
+
+
+@pytest.mark.parametrize("fetch_fails", [False, True])
+def test_rejected_lease_during_acquisition_never_replays_trigger(
+    monkeypatch, execute_sessions, fetch_fails
+):
+    """A rejected renewal should preserve received shots or report an unknown outcome."""
+    monkeypatch.setattr(session_manager_module, "QUEL3_LEASE_RENEW_INTERVAL_SECONDS", 0)
+    fetching = asyncio.Event()
+    rejected = asyncio.Event()
+    missing_resource = type(
+        "ResourceNotFoundError",
+        (Exception,),
+        {"__module__": "quelware_client.core.exceptions"},
+    )
+
+    class Session(_FakeSession):
+        async def extend(self, new_ttl_ms):
+            await fetching.wait()
+            rejected.set()
+            return False
+
+        async def wait_for_results(self, instrument_ids):
+            fetching.set()
+            await asyncio.wait_for(rejected.wait(), timeout=1)
+            if fetch_fails:
+                raise missing_resource("fetch failed")
+            return await super().wait_for_results(instrument_ids)
+
+    first, second = Session(), _FakeSession()
+    run = execute_sessions(
+        [first, second], _make_payload(n_iterations=3), max_capture_samples=2
+    )
+    if fetch_fails:
+        with pytest.raises(QuelwareSessionError, match="outcome unknown") as error:
+            asyncio.run(run)
+        assert str(error.value.__cause__) == "fetch failed"
+        assert not second.trigger_calls
+    else:
+        result = asyncio.run(run)
+        np.testing.assert_allclose(result.data["alias-rq00"][0], [1], rtol=0, atol=0)
+        assert len(second.initialize_calls) == len(second.trigger_calls) == 1
+    assert len(first.trigger_calls) == 1
+
+
+@pytest.mark.parametrize(("planned_s", "limit_s"), [(1, 300), (30, 300), (45, 450)])
+@pytest.mark.parametrize("stall_phase", ["trigger", "fetch"])
+def test_physical_trigger_timeout_ends_batch_without_replay(
+    monkeypatch, execute_sessions, planned_s, limit_s, stall_phase
+):
+    """The padded final trigger should have one deadline covering trigger and retrieval."""
+    offset = 0.0
+    closed = False
+
+    class Session(_FakeSession):
+        async def trigger(self, instrument_ids, wait_ms=None):
+            nonlocal offset
+            result = await super().trigger(instrument_ids, wait_ms)
+            if len(self.trigger_calls) == 2:
+                offset += limit_s - 1
+                if stall_phase == "trigger":
+                    offset += 2
+                    await asyncio.sleep(0.05)
+            return result
+
+        async def wait_for_results(self, instrument_ids):
+            nonlocal offset
+            if len(self.trigger_calls) == 2 and stall_phase == "fetch":
+                offset += 2
+                await asyncio.sleep(0.05)
+            return await super().wait_for_results(instrument_ids)
+
+        async def __aexit__(self, *args):
+            nonlocal closed
+            closed = True
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        original_time = loop.time
+        monkeypatch.setattr(loop, "time", lambda: original_time() + offset)
+        payload = replace(
+            _make_payload(n_iterations=3), shot_interval_ns=planned_s * 1e9 / 2 - 0.8
+        )
+        await execute_sessions(
+            [session],
+            payload,
+            max_capture_samples=2,
+            max_execution_duration_ns=planned_s * 1e9 + 1,
+        )
+
+    session = Session(session_id="timed-out")
+    with pytest.raises(QuelwareSessionError, match="outcome unknown") as error:
+        asyncio.run(run())
+    assert error.value.session_token == session.token
+    assert isinstance(error.value.__cause__, TimeoutError)
+    for detail in (
+        "execution=1",
+        f"planned_seconds={planned_s}",
+        f"limit_seconds={limit_s}",
+        "elapsed_seconds=",
+    ):
+        assert detail in str(error.value)
+    assert len(session.trigger_calls) == 2
+    assert closed
+
+
+def test_expired_lease_during_preparation_reopens_before_trigger(
+    monkeypatch, execute_sessions
+):
+    """An expired lease should cause fresh preparation before any trigger is sent."""
+    offset = 0.0
+
+    class SlowSession(_FakeSession):
+        async def initialize(self, instrument_ids, parallel=True):
+            nonlocal offset
+            await super().initialize(instrument_ids, parallel)
+            offset += 31
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        original_time = loop.time
+        monkeypatch.setattr(loop, "time", lambda: original_time() + offset)
+        return await execute_sessions([first, second], _make_payload())
+
+    monkeypatch.setattr(
+        session_workarounds_module, "QUEL3_SESSION_REQUEST_RETRY_DELAY_SECONDS", 0
+    )
+    first, second = SlowSession(), _FakeSession()
+    result = asyncio.run(run())
+    assert not first.trigger_calls
+    assert len(second.initialize_calls) == len(second.trigger_calls) == 1
+    np.testing.assert_allclose(result.data["alias-rq00"][0], [1], rtol=0, atol=0)
+
+
+def test_execution_cancellation_stops_fetch_and_renewal_before_close(
+    monkeypatch, execute_sessions
+):
+    """Cancelling a pending acquisition should stop both tasks before session exit."""
+    monkeypatch.setattr(session_manager_module, "QUEL3_LEASE_RENEW_INTERVAL_SECONDS", 0)
+    fetching, renewing = asyncio.Event(), asyncio.Event()
+    stopped = []
+
+    class Session(_FakeSession):
+        async def extend(self, new_ttl_ms):
+            renewing.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.append("renewal")
+            return True
+
+        async def wait_for_results(self, instrument_ids):
+            fetching.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.append("fetch")
+            return {}
+
+        async def __aexit__(self, *args):
+            stopped.append("close")
+
+    async def run():
+        task = asyncio.create_task(execute_sessions([session], _make_payload()))
+        await asyncio.wait_for(
+            asyncio.gather(fetching.wait(), renewing.wait()), timeout=1
+        )
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    session = Session()
+    asyncio.run(run())
+    assert stopped == ["fetch", "renewal", "close"]
+    assert len(session.trigger_calls) == 1

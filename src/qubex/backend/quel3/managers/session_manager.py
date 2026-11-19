@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from asyncio import sleep
 from collections.abc import Collection
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
@@ -16,6 +18,8 @@ from qubex.backend.quel3.interfaces import (
     SessionProtocol,
 )
 from qubex.backend.quel3.managers.session_workarounds import (
+    QUELWARE_SESSION_CREATE_TTL_MS,
+    QUELWARE_SESSION_EXTEND_TTL_MS,
     QuelwareSessionError,
     enter_quelware_session_with_resource_retry,
     quelware_exception_summary,
@@ -23,6 +27,8 @@ from qubex.backend.quel3.managers.session_workarounds import (
 )
 
 logger = logging.getLogger(__name__)
+
+QUEL3_LEASE_RENEW_INTERVAL_SECONDS = 5.0
 
 
 class Quel3SessionManager:
@@ -42,6 +48,8 @@ class Quel3SessionManager:
         self._session: SessionProtocol | None = None
         self._session_token: str | None = None
         self._resource_ids: tuple[ResourceIdProtocol, ...] | None = None
+        self._renewal_task: asyncio.Task[None] | None = None
+        self._lease_expires_at = 0.0
 
     @property
     def runtime_config(self) -> Quel3RuntimeConfig:
@@ -92,6 +100,13 @@ class Quel3SessionManager:
         """Return resource IDs bound to the current open session."""
         return self._resource_ids
 
+    def has_valid_lease(self, session: SessionProtocol) -> bool:
+        """Return whether this session still has a confirmed execution lease."""
+        return (
+            self._session is session
+            and asyncio.get_running_loop().time() < self._lease_expires_at
+        )
+
     async def open(
         self,
         resource_ids: Collection[ResourceIdProtocol] | None = None,
@@ -102,8 +117,8 @@ class Quel3SessionManager:
         Open quelware client/session resources.
 
         If `resource_ids` is omitted, only the client context is opened.
-        If the client is already open and the session matches the requested
-        resources, the existing session is reused.
+        An existing session with the same resources and a confirmed lease is
+        reused. Each acquired session owns one periodic lease renewal task.
         """
         if self._client is None:
             runtime_client_factory = (
@@ -130,8 +145,12 @@ class Quel3SessionManager:
                 raise RuntimeError(
                     "QuEL-3 session manager is already bound to different resources."
                 )
-            return self._session
+            if self.has_valid_lease(self._session):
+                return self._session
+            return await self.reopen_session(normalized_resource_ids)
 
+        loop = asyncio.get_running_loop()
+        started = loop.time()
         try:
             (
                 self._session_cm,
@@ -145,23 +164,56 @@ class Quel3SessionManager:
             raise
         self._session_token = quelware_session_token(self._session)
         self._resource_ids = normalized_resource_ids
+        self._lease_expires_at = started + QUELWARE_SESSION_CREATE_TTL_MS / 1000
+        self._renewal_task = asyncio.create_task(
+            self._renew_lease(self._session, loop.time())
+        )
         return self._session
+
+    async def _renew_lease(self, session: SessionProtocol, opened_at: float) -> None:
+        """Renew the acquired session until it closes, expires, or rejects renewal."""
+        loop = asyncio.get_running_loop()
+        sent = opened_at
+        while self.has_valid_lease(session):
+            await sleep(max(0, sent + QUEL3_LEASE_RENEW_INTERVAL_SECONDS - loop.time()))
+            sent = loop.time()
+            if sent >= self._lease_expires_at:
+                break
+            try:
+                accepted = await session.extend(QUELWARE_SESSION_EXTEND_TTL_MS)
+            except Exception as exc:
+                logger.warning(
+                    "QuEL-3 lease renewal failed; session_token=%s; cause=%s",
+                    self._session_token,
+                    quelware_exception_summary(exc),
+                )
+                continue
+            if not accepted:
+                self._lease_expires_at = 0.0
+                logger.warning(
+                    "QuEL-3 lease renewal rejected; session_token=%s",
+                    self._session_token,
+                )
+                return
+            self._lease_expires_at = sent + QUELWARE_SESSION_EXTEND_TTL_MS / 1000
+        logger.warning(
+            "QuEL-3 session lease expired; session_token=%s", self._session_token
+        )
 
     async def reopen_session(
         self,
         resource_ids: Collection[ResourceIdProtocol] | None = None,
     ) -> SessionProtocol | None:
         """Close the current session and open a replacement on the same client."""
-        session_cm, session_token = self._detach_session_context()
-        if session_cm is not None:
-            try:
-                await session_cm.__aexit__(None, None, None)
-            except Exception as exc:
-                raise QuelwareSessionError(
-                    "QuEL-3 quelware session close failed before reopening",
-                    session_token=session_token,
-                    cause=exc,
-                ) from exc
+        session_token = self._session_token or "<unavailable>"
+        try:
+            await self._close_session()
+        except Exception as exc:
+            raise QuelwareSessionError(
+                "QuEL-3 quelware session close failed before reopening",
+                session_token=session_token,
+                cause=exc,
+            ) from exc
         return await self.open(resource_ids)
 
     async def close_safely(self) -> None:
@@ -178,10 +230,8 @@ class Quel3SessionManager:
 
     async def close(self) -> None:
         """Close any open quelware session and client contexts."""
-        session_cm, _ = self._detach_session_context()
         try:
-            if session_cm is not None:
-                await session_cm.__aexit__(None, None, None)
+            await self._close_session()
         finally:
             client_cm = self._client_cm
             self._client_cm = None
@@ -190,17 +240,22 @@ class Quel3SessionManager:
             if client_cm is not None:
                 await client_cm.__aexit__(None, None, None)
 
-    def _detach_session_context(
-        self,
-    ) -> tuple[AbstractAsyncContextManager[SessionProtocol] | None, str]:
-        """Clear stored session state and return the previous context."""
+    async def _close_session(self) -> None:
+        """Stop renewal before releasing the associated session context."""
         session_cm = self._session_cm
-        session_token = self._session_token or quelware_session_token(self._session)
+        renewal = self._renewal_task
+        self._renewal_task = None
         self._session_cm = None
         self._session = None
         self._session_token = None
         self._resource_ids = None
-        return session_cm, session_token
+        try:
+            if renewal is not None:
+                renewal.cancel()
+                await asyncio.gather(renewal, return_exceptions=True)
+        finally:
+            if session_cm is not None:
+                await session_cm.__aexit__(None, None, None)
 
     async def __aenter__(self) -> Quel3SessionManager:
         """Open the underlying quelware client context and return self."""

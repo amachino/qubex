@@ -50,7 +50,7 @@ from qubex.backend.quel3.interfaces import (
 from qubex.backend.quel3.managers.configuration_manager import Quel3ConfigurationManager
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.managers.session_workarounds import (
-    QUELWARE_SESSION_EXTEND_TTL_MS,
+    Quel3ExecutionOutcomeUnknown,
     QuelwareSessionError,
     is_resource_not_found_error,
     quelware_exception_summary,
@@ -71,6 +71,17 @@ T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
 QUEL3_SESSION_TRIGGER_WAIT_MS: int | None = None
+
+
+def _is_trigger_timeout(exc: Exception) -> bool:
+    """Recognize local and remote deadlines reported by the trigger RPC."""
+    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+        return True
+    try:
+        from grpclib import GRPCError, Status
+    except ImportError:
+        return False
+    return isinstance(exc, GRPCError) and exc.status is Status.DEADLINE_EXCEEDED
 
 
 @contextmanager
@@ -238,6 +249,10 @@ class Quel3ExecutionManager:
         Recovery requires every requested alias to retain its port. Replanning
         uses current instrument settings and restarts the entire batch,
         including any executions that already completed.
+
+        Each physical trigger has ten times the greater of 30 seconds and its
+        planned duration to return results. A trigger timeout or a missing
+        result after lease loss ends the batch with an unknown outcome.
         """
         requests = tuple(requests)
         options = execution_options or self.execution_options
@@ -268,7 +283,11 @@ class Quel3ExecutionManager:
                     parallel=parallel,
                 )
             except QuelwareSessionError as exc:  # noqa: PERF203 - Replanning and IO need a bounded retry loop.
-                if attempt or not is_resource_not_found_error(exc):
+                if (
+                    attempt
+                    or isinstance(exc, Quel3ExecutionOutcomeUnknown)
+                    or not is_resource_not_found_error(exc)
+                ):
                     raise
                 # TODO: Resume from the failed execution instead of replaying the whole batch.
                 expected_ports = {
@@ -405,8 +424,14 @@ class Quel3ExecutionManager:
         assembler = Quel3ResultAssembler(
             tuple(analysis.payload for analysis in analyses)
         )
+        previous_jobs: tuple[int, ...] = ()
+        prepared: _PayloadExecutionSession | None = None
         try:
             for index, run in enumerate(executions):
+                jobs = tuple(f.job_index for f in run.result_mapping.fragments)
+                if jobs != previous_jobs:
+                    prepared = None
+
                 if logger.isEnabledFor(logging.DEBUG):
                     sources = ", ".join(
                         f"job={f.job_index} shots=[{f.shot_start},{f.shot_stop})"
@@ -422,21 +447,35 @@ class Quel3ExecutionManager:
                     alias: instruments[alias]
                     for alias in sorted(run.payload.fixed_timelines)
                 }
+
                 started = time.monotonic()
-                result = await run_with_session_request_retry(
+                result, prepared = await run_with_session_request_retry(
                     manager=self._session_manager,
                     client_factory=quelware_api.client_factory,
                     resource_ids=tuple(
                         info.id for info in alias_to_instrument_info.values()
                     ),
+                    reuse_session=jobs == previous_jobs,
                     operation=partial(
                         self._execute_payload_in_session,
-                        payload=run.payload,
+                        run=run,
+                        execution_index=index,
                         alias_to_instrument_info=alias_to_instrument_info,
                         quelware_api=quelware_api,
                         parallel=parallel,
+                        prepared=prepared,
                     ),
                 )
+                fragment = run.result_mapping.fragments[0]
+                requested_shots = fragment.shot_stop - fragment.shot_start
+                logger.debug(
+                    "QuEL-3 execution=%d requested_shots=%d executed_shots=%d padding_shots=%d",
+                    index,
+                    requested_shots,
+                    run.payload.n_iterations,
+                    run.payload.n_iterations - requested_shots,
+                )
+                previous_jobs = jobs
                 with _log_phase_duration("restore_results"):
                     assembler.add(run.result_mapping, result)
                 logger.debug(
@@ -454,12 +493,43 @@ class Quel3ExecutionManager:
         self,
         session: SessionProtocol,
         *,
+        run: BuiltExecution,
+        execution_index: int,
+        alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
+        quelware_api: QuelwareExecutionApi,
+        parallel: bool,
+        prepared: _PayloadExecutionSession | None,
+    ) -> tuple[Quel3BackendExecutionResult, _PayloadExecutionSession]:
+        """
+        Execute a payload and return its successfully prepared session state.
+
+        Request retries open a fresh session, so previous preparation is reused
+        only when it belongs to the supplied session. Failed attempts never
+        publish preparation back to the execution loop.
+        """
+        if prepared is None or prepared.session is not session:
+            prepared = await self._prepare_payload_in_session(
+                session,
+                payload=run.payload,
+                alias_to_instrument_info=alias_to_instrument_info,
+                quelware_api=quelware_api,
+                parallel=parallel,
+            )
+        result = await self._execute_payload(
+            run=run, execution_index=execution_index, session_state=prepared
+        )
+        return result, prepared
+
+    async def _prepare_payload_in_session(
+        self,
+        session: SessionProtocol,
+        *,
         payload: Quel3ExecutionPayload,
         alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
         quelware_api: QuelwareExecutionApi,
         parallel: bool,
-    ) -> Quel3BackendExecutionResult:
-        """Build session-bound drivers and execute a validated payload."""
+    ) -> _PayloadExecutionSession:
+        """Bind session drivers and apply the payload settings."""
         with _log_phase_duration("bind_instruments"):
             session_state = self._build_payload_execution_session(
                 session=session,
@@ -472,7 +542,7 @@ class Quel3ExecutionManager:
                 },
                 quelware_api=quelware_api,
             )
-        return await self._execute_payload(
+        await self._prepare_payload(
             alias_to_port={
                 alias: str(info.port_id)
                 for alias, info in alias_to_instrument_info.items()
@@ -482,6 +552,7 @@ class Quel3ExecutionManager:
             quelware_api=quelware_api,
             parallel=parallel,
         )
+        return session_state
 
     def _build_payload_execution_session(
         self,
@@ -547,7 +618,7 @@ class Quel3ExecutionManager:
                 raise ValueError("Capture aliases must agree on sampling period.")
         return capture_sampling_period_ns
 
-    async def _execute_payload(
+    async def _prepare_payload(
         self,
         *,
         payload: Quel3ExecutionPayload,
@@ -555,8 +626,8 @@ class Quel3ExecutionManager:
         quelware_api: QuelwareExecutionApi,
         parallel: bool,
         alias_to_port: dict[str, str],
-    ) -> Quel3BackendExecutionResult:
-        """Execute one payload using an already-open payload session."""
+    ) -> None:
+        """Initialize instruments and apply the payload's fixed timelines."""
         cable_delay_ns = payload.cable_delay_ns
         aliases = sorted(payload.fixed_timelines.keys())
         alias_bindings: dict[str, tuple[int, int]] = {}
@@ -643,20 +714,81 @@ class Quel3ExecutionManager:
                         alias_to_directives[alias]
                     )
 
+    async def _trigger_and_fetch(
+        self,
+        session: SessionProtocol,
+        instrument_ids: list[ResourceIdProtocol],
+        execution_index: int,
+    ) -> dict[ResourceIdProtocol, ResultContainerProtocol]:
+        """Dispatch one trigger with a valid lease and retrieve its results."""
+        if not self._session_manager.has_valid_lease(session):
+            raise RuntimeError("QuEL-3 session lease lost before trigger.")
+        trigger_returned = False
+        try:
+            with _log_phase_duration("trigger"):
+                await session.trigger(
+                    instrument_ids=instrument_ids, wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS
+                )
+            trigger_returned = True
+            with _log_phase_duration("fetch_results"):
+                return await session.wait_for_results(instrument_ids)
+        except Exception as exc:
+            if not trigger_returned and _is_trigger_timeout(exc):
+                reason = "trigger RPC timeout"
+            elif not self._session_manager.has_valid_lease(session):
+                reason = "lease loss"
+            else:
+                raise
+            raise Quel3ExecutionOutcomeUnknown(
+                f"QuEL-3 trigger outcome unknown after {reason}; execution={execution_index}",
+                session_token=self._session_manager.session_token or "<unavailable>",
+                cause=exc,
+            ) from exc
+
+    async def _execute_payload(
+        self,
+        *,
+        run: BuiltExecution,
+        execution_index: int,
+        session_state: _PayloadExecutionSession,
+    ) -> Quel3BackendExecutionResult:
+        """Trigger the prepared payload and collect its results."""
+        payload = run.payload
+        instrument_resource_ids = [
+            session_state.alias_to_resource_id[alias]
+            for alias in sorted(payload.fixed_timelines)
+        ]
         shot_samples = {
             alias: {window.name: [] for window in timeline.capture_windows}
             for alias, timeline in payload.fixed_timelines.items()
         }
-        with _log_phase_duration("trigger"):
-            await session_state.session.extend(QUELWARE_SESSION_EXTEND_TTL_MS)
-            await session_state.session.trigger(
-                instrument_ids=instrument_resource_ids,
-                wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,
+        planned_seconds = run.resources.duration_ns / 1e9
+        limit_seconds = 10 * max(30.0, planned_seconds)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        acquisition = asyncio.create_task(
+            self._trigger_and_fetch(
+                session_state.session, instrument_resource_ids, execution_index
             )
-        with _log_phase_duration("fetch_results"):
-            results = await session_state.session.wait_for_results(
-                instrument_resource_ids
-            )
+        )
+        try:
+            done, _ = await asyncio.wait((acquisition,), timeout=limit_seconds)
+            if not done:
+                cause = TimeoutError(
+                    "Timed out waiting for QuEL-3 trigger and results."
+                )
+                raise Quel3ExecutionOutcomeUnknown(
+                    f"QuEL-3 trigger outcome unknown after timeout; execution={execution_index}; "
+                    f"planned_seconds={planned_seconds:g}; limit_seconds={limit_seconds:g}; "
+                    f"elapsed_seconds={loop.time() - started:g}",
+                    session_token=self._session_manager.session_token
+                    or "<unavailable>",
+                    cause=cause,
+                ) from cause
+            results = acquisition.result()
+        finally:
+            acquisition.cancel()
+            await asyncio.gather(acquisition, return_exceptions=True)
 
         with _log_phase_duration("convert_result"):
             for alias, timeline in payload.fixed_timelines.items():

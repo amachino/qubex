@@ -115,6 +115,16 @@ def plan_jobs(
     )
 
 
+def test_split_chunks_execute_uniform_physical_shots():
+    """The tail should execute a full chunk while mapping only requested shots."""
+    prepared = plan_jobs(make_payload(), max_capture_samples=8)
+    assert [r.payload.n_iterations for r in prepared.executions] == [2, 2, 2]
+    assert prepared.estimated_duration_ns == pytest.approx(19.2)
+    assert [r.resources.capture_samples for r in prepared.executions] == [
+        {"unit:rx_p00": 8}
+    ] * 3
+
+
 def test_analysis_extracts_planning_metadata_and_normalizes_timelines() -> None:
     """Analysis should expose counts and conditions without requiring IQ in planning."""
     payload = make_payload()
@@ -190,6 +200,7 @@ def test_payload_builder_applies_supplied_placements_and_maps_captures() -> None
         3,
         13.6,
         Quel3ResourceUsage({"R0": 8}, {"unit:rx_p00": 16}, 27.2),
+        2,
     )
     built = Quel3ExecutionPayloadBuilder().build_all(
         analyses, Quel3ExecutionPlan(2, (run,))
@@ -215,7 +226,7 @@ def test_payload_builder_applies_supplied_placements_and_maps_captures() -> None
 def test_capture_limit_splits_all_modes_using_raw_samples(mode) -> None:
     """RAW capacity should split every capture mode into the same shot ranges."""
     plan = plan_jobs(make_payload(mode=mode), max_capture_samples=8)
-    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 2]
     assert [
         (
             run.result_mapping.fragments[0].shot_start,
@@ -226,17 +237,49 @@ def test_capture_limit_splits_all_modes_using_raw_samples(mode) -> None:
     assert [run.resources.capture_samples for run in plan.executions] == [
         {"unit:rx_p00": 8},
         {"unit:rx_p00": 8},
-        {"unit:rx_p00": 4},
+        {"unit:rx_p00": 8},
     ]
 
 
-@pytest.mark.parametrize(("limit", "counts"), [(19, [4, 1]), (20, [5]), (21, [5])])
+@pytest.mark.parametrize(("limit", "counts"), [(19, [3, 3]), (20, [5]), (21, [5])])
 def test_capture_limit_is_inclusive(limit, counts) -> None:
     """Capture capacity should accept the exact limit and split just above it."""
     assert [
         run.payload.n_iterations
         for run in plan_jobs(make_payload(), max_capture_samples=limit).executions
     ] == counts
+
+
+@pytest.mark.parametrize(
+    "resource_limit",
+    ["max_capture_samples", "max_return_capture_samples", "max_execution_duration_ns"],
+)
+@pytest.mark.parametrize(
+    ("shots", "shot_limit", "counts", "ranges"),
+    [
+        (8192, 6944, [4096, 4096], [(0, 4096), (4096, 8192)]),
+        (13, 6, [5, 5, 5], [(0, 5), (5, 10), (10, 13)]),
+        (12, 6, [6, 6], [(0, 6), (6, 12)]),
+        (3, 1, [1, 1, 1], [(0, 1), (1, 2), (2, 3)]),
+        (1, 6, [1], [(0, 1)]),
+    ],
+)
+def test_split_shots_are_distributed_evenly(
+    shots, shot_limit, counts, ranges, resource_limit
+):
+    """Shots should use the minimum number of equal runs with minimal padding."""
+    limit = shot_limit * (3.2 if resource_limit == "max_execution_duration_ns" else 4)
+    plan = plan_jobs(make_payload(shots=shots), **{resource_limit: limit})
+    assert [run.payload.n_iterations for run in plan.executions] == counts
+    assert [
+        (fragment.shot_start, fragment.shot_stop)
+        for run in plan.executions
+        for fragment in run.result_mapping.fragments
+    ] == ranges
+    assert [run.resources.capture_samples for run in plan.executions] == [
+        {"unit:rx_p00": count * 4} for count in counts
+    ]
+    assert plan.estimated_duration_ns == pytest.approx(sum(counts) * 3.2)
 
 
 def test_capture_capacity_is_summed_across_instruments_on_one_mux() -> None:
@@ -250,7 +293,7 @@ def test_capture_capacity_is_summed_across_instruments_on_one_mux() -> None:
     assert [
         run.payload.n_iterations
         for run in plan_jobs(payload, cache=cache, max_capture_samples=16).executions
-    ] == [2, 2, 1]
+    ] == [2, 2, 2]
 
 
 def test_distinct_units_have_independent_capture_budgets() -> None:
@@ -431,7 +474,7 @@ def test_only_oversized_single_jobs_are_split_between_whole_groups(options) -> N
         tuple(fragment.job_index for fragment in run.result_mapping.fragments)
         for run in plan.executions
     ] == [(0, 1), (2,), (2,), (2,), (3, 4)]
-    assert [run.payload.n_iterations for run in plan.executions] == [5, 2, 2, 1, 5]
+    assert [run.payload.n_iterations for run in plan.executions] == [5, 2, 2, 2, 5]
     assert [
         (
             run.result_mapping.fragments[0].shot_start,
@@ -448,7 +491,7 @@ def test_adjacent_oversized_jobs_are_split_independently() -> None:
         (fragment.job_index, fragment.shot_start, fragment.shot_stop)
         for run in plan.executions
         for fragment in run.result_mapping.fragments
-    ] == [(0, 0, 4), (0, 4, 5), (1, 0, 4), (1, 4, 5)]
+    ] == [(0, 0, 3), (0, 3, 5), (1, 0, 3), (1, 3, 5)]
 
 
 @pytest.mark.parametrize(
@@ -589,14 +632,14 @@ def test_unsplittable_job_reports_the_violated_resource(options) -> None:
 def test_time_limit_splits_even_when_merging_is_disabled() -> None:
     """Disabling job merging should retain automatic duration-based splitting."""
     plan = plan_jobs(make_payload(), merge_jobs=False, max_execution_duration_ns=6.4)
-    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 2]
 
 
 @pytest.mark.parametrize(
     "mode", [mode for mode in Quel3CaptureMode if mode != Quel3CaptureMode.UNSPECIFIED]
 )
-def test_result_assembly_preserves_shots_and_weights_unequal_chunks(mode) -> None:
-    """Reconstruction should concatenate shots or weight chunk averages by shots."""
+def test_result_assembly_preserves_requested_shots_and_padded_averages(mode) -> None:
+    """Reconstruction should trim excess shots or average all physical shots."""
     plan = plan_jobs(make_payload(mode=mode), max_capture_samples=8)
     assembler = Quel3ResultAssembler(plan.jobs)
     is_waveform = mode in (
@@ -609,7 +652,11 @@ def test_result_assembly_preserves_shots_and_weights_unequal_chunks(mode) -> Non
     )
     for run in plan.executions:
         fragment = run.result_mapping.fragments[0]
-        values = np.arange(fragment.shot_start, fragment.shot_stop, dtype=np.complex128)
+        values = np.arange(
+            fragment.shot_start,
+            fragment.shot_start + run.payload.n_iterations,
+            dtype=np.complex128,
+        )
         if is_waveform:
             values = np.repeat(values[:, None], 4, axis=1)
         if is_average:
@@ -622,7 +669,7 @@ def test_result_assembly_preserves_shots_and_weights_unequal_chunks(mode) -> Non
         )
     result = assembler.finish()[0]
     if is_average:
-        np.testing.assert_allclose(result.data["R0"][0], 2, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(result.data["R0"][0], 2.5, rtol=0, atol=1e-12)
     else:
         assert result.data["R0"][0].shape == ((5, 4) if is_waveform else (5,))
         np.testing.assert_allclose(
@@ -650,7 +697,7 @@ def test_split_and_whole_jobs_restore_each_capture_sequence(mode) -> None:
         },
     )
     plan = plan_jobs(first, make_payload(mode=mode), max_capture_samples=24)
-    assert [run.payload.n_iterations for run in plan.executions] == [3, 2, 5]
+    assert [run.payload.n_iterations for run in plan.executions] == [3, 3, 5]
     assembler = Quel3ResultAssembler(plan.jobs)
     waveform = mode in (
         Quel3CaptureMode.RAW_WAVEFORMS,
@@ -662,7 +709,10 @@ def test_split_and_whole_jobs_restore_each_capture_sequence(mode) -> None:
     )
     for run in plan.executions:
         fragment = run.result_mapping.fragments[0]
-        start, stop = fragment.shot_start, fragment.shot_stop
+        start, stop = (
+            fragment.shot_start,
+            fragment.shot_start + run.payload.n_iterations,
+        )
         captures = []
         for capture in fragment.captures:
             offset = fragment.job_index * 20 + capture.original_index * 10
@@ -684,7 +734,9 @@ def test_split_and_whole_jobs_restore_each_capture_sequence(mode) -> None:
         [*results[0].data["R0"], *results[1].data["R0"]], (0, 10, 20), strict=True
     ):
         if averaged:
-            np.testing.assert_allclose(capture, offset + 2, rtol=0, atol=1e-12)
+            np.testing.assert_allclose(
+                capture, offset + (2.5 if offset < 20 else 2), rtol=0, atol=1e-12
+            )
         else:
             np.testing.assert_allclose(
                 capture.reshape(5, -1)[:, 0], np.arange(5) + offset, rtol=0, atol=0
@@ -990,9 +1042,9 @@ def test_duration_limit_includes_final_shot_interval() -> None:
     """The appended shot interval should count toward each execution duration limit."""
     payload = replace(make_payload(), shot_interval_ns=3.2)
     plan = plan_jobs(payload, max_execution_duration_ns=12.8)
-    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 1]
+    assert [run.payload.n_iterations for run in plan.executions] == [2, 2, 2]
     assert [run.resources.duration_ns for run in plan.executions] == pytest.approx(
-        [12.8, 12.8, 6.4], rel=0, abs=1e-9
+        [12.8, 12.8, 12.8], rel=0, abs=1e-9
     )
 
 

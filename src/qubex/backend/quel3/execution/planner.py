@@ -254,12 +254,15 @@ class Quel3ExecutionPlanner:
                     )
                 ),
             )
+        total_shots = group.conditions.n_iterations
+        split_count = (total_shots + shot_limit - 1) // shot_limit
+        shots = (total_shots + split_count - 1) // split_count
         executions = []
-        for start in range(0, group.conditions.n_iterations, shot_limit):
-            stop = min(start + shot_limit, group.conditions.n_iterations)
-            shots = stop - start
+        for start in range(0, total_shots, shots):
+            stop = min(start + shots, total_shots)
             executions.append(
                 Quel3PlannedExecution(
+                    n_iterations=shots,
                     placements=group.placements,
                     shot_start=start,
                     shot_stop=stop,
