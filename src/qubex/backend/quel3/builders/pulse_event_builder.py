@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import numpy as np
 from qxpulse import Blank, Pulse, PulseArray
@@ -14,6 +14,20 @@ from qubex.backend.quel3.quel3_backend_constants import (
     READOUT_SAMPLING_PERIOD_FS,
     READOUT_SAMPLING_PERIOD_NS,
 )
+
+
+@dataclass(frozen=True)
+class _RepeatedBlock:
+    """Start, size and repeat count on the registered waveform's sample grid."""
+
+    start: int
+    size: int
+    count: int
+
+    @property
+    def end(self) -> int:
+        """Return the sample following the last copy."""
+        return self.start + self.size * self.count
 
 
 class _WaveformLibrary:
@@ -105,6 +119,25 @@ class Quel3PulseEventBuilder:
         if not np.all(np.isfinite(shape)):
             raise ValueError("Waveform IQ values must be finite.")
         return (Quel3WaveformEvent(library.register(shape, period), 0.0),)
+
+    @staticmethod
+    def _choose_repeated_block(
+        *, length: int, first: int, stop: int, alignment: int, target: int, minimum: int
+    ) -> _RepeatedBlock | None:
+        """Fit fixed blocks in [first, stop) on the registered sample grid."""
+        size = target // alignment * alignment
+        if size < minimum:
+            return None
+
+        start = max(first, minimum) if first else 0
+        start = (start + alignment - 1) // alignment * alignment
+        count = (stop - start) // size
+        tail = length - (start + count * size)
+        if 0 < tail < minimum:
+            count -= 1
+        if count < 2:
+            return None
+        return _RepeatedBlock(start, size, count)
 
     @staticmethod
     def _normalize_waveform(
