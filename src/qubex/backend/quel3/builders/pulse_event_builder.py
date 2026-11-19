@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass, replace
 
 import numpy as np
-from qxpulse import Blank, Pulse, PulseArray, Rect
+from qxpulse import Blank, FlatTop, Pulse, PulseArray, Rect
 
 from qubex.backend.quel3.models import (
     Quel3Waveform,
@@ -165,7 +165,7 @@ class Quel3PulseEventBuilder:
         instrument_period_fs: int,
     ) -> _RepeatedBlock | None:
         """Select a block on the registered grid and verify its source samples."""
-        if not self._compression.enabled or type(pulse) is not Rect:
+        if not self._compression.enabled or type(pulse) not in (Rect, FlatTop):
             return None
         stride = round(period / pulse.sampling_period)
         if stride * pulse.sampling_period != period:
@@ -176,10 +176,16 @@ class Quel3PulseEventBuilder:
         if not math.isclose(period * 1e6, period_fs, rel_tol=0, abs_tol=1e-8):
             return None
         quantum = instrument_period_fs // math.gcd(period_fs, instrument_period_fs)
+        # Keep both ramps, their derivative neighbours and partial readout groups.
+        margin = (
+            math.ceil(pulse.tau / pulse.sampling_period) + 2
+            if isinstance(pulse, FlatTop)
+            else 0
+        )
         block = self._choose_repeated_block(
             length=length,
-            first=0,
-            stop=pulse.length // stride,
+            first=(margin + stride - 1) // stride,
+            stop=(pulse.length - margin) // stride,
             alignment=quantum,
             target=self._compression.target_block_samples,
             minimum=self._compression.min_chunk_samples,

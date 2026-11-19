@@ -1,10 +1,13 @@
 """Tests for block sharing while compiling QuEL-3 pulse schedules."""
 
+from functools import partial
+
 import numpy as np
 import pytest
-from qxpulse import Arbitrary, PulseArray, Rect, VirtualZ
+from qxpulse import Arbitrary, FlatTop, PulseArray, Rect, VirtualZ
 
 from qubex.backend.quel3.builders import Quel3PulseEventBuilder
+from qubex.backend.quel3.execution.timing import sample_count
 from qubex.backend.quel3.models import Quel3WaveformCompression
 
 
@@ -138,6 +141,63 @@ def test_generation_settings_choose_block_sizes():
         assert [len(library[e.waveform_name].iq_array) for e in events] == sizes
 
 
+@pytest.mark.parametrize("instrument_period_fs", [400_000, 800_000])
+@pytest.mark.parametrize("frequency", [0.0, 0.0137123, -0.027431])
+@pytest.mark.parametrize(
+    "shape", [Rect, pytest.param(partial(FlatTop, tau=45.2, beta=0.25), id="FlatTop")]
+)
+def test_block_playback_preserves_normalized_complex_iq(
+    instrument_period_fs, frequency, shape
+):
+    """Playback preserves ramps, odd readout padding, detuning, gain and frame shifts."""
+    pulse = shape(
+        duration=40014.8,
+        amplitude=0.3,
+        sampling_period=0.4,
+        detuning=frequency,
+    )
+    sequence = PulseArray([VirtualZ(0.73), pulse, pulse.scaled(-0.6)])
+
+    def render(enabled):
+        builder = Quel3PulseEventBuilder(
+            compression=Quel3WaveformCompression(enabled=enabled)
+        )
+        by_target, library = builder.build(
+            {"target": sequence}, instrument_periods_fs={"target": instrument_period_fs}
+        )
+        events = by_target["target"]
+        period = instrument_period_fs / 1e6
+        signal = np.zeros(round(sequence.duration / period) + 2, dtype=complex)
+        for event in events:
+            start = sample_count(event.start_offset_ns, period)
+            samples = library[event.waveform_name].iq_array
+            assert len(samples) >= 1000
+            signal[start : start + len(samples)] += (
+                event.gain * np.exp(1j * np.deg2rad(event.phase_offset_deg)) * samples
+            )
+        return signal, len(events)
+
+    actual, count = render(True)
+    expected, _ = render(False)
+    assert count > 2
+    assert np.max(np.abs(actual - expected)) < 1e-10
+
+
+@pytest.mark.parametrize("instrument_period_fs", [400_000, 600_000])
+def test_flat_top_chunks_align_to_the_control_grid(instrument_period_fs):
+    """Fractional control samples produce full fragments at hardware sample boundaries."""
+    pulse = FlatTop(duration=8000.2, amplitude=0.2, tau=40.2, sampling_period=0.2)
+    library, events = _compile(pulse, instrument_period_fs=instrument_period_fs)
+    assert len(events) > 1
+    period_ns = instrument_period_fs / 1e6
+    for event in events:
+        assert event.start_offset_ns / period_ns == pytest.approx(
+            round(event.start_offset_ns / period_ns), abs=1e-8
+        )
+    actual = np.concatenate([library[e.waveform_name].iq_array for e in events])
+    np.testing.assert_array_equal(actual, pulse.shape_values)
+
+
 @pytest.mark.parametrize(
     ("length", "first", "stop", "alignment", "target", "minimum", "expected"),
     [
@@ -160,3 +220,15 @@ def test_integer_block_policy(
         minimum=minimum,
     )
     assert ((block.start, block.size, block.count) if block else None) == expected
+
+
+def test_repeated_flat_top_preserves_internal_ramps():
+    """A repeated flat-top retains the ramps between copies."""
+    pulse = FlatTop(duration=8000, sampling_period=0.4, amplitude=0.2, tau=40).repeated(
+        3
+    )
+    library, events = _compile(pulse)
+    assert len(events) == 1
+    np.testing.assert_array_equal(
+        library[events[0].waveform_name].iq_array, pulse.shape_values
+    )
