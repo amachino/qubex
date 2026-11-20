@@ -25,6 +25,9 @@ class _SuccessfulSession:
         self.enter_calls = 0
         self.exit_calls = 0
 
+    async def extend(self, new_ttl_ms: int) -> bool:
+        return True
+
     async def __aenter__(self) -> _SuccessfulSession:
         self.enter_calls += 1
         return self
@@ -418,6 +421,45 @@ def test_open_captures_session_token_on_success(
     assert closed_session_id is None
 
 
+@pytest.mark.parametrize("accepted", [True, False])
+@pytest.mark.parametrize("acquisition_seconds", [0, 31])
+def test_open_extends_lease_before_return(monkeypatch, accepted, acquisition_seconds):
+    """Every newly acquired session should be extended before execution."""
+    now = 100.0
+    extensions = []
+
+    class SlowSession(_SuccessfulSession):
+        async def __aenter__(self):
+            nonlocal now
+            now += acquisition_seconds
+            return await super().__aenter__()
+
+        async def extend(self, new_ttl_ms):
+            extensions.append(new_ttl_ms)
+            return accepted
+
+    async def run():
+        monkeypatch.setattr(asyncio.get_running_loop(), "time", lambda: now)
+        session = SlowSession()
+        context = _FakeClientContext(_FakeClient(session))
+        manager = Quel3SessionManager()
+        acquisition = manager.open(
+            ("inst",), client_factory=cast(Any, lambda *_: context)
+        )
+        if accepted:
+            opened = await acquisition
+            assert opened is not None
+            assert manager.has_valid_lease(opened)
+            await manager.close()
+        else:
+            with pytest.raises(QuelwareSessionError):
+                await acquisition
+        assert extensions == [30_000]
+        assert session.exit_calls == context.exit_calls == 1
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("ending", ["close", "reopen", "close_error"])
 def test_session_renews_until_stopped_before_exit(monkeypatch, ending):
     """One renewal task should survive reuse and stop before its session exits."""
@@ -430,10 +472,12 @@ def test_session_renews_until_stopped_before_exit(monkeypatch, ending):
 
         async def extend(self, new_ttl_ms):
             self.calls += 1
-            attempts.put_nowait(new_ttl_ms)
             if self.calls == 1:
-                raise ConnectionError("temporary renewal failure")
+                return True
+            attempts.put_nowait(new_ttl_ms)
             if self.calls == 2:
+                raise ConnectionError("temporary renewal failure")
+            if self.calls == 3:
                 return True
             try:
                 await asyncio.Event().wait()
