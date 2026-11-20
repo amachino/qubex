@@ -30,16 +30,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Update submodules
         run: git submodule update --init --recursive
 
       - name: Install the latest version of uv and set the python version
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+          prune-cache: true
 
       - name: Install dependencies
         run: uv sync --locked --dev --group docs --extra quel1 --extra quel3
