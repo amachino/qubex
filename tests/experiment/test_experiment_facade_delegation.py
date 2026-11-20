@@ -797,6 +797,7 @@ def test_build_measurement_schedule_delegates_to_measurement_service() -> None:
                 "final_measurement": False,
                 "capture_placement": "pulse_aligned",
                 "capture_targets": None,
+                "capture_windows": None,
                 "plot": False,
             },
         )

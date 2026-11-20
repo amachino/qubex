@@ -53,6 +53,7 @@ def test_schedule_builder_keeps_readout_target_order(monkeypatch) -> None:
         readout_targets: list[str],
         capture_targets: list[str],
         capture_placement: str,
+        capture_windows: object = None,
     ) -> CaptureSchedule:
         _ = (capture_targets, capture_placement)
         captured["readout_targets"] = readout_targets
@@ -117,6 +118,7 @@ def test_schedule_builder_uses_registry_for_readout_label_order(
         readout_targets: list[str],
         capture_targets: list[str],
         capture_placement: str,
+        capture_windows: object = None,
     ) -> CaptureSchedule:
         _ = (capture_targets, capture_placement)
         captured["readout_targets"] = readout_targets
@@ -170,6 +172,7 @@ def test_schedule_builder_accepts_qubit_keyed_readout_amplitudes(monkeypatch) ->
         readout_targets: list[str],
         capture_targets: list[str],
         capture_placement: str,
+        capture_windows: object = None,
     ) -> CaptureSchedule:
         _ = (schedule, readout_targets, capture_targets, capture_placement)
         return CaptureSchedule(captures=[])
@@ -219,6 +222,7 @@ def test_schedule_builder_resolves_none_options_in_build(monkeypatch) -> None:
         readout_targets: list[str],
         capture_targets: list[str],
         capture_placement: str,
+        capture_windows: object = None,
     ) -> CaptureSchedule:
         _ = (self, schedule, capture_targets)
         captured["readout_targets"] = readout_targets
