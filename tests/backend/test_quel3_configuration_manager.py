@@ -22,7 +22,6 @@ from qubex.backend.quel3.instrument_cache import InstrumentCache
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
-    session_workarounds as session_workarounds_module,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
 from qubex.backend.quel3.models import (
@@ -683,142 +682,37 @@ def test_append_failure_is_not_retried(
     assert client.exit_calls == 1
 
 
-def test_deploy_instruments_retries_resource_allocation_on_session_create(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given transient resource allocation failure, deploy should retry session creation."""
+@pytest.mark.parametrize("error_name", ["LockConflictError", "UnitUnreachableError"])
+def test_replace_deploy_propagates_acquisition_failure(monkeypatch, error_name):
+    """A replacement deployment should open once and preserve the server failure."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    errors = pytest.importorskip("quelware_client.core.exceptions")
+    cause = getattr(errors, error_name)("resource unavailable")
+    session = AsyncMock()
+    session.__aenter__.side_effect = cause
+    client = MagicMock()
+    client.__aenter__.return_value = client
+    client.create_session.return_value = session
     manager = Quel3ConfigurationManager()
-
-    async def _skip_sleep(delay: float) -> None:
-        del delay
-
-    monkeypatch.setattr(session_workarounds_module.asyncio, "sleep", _skip_sleep)
-
-    class _Profile:
-        def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
-            self.frequency_range_min = frequency_range_min
-            self.frequency_range_max = frequency_range_max
-
-    class _Definition:
-        def __init__(self, *, alias: str, mode: object, role: object, profile: object):
-            self.alias = alias
-            self.mode = mode
-            self.role = role
-            self.profile = profile
-
-    class _Mode:
-        FIXED_TIMELINE = "fixed_timeline"
-
-    class _Role:
-        TRANSMITTER = "transmitter"
-
-    @dataclass(frozen=True)
-    class _InstrumentInfo:
-        id: str
-        port_id: str
-        definition: _Definition
-
-    class _FailingSessionContext:
-        def __init__(self) -> None:
-            self.exit_calls = 0
-
-        async def __aenter__(self) -> object:
-            raise RuntimeError("resource is not available yet")
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-            self.exit_calls += 1
-
-    class _FakeSession:
-        def __init__(self) -> None:
-            self.exit_calls = 0
-
-        async def __aenter__(self) -> _FakeSession:
-            return self
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-            self.exit_calls += 1
-
-        async def deploy_instruments(
-            self,
-            port_id: str,
-            *,
-            definitions: list[_Definition],
-            append: bool = True,
-        ) -> list[_InstrumentInfo]:
-            del append
-            return [
-                _InstrumentInfo(
-                    id=f"deployed:{definitions[0].alias}",
-                    port_id=port_id,
-                    definition=definitions[0],
-                )
-            ]
-
-    class _FakeClient:
-        def __init__(self, session: _FakeSession) -> None:
-            self._session = session
-            self.failing_context = _FailingSessionContext()
-            self.create_session_calls: list[tuple[str, ...]] = []
-
-        async def __aenter__(self) -> _FakeClient:
-            return self
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-
-        def create_session(self, resource_ids: list[str], **_: object) -> object:
-            self.create_session_calls.append(tuple(resource_ids))
-            if len(self.create_session_calls) == 1:
-                return self.failing_context
-            return self._session
-
-    session = _FakeSession()
-    client = _FakeClient(session)
     monkeypatch.setattr(
-        manager,
-        "_load_quelware_client_factory",
-        lambda: lambda endpoint, port: client,
+        manager, "_load_quelware_client_factory", lambda: lambda *_: client
     )
-    monkeypatch.setattr(
-        manager,
-        "_load_instrument_entities",
-        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
-    )
-
-    specification = InstrumentSpec(
-        port_id="quel3-02-a01:tx_p02",
+    monkeypatch.setattr(manager, "_load_instrument_entities", lambda: object())
+    spec = InstrumentSpec(
+        port_id="unit:tx_p02",
         role="TRANSMITTER",
         frequency_range_min_hz=4.1e9,
         frequency_range_max_hz=4.3e9,
         alias="Q00",
     )
 
-    deployed = _deploy_configuration(manager, specifications=(specification,))
-
-    assert client.create_session_calls == [
-        ("quel3-02-a01:tx_p02",),
-        ("quel3-02-a01:tx_p02",),
-    ]
-    assert client.failing_context.exit_calls == 1
-    assert session.exit_calls == 1
-    assert "Q00" in deployed
+    with pytest.raises(QuelwareSessionError) as error:
+        _deploy_configuration(manager, specifications=(spec,), append=False)
+    assert error.value.__cause__ is cause
+    client.create_session.assert_called_once()
+    session.__aexit__.assert_awaited_once()
+    client.__aexit__.assert_awaited_once()
 
 
 def test_deploy_instruments_skips_client_for_empty_requests(

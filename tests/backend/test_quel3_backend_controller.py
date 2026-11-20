@@ -3043,7 +3043,17 @@ def test_execution_packs_splits_and_logs_original_shot_ranges(
     )
     assert applied_frequencies == [6e9, 6e9, 6.1e9, 6e9]
     assert len(session.initialize_calls) == 4
-    assert session.lifecycle_calls == ["trigger"] * 5
+    assert session.lifecycle_calls == [
+        "extend",
+        "trigger",
+        "extend",
+        "trigger",
+        "trigger",
+        "extend",
+        "trigger",
+        "extend",
+        "trigger",
+    ]
     for result, expected, shots in zip(
         results, (6, 7, 6, 6.1, 6), (2, 2, 5, 2, 2), strict=True
     ):
@@ -3383,7 +3393,7 @@ def test_rejected_lease_during_acquisition_never_replays_trigger(
     monkeypatch, execute_sessions, fetch_fails
 ):
     """A rejected renewal should preserve received shots or report an unknown outcome."""
-    monkeypatch.setattr(session_manager_module, "QUEL3_LEASE_RENEW_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(session_manager_module, "sleep", lambda _: asyncio.sleep(0))
     fetching = asyncio.Event()
     rejected = asyncio.Event()
     missing_resource = type(
@@ -3394,6 +3404,8 @@ def test_rejected_lease_during_acquisition_never_replays_trigger(
 
     class Session(_FakeSession):
         async def extend(self, new_ttl_ms):
+            if not self.initialize_calls:
+                return True
             await fetching.wait()
             rejected.set()
             return False
@@ -3514,12 +3526,14 @@ def test_execution_cancellation_stops_fetch_and_renewal_before_close(
     monkeypatch, execute_sessions
 ):
     """Cancelling a pending acquisition should stop both tasks before session exit."""
-    monkeypatch.setattr(session_manager_module, "QUEL3_LEASE_RENEW_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(session_manager_module, "sleep", lambda _: asyncio.sleep(0))
     fetching, renewing = asyncio.Event(), asyncio.Event()
     stopped = []
 
     class Session(_FakeSession):
         async def extend(self, new_ttl_ms):
+            if not self.initialize_calls:
+                return True
             renewing.set()
             try:
                 await asyncio.Event().wait()

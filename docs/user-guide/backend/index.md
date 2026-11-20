@@ -31,7 +31,7 @@ controller-level behavior itself is the subject.
 ## QuEL-3 execution sessions
 
 Execution logs record the session ID captured on opening and the request attempt
-number at `INFO`. Retries and cleanup failures are logged at `WARNING`; a final
+number at `DEBUG`. Retries and cleanup failures are logged at `WARNING`; a final
 request failure is logged at `ERROR` with its traceback and session ID.
 
 Add your own possible causes to `QUELWARE_EXCEPTION_HINTS` in
@@ -49,12 +49,15 @@ possible QuEL server bug and checking server/proxy logs. Exact status entries su
 as `"503"` override the family hint. These are diagnostic suggestions, not array-size
 validation or a determination of the server failure's cause.
 
-Session creation retries known resource or unit availability failures up to four
-times with backoff. A separate loop retries each payload up to four times after
-an `Exception`, recreating the client and session. Each outer attempt retains its
-own session creation budget; cancellation is not retried. A failure after trigger
-can therefore execute the same payload again. Healthy clients are reused within
-a batch. Final cleanup failures are logged without replacing the result or error.
+Qubex requests each session once. On lock contention or a slow unit, a supporting
+server may start new acquisition attempts for 30 seconds by default. An attempt
+already in progress can continue until the default 60-second OpenSession RPC
+deadline. Older servers make one attempt. Qubex extends each newly acquired
+session for 30 seconds before execution, then renews the lease every 5 seconds.
+
+After acquisition, eligible request failures can trigger a new session, up to
+four request attempts in total. An unknown trigger outcome ends the batch.
+A stale instrument ID triggers one cache refresh and replanning attempt.
 
 Split QuEL-3 jobs use equal shot counts per trigger and may execute extra shots.
 Per-shot results omit the extras; hardware-averaged results include them. For

@@ -713,3 +713,52 @@ def test_channel_maps_truncated_response_to_stream_termination(
         _request(channel, {})
 
     assert exc_info.value.__cause__ is incomplete_read
+
+
+@pytest.mark.parametrize("encoding", ["legacy", "dense"])
+def test_http_iq_point_encodings_preserve_capture_samples(monkeypatch, encoding):
+    """HTTP capture results should preserve point values from either server encoding."""
+    models = pytest.importorskip("quelware_core.pb.quelware.models.v1")
+    converter = pytest.importorskip("quelware_core.pb_converter.result")
+    entities = pytest.importorskip("quelware_core.entities.result")
+    from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
+    from qubex.backend.quel3.models import Quel3CaptureMode
+
+    points = [1 + 2j, -3 - 4j]
+    if encoding == "dense":
+        result = entities.ResultContainer()
+        result.iq_point_result["window"] = points
+        message = converter.result_container_to_pb(result)
+    else:
+        message = models.ResultContainer(
+            iq_result={
+                "window": models.IqResult(
+                    iq_points=models.IqPointList(
+                        iq_points=[models.IqPoint(i=v.real, q=v.imag) for v in points]
+                    )
+                )
+            }
+        )
+    _patch_channel_opener(
+        monkeypatch,
+        lambda *args, **kwargs: _HttpResponse(bytes(message), "application/protobuf"),
+    )
+    channel = ProtobufHttpChannel("example.test", None, scheme="https")
+
+    async def read_result():
+        async with channel.request(
+            "/test/capture",
+            Cardinality.UNARY_UNARY,
+            _RequestMessage,
+            models.ResultContainer,
+        ) as stream:
+            await stream.send_message(_RequestMessage(), end=True)
+            return converter.result_container_from_pb(await stream.recv_message())
+
+    samples = Quel3ExecutionManager._extract_capture_samples(  # noqa: SLF001
+        asyncio.run(read_result()),
+        "window",
+        capture_mode=Quel3CaptureMode.VALUES_PER_ITER,
+    )
+    assert samples is not None
+    assert samples.tolist() == points

@@ -18,10 +18,10 @@ from qubex.backend.quel3.interfaces import (
     SessionProtocol,
 )
 from qubex.backend.quel3.managers.session_workarounds import (
-    QUELWARE_SESSION_CREATE_TTL_MS,
     QUELWARE_SESSION_EXTEND_TTL_MS,
+    QuelwareSessionAcquisitionError,
     QuelwareSessionError,
-    enter_quelware_session_with_resource_retry,
+    enter_quelware_session,
     quelware_exception_summary,
     quelware_session_token,
 )
@@ -149,24 +149,33 @@ class Quel3SessionManager:
                 return self._session
             return await self.reopen_session(normalized_resource_ids)
 
-        loop = asyncio.get_running_loop()
-        started = loop.time()
         try:
             (
                 self._session_cm,
                 self._session,
-            ) = await enter_quelware_session_with_resource_retry(
+            ) = await enter_quelware_session(
                 client=self._client,
                 resource_ids=normalized_resource_ids,
             )
-        except Exception:
-            await self.close()
+            self._session_token = quelware_session_token(self._session)
+            started = asyncio.get_running_loop().time()
+            if not await self._session.extend(QUELWARE_SESSION_EXTEND_TTL_MS):
+                raise RuntimeError("Initial session lease extension was rejected.")  # noqa: TRY301 - Handle rejection and RPC failure together.
+        except (QuelwareSessionAcquisitionError, asyncio.CancelledError):
+            await self.close_safely()
             raise
-        self._session_token = quelware_session_token(self._session)
+        except Exception as exc:
+            token = self._session_token or "<unavailable>"
+            await self.close_safely()
+            raise QuelwareSessionAcquisitionError(
+                "QuEL-3 lease extension failed after session acquisition",
+                session_token=token,
+                cause=exc,
+            ) from exc
         self._resource_ids = normalized_resource_ids
-        self._lease_expires_at = started + QUELWARE_SESSION_CREATE_TTL_MS / 1000
+        self._lease_expires_at = started + QUELWARE_SESSION_EXTEND_TTL_MS / 1000
         self._renewal_task = asyncio.create_task(
-            self._renew_lease(self._session, loop.time())
+            self._renew_lease(self._session, started)
         )
         return self._session
 
