@@ -21,7 +21,7 @@ from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_CREATE_TTL_MS,
     QUELWARE_SESSION_EXTEND_TTL_MS,
     QuelwareSessionError,
-    enter_quelware_session_with_resource_retry,
+    enter_quelware_session,
     quelware_exception_summary,
     quelware_session_token,
 )
@@ -155,12 +155,12 @@ class Quel3SessionManager:
             (
                 self._session_cm,
                 self._session,
-            ) = await enter_quelware_session_with_resource_retry(
+            ) = await enter_quelware_session(
                 client=self._client,
                 resource_ids=normalized_resource_ids,
             )
-        except Exception:
-            await self.close()
+        except (Exception, asyncio.CancelledError):
+            await self.close_safely()
             raise
         self._session_token = quelware_session_token(self._session)
         self._resource_ids = normalized_resource_ids

@@ -24,8 +24,9 @@ from qubex.backend.quel3.interfaces.client import (
 )
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
+    QuelwareSessionAcquisitionError,
     QuelwareSessionError,
-    enter_quelware_session_with_resource_retry,
+    enter_quelware_session,
     quelware_exception_summary,
     quelware_session_token,
 )
@@ -549,6 +550,8 @@ class Quel3ConfigurationManager:
                     max_attempts=max_attempts,
                 )
                 break
+            except QuelwareSessionAcquisitionError:
+                raise
             except Exception as exc:
                 if attempt + 1 >= max_attempts:
                     if isinstance(exc, QuelwareSessionError):
@@ -586,7 +589,7 @@ class Quel3ConfigurationManager:
             self._runtime_config.endpoint,
             self._runtime_config.port,
         ) as client:
-            session_cm, session = await enter_quelware_session_with_resource_retry(
+            session_cm, session = await enter_quelware_session(
                 client=client,
                 resource_ids=list(port_batches),
             )

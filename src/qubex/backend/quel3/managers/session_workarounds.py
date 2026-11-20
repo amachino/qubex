@@ -27,11 +27,6 @@ QUEL3_SESSION_REQUEST_MAX_ATTEMPTS = 4
 QUEL3_SESSION_REQUEST_RETRY_DELAY_SECONDS = 0.5
 QUELWARE_SESSION_CREATE_TTL_MS = 30_000
 QUELWARE_SESSION_EXTEND_TTL_MS = 30_000
-QUELWARE_SESSION_CREATE_TENTATIVE_TTL_MS = 5_000
-QUELWARE_SESSION_CREATE_MAX_ATTEMPTS = 4
-QUELWARE_SESSION_CREATE_INITIAL_RETRY_DELAY_SECONDS = 0.5
-QUELWARE_SESSION_CREATE_MAX_RETRY_DELAY_SECONDS = 4.0
-QUELWARE_SESSION_CREATE_RETRY_BACKOFF_FACTOR = 1.5
 QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS = 4
 
 # Add diagnoses here using module-qualified exception class names.
@@ -82,6 +77,10 @@ class QuelwareSessionError(RuntimeError):
         )
 
 
+class QuelwareSessionAcquisitionError(QuelwareSessionError):
+    """The server could not grant a usable session."""
+
+
 class Quel3ExecutionOutcomeUnknown(QuelwareSessionError):
     """A dispatched trigger whose outcome could not be confirmed; never replay it."""
 
@@ -98,7 +97,7 @@ async def run_with_session_request_retry(
     Run an operation, retrying request failures with a fresh client and session.
 
     `reuse_session` keeps an open session when its resource IDs match.
-    Otherwise, open a new session. Session creation has its own retry budget.
+    Otherwise, open a new session. The server handles acquisition retries.
     Missing resources propagate to the caller for cache refresh.
     """
     max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
@@ -135,7 +134,7 @@ async def run_with_session_request_retry(
                 time.monotonic() - started,
             )
             return await operation(session)
-        except Quel3ExecutionOutcomeUnknown:
+        except (Quel3ExecutionOutcomeUnknown, QuelwareSessionAcquisitionError):
             raise
         except Exception as exc:
             session_token = (
@@ -262,120 +261,32 @@ def is_resource_not_found_error(exc: BaseException) -> bool:
     return False
 
 
-def is_resource_allocation_error(exc: BaseException) -> bool:
-    """Return whether an exception looks like transient resource allocation failure."""
-    if is_resource_not_found_error(exc):
-        return False
-    text = f"{type(exc).__module__}.{type(exc).__name__}: {exc}".lower()
-    grpc_code = _grpc_code_name(exc)
-    if grpc_code is not None:
-        text = f"{text} {grpc_code.lower()}"
-    if "unit" in text and ("unavailable" in text or "not ready" in text):
-        return True
-    if "resource" not in text:
-        return False
-    return any(
-        keyword in text
-        for keyword in (
-            "acquire",
-            "acquired",
-            "allocate",
-            "allocated",
-            "allocation",
-            "already",
-            "available",
-            "busy",
-            "exhausted",
-            "in use",
-            "locked",
-            "release",
-            "released",
-            "unavailable",
-        )
-    )
-
-
-async def enter_quelware_session_with_resource_retry(
+async def enter_quelware_session(
     *,
     client: QuelwareClientProtocol,
     resource_ids: Collection[ResourceIdProtocol],
 ) -> tuple[AbstractAsyncContextManager[SessionProtocol], SessionProtocol]:
-    """
-    Enter a quelware session while retrying transient resource allocation failures.
-
-    Notes
-    -----
-    This is a QuEL-3-local workaround for observed `quelware-client` behavior
-    where resources can briefly appear unavailable after the previous session
-    released them.
-    """
-    normalized_resource_ids = tuple(resource_ids)
-    max_attempts = max(1, int(QUELWARE_SESSION_CREATE_MAX_ATTEMPTS))
-    for attempt in range(max_attempts):
-        session_cm: AbstractAsyncContextManager[SessionProtocol] | None = None
-        try:
-            session_cm = client.create_session(
-                normalized_resource_ids,
-                ttl_ms=QUELWARE_SESSION_CREATE_TTL_MS,
-                tentative_ttl_ms=QUELWARE_SESSION_CREATE_TENTATIVE_TTL_MS,
-            )
-            session = await session_cm.__aenter__()
-        except Exception as exc:
-            session_token = quelware_session_token(session_cm)
-            if session_cm is not None:
-                await _close_after_failed_enter(session_cm=session_cm, exc=exc)
-            attempt_number = attempt + 1
-            retryable = is_resource_allocation_error(exc)
-            if attempt_number >= max_attempts or not retryable:
-                raise QuelwareSessionError(
-                    "QuEL-3 quelware session creation failed after retries",
-                    session_token=session_token,
-                    cause=exc,
-                ) from exc
-            retry_delay = _session_create_retry_delay(attempt)
-            logger.warning(
-                "QuEL-3 quelware session creation failed; session_token=%s; "
-                "attempt=%d/%d; retrying in %.3g s; cause=%s",
-                session_token,
-                attempt_number,
-                max_attempts,
-                retry_delay,
-                quelware_exception_summary(exc),
-            )
-            await asyncio.sleep(retry_delay)
-        else:
-            return session_cm, session
-    raise RuntimeError("unreachable quelware session retry state")
-
-
-async def _close_after_failed_enter(
-    *,
-    session_cm: AbstractAsyncContextManager[SessionProtocol],
-    exc: Exception,
-) -> None:
-    """Close a context manager that failed partway through `__aenter__`."""
-    with suppress(Exception):
-        await session_cm.__aexit__(type(exc), exc, exc.__traceback__)
-
-
-def _session_create_retry_delay(attempt: int) -> float:
-    """Return retry delay for a failed session creation attempt."""
-    delay = QUELWARE_SESSION_CREATE_INITIAL_RETRY_DELAY_SECONDS * (
-        QUELWARE_SESSION_CREATE_RETRY_BACKOFF_FACTOR**attempt
-    )
-    return min(delay, QUELWARE_SESSION_CREATE_MAX_RETRY_DELAY_SECONDS)
-
-
-def _grpc_code_name(exc: BaseException) -> str | None:
-    """Return a gRPC status-code name when the exception exposes one."""
-    code = getattr(exc, "code", None)
-    if not callable(code):
-        return None
+    """Acquire a session using the server's retry window and tentative lock TTL."""
+    session_cm = None
     try:
-        value = code()
-    except Exception:
-        return None
-    name = getattr(value, "name", None)
-    if isinstance(name, str):
-        return name
-    return str(value)
+        session_cm = client.create_session(
+            tuple(resource_ids), ttl_ms=QUELWARE_SESSION_CREATE_TTL_MS
+        )
+        session = await session_cm.__aenter__()
+    except (Exception, asyncio.CancelledError) as exc:
+        token = quelware_session_token(session_cm)
+        if session_cm is not None:
+            with suppress(Exception):
+                await session_cm.__aexit__(type(exc), exc, exc.__traceback__)
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+        logger.error(
+            "QuEL-3 session acquisition failed; session_token=%s; cause=%s",
+            token,
+            quelware_exception_summary(exc),
+            exc_info=True,
+        )
+        raise QuelwareSessionAcquisitionError(
+            "QuEL-3 quelware session acquisition failed", session_token=token, cause=exc
+        ) from exc
+    return session_cm, session
