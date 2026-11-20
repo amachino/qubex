@@ -5425,6 +5425,8 @@ class Experiment:
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
+        paired: bool = True,
+        acquisition_seed: int | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         time_integration: bool | None = None,
@@ -5441,6 +5443,14 @@ class Experiment:
             the supplied length grid, or the full candidate grid through
             `max_n_cliffords` for automatic acquisition. Legacy vectors are
             not accepted. Results retain only acquired rows.
+
+        paired : bool, optional
+            Acquire adjacent reference/interleaved pairs in shuffled order
+            within each length, with balanced AB/BA order. Defaults to True.
+            False retains grouped reference-then-interleaved acquisition.
+        acquisition_seed : int | None, optional
+            Seed for pair ordering, independent of sequence seeds. Defaults
+            to None for fresh order. Ignored when paired is False.
         """
         return self.benchmarking_service.interleaved_randomized_benchmarking(
             targets=targets,
@@ -5453,6 +5463,8 @@ class Experiment:
             x90=x90,
             zx90=zx90,
             in_parallel=in_parallel,
+            paired=paired,
+            acquisition_seed=acquisition_seed,
             shots=n_shots,
             interval=shot_interval,
             time_integration=time_integration,
@@ -5466,13 +5478,27 @@ class Experiment:
         *,
         n_trials: int | None = None,
         in_parallel: bool | None = None,
+        paired: bool = True,
+        acquisition_seed: int | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
         **deprecated_options: Any,
     ) -> None:
-        """Run standard 1Q benchmarking suite."""
+        """
+        Run standard 1Q benchmarking suite.
+
+        Parameters
+        ----------
+        paired : bool, optional
+            Acquire adjacent reference/interleaved pairs in shuffled order
+            within each length, with balanced AB/BA order. Defaults to True.
+            False retains grouped reference-then-interleaved acquisition.
+        acquisition_seed : int | None, optional
+            Seed for pair ordering, independent of sequence seeds. Defaults
+            to None for fresh order. Ignored when paired is False.
+        """
         n_shots = self._resolve_deprecated_option(
             value=n_shots,
             deprecated_options=deprecated_options,
@@ -5493,6 +5519,8 @@ class Experiment:
             targets=targets,
             n_trials=n_trials,
             in_parallel=in_parallel,
+            paired=paired,
+            acquisition_seed=acquisition_seed,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,
@@ -5505,13 +5533,27 @@ class Experiment:
         *,
         n_trials: int | None = None,
         in_parallel: bool | None = None,
+        paired: bool = True,
+        acquisition_seed: int | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
         **deprecated_options: Any,
     ) -> None:
-        """Run standard 2Q benchmarking suite."""
+        """
+        Run standard 2Q benchmarking suite.
+
+        Parameters
+        ----------
+        paired : bool, optional
+            Acquire adjacent reference/interleaved pairs in shuffled order
+            within each length, with balanced AB/BA order. Defaults to True.
+            False retains grouped reference-then-interleaved acquisition.
+        acquisition_seed : int | None, optional
+            Seed for pair ordering, independent of sequence seeds. Defaults
+            to None for fresh order. Ignored when paired is False.
+        """
         n_shots = self._resolve_deprecated_option(
             value=n_shots,
             deprecated_options=deprecated_options,
@@ -5532,6 +5574,8 @@ class Experiment:
             targets=targets,
             n_trials=n_trials,
             in_parallel=in_parallel,
+            paired=paired,
+            acquisition_seed=acquisition_seed,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,

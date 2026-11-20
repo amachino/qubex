@@ -304,6 +304,8 @@ def test_benchmark_1q_delegates_to_benchmarking_service() -> None:
             {
                 "targets": ["Q00", "Q01"],
                 "n_trials": 10,
+                "paired": True,
+                "acquisition_seed": None,
                 "in_parallel": True,
                 "shots": 512,
                 "interval": 200.0,
@@ -337,6 +339,8 @@ def test_benchmark_2q_delegates_to_benchmarking_service() -> None:
             {
                 "targets": ["Q00-Q01"],
                 "n_trials": 12,
+                "paired": True,
+                "acquisition_seed": None,
                 "in_parallel": False,
                 "shots": 1024,
                 "interval": 240.0,
@@ -1445,3 +1449,31 @@ def test_register_custom_target_forwards_omitted_channel() -> None:
     )
     assert context_stub.calls[0][0] == "register_custom_target"
     assert context_stub.calls[0][1]["channel_number"] is None
+
+
+@pytest.mark.parametrize(
+    "method_name",
+    ["interleaved_randomized_benchmarking", "benchmark_1q", "benchmark_2q"],
+)
+@pytest.mark.parametrize(("paired", "acquisition_seed"), [(True, None), (False, 42)])
+def test_benchmarking_facade_forwards_acquisition_controls(
+    method_name: str,
+    paired: bool,
+    acquisition_seed: int | None,
+) -> None:
+    """Benchmarking facade methods should forward paired acquisition controls unchanged."""
+    exp = object.__new__(Experiment)
+    service = _BenchmarkingServiceStub()
+    exp.__dict__["_benchmarking_service"] = service
+    options = (
+        {"interleaved_clifford": "X90"}
+        if method_name == "interleaved_randomized_benchmarking"
+        else {}
+    )
+    getattr(exp, method_name)(
+        targets="Q00", paired=paired, acquisition_seed=acquisition_seed, **options
+    )
+    name, arguments = service.calls[0]
+    assert name == method_name
+    assert arguments["paired"] is paired
+    assert arguments["acquisition_seed"] == acquisition_seed
