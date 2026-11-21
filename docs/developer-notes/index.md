@@ -19,6 +19,7 @@ Manage development notes and operational documents.
 - [QuEL-3 Control-System Model Design](quel3-control-system-model-design.md)
 - [Target label metadata roadmap](target-label-metadata-roadmap.md)
 - [Experiment system logical/hardware configuration split design](experiment-system-logical-hardware-split-design.md)
+- [Experiment task API design proposal](experiment-task-api-design.md)
 - [QuEL-3 Wiring And Binding Policy](quel3-wiring-binding-policy.md)
 - [QuEL-3 Demo Readiness (2026-03-19)](quel3-demo-readiness-2026-03-19.md)
 - [System Package QuEL-1/QuEL-3 Boundary](system-package-quel1-quel3-boundary.md)
