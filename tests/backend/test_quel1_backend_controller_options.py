@@ -6,10 +6,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 from enum import Enum
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
+from qubex.backend.quel1.managers.configuration_manager import (
+    Quel1ConfigurationManager,
+)
 from qubex.backend.quel1.quel1_backend_constants import (
     DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
     DEFAULT_BACKGROUND_NOISE_THRESHOLD_RELINKUP,
@@ -102,6 +106,112 @@ def test_constructor_allows_manager_injection() -> None:
     assert controller._execution_manager is execution_manager
     assert controller._configuration_manager is configuration_manager
     assert controller._skew_manager is skew_manager
+
+
+def test_config_port_forwards_cnco_locked_with_to_configuration_manager() -> None:
+    """Given a CNCO lock target, when configuring a port, then it is forwarded."""
+    calls: list[dict[str, Any]] = []
+
+    class _ConfigurationManager:
+        def config_port(self, **kwargs: Any) -> None:
+            calls.append(dict(kwargs))
+
+    controller = cast(Any, Quel1BackendController)(
+        runtime_context=cast(Any, object()),
+        connection_manager=cast(Any, object()),
+        clock_manager=cast(Any, object()),
+        execution_manager=cast(Any, object()),
+        configuration_manager=_ConfigurationManager(),
+        skew_manager=cast(Any, object()),
+    )
+
+    controller.config_port(
+        "B0",
+        port=4,
+        lo_freq_hz=8_500_000_000,
+        cnco_locked_with=1,
+        rfswitch="loop",
+    )
+
+    assert calls == [
+        {
+            "box_name": "B0",
+            "port": 4,
+            "lo_freq_hz": 8_500_000_000,
+            "cnco_freq_hz": None,
+            "cnco_locked_with": 1,
+            "vatt": None,
+            "sideband": None,
+            "fullscale_current": None,
+            "rfswitch": "loop",
+        }
+    ]
+
+
+def test_configuration_manager_passes_cnco_locked_with_to_box() -> None:
+    """Given a CNCO lock target, when configuring hardware, then box config receives it."""
+
+    class _Box:
+        boxtype = "quel1-a"
+
+        def __init__(self) -> None:
+            self.config_port_calls: list[dict[str, Any]] = []
+
+        def config_port(self, **kwargs: Any) -> None:
+            self.config_port_calls.append(dict(kwargs))
+
+    box = _Box()
+    runtime_context = SimpleNamespace(
+        is_connected=True,
+        boxpool=SimpleNamespace(_boxes={"B0": (box,)}),
+        validate_box_availability=lambda _box_name: None,
+    )
+    manager = Quel1ConfigurationManager(runtime_context=cast(Any, runtime_context))
+
+    manager.config_port(
+        box_name="B0",
+        port=4,
+        lo_freq_hz=8_500_000_000,
+        cnco_freq_hz=None,
+        cnco_locked_with=1,
+        vatt=None,
+        sideband=None,
+        fullscale_current=None,
+        rfswitch="loop",
+    )
+
+    assert box.config_port_calls == [
+        {
+            "port": 4,
+            "lo_freq": 8_500_000_000,
+            "cnco_freq": None,
+            "cnco_locked_with": 1,
+            "vatt": None,
+            "sideband": None,
+            "fullscale_current": None,
+            "rfswitch": "loop",
+        }
+    ]
+
+
+def test_configuration_manager_returns_loopback_source_ports() -> None:
+    """Given an input port, when resolving loopbacks, then output ports are returned."""
+
+    class _Box:
+        def get_loopbacks_of_port(self, port: int) -> set[int]:
+            assert port == 4
+            return {1, 2}
+
+    runtime_context = SimpleNamespace(
+        is_connected=True,
+        boxpool=SimpleNamespace(_boxes={"B0": (_Box(),)}),
+        validate_box_availability=lambda _box_name: None,
+    )
+    manager = Quel1ConfigurationManager(runtime_context=cast(Any, runtime_context))
+
+    loopbacks = manager.get_loopbacks_of_port(box_name="B0", port_number=4)
+
+    assert loopbacks == {1, 2}
 
 
 def test_default_relinkup_noise_threshold_is_1024() -> None:
