@@ -99,7 +99,10 @@ def mle_fit_density_matrix(
     b_list: list[float] = []
     for basis, val in expected_values.items():
         op = reduce(np.kron, [paulis[p] for p in basis])
-        A_list.append(op.reshape(1, -1).conj())
+        # Match cp.vec's column-major order: vec(op).H @ vec(rho) equals
+        # trace(op.H @ rho), or trace(op @ rho) for Hermitian Pauli operators.
+        # Mixing row-major operator coefficients with column-major rho flips Y.
+        A_list.append(op.reshape(1, -1, order="F").conj())
         b_list.append(val)
     A = np.vstack(A_list)
     b = np.array(b_list)
